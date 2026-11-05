@@ -1,0 +1,93 @@
+{"arm": "base", "split": "validation", "passed": 55, "total": 64}
+[river] River account advertises model access: Qwen/Qwen3.5-9B
+[river] built 128 River SFT data from 128 rows
+Traceback (most recent call last):
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/study_runner.py", line 316, in <module>
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/study_runner.py", line 211, in worker
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/stateset_agents/remote/river.py", line 369, in submit
+    return self._submit_with_cleanup(spec)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/stateset_agents/remote/river.py", line 387, in _submit_with_cleanup
+    return self._submit_job(handle, job, spec)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/stateset_agents/remote/river.py", line 469, in _submit_job
+    self._train_with_recovery(client, spec, data, job)
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/stateset_agents/remote/river.py", line 1152, in _train_with_recovery
+    self._train(client, spec, data, job)
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/stateset_agents/remote/river.py", line 1190, in _train
+    model = session.create_model(base_model=spec.base_model, lora=lora)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/river_client/client.py", line 2836, in create_model
+    tok = load_tokenizer(tokenizer, base_model=base_model)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/river_client/tokenizers.py", line 212, in load_tokenizer
+    return _load_tokenizer_name(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/river_client/tokenizers.py", line 136, in _load_tokenizer_name
+    tokenizer = AutoTokenizer.from_pretrained(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/transformers/models/auto/tokenization_auto.py", line 815, in from_pretrained
+    return tokenizer_class.from_pretrained(pretrained_model_name_or_path, *inputs, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/transformers/tokenization_utils_base.py", line 1676, in from_pretrained
+    for template in list_repo_templates(
+                    ^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/transformers/utils/hub.py", line 149, in list_repo_templates
+    for entry in hf_api().list_repo_tree(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/huggingface_hub/hf_api.py", line 4098, in list_repo_tree
+    for path_info in paginate(path=tree_url, headers=headers, params={"recursive": recursive, "expand": expand}):
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/huggingface_hub/utils/_pagination.py", line 36, in paginate
+    r = session.get(path, params=params, headers=headers, timeout=timeout)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/httpx/_client.py", line 1066, in get
+    return self.request(
+           ^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/httpx/_client.py", line 837, in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/httpx/_client.py", line 926, in send
+    response = self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/httpx/_client.py", line 954, in _send_handling_auth
+    response = self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/httpx/_client.py", line 991, in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/httpx/_client.py", line 1027, in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 236, in handle_request
+    resp = self._pool.handle_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py", line 256, in handle_request
+    raise exc from None
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py", line 236, in handle_request
+    response = connection.handle_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/httpcore/_sync/connection.py", line 103, in handle_request
+    return self._connection.handle_request(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/httpcore/_sync/http11.py", line 136, in handle_request
+    raise exc
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/httpcore/_sync/http11.py", line 106, in handle_request
+    ) = self._receive_response_headers(**kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/httpcore/_sync/http11.py", line 177, in _receive_response_headers
+    event = self._receive_event(timeout=timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/httpcore/_sync/http11.py", line 217, in _receive_event
+    data = self._network_stream.read(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/httpcore/_backends/sync.py", line 128, in read
+    return self._sock.recv(max_bytes)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/ssl.py", line 1232, in recv
+    return self.read(buflen)
+           ^^^^^^^^^^^^^^^^^
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/ssl.py", line 1105, in read
+    return self._sslobj.read(len)
+           ^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt

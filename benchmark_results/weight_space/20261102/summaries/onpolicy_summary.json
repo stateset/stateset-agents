@@ -1,0 +1,86 @@
+{
+  "rounds": [
+    {
+      "round": 0,
+      "spec": "conclude-neuron-L23_v3t",
+      "spec_hash": "f221470a088d0860",
+      "select_think_strict": 0.445,
+      "select_think_lenient": 0.52,
+      "select_think_multi_close": 0.15,
+      "select_think_no_close": 0.2,
+      "select_nothink_strict": 0.44,
+      "select_nothink_stray": 0.15,
+      "by_kind": {
+        "gsm8k": 0.53,
+        "math": 0.36
+      },
+      "mined_this_round": {
+        "extra_close": 25,
+        "premature_close": 27,
+        "stray_close": 18,
+        "good_close": 63,
+        "missed_answer": 1
+      }
+    },
+    {
+      "round": 1,
+      "spec": "conclude-neuron-L23_op1",
+      "spec_hash": "c109c1b4eabf7d15",
+      "select_think_strict": 0.355,
+      "select_think_lenient": 0.45,
+      "select_think_multi_close": 0.175,
+      "select_think_no_close": 0.3,
+      "select_nothink_strict": 0.485,
+      "select_nothink_stray": 0.1,
+      "by_kind": {
+        "gsm8k": 0.41,
+        "math": 0.3
+      },
+      "mined_this_round": {
+        "extra_close": 8,
+        "premature_close": 1,
+        "stray_close": 0,
+        "good_close": 39,
+        "missed_answer": 15
+      }
+    },
+    {
+      "round": 2,
+      "spec": "conclude-neuron-L23_op2",
+      "spec_hash": "1ac7478a57fb17da",
+      "select_think_strict": 0.315,
+      "select_think_lenient": 0.455,
+      "select_think_multi_close": 0.25,
+      "select_think_no_close": 0.27,
+      "select_nothink_strict": 0.425,
+      "select_nothink_stray": 0.215,
+      "by_kind": {
+        "gsm8k": 0.36,
+        "math": 0.27
+      },
+      "mined_this_round": {
+        "extra_close": 14,
+        "premature_close": 5,
+        "stray_close": 1,
+        "good_close": 34,
+        "missed_answer": 11
+      }
+    },
+    {
+      "round": 3,
+      "spec": "conclude-neuron-L23_op3",
+      "spec_hash": "e13aa9c229f437de",
+      "select_think_strict": 0.3,
+      "select_think_lenient": 0.445,
+      "select_think_multi_close": 0.28,
+      "select_think_no_close": 0.225,
+      "select_nothink_strict": 0.38,
+      "select_nothink_stray": 0.31,
+      "by_kind": {
+        "gsm8k": 0.36,
+        "math": 0.24
+      }
+    }
+  ],
+  "kept_round": 0
+}

@@ -172,6 +172,51 @@ def test_manual_metric_sync_uses_model_parameter_device(monkeypatch):
     }
 
 
+def test_manual_cpu_topology_does_not_select_cuda(monkeypatch):
+    trainer = trainer_with_accelerator(None, world_size=2)
+    trainer.distributed_config.strategy = "ddp"
+    trainer.distributed_config.backend = "gloo"
+    for key in ["RANK", "WORLD_SIZE", "LOCAL_RANK"]:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(distributed.torch.cuda, "is_available", lambda: False)
+    select_device = MagicMock()
+    initialize = MagicMock()
+    monkeypatch.setattr(distributed.torch.cuda, "set_device", select_device)
+    monkeypatch.setattr(distributed.dist, "is_initialized", lambda: False)
+    monkeypatch.setattr(distributed.dist, "init_process_group", initialize)
+
+    trainer._init_distributed()
+
+    select_device.assert_not_called()
+    initialize.assert_called_once_with(backend="gloo", world_size=2, rank=0)
+    assert trainer.is_main_process is True
+
+
+@pytest.mark.parametrize("mismatch", ["world_size", "rank", "backend"])
+def test_manual_topology_rejects_conflicting_existing_group(monkeypatch, mismatch):
+    trainer = trainer_with_accelerator(None, world_size=2)
+    trainer.distributed_config.strategy = "ddp"
+    trainer.distributed_config.backend = "gloo"
+    for key in ["RANK", "WORLD_SIZE", "LOCAL_RANK"]:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(distributed.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(distributed.dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(
+        distributed.dist, "get_world_size", lambda: 3 if mismatch == "world_size" else 2
+    )
+    monkeypatch.setattr(
+        distributed.dist, "get_rank", lambda: 1 if mismatch == "rank" else 0
+    )
+    monkeypatch.setattr(
+        distributed.dist,
+        "get_backend",
+        lambda: "nccl" if mismatch == "backend" else "gloo",
+    )
+
+    with pytest.raises(ValueError, match="topology differs"):
+        trainer._init_distributed()
+
+
 def test_real_accelerate_prepares_cpu_model_and_optimizer():
     accelerator = Accelerator(cpu=True)
     trainer = trainer_with_accelerator(accelerator)
@@ -213,3 +258,52 @@ async def test_real_accelerate_accumulates_before_optimizer_step():
     assert trainer.global_step == 1
     assert torch.equal(before, after_first)
     assert not torch.equal(after_first, trainer.agent.model.weight.detach())
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("full_shard", "FULL_SHARD"),
+        (" Shard_Grad_Op ", "SHARD_GRAD_OP"),
+        ("no_shard", "NO_SHARD"),
+    ],
+)
+def test_fsdp_sharding_strategy_config_resolves_to_enum(value, expected):
+    from torch.distributed.fsdp import ShardingStrategy
+
+    resolved = distributed._resolve_fsdp_sharding_strategy(value)
+
+    assert resolved is ShardingStrategy[expected]
+    assert distributed._resolve_fsdp_sharding_strategy(resolved) is resolved
+
+
+def test_fsdp_sharding_strategy_rejects_unknown_value():
+    with pytest.raises(ValueError, match="fsdp_sharding_strategy"):
+        distributed._resolve_fsdp_sharding_strategy("quarter_shard")
+
+
+def test_fsdp_wrap_passes_sharding_strategy_enum(monkeypatch):
+    """Regression: FSDP received the raw config string, not a ShardingStrategy."""
+    from torch.distributed.fsdp import ShardingStrategy
+
+    trainer = object.__new__(DistributedTrainer)
+    trainer.distributed_config = DistributedConfig(
+        strategy="fsdp",
+        fsdp_sharding_strategy="shard_grad_op",
+        fsdp_mixed_precision=False,
+        fsdp_auto_wrap_min_params=0,
+    )
+    trainer.config = SimpleNamespace(bf16=False, fp16=False)
+    module = torch.nn.Linear(1, 1)
+    trainer.agent = SimpleNamespace(model=module)
+    fsdp = MagicMock(side_effect=lambda model, **kwargs: model)
+    monkeypatch.setattr(distributed, "FSDP", fsdp)
+    monkeypatch.setattr(distributed.torch.cuda, "current_device", lambda: 0)
+
+    trainer._wrap_model_fsdp()
+
+    kwargs = fsdp.call_args.kwargs
+    assert fsdp.call_args.args[0] is module
+    assert kwargs["sharding_strategy"] is ShardingStrategy.SHARD_GRAD_OP
+    assert kwargs["auto_wrap_policy"] is None
+    assert kwargs["device_id"] == 0

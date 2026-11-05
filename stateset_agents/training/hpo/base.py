@@ -215,22 +215,29 @@ class HPOSummary:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2)
 
-    def print_summary(self):
-        """Print a formatted summary to console."""
-        print("\n" + "=" * 60)
-        print("HPO RUN SUMMARY")
-        print("=" * 60)
-        print(f"Best Trial ID: {self.best_trial_id}")
-        print(f"Best Metric: {self.best_metric:.4f}")
-        print("\nBest Hyperparameters:")
+    def format_summary(self) -> str:
+        """A formatted text summary of the HPO run."""
+        lines: list[str] = []
+        lines.append("\n" + "=" * 60)
+        lines.append("HPO RUN SUMMARY")
+        lines.append("=" * 60)
+        lines.append(f"Best Trial ID: {self.best_trial_id}")
+        lines.append(f"Best Metric: {self.best_metric:.4f}")
+        lines.append("\nBest Hyperparameters:")
         for param, value in self.best_params.items():
-            print(f"  {param}: {value}")
-        print(
+            lines.append(f"  {param}: {value}")
+        lines.append(
             f"\nTrials: {self.total_trials} total, {self.successful_trials} successful, "
             f"{self.failed_trials} failed, {self.pruned_trials} pruned"
         )
-        print(f"Total Time: {self.total_time:.2f}s")
-        print("=" * 60 + "\n")
+        lines.append(f"Total Time: {self.total_time:.2f}s")
+        lines.append("=" * 60 + "\n")
+        return "\n".join(lines)
+
+    def print_summary(self) -> None:
+        """Print :meth:`format_summary` to the console (an explicit,
+        interactive request; the HPO trainer logs it instead)."""
+        print(self.format_summary())  # noqa: T201 - explicit console helper
 
 
 class HPOCallback(Protocol):

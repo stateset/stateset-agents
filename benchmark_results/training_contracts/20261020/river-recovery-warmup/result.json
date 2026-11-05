@@ -1,0 +1,9 @@
+{
+  "accepted": true,
+  "nonzero_variance_groups": 6,
+  "quality_certification": false,
+  "rl_updates": 0,
+  "sft_updates": 10,
+  "status": "completed",
+  "test_attempted": true
+}

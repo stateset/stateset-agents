@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "input_rows": 6,
+  "duplicate_rows": 0,
+  "filtered_training_rows": 0,
+  "validation_after": "2026-02-01T00:00:00Z",
+  "test_after": "2026-03-01T00:00:00Z",
+  "minimum_reward": null,
+  "redaction": "known-contact-and-credential-patterns-v1",
+  "split_sha256": {
+    "train": "81f34edb178cb25552373ea9458715f70040b095909bdd4f143f5f07ad9f17a3",
+    "validation": "766748f3ceb384defb12e85e33df143bb525afb9ae2deadaa78bc2c35c78a877",
+    "test": "22bd484963b5789c00e28058cdfab17b61eae93ed9e729b96b14808fc9157fba"
+  },
+  "split_rows": {
+    "train": 2,
+    "validation": 2,
+    "test": 2
+  }
+}

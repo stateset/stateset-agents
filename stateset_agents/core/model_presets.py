@@ -19,7 +19,10 @@ now a backwards-compatible re-export shim over this one.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+
+from stateset_agents._deprecation import warn_deprecated
+from stateset_agents.core.frontier_models import FRONTIER_MODELS
 
 
 @dataclass(frozen=True)
@@ -93,6 +96,11 @@ class ModelPreset:
     cli_default_output_dir: str | None = None
     """Optional per-variant output directory when variants share a starter."""
 
+    model_revision: str | None = None
+    """Immutable checkpoint revision when the preset declares a verified pin."""
+    chat_template_kwargs: tuple[tuple[str, str | bool], ...] = ()
+    """Immutable scalar template options copied into the agent configuration."""
+
     def __post_init__(self) -> None:
         if self.cli_command is None:
             return
@@ -117,6 +125,32 @@ class ModelPreset:
 
 
 PRESETS: dict[str, ModelPreset] = {
+    "muse-spark-open": ModelPreset(
+        model_id="meta-models/Muse-Spark-Open-816B-A42B",
+        tokenizer_id="meta-models/Muse-Spark-Open-816B-A42B",
+        model_revision="0fb02478b02565b2ce7fc57e6051c91172774ac9",
+        chat_template_kwargs=(
+            ("reasoning_effort", "low"),
+            ("current_date", "2026-10-15"),
+        ),
+        trust_remote_code=False,
+        lora_target_modules=("q_proj", "k_proj", "v_proj", "o_proj"),
+        max_prompt_length=2048,
+        max_completion_length=1024,
+        learning_rate=1e-6,
+        num_generations=2,
+        use_4bit=False,
+        use_8bit=False,
+        notes=(
+            "Gated Muse Spark Open BF16, native muse_spark conditional-generation "
+            "architecture. Requires [muse-spark]. Text-only native GSPO integration; "
+            "full-size GPU/RL conformance is unverified. Language attention targets "
+            "come from the released Transformers implementation; encoders are excluded "
+            "by text_lora_targets. 816B total weights must fit independently of the "
+            "42B active count. The CLI muse-spark-open provides the separate upstream "
+            "load-time FSDP/EP SFT path. NVFP4 is not a BF16 training footprint."
+        ),
+    ),
     "granite4-micro": ModelPreset(
         model_id="ibm-granite/granite-4.0-micro",
         tokenizer_id="ibm-granite/granite-4.0-micro",
@@ -1008,7 +1042,7 @@ PRESETS: dict[str, ModelPreset] = {
             "native image/video inference uses AutoProcessor or vLLM/SGLang."
         ),
     ),
-    "qwen3": ModelPreset(
+    "qwen2.5-7b": ModelPreset(
         model_id="Qwen/Qwen2.5-7B",
         tokenizer_id="Qwen/Qwen2.5-7B",
         lora_target_modules=(
@@ -1033,7 +1067,9 @@ PRESETS: dict[str, ModelPreset] = {
             "This preset captures its 7B-14B branch (representative "
             "'larger model with LoRA' example from the script's docstring, "
             "Qwen/Qwen2.5-7B). The 0.8B and 27B branches are captured "
-            "separately as the qwen3.5-0.8b and qwen3.5-27b presets."
+            "separately as the qwen3.5-0.8b and qwen3.5-27b presets. Named "
+            "'qwen3' until v0.70.0 although it loads Qwen2.5; that name is a "
+            "deprecated alias."
         ),
     ),
     "qwen3.5-0.8b": ModelPreset(
@@ -1093,7 +1129,7 @@ PRESETS: dict[str, ModelPreset] = {
             "per-model identity)."
         ),
     ),
-    "gemma3": ModelPreset(
+    "gemma2-9b": ModelPreset(
         model_id="google/gemma-2-9b-it",
         tokenizer_id="google/gemma-2-9b-it",
         lora_target_modules=(
@@ -1115,7 +1151,9 @@ PRESETS: dict[str, ModelPreset] = {
         notes=(
             "examples/finetune_gemma3_gspo.py branches on size "
             "(2b/9b/27b). This preset captures the 9b branch "
-            "(google/gemma-2-9b-it), the script's middle example."
+            "(google/gemma-2-9b-it), the script's middle example. Named "
+            "'gemma3' until v0.70.0 although it loads Gemma 2; that name is a "
+            "deprecated alias."
         ),
     ),
     "gemma4-e2b": ModelPreset(
@@ -1256,17 +1294,94 @@ PRESETS: dict[str, ModelPreset] = {
 }
 
 
+# Checkpoint-specific attention targets replace provisional family guesses. These
+# entries are configurations, not full-size training certifications. Use
+# frontier-models/frontier-sft for readiness and distributed SFT.
+for _frontier in FRONTIER_MODELS:
+    if _frontier.key in PRESETS:
+        PRESETS[_frontier.key] = replace(
+            PRESETS[_frontier.key],
+            model_revision=_frontier.revision,
+            chat_template_kwargs=_frontier.chat_template_options,
+            trust_remote_code=_frontier.trust_remote_code,
+            lora_target_modules=_frontier.attention_targets,
+            use_4bit=False,
+            use_8bit=False,
+            notes=(
+                f"Pinned {_frontier.architecture}; {_frontier.checkpoint_format}. "
+                "Text attention targets audited against the released index. "
+                "Full-size training unverified. Use frontier-sft for distributed SFT. "
+                + " ".join(_frontier.blockers)
+            ),
+        )
+    else:
+        PRESETS[_frontier.key] = ModelPreset(
+            model_id=_frontier.model_id,
+            tokenizer_id=_frontier.model_id,
+            model_revision=_frontier.revision,
+            chat_template_kwargs=_frontier.chat_template_options,
+            trust_remote_code=_frontier.trust_remote_code,
+            lora_target_modules=_frontier.attention_targets,
+            max_prompt_length=2048,
+            max_completion_length=1024,
+            learning_rate=1e-6,
+            num_generations=2,
+            notes=(
+                f"Pinned {_frontier.architecture}; {_frontier.checkpoint_format}. "
+                "Full-size GPU training unverified; use frontier-sft. "
+                + " ".join(_frontier.blockers)
+            ),
+        )
+del _frontier
+
+
+#: Old preset names whose model belonged to another generation than the name
+#: claimed ("qwen3" loaded Qwen2.5-7B, "gemma3" loaded Gemma 2 9B). Each still
+#: resolves, with a DeprecationWarning, until the removal release. Preset names
+#: are not part of the v1 public contract, so they follow the provisional
+#: schedule (removed after the next minor release).
+DEPRECATED_PRESET_ALIASES: dict[str, str] = {
+    "qwen3": "qwen2.5-7b",
+    "gemma3": "gemma2-9b",
+}
+
+
+def _resolve(name: str, stacklevel: int) -> str:
+    canonical = DEPRECATED_PRESET_ALIASES.get(name)
+    if canonical is None:
+        return name
+    warn_deprecated(
+        f"Model preset {name!r} (which loads {PRESETS[canonical].model_id})",
+        removal="0.72.0",
+        replacement=f"preset {canonical!r}",
+        stacklevel=stacklevel + 1,
+    )
+    return canonical
+
+
+def resolve_preset_name(name: str) -> str:
+    """Return the canonical preset name, warning when ``name`` is deprecated."""
+
+    return _resolve(name, stacklevel=2)
+
+
 def list_preset_names() -> list[str]:
-    """Return preset names in a stable, deterministic order."""
+    """Return canonical preset names in a stable, deterministic order.
+
+    Deprecated aliases (:data:`DEPRECATED_PRESET_ALIASES`) are not listed.
+    """
 
     return list(PRESETS.keys())
 
 
 def get_preset(name: str) -> ModelPreset:
-    """Look up a preset by name, raising a clear error for typos."""
+    """Look up a preset by name, raising a clear error for typos.
+
+    A deprecated alias resolves to its replacement with a DeprecationWarning.
+    """
 
     try:
-        return PRESETS[name]
+        return PRESETS[_resolve(name, stacklevel=2)]
     except KeyError as exc:
         available = ", ".join(sorted(PRESETS))
         raise KeyError(
@@ -1274,4 +1389,27 @@ def get_preset(name: str) -> ModelPreset:
         ) from exc
 
 
-__all__ = ["ModelPreset", "PRESETS", "get_preset", "list_preset_names"]
+def trust_remote_code_for(model_name: str) -> bool:
+    """Whether loading ``model_name`` may run repository-shipped model code.
+
+    Only curated presets that require it (``ModelPreset.trust_remote_code``)
+    opt in; any other model id loads with the native ``transformers``
+    implementation. Every layer that loads a checkpoint by model id (SFT, the
+    remote chat REPL) asks here, so the policy has one home below them.
+    """
+
+    return next(
+        (p.trust_remote_code for p in PRESETS.values() if p.model_id == model_name),
+        False,
+    )
+
+
+__all__ = [
+    "DEPRECATED_PRESET_ALIASES",
+    "ModelPreset",
+    "PRESETS",
+    "get_preset",
+    "list_preset_names",
+    "resolve_preset_name",
+    "trust_remote_code_for",
+]

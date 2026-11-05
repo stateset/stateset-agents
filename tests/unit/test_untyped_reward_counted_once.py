@@ -9,10 +9,12 @@ class _Untyped:
         return 1.0
 
 
-def test_step_scoring_environment_skips_final_reward():
+def test_conversation_environment_scores_untyped_rewards_at_episode_end():
+    # Untyped rewards are episode-level, as when a trainer holds them, so the
+    # total does not depend on where the reward is attached.
     env = ConversationEnvironment(scenarios=[{"id": "s"}], reward_fn=_Untyped())
-    assert env._should_compute_step_reward()
-    assert not env._should_compute_final_reward()
+    assert not env._should_compute_step_reward()
+    assert env._should_compute_final_reward()
 
 
 def test_other_environments_score_untyped_rewards_at_episode_end():
@@ -22,3 +24,12 @@ def test_other_environments_score_untyped_rewards_at_episode_end():
         reward_fn=_Untyped(),
     )
     assert env._should_compute_final_reward()
+
+
+def test_a_step_scoring_subclass_scores_untyped_rewards_per_step():
+    class StepScoring(ConversationEnvironment):
+        scores_steps = True
+
+    env = StepScoring(scenarios=[{"id": "s"}], reward_fn=_Untyped())
+    assert env._should_compute_step_reward()
+    assert not env._should_compute_final_reward()

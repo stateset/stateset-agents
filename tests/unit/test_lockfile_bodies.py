@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.check_lockfile_bodies import lock_body
+from scripts.check_lockfile_bodies import lock_body, main
 
 
 def test_lock_body_ignores_generator_header_only(tmp_path: Path) -> None:
@@ -27,3 +27,22 @@ def test_lock_body_rejects_empty_lock(tmp_path: Path) -> None:
     path.write_text("# generated\n")
     with pytest.raises(ValueError, match="no resolved packages"):
         lock_body(path)
+
+
+@pytest.mark.parametrize("pairs", [1, 2, 3])
+def test_every_requested_lock_pair_is_checked(tmp_path: Path, pairs: int) -> None:
+    paths = []
+    for index in range(pairs):
+        for side in ("committed", "regenerated"):
+            path = tmp_path / f"{index}-{side}.txt"
+            path.write_text("# metadata\nnumpy==2.4.6\n")
+            paths.append(str(path))
+    assert main(paths) == 0
+    Path(paths[-1]).write_text("# metadata\nnumpy==2.4.7\n")
+    assert main(paths) == 1
+
+
+@pytest.mark.parametrize("paths", [[], ["unpaired"]])
+def test_lock_comparison_rejects_incomplete_pairs(paths: list[str]) -> None:
+    with pytest.raises(SystemExit, match="expected pairs"):
+        main(paths)

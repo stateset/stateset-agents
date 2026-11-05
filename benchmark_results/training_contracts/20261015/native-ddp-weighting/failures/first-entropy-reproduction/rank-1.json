@@ -1,0 +1,34 @@
+[
+  {
+    "objective": "grpo",
+    "entropy": 0.0,
+    "steps": 1,
+    "microbatches": 1,
+    "max_parameter_error": 0.0,
+    "optimizer_steps": 1
+  },
+  {
+    "objective": "grpo",
+    "entropy": 0.0,
+    "steps": 2,
+    "microbatches": 2,
+    "max_parameter_error": 0.0,
+    "optimizer_steps": 1
+  },
+  {
+    "objective": "grpo",
+    "entropy": 0.0,
+    "steps": 4,
+    "microbatches": 2,
+    "max_parameter_error": 0.0,
+    "optimizer_steps": 1
+  },
+  {
+    "objective": "grpo",
+    "entropy": 0.07,
+    "steps": 1,
+    "microbatches": 1,
+    "max_parameter_error": 0.00015807151794433594,
+    "optimizer_steps": 1
+  }
+]

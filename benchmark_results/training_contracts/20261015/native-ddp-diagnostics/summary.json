@@ -1,0 +1,68 @@
+{
+  "passed": true,
+  "queue_job": "67ceb2473dbf",
+  "typed_modules": 411,
+  "source_unchanged": true,
+  "test_sources_unchanged": true,
+  "wheel_source_matches": true,
+  "wheel_sha256": "f6e7a3a6d30d8728f27d27420ba698489079feb302b83a1035fe88b46680856f",
+  "regressions": {
+    "passed": 2034,
+    "skipped": 7
+  },
+  "source_distributed": {
+    "passed": 11,
+    "skipped": 0
+  },
+  "wheel_regressions": {
+    "passed": 767,
+    "skipped": 0
+  },
+  "wheel_distributed": {
+    "passed": 11,
+    "skipped": 0
+  },
+  "runtime": {
+    "torch": "2.11.0",
+    "transformers": "5.14.1",
+    "accelerate": "1.14.0",
+    "numpy": "2.3.5",
+    "tokenizers": "0.22.2"
+  },
+  "diagnostic_scenarios_per_peer": 8,
+  "existing_scenario_reports": {
+    "rank-0.json": 294,
+    "advantages-0.json": 48,
+    "learner-preflight-0.json": 40,
+    "replica-consensus-0.json": 32,
+    "native-ddp-checkpoint-0.json": 98,
+    "ddp-evaluation-0.json": 28,
+    "ddp-continual-0.json": 46,
+    "empty-population-0.json": 131,
+    "ddp-training-loop-0.json": 17,
+    "ddp-rollout-metrics-0.json": 21
+  },
+  "semantics": {
+    "checkpoint": "learning state v2 validates history before weight application; serial v1 restores fresh history; native checkpoint v2 binds shared guard controls",
+    "history": "patience, counters, bounded recent rewards, finite scalar latest metrics, last-step identity and retained failure; process-local clocks restart",
+    "observation": "coordinate local post-step timing/cost and monitor failures, then agree on guard controls",
+    "failures": "post-update diagnostics poison every peer until a complete healthy checkpoint reload; failed snapshots retain failure",
+    "recovery": "preserve existing monitor callback references; clear stale target failure and transient rollout timing; exact subsequent learner update matches combined reference",
+    "admission": "preflight v4 checks guard controls before forward; differing patience, streak or observation count rejects without learner mutation",
+    "noop": "globally empty batches do not create, advance or reset guard history; pending batches retain prior step-identity deduplication"
+  },
+  "gpu_verified": false,
+  "multi_node_verified": false,
+  "fsdp_verified": false,
+  "deepspeed_verified": false,
+  "multi_rank_accelerate_verified": false,
+  "model_quality_improvement_verified": false,
+  "workflow_validation": {
+    "queue_job": "b911909ff941",
+    "tool": "actionlint 1.7.12",
+    "path": ".github/workflows/training-contracts.yml",
+    "sha256": "8a6318b45b77e6cc75f0a77d5f04df8b1091213e7156f93c7f68a476440d5247"
+  },
+  "boundaries": "Tiny FP32 CPU/Gloo learners and synthetic rewards. Native checkpoint v1 directories fail closed. All live peers must enter the same operation. Incompatible callback collectives, backend collective failure and process loss require external recovery. Task/final flush event reporting remains open.",
+  "count_note": "Targeted source/wheel tests overlap. Eleven two-worker pytest contracts contain multiple scenarios; eight new scenarios per peer are not separate pytest cases."
+}

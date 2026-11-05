@@ -1,0 +1,18 @@
+{
+  "source.py": "5ecfd385118c5b762362c6b6f69e68e34512ea0f4467a8d86010a6fbb0e0c995",
+  "evaluation.safetensors": "1b334443f89776746ef62844f896962cb8eadac002e6d021e3bc6a520d0d6bbc",
+  "protocol.json": "b4b4d78062c7f843fd131344a4f87e53f269c1aebe80d9b7d65d879b0190dc54",
+  "seed0_lr0.001.safetensors": "f0a3261e0be21fd3fc8da5718acaeb4390c8309e7a7a6cc9bc5aad575ed5b946",
+  "README.md": "04525bcd48b99d931515fe099cb473b0eee1c1caca6d13069dcdada4e5185434",
+  "trials.json": "86e534ed53651643768d5d69bf92a47b9b00771429625d74dceee3b579a873c1",
+  "splits.json": "13d326b5b3f215c16dee9919c645224104d970569b64c60fe4b5ae82bdcc281f",
+  "summary.json": "e643a91001d2cc0656d6e1b17a990e0fbc50779aeb637cddd795f4eab73c20a4",
+  "seed0_lr0.003.safetensors": "84969f3faf3566e94e6358912e2454dccf44a938cabe7b9e0315d564a9433472",
+  "seed1_lr0.003.safetensors": "c773811b92f8090a04227b30d73f8076e99dffd3616b7e92f301f5c6d7e65372",
+  "seed2_lr0.001.safetensors": "684c7b2c48ebfd8bcf51a2068bc319da8056268bf0fcbe3c73a9dc03288634cd",
+  "seed1_lr0.001.safetensors": "8227b0fb2f504a20a389447f135a2d075d88f91f47248f0e3387939e77bcbd54",
+  "verification.json": "e30ae2c85bc17d5e8508196e280647deeae523eeec1880dbfaf7e9544fba5ca8",
+  "seed2_lr0.003.safetensors": "8f3f3fec9a22657b8816d41a94eaddd006fc4b34df9311f8057e592130490a74",
+  "dependencies/handwritten_weighted_graph.py": "7540fda391dbc06afc75b800a5a53fbfe47f6f38e720874307012573fef87e0a",
+  "dependencies/handwritten_weighted_graph_job.py": "837e4d6bc57278cae65da027cb6fa1d099a060f38a1b02abbd8544ae9a4237c0"
+}

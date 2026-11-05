@@ -71,7 +71,7 @@ class _ContainsTokenRewardModel:
     """Reward 1.0 if the response contains the target token, else 0.0."""
 
     async def compute_reward(self, turns, context) -> RewardResult:
-        content = turns[0].content
+        content = turns[-1].content
         score = 1.0 if "A" in content else 0.0
         return RewardResult(score=score, breakdown={}, components={})
 

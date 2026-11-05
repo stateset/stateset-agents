@@ -1,0 +1,44 @@
+"""Retain the focused preview honestly while the full verifier is queued."""
+from pathlib import Path
+import hashlib
+import json
+import shutil
+import subprocess
+import time
+import xml.etree.ElementTree as ET
+
+root=Path('/home/dom/stateset-agents'); prefix='stateset-studio-mobile'
+def job(handle):
+    return json.loads(subprocess.check_output(['/home/dom/agent-builds/buildr','show','--json',handle],text=True))
+focused=job('cc03b0298bb5'); full=job('c0e0a6acf3be')
+assert focused['state']=='succeeded' and focused['exit_code']==0
+parsed=ET.parse('/tmp/stateset-mobile-dev.xml').getroot()
+cases=list(parsed.iter('testcase'))
+assert len(cases)==31 and not list(parsed.iter('failure')) and not list(parsed.iter('error')) and not list(parsed.iter('skipped'))
+draft=json.loads(Path('/tmp',prefix+'-draft.json').read_text()); assert draft['draft_preserved']
+live=Path('/tmp',prefix+'-live.txt'); assert 'Phone terminals:' in live.read_text()
+source={p.relative_to(root/'stateset_agents').as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'stateset_agents').rglob('*.py')}
+tests={p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'tests').rglob('*.py')}
+report={'created_at':time.time(),'scope':'Focused mobile preview; full acceptance is pending','focused_tests':31,'focused_job':focused['id'],'full_job':full['id'],'full_state_at_capture':full['state'],'live_pane':'w1:p1A','live_pid':3299849,'draft_preserved':True,'training_started':False,'source_sha256':source,'test_source_sha256':tests}
+Path('/tmp',prefix+'-preview.json').write_text(json.dumps(report,indent=2)+'\n')
+out=root/'benchmark_results/training_contracts/20261016/finetune-studio-mobile-preview'; out.mkdir(exist_ok=False)
+(out/'preview.json').write_text(json.dumps(report,indent=2)+'\n')
+keys=['id','state','exit_code','argv','created','started','finished','wait_seconds','elapsed_seconds','reason']
+(out/'queue-receipts.json').write_text(json.dumps([{k:j.get(k) for k in keys} for j in [focused,full]],indent=2)+'\n')
+shutil.copy2('/tmp/stateset-mobile-dev.xml',out/'focused.xml')
+shutil.copy2(live,out/'herdr-live.txt'); shutil.copy2(Path('/tmp',prefix+'-draft.json'),out/'herdr-draft.json')
+shutil.copy2(__file__,out/'preview-retain.py.txt')
+(out/'README.md').write_text('''# Mobile TUI preview
+
+All 31 focused mobile checks passed through Buildr job `cc03b0298bb5`.
+The existing idle Herdr split was refreshed to this source without changing
+saved draft bytes, permissions or the run list. Phone controls are present
+in live help. No training or inference was started.
+
+Full source/wheel/installed-CLI verification is still pending at this capture,
+under the original job `c0e0a6acf3be`. This is a focused preview receipt, not
+final package acceptance. Source and test hashes preserve the preview identity
+for the later full verifier. Real phone hardware and model quality were not
+certified. The live pane keeps its existing desktop geometry.
+''')
+print(json.dumps({'path':str(out),'focused_tests':31,'full_state':full['state'],'draft_preserved':True}))

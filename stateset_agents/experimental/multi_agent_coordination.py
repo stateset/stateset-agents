@@ -223,7 +223,7 @@ class CapabilityBasedAllocator(TaskAllocator):
             selected = min(capable_agents, key=lambda a: a.workload)
         else:
             # Random selection among capable agents
-            selected = np.random.choice(capable_agents)
+            selected = capable_agents[int(np.random.randint(len(capable_agents)))]
 
         return selected.agent_id
 

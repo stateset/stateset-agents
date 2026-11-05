@@ -1,0 +1,107 @@
+.............................FF......................................... [ 40%]
+...............s........................................................ [ 80%]
+..................................                                       [100%]
+=================================== FAILURES ===================================
+___________________ test_checkpoint_io_shim_only_re_exports ____________________
+
+    def test_checkpoint_io_shim_only_re_exports():
+        """The training shim must stay a re-export, not a second load site."""
+>       assert _torch_load_calls(_CHECKPOINT_IO_SHIM.read_text(encoding="utf-8")) == []
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_checkpoint_trust.py:300: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/pathlib.py:1027: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/tmp/stateset-a-plus-20261018/checks/stateset_agents/training/checkpoint_io.py')
+mode = 'r', buffering = -1, encoding = 'utf-8', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/tmp/stateset-a-plus-20261018/checks/stateset_agents/training/checkpoint_io.py'
+
+/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/pathlib.py:1013: FileNotFoundError
+_____________________ test_checkpoint_io_pins_weights_only _____________________
+
+    def test_checkpoint_io_pins_weights_only():
+        """The single ``torch.load`` site passes a non-``False`` ``weights_only``."""
+>       calls = _torch_load_calls(_CHECKPOINT_IO.read_text(encoding="utf-8"))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_checkpoint_trust.py:305: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/pathlib.py:1027: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/tmp/stateset-a-plus-20261018/checks/stateset_agents/core/checkpoint_io.py')
+mode = 'r', buffering = -1, encoding = 'utf-8', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/tmp/stateset-a-plus-20261018/checks/stateset_agents/core/checkpoint_io.py'
+
+/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/pathlib.py:1013: FileNotFoundError
+=============================== warnings summary ===============================
+tests/unit/test_training_queue.py: 134 warnings
+  /tmp/stateset-a-plus-20261018/site-packages/stateset_agents/api/training_queue.py:232: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    now = datetime.utcnow()
+
+tests/unit/test_training_queue.py: 32 warnings
+  /tmp/stateset-a-plus-20261018/site-packages/stateset_agents/api/training_queue.py:413: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    snapshot.update(status="running", started_at=datetime.utcnow())
+
+tests/unit/test_training_queue.py: 16 warnings
+  /tmp/stateset-a-plus-20261018/site-packages/stateset_agents/api/training_queue.py:503: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    snapshot["completed_at"] = datetime.utcnow()
+
+tests/unit/test_training_queue.py::test_cancellation_and_expired_worker_writes_are_fenced[sqlite]
+tests/unit/test_training_queue.py::test_cancellation_and_expired_worker_writes_are_fenced[postgres]
+tests/unit/test_training_queue.py::test_heartbeat_cannot_revive_a_lease_that_expired_while_waiting_for_lock
+tests/unit/test_training_queue.py::test_lease_is_expired_at_its_deadline
+  /tmp/stateset-a-plus-20261018/site-packages/stateset_agents/api/training_queue.py:394: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    completed_at=datetime.utcnow(),
+
+tests/unit/test_training_queue.py::test_cancellation_and_expired_worker_writes_are_fenced[sqlite]
+tests/unit/test_training_queue.py::test_cancellation_and_expired_worker_writes_are_fenced[postgres]
+  /tmp/stateset-a-plus-20261018/checks/tests/unit/test_training_queue.py:72: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    snapshot.update(status="completed", completed_at=datetime.utcnow())
+
+tests/unit/test_training_queue.py::test_late_cancellation_cannot_be_overwritten_by_success[sqlite]
+tests/unit/test_training_queue.py::test_late_cancellation_cannot_be_overwritten_by_success[postgres]
+  /tmp/stateset-a-plus-20261018/checks/tests/unit/test_training_queue.py:81: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    snapshot.update(status="completed", completed_at=datetime.utcnow())
+
+tests/unit/test_training_queue.py::test_lease_is_expired_at_its_deadline
+  /tmp/stateset-a-plus-20261018/checks/tests/unit/test_training_queue.py:161: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    snapshot.update(status="completed", completed_at=datetime.utcnow())
+
+tests/unit/test_training_queue.py::test_postgres_uses_database_clock_instead_of_worker_host_clock[postgres]
+  /tmp/stateset-a-plus-20261018/checks/tests/unit/test_training_queue.py:181: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    snapshot.update(status="completed", completed_at=datetime.utcnow())
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/test_checkpoint_trust.py::test_checkpoint_io_shim_only_re_exports
+FAILED tests/unit/test_checkpoint_trust.py::test_checkpoint_io_pins_weights_only
+2 failed, 175 passed, 1 skipped, 192 warnings in 159.69s (0:02:39)

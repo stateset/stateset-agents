@@ -1,0 +1,15 @@
+{
+  "versions": {
+    "torch": "2.11.0",
+    "transformers": "5.20.0",
+    "trl": "1.14.0",
+    "peft": "0.21.0",
+    "accelerate": "1.15.0",
+    "datasets": "5.1.0",
+    "huggingface-hub": "1.31.0",
+    "tokenizers": "0.23.3",
+    "fsspec": "2026.6.0",
+    "safetensors": "0.8.0"
+  },
+  "unsatisfied_requirements": []
+}

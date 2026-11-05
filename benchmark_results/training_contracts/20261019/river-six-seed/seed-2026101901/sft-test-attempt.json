@@ -1,0 +1,1 @@
+{"plan_hash": "69fee58dfb533f77cae819949e2317b2c7fb48269a4514f20b94419a32c36e89", "seed": 2026101901, "checkpoint": {"path": "river://45529f01-6e51-48f2-bc04-ce6ea02bf198/sampler_weights/sft", "step": 16, "checkpoint_type": "inference", "policy_version": null}, "test_hash": "4989614416faf816620424300b671e129fa32f3ba954ecffd74e49f558086667"}

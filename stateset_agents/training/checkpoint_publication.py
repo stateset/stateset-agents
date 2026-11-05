@@ -22,6 +22,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 COMPLETION_FILE = ".stateset-checkpoint.json"
+LOCK_FILE = ".stateset-checkpoint.lock"
 
 
 def _sync_directory(path: Path) -> None:
@@ -31,17 +32,6 @@ def _sync_directory(path: Path) -> None:
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
-
-
-def _sync_file(path: Path) -> None:
-    """Flush a written file to disk. Windows' FlushFileBuffers needs a
-    writable handle (fsync on a read-only one raises EBADF)."""
-    flags = os.O_RDWR | getattr(os, "O_BINARY", 0) if os.name == "nt" else os.O_RDONLY
-    descriptor = os.open(path, flags)
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
 
 
 def _write_json(path: Path, value: Any) -> None:
@@ -57,9 +47,10 @@ def _lock(parent: Path) -> Iterator[None]:
     if sys.platform == "win32":
         import msvcrt
 
-        with (parent / ".stateset-checkpoint.lock").open("a+b") as stream:
-            stream.write(b"0")
-            stream.flush()
+        with (parent / LOCK_FILE).open("a+b") as stream:
+            if stream.seek(0, os.SEEK_END) == 0:
+                stream.write(b"0")
+                stream.flush()
             stream.seek(0)
             try:
                 msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
@@ -93,14 +84,21 @@ def _inventory(path: Path, *, sync: bool = False) -> dict[str, str]:
             continue
         if not item.is_file():
             raise ValueError("Checkpoint artifacts must be regular files")
-        if item == path / COMPLETION_FILE:
+        # Windows readers/writers retain an advisory lock file in their parent
+        # directory. Accessing a child checkpoint can create this metadata
+        # inside an existing publication; it is never model/trainer payload.
+        # Symlinks and nonregular files are still rejected before this check.
+        if item == path / COMPLETION_FILE or item.name == LOCK_FILE:
             continue
         digest = hashlib.sha256()
-        with item.open("rb") as stream:
+        # Windows FlushFileBuffers (used by os.fsync) requires write access.
+        # Validation remains read-only; only a freshly staged publication is
+        # opened for updating, without truncating or changing artifact bytes.
+        with item.open("r+b" if sync and os.name == "nt" else "rb") as stream:
             for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                 digest.update(chunk)
-        if sync:
-            _sync_file(item)
+            if sync:
+                os.fsync(stream.fileno())
         files[item.relative_to(path).as_posix()] = digest.hexdigest()
     if sync:
         for directory in sorted(

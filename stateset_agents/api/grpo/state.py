@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Generic, TypeVar, cast, overload
 
+from stateset_agents.utils.clock import utc_now
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -225,7 +227,7 @@ class TrainingJob:
     strategy: str
     user_id: str
     request_id: str
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utc_now)
     started_at: datetime | None = None
     completed_at: datetime | None = None
     iterations_completed: int = 0
@@ -243,7 +245,7 @@ class ConversationState:
     user_id: str
     agent_id: str | None = None
     strategy: str = "default"
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utc_now)
     last_message_at: datetime | None = None
     message_count: int = 0
     total_tokens: int = 0
@@ -325,9 +327,9 @@ class StateManager:
         if status:
             job.status = status
             if status == "running" and not job.started_at:
-                job.started_at = datetime.utcnow()
+                job.started_at = utc_now()
             elif status in ("completed", "failed", "cancelled"):
-                job.completed_at = datetime.utcnow()
+                job.completed_at = utc_now()
 
         if iterations is not None:
             job.iterations_completed = iterations
@@ -375,7 +377,7 @@ class StateManager:
         if not conv:
             return None
 
-        conv.last_message_at = datetime.utcnow()
+        conv.last_message_at = utc_now()
         conv.message_count += 1
         conv.total_tokens += tokens
 

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .checkpoint_state import load_training_checkpoint, save_training_checkpoint
+from .config import config_value
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ async def save_multi_turn_checkpoint(
         if is_best:
             checkpoint_name = "best-checkpoint"
 
-    output_dir = getattr(trainer.config, "output_dir", "./outputs")
+    output_dir = config_value(trainer.config, "output_dir")
     checkpoint_path = Path(output_dir) / checkpoint_name
     save_training_checkpoint(
         trainer, checkpoint_path, require_torch_fn=require_torch_fn
@@ -43,6 +44,7 @@ async def save_multi_turn_checkpoint(
         path=str(checkpoint_path),
         step=int(trainer.global_step),
         is_best=bool(is_best),
+        strict=bool(config_value(trainer.config, "strict_callbacks")),
     )
 
 

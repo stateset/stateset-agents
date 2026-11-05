@@ -1,0 +1,26 @@
+{
+  "tested": false,
+  "canonical_files_changed": false,
+  "files": {
+    "stateset_agents/finetune_workspace.py": {
+      "base_sha256": "529f119ebac373afb39bc923a900eac89497e73bfae7a826059a71502ab9b14d",
+      "staged_sha256": "68fa9e6d52a41fdcda11351b065824d4b8d8d4160188e52ae52233abe472fe2f"
+    },
+    "stateset_agents/tui.py": {
+      "base_sha256": "10b7d686d5db9b3e17afa23e4042765dcf0575f09a1a9fc04615506f3873e166",
+      "staged_sha256": "2d05ee7ee82ccd8ee1b3959633bce58aaefb5b2ca8654723befd08e2f4418dba"
+    },
+    "stateset_agents/cli_finetune.py": {
+      "base_sha256": "04cbf08e4f139e195cd5779f988c09fc03fcaef619d01cc8663fc057634a08f9",
+      "staged_sha256": "51d6f1f0dae3711ff717056617da85bb386496a7416dd963d5e0ccc6f957e9ef"
+    },
+    "stateset_agents/api/routers/finetune.py": {
+      "base_sha256": "820eb1746e0ea99eb40056e76ed2d3e992992854c2cb25cd0b7ead6ffce64640",
+      "staged_sha256": "b54ff3af02f5400f42118e98f0c000783ac75c22ffd4d0f2f1c234aa41d4acff"
+    },
+    "tests/unit/test_finetune_interrupted_stop.py": {
+      "base_sha256": null,
+      "staged_sha256": "113acfcf0fdb0479c5a57e902ff2f04aa6b08b01a77317e4be7d3f3c43318447"
+    }
+  }
+}

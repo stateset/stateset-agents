@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "completed_at": "2026-10-15T04:20:19.276249+00:00",
+  "scope": "local CPU engineering verification of an unreleased checkout based on 0.66.1",
+  "full_suite": {
+    "passed": 8249,
+    "skipped": 57,
+    "workers": 2,
+    "timeout_seconds": 90
+  },
+  "type_checked_modules": 383,
+  "all_verification_stages_passed": true,
+  "package_sources_unchanged": true,
+  "wheel_sources_match_verified_sources": true,
+  "wheel_sha256": "ed3b57f105aa568f00c1189e1de0b8e86d94c66e9a72695b510bac3e8d2affbd",
+  "sft_optimizer_updates": 10,
+  "rl_optimizer_updates": 2,
+  "artifact_revalidated": true,
+  "representative_quality_demonstrated": false,
+  "production_approved": false,
+  "runpod_resources_allocated_for_this_evidence": false,
+  "local_policy_exports": "/tmp/stateset-platform-final-wheel-proof-20261014/run",
+  "verification_log": "/tmp/stateset-platform-final-verification.log",
+  "verification_log_sha256": "871d9051e1db8721766f08ad14139319be4fd24d937328abc32a9722d759a51b",
+  "remaining_live_gates": [
+    "reviewed-case quality study",
+    "native/TRL/external backend certification and matched comparisons",
+    "multi-node fault injection and three-seed 12-hour soak"
+  ]
+}

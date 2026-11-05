@@ -1,0 +1,10 @@
+{
+  "source": "pytest.ini",
+  "sha256": "793d1a25bbd22d2e427fa515a5117aebc3475aa25db272f26fc81e950d8e4049",
+  "destination": "checks/pytest.ini",
+  "reason": "Match frozen source pytest configuration, shared API development environment, module restoration and cost-ledger isolation.",
+  "shared_fixture_sha256": {
+    "tests/conftest.py": "554299451607795b3151bef78f41c1da0f116d3229d1c5d44c68fddd7eae5277",
+    "tests/_module_stubs.py": "2a8274043648c461b93797558f7285dab30ed437cc5185cbd7b793c27d8b02a2"
+  }
+}

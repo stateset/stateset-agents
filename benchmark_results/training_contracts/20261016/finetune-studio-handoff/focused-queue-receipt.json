@@ -1,0 +1,32 @@
+{
+  "id": "119103ca3cc6",
+  "state": "succeeded",
+  "exit_code": 0,
+  "argv": [
+    "env",
+    "OMP_NUM_THREADS=1",
+    "MKL_NUM_THREADS=1",
+    "OPENBLAS_NUM_THREADS=1",
+    "RAYON_NUM_THREADS=2",
+    "TOKENIZERS_PARALLELISM=false",
+    ".venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "-n0",
+    "-o",
+    "addopts=",
+    "--timeout=150",
+    "--tb=short",
+    "tests/unit/test_finetune_handoff.py",
+    "tests/unit/test_finetune_studio.py",
+    "tests/unit/test_finetune_inspection.py",
+    "tests/unit/test_finetune_failures.py",
+    "tests/unit/test_cli_finetune.py"
+  ],
+  "created": 1792176787.287551,
+  "started": 1792176964.1913273,
+  "finished": 1792177006.8056734,
+  "wait_seconds": 176.90377640724182,
+  "elapsed_seconds": 42.61434602737427
+}

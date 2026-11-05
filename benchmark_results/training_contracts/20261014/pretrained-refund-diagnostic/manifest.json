@@ -1,0 +1,19 @@
+{
+  "cases": null,
+  "synthetic": true,
+  "output": "/workspace/stateset-improvements-native-attempt2",
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "seeds": [
+    42
+  ],
+  "updates": 2,
+  "generations": 2,
+  "eval_every": 1,
+  "learning_rate": 1e-05,
+  "synthetic_case_count": 8,
+  "cases_sha256": "16fd1937aca56a4765c8139665655c001f9bf2e1be885ab88d07fa6c1ebdbcad",
+  "provenance": {
+    "source": "synthetic"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "passed": true,
+  "source_tests": 1572,
+  "installed_wheel_tests": 1461,
+  "typed_modules": 429,
+  "queue_job": "4987a3a77fc0",
+  "wheel_sha256": "78274fef458cbe9bca0e53f80ee0129d83760aad83f429ae147a34dfe7e3761b",
+  "source_and_tests_unchanged": true,
+  "wheel_bytes_match_source": true,
+  "wheel_case_identities_match_source": true,
+  "real_cpu_checkpoint_cadence_verified": true,
+  "real_cpu_selected_adapter_loading_verified": true,
+  "real_pty_checkpoint_picker_sizes": [
+    [
+      74,
+      44
+    ],
+    [
+      110,
+      32
+    ]
+  ],
+  "live_herdr_refreshed": true,
+  "draft_preserved": true,
+  "live_judge_verified": false,
+  "gpu_verified": false,
+  "remote_evaluation_verified": false,
+  "quality_gain_verified": false,
+  "paid_run_launched": false,
+  "count_note": "Source and installed-wheel cases overlap; synthetic judge replies and provider/process mocks do not establish model quality."
+}

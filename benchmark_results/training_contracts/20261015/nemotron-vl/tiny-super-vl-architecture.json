@@ -1,0 +1,19 @@
+{
+  "kind": "actual-pinned-super-vl-code-tiny-random-weight-contract",
+  "model": "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16",
+  "revision": "fc067b34f6b514014d2f8bddba855d2e4bfdfba6",
+  "loaded_pretrained_weights": false,
+  "full_size_gpu_training_verified": false,
+  "loss": 5.549727439880371,
+  "updated_lora_parameters": [
+    "base_model.model.language_model.model.layers.0.mixer.q_proj.lora_A.default.weight",
+    "base_model.model.language_model.model.layers.0.mixer.q_proj.lora_B.default.weight",
+    "base_model.model.language_model.model.layers.0.mixer.k_proj.lora_A.default.weight",
+    "base_model.model.language_model.model.layers.0.mixer.k_proj.lora_B.default.weight",
+    "base_model.model.language_model.model.layers.0.mixer.v_proj.lora_A.default.weight",
+    "base_model.model.language_model.model.layers.0.mixer.v_proj.lora_B.default.weight",
+    "base_model.model.language_model.model.layers.0.mixer.o_proj.lora_A.default.weight",
+    "base_model.model.language_model.model.layers.0.mixer.o_proj.lora_B.default.weight"
+  ],
+  "parameters": 651592
+}

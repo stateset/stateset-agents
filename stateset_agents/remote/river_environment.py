@@ -6,7 +6,7 @@ import inspect
 import math
 from collections.abc import Awaitable, Callable
 from copy import deepcopy
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from stateset_agents.core.environment_base import (
     Environment,
@@ -15,6 +15,10 @@ from stateset_agents.core.environment_base import (
 )
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.evaluation.agent_runs import content_hash
+
+if TYPE_CHECKING:
+    # Annotation only: older river_client releases have no renderers module.
+    from river_client.renderers import Message
 
 
 async def _settle(value: Any) -> Any:
@@ -74,7 +78,7 @@ def river_environment_factory(
             self.case_hash: str | None = None
             self.trace: dict[str, Any] | None = None
 
-        async def reset(self, row: dict[str, Any]) -> list[dict[str, Any]]:
+        async def reset(self, row: dict[str, Any]) -> list[Message]:
             # A failed reset must not leave the previous episode usable.
             self.state, self.case_hash = None, None
             self.trace = None
@@ -98,7 +102,7 @@ def river_environment_factory(
                 }
             return list(messages)
 
-        async def on_turn(self, traj: Any) -> list[dict[str, Any]] | None:
+        async def on_turn(self, traj: Any) -> list[Message] | None:
             if self.state is None or self.done:
                 raise RuntimeError("Environment must be reset before stepping")
             traj.stateset_episode_id = self.state.episode_id

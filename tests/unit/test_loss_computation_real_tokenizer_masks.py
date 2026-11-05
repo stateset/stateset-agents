@@ -18,6 +18,9 @@ transformers = pytest.importorskip("transformers")
 from stateset_agents.training.loss_computation import (  # noqa: E402
     _prepare_inputs_and_labels,
 )
+from stateset_agents.training.rollout_contract import (  # noqa: E402
+    RolloutContractError,
+)
 
 CHATML = (
     "{% for m in messages %}<|im_start|>{{ m['role'] }}\n"
@@ -52,12 +55,16 @@ def _byte_tokenizer(chat_template: str | None):
     return tok
 
 
-def _supervised_text(chat_template: str | None, turns: list[dict[str, str]]) -> str:
+def _supervised_text(
+    chat_template: str | None, turns: list[dict[str, str]], **settings: object
+) -> str:
     tok = _byte_tokenizer(chat_template)
     agent = SimpleNamespace(
         tokenizer=tok, model=SimpleNamespace(device=torch.device("cpu"))
     )
-    config = SimpleNamespace(max_prompt_length=512, max_completion_length=512)
+    config = SimpleNamespace(
+        max_prompt_length=512, max_completion_length=512, **settings
+    )
     inputs, labels = _prepare_inputs_and_labels(
         SimpleNamespace(turns=turns), agent, config
     )
@@ -95,7 +102,11 @@ def test_template_without_prefix_property_falls_back_to_full_stream():
         "{{ m['content'] }}<|im_end|>\n{% endfor %}"
         "{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}"
     )
-    supervised = _supervised_text(reversing, TURNS)
+    # TURNS has a user turn after the first reply: the full stream would train
+    # the policy on it, so it needs the explicit opt-in (test_unmasked_label_gate).
+    with pytest.raises(RolloutContractError, match="allow_unmasked_labels"):
+        _supervised_text(reversing, TURNS)
+    supervised = _supervised_text(reversing, TURNS, allow_unmasked_labels=True)
     # Never all -100 (that would make the loss NaN): full stream is supervised.
     assert "Where is my order" in supervised
     assert "Welcome!" in supervised

@@ -1,0 +1,46 @@
+[
+  {
+    "chargeback_open": false,
+    "customer_note": "Please resolve my refund request.",
+    "days_since_delivery": 31,
+    "family": "outside_window",
+    "order_id": "policy-b98a68caa1f87140c11a8029",
+    "paid_cents": 62406,
+    "refunded_cents": 0,
+    "return_window_days": 7,
+    "status": "delivered"
+  },
+  {
+    "chargeback_open": false,
+    "customer_note": "Please resolve my refund request.",
+    "days_since_delivery": 10,
+    "family": "eligible",
+    "order_id": "policy-47aaa46ad985dbe390b1207d",
+    "paid_cents": 39827,
+    "refunded_cents": 0,
+    "return_window_days": 45,
+    "status": "delivered"
+  },
+  {
+    "chargeback_open": false,
+    "customer_note": "Please resolve my refund request.",
+    "days_since_delivery": 14,
+    "family": "already_refunded",
+    "order_id": "policy-e21ef0f16640931ca235569f",
+    "paid_cents": 81731,
+    "refunded_cents": 81731,
+    "return_window_days": 45,
+    "status": "delivered"
+  },
+  {
+    "chargeback_open": false,
+    "customer_note": "Please resolve my refund request.",
+    "days_since_delivery": 2,
+    "family": "partial_refund",
+    "order_id": "policy-7d52f85bada06c916d5296bd",
+    "paid_cents": 25937,
+    "refunded_cents": 25676,
+    "return_window_days": 7,
+    "status": "delivered"
+  }
+]

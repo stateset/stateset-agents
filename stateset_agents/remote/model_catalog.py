@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Literal, TypedDict
 
+from stateset_agents.core.frontier_models import FRONTIER_MODELS
+
 SupportTier = Literal["default", "frontier-preview", "compatibility"]
 CertificationStage = Literal[
     "configured",
@@ -215,6 +217,19 @@ MODEL_CATALOG: tuple[ModelSupport, ...] = (
         certification="smoke-tested",
         recommended_provider="runpod",
     ),
+)
+
+
+# New checkpoint entries intentionally carry no invented single-node capacity.
+MODEL_CATALOG += tuple(
+    ModelSupport(
+        model=spec.model_id,
+        tier="frontier-preview",
+        certification="configured",
+        recommended_provider="runpod",
+    )
+    for spec in FRONTIER_MODELS
+    if not any(row.model == spec.model_id for row in MODEL_CATALOG)
 )
 
 

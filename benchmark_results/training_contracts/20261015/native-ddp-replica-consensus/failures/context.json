@@ -1,0 +1,22 @@
+[
+  {
+    "job": "f7fc906cbe0c",
+    "kind": "source_snapshot_invalidated",
+    "explanation": "1874 regressions passed. Review found source-file I/O errors were not coordinated by native admission; adding OSError/LookupError handling and a real two-rank fault injection changed the snapshot. The verifier rejected this drift and acceptance was repeated."
+  },
+  {
+    "job": "e5771c93762a",
+    "kind": "source_snapshot_invalidated",
+    "explanation": "1874 regressions, the 404-module type gate and all four distributed cases passed. Correcting leftover v1 docstrings changed the package snapshot during verification; the verifier correctly rejected source drift before wheel acceptance, and the full run was repeated."
+  },
+  {
+    "job": "e3c3ce1629e3",
+    "kind": "implementation_failure",
+    "explanation": "Five noncontiguous/singleton chunk cases failed byte conversion: PyTorch can mark a singleton strided view contiguous without changing its last stride. Explicit packed CPU chunk allocation fixed the issue; 56 other checks passed."
+  },
+  {
+    "job": "ae14dcdc9f4a",
+    "kind": "test_style_failure",
+    "explanation": "The initial broad gate rejected an unused copy import in the new integration fixture, before types/tests. The import was removed before the final run."
+  }
+]

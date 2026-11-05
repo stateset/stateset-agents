@@ -1,10 +1,8 @@
-"""The text an agent says must be exactly what its policy generated.
+"""Preserve complete sampled actions while rendering configured stop strings.
 
-For RL, the assistant turn's ``content`` (what the conversation history, the
-reward and the next prompt see) must equal the decoded ``token_ids`` the
-token-path loss trains on. These tests drive ``MultiTurnAgent`` with a real
-tiny GPT-2 (``tests/learning/_toy.py``) and a tokenizer that also has merged
-multi-character tokens, so stop strings can land inside a single token.
+Without a stop string, ordinary reply text is the decode of sampled token IDs.
+With a stop string, displayed text ends before it and the retained action still
+includes the complete token that triggered stopping, plus its likelihood.
 """
 
 from __future__ import annotations
@@ -184,7 +182,7 @@ async def test_merged_token_containing_blank_line_is_kept_verbatim(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("batched", [False, True])
-async def test_stop_sequence_on_token_boundary_truncates_text_and_tokens(
+async def test_stop_sequence_on_token_boundary_preserves_sampled_stop_tokens(
     batched: bool,
 ) -> None:
     tok = _tokenizer()
@@ -202,13 +200,15 @@ async def test_stop_sequence_on_token_boundary_truncates_text_and_tokens(
     )
     for turn in turns:
         assert turn.content == "Hello\n"
-        assert turn.metadata["token_ids"] == _ids(tok, [*"Hello\n"])
-        _assert_faithful(tok, turn)
+        assert turn.metadata["token_ids"] == _ids(tok, [*"Hello\nUser:"])
+        assert len(turn.metadata["sampler_log_probs"]) == len(
+            turn.metadata["token_ids"]
+        )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("batched", [False, True])
-async def test_stop_sequence_inside_a_merged_token_keeps_text_and_tokens_aligned(
+async def test_stop_sequence_inside_a_merged_token_preserves_the_complete_action(
     batched: bool,
 ) -> None:
     tok = _tokenizer()
@@ -225,11 +225,12 @@ async def test_stop_sequence_inside_a_merged_token_keeps_text_and_tokens_aligned
         else [await agent.generate_turn(USER)]
     )
     for turn in turns:
-        # The token straddling the stop cannot be split: the reply ends at the
-        # last whole token before the stop string, in text and in ids alike.
-        assert turn.content == "Hi th"
-        assert turn.metadata["token_ids"] == _ids(tok, [*"Hi th"])
-        _assert_faithful(tok, turn)
+        # Display can end within a token; policy loss must retain that token.
+        assert turn.content == "Hi there"
+        assert turn.metadata["token_ids"] == _ids(tok, [*"Hi th", "ereUser: no"])
+        assert len(turn.metadata["sampler_log_probs"]) == len(
+            turn.metadata["token_ids"]
+        )
 
 
 @pytest.mark.asyncio
@@ -333,6 +334,38 @@ async def test_rollout_backend_receives_the_configured_top_k() -> None:
         agent.set_rollout_backend(Backend())
         await agent.generate_turn(USER)
         assert seen[-1]["top_k"] == expected
+
+
+@pytest.mark.asyncio
+async def test_rollout_backend_stop_display_preserves_every_sampled_token() -> None:
+    from types import SimpleNamespace
+
+    tok = _tokenizer()
+    action_ids = _ids(tok, [*"Hi th", "ereUser: no"])
+    probabilities = [-0.1] * len(action_ids)
+
+    class Backend:
+        async def generate_with_logprobs(self, prompts: Any, **kwargs: Any) -> Any:
+            return [
+                SimpleNamespace(
+                    prompt=prompt,
+                    response="Hi thereUser: no",
+                    prompt_token_ids=list(tok(prompt)["input_ids"]),
+                    response_token_ids=list(action_ids),
+                    token_logprobs=list(probabilities),
+                )
+                for prompt in prompts
+            ]
+
+    agent = _agent(_gpt2(len(tok)), tok, stop_sequences=["User:"])
+    agent.set_rollout_backend(Backend())
+    for turn in [
+        await agent.generate_turn(USER),
+        *(await agent.generate_turns(USER, 2)),
+    ]:
+        assert turn.content == "Hi there"
+        assert turn.metadata["token_ids"] == action_ids
+        assert turn.metadata["sampler_log_probs"] == probabilities
 
 
 @pytest.mark.parametrize("bad", ["User:", [""], [3], None])

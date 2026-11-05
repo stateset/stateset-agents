@@ -1,0 +1,184 @@
+{
+  "id": "7f466030cf3c",
+  "state": "failed",
+  "created": 1792246875.8114839,
+  "started": 1792247048.2741718,
+  "finished": 1792247462.2263634,
+  "owner_pid": 2079117,
+  "owner_start": "23677077",
+  "child_pid": 2087672,
+  "child_start": "23694336",
+  "cwd": "/home/dom/stateset-agents",
+  "command": "[\".venv/bin/python\", \"/tmp/stateset-publication-verify.py\"]",
+  "backend": "local",
+  "lane": "quick",
+  "slots": 2,
+  "memory_gb": 3.0,
+  "resource_key": "stateset-publication-verification",
+  "exit_code": 1,
+  "reason": "",
+  "cancel_requested": 0,
+  "image": "",
+  "timeout": 1800.0,
+  "herdr": "{\"pane_id\": \"w1:pZ\", \"tab_id\": \"w1:tY\", \"workspace_id\": \"w1\"}",
+  "min_free_gb": 0.0,
+  "scratch_gb": 0.3,
+  "wait_context": {},
+  "usage": {
+    "cpu_seconds": 362.5998,
+    "sampled_peak_rss_gb": 2.2062034606933594,
+    "samples": 673,
+    "observed_seconds": 413.9475944250007,
+    "observed_at": 1792247462.226188,
+    "source": "local_process_tree",
+    "complete": true,
+    "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+  },
+  "policy_version": "protected-verification-v5",
+  "source": {},
+  "wait_history": {
+    "version": 1,
+    "last_at": 1792247048.2741718,
+    "current_category": "priority",
+    "current_blocker": "fe69d9ffeb50",
+    "seconds": {
+      "unobserved": 5.231747627258301,
+      "priority": 167.23094034194946
+    },
+    "transitions": [
+      {
+        "at": 1792246875.9093285,
+        "category": "priority",
+        "blocking_job_id": "7cd148304926"
+      },
+      {
+        "at": 1792246961.7925458,
+        "category": "priority",
+        "blocking_job_id": "cdaad6c36771"
+      },
+      {
+        "at": 1792246997.0115232,
+        "category": "priority",
+        "blocking_job_id": "862569524f63"
+      },
+      {
+        "at": 1792246998.236056,
+        "category": "priority",
+        "blocking_job_id": "95f08a689a40"
+      },
+      {
+        "at": 1792247035.2442498,
+        "category": "priority",
+        "blocking_job_id": "dda039ec5aab"
+      },
+      {
+        "at": 1792247045.2453732,
+        "category": "priority",
+        "blocking_job_id": "fe69d9ffeb50"
+      }
+    ],
+    "transition_count": 6
+  },
+  "runner_version": "0.26.1.dev0",
+  "lock_protocol": 1,
+  "resource_keys": [
+    "stateset-publication-verification"
+  ],
+  "batch": {},
+  "admission": {
+    "cpu_slots": 6,
+    "max_running": 4,
+    "max_heavy": 2,
+    "memory_gb": 16,
+    "quick_reserve_slots": 2,
+    "quick_reserve_jobs": 2,
+    "quick_reserve_memory_gb": 4,
+    "protected_quick": true,
+    "aging_seconds": 120
+  },
+  "reserve_protocol": 2,
+  "input_protocol": 0,
+  "input_owner_epoch": 0,
+  "storage_state": "failed",
+  "locks": [],
+  "argv": [
+    ".venv/bin/python",
+    "/tmp/stateset-publication-verify.py"
+  ],
+  "command_display": ".venv/bin/python /tmp/stateset-publication-verify.py",
+  "log_path": "/home/dom/.local/state/agent-builds/logs/7f466030cf3c.log",
+  "origin": {
+    "pane_id": "w1:pZ",
+    "tab_id": "w1:tY",
+    "workspace_id": "w1"
+  },
+  "worker_budget": {
+    "environment": {
+      "CARGO_BUILD_JOBS": "2",
+      "RUST_TEST_THREADS": "2"
+    },
+    "cargo_build": {
+      "queue_default": 2,
+      "configured_value": 2,
+      "source": "queue_environment"
+    },
+    "rust_tests": {
+      "queue_default": 2,
+      "configured_value": 2,
+      "source": "queue_environment"
+    },
+    "direct_cargo_command": false,
+    "runtime_concurrency_measured": false,
+    "inspection_scope": "direct Cargo argv; shell scripts, custom harnesses, and subprocess settings are not inspected"
+  },
+  "wait_seconds": 172.46268796920776,
+  "wait_breakdown": {
+    "recorded": true,
+    "seconds": {
+      "unobserved": 5.231747627258301,
+      "priority": 167.23094034194946
+    },
+    "total_seconds": 172.46268796920776,
+    "observed_seconds": 167.23094034194946,
+    "coverage": 0.9696644666225288,
+    "current_category": "priority",
+    "current_blocker": "fe69d9ffeb50",
+    "last_observed_at": 1792247048.2741718,
+    "transitions": [
+      {
+        "at": 1792246875.9093285,
+        "category": "priority",
+        "blocking_job_id": "7cd148304926"
+      },
+      {
+        "at": 1792246961.7925458,
+        "category": "priority",
+        "blocking_job_id": "cdaad6c36771"
+      },
+      {
+        "at": 1792246997.0115232,
+        "category": "priority",
+        "blocking_job_id": "862569524f63"
+      },
+      {
+        "at": 1792246998.236056,
+        "category": "priority",
+        "blocking_job_id": "95f08a689a40"
+      },
+      {
+        "at": 1792247035.2442498,
+        "category": "priority",
+        "blocking_job_id": "dda039ec5aab"
+      },
+      {
+        "at": 1792247045.2453732,
+        "category": "priority",
+        "blocking_job_id": "fe69d9ffeb50"
+      }
+    ],
+    "transition_count": 6,
+    "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+  },
+  "elapsed_seconds": 413.9521915912628,
+  "age_seconds": 586.4148795604706
+}

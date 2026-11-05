@@ -24,6 +24,13 @@ documentation can improve without creating false compatibility failures.
 `stateset_agents.experimental`, deprecated shim packages, and the opt-in
 `/api/lab/*` training-lab router are not stable surfaces.
 
+Subpackage namespaces such as `stateset_agents.training` (whose `__all__`
+re-exports several hundred trainers, configs, and helpers) are **provisional**:
+they are importable and tested, but only names re-exported from
+`stateset_agents.__all__` carry the compatibility guarantee. Import stable
+entry points from the top-level package; reach into subpackages when you need
+something the stable surface does not expose and pin the release.
+
 ## Guarantee
 
 Existing stable imports and HTTP wire contracts remain compatible within the

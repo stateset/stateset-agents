@@ -1,0 +1,12 @@
+{
+  "README.md": "2b5629701725798442d2dd1f47e72b6b72aeb168429ba0c19d554548dbc02235",
+  "checkpoints.safetensors": "e03db07c692c9e9be2056b70f529a2834ed3bc625480eb96a6067ac5ce62c7aa",
+  "compatibility_bytes.json": "ffc7ef9cc27b593cb09cd4548e9b6eebecd4399998bf428047643d0a04c52849",
+  "inputs.safetensors": "a7a6d9cff1505c1ee350478e47f7249dfe291ba23e1c8bc453d434db73dc666e",
+  "protocol.json": "3474e9ab34e51baebb2cba400170069f365dccb47f6afc767cea404841353248",
+  "sources/relu_compiler_job.py": "02644e9f429c8613313ddbaa32c372f4efd3bedfabd9ddfb8ed9495c815192cc",
+  "sources/relu_program.py": "0a133e8732fa16e3835f105683e596cf52929b1efb1809d21ec2a17de7db9f17",
+  "sources/verify_relu_compiler.py": "b29ae1bba5cc7fd834ecabc0387f1097977eba507d3e1bd06ba709ed151bf936",
+  "summary.json": "98737d580c6b17339772ac1ca8a419500d613714a9efa22b50ae030930bca09c",
+  "verification.json": "ec75578dacfaffeb10517d20cc4cc8c22c5300ea1dfa79c3de8ce28e43bc77c5"
+}

@@ -79,14 +79,27 @@ def test_wheel_version_mentions_match_current_version():
     assert not stale, "stale wheel version mentions found:\n" + "\n".join(stale)
 
 
-def test_readme_release_install_surfaces_match_current_version() -> None:
-    """The advertised stable installs must move with every package release."""
+def test_readme_candidate_and_published_install_surfaces_are_separate() -> None:
+    """A source candidate must not silently move the verified registry pin."""
     text = (ROOT / "README.md").read_text(encoding="utf-8")
     current = stateset_agents.__version__
 
-    assert f"**Current Python release:** `stateset-agents=={current}`" in text
-    assert f'pip install "stateset-agents=={current}" # current stable release' in text
+    assert f"**Current Python candidate:** `stateset-agents=={current}`" in text
+    published = re.search(
+        r"\*\*Latest verified PyPI release:\*\* `stateset-agents==(\d+\.\d+\.\d+)`",
+        text,
+    )
+    assert published is not None
+    assert (
+        f'pip install "stateset-agents=={published.group(1)}" # latest verified PyPI release'
+        in text
+    )
     assert f"stateset-agents.git@v{current}" in text
+
+
+def test_roadmap_package_version_matches_current_release() -> None:
+    text = (ROOT / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
+    assert f"Current tagged version: **v{stateset_agents.__version__} " in text
 
 
 def test_marker_exempts_the_next_line():

@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "kind": "live-river-integration-review",
+  "reviewed_at": "2026-10-18T22:27:17.499087+00:00",
+  "status": "integration_passed_quality_limited",
+  "base_model": "Qwen/Qwen3.5-9B",
+  "benchmark": "refund-policy-v2",
+  "seed": 20261018,
+  "elapsed_seconds": 471.6,
+  "sdk_version": "0.11.0",
+  "training_activity": {
+    "completed_batches": 2,
+    "observed_optimizer_updates": 2,
+    "observed_skipped_batches": 0,
+    "schema_version": 1,
+    "scope": "SDK-reported run activity; not proof of nonzero gradients, selected-checkpoint changes, learning gains, or provider cost",
+    "status": "updates_observed",
+    "unknown_update_batches": 0
+  },
+  "training_batches": [
+    {
+      "batch": 1,
+      "updated": 1.0,
+      "grad_norm": 0.13466718792915344,
+      "successful_trajectories": 4.0,
+      "training_generated_tokens": 5389.0
+    },
+    {
+      "batch": 2,
+      "updated": 1.0,
+      "grad_norm": 0.14531530439853668,
+      "successful_trajectories": 4.0,
+      "training_generated_tokens": 6433.0
+    }
+  ],
+  "validation": [
+    {
+      "step": 0,
+      "passed": 0,
+      "total": 8,
+      "mean_reward": -1.0
+    },
+    {
+      "step": 1,
+      "passed": 2,
+      "total": 8,
+      "mean_reward": -0.5
+    },
+    {
+      "step": 2,
+      "passed": 2,
+      "total": 8,
+      "mean_reward": -0.5
+    }
+  ],
+  "selected_validation_step": 1,
+  "test": {
+    "passed": 3,
+    "total": 8,
+    "success_rate": 0.375,
+    "success_wilson_95": [
+      0.13684428582359742,
+      0.6942576053973727
+    ],
+    "violation_rate": 0.625,
+    "truncation_rate": 0.5
+  },
+  "replay_audit_passed": true,
+  "rollout_budget": {
+    "admitted_trajectories": 96,
+    "fingerprint": "515acd76d7a9193b99627201d7d550d02badec51eae9adfba66d30879b0cfb0b",
+    "limit": 110000,
+    "reserved_generated_tokens": 98304,
+    "schema_version": 1,
+    "trajectory_tokens": 1024
+  },
+  "source_files": 439,
+  "local_sdk_regression": {
+    "passed": 19,
+    "duration_seconds": 6.71,
+    "transport": "scripted, not live provider",
+    "earlier_attempt": "stalled and manually interrupted; not counted as passed; cause unconfirmed"
+  },
+  "cost_usd": null,
+  "dollar_cap_enforced": false,
+  "credential_in_retained_files": false,
+  "quality_certification": false,
+  "limitations": [
+    "32 synthetic training cases, 8 validation and 8 test cases, one seed, two updates",
+    "No matched base-model test evaluation; validation and test are different splits",
+    "Validation has only 8 cases; test Wilson 95% interval is wide",
+    "Five of eight test cases had action-format or order-ID failures; one recovered valid policy action still failed due to a prior violation",
+    "No live interruption/resume or independent provider resource inventory check",
+    "River account pricing and final billed cost not verified"
+  ],
+  "next_experiment": "Clarify complete JSON-action examples or add a small expert SFT warmup, then compare on fresh cases without reusing this sealed test split."
+}

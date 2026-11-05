@@ -1,0 +1,40 @@
+STATESET / FINE-TUNING STUDIO                                                                                  unused-workspace  /  0 active
+[CONFIGURE] Runs | Tab switches views                                                                                        Ctrl+P Commands
+============================================================================================================================================
+REVIEW LAUNCH / Enter launches, Esc returns
+
+SFT | local
+Model: Qwen/Qwen3.5-2B
+Model commit: mutable / unpinned
+Input snapshot: 512 examples
+SHA256: fba5fa8e6bceed34eb76126c61bdaddf16b1da34780629eb4010dc86fbfec2fd
+Learning rate: 1e-05 | LoRA rank: 16
+Training seed: 42
+Budget: 3 epochs
+Timeout: 3600s (queue wait is additional)
+Compute: local CUDA
+Result: local_weights
+
+Queue: buildr
+Local reservation: 2 CPUs / 4.0 GiB RAM
+Scratch reservation: 5.0 GiB
+
+Dataset: 512 declared synthetic industry examples; not independently reviewed. Source bytes and provenance are retained.
+Completion is not evidence of a quality gain.
+Training seed: 42. Controls initialization and training randomness; identical GPU results are not guaranteed.
+Model revision is mutable; set a commit for reproducibility.
+
+Closing this terminal will not stop a launched job.
+
+
+
+
+
+
+
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------
+Start here: w guided setup | : actions. Preview is free.
+PgUp/Dn scroll | Enter launch | Esc back

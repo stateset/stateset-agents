@@ -13,7 +13,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
-from stateset_agents.exceptions import ATTRIBUTE_VALUE_EXCEPTIONS
+from stateset_agents.exceptions import RUNTIME_FAILURE_EXCEPTIONS
+from stateset_agents.utils.clock import utc_isoformat, utc_now
 from stateset_agents.utils.performance_monitor import get_global_monitor
 from stateset_agents.utils.security import SecurityMonitor
 
@@ -30,7 +31,9 @@ from ..schemas import ErrorResponse
 
 router = APIRouter(tags=["observability"])
 
-METRICS_EXCEPTIONS = ATTRIBUTE_VALUE_EXCEPTIONS
+#: A monitor that fails at runtime yields an empty summary; an AttributeError
+#: or TypeError there is a bug and surfaces as a 500 instead of empty metrics.
+METRICS_EXCEPTIONS = RUNTIME_FAILURE_EXCEPTIONS
 HEALTH_TIMEOUT_SECONDS = 5.0
 
 # Track service start time for uptime calculation
@@ -54,7 +57,9 @@ class ComponentHealthDetail(BaseModel):
 
     name: str = Field(..., description="Component name")
     status: str = Field(..., description="Health status (healthy, degraded, unhealthy)")
-    latency_ms: float = Field(0.0, description="Component response latency in ms")
+    latency_ms: float = Field(
+        default=0.0, description="Component response latency in ms"
+    )
     details: dict[str, Any] = Field(
         default_factory=dict, description="Additional details"
     )
@@ -65,7 +70,7 @@ class DetailedHealthResponse(BaseModel):
 
     status: str = Field(..., description="Overall service status")
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="Response timestamp"
+        default_factory=utc_now, description="Response timestamp"
     )
     version: str = Field(..., description="API version")
     uptime_seconds: float = Field(..., description="Service uptime in seconds")
@@ -82,7 +87,7 @@ class RouterHealthResponse(BaseModel):
 
     status: str = Field(..., description="Overall service status")
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="Response timestamp"
+        default_factory=utc_now, description="Response timestamp"
     )
     version: str = Field(..., description="API version")
     uptime: float = Field(..., description="Service uptime in seconds")
@@ -96,7 +101,7 @@ class DetailedMetricsResponse(BaseModel):
     """Detailed metrics response."""
 
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="Metrics timestamp"
+        default_factory=utc_now, description="Metrics timestamp"
     )
     system_metrics: dict[str, Any] = Field(
         default_factory=dict, description="System metrics"
@@ -154,7 +159,7 @@ async def health_check(request: Request, response: Response) -> RouterHealthResp
         response.status_code = 503
     return RouterHealthResponse(
         status=overall_status,
-        timestamp=datetime.utcnow(),
+        timestamp=utc_now(),
         version=API_VERSION,
         uptime=round(time.monotonic() - _service_start_time, 2),
         components=components,
@@ -245,7 +250,7 @@ async def get_metrics(
     # Try cache first
     cached_response = cache.get(cache_key)
     if cached_response is not None:
-        cached_response["timestamp"] = datetime.utcnow().isoformat()
+        cached_response["timestamp"] = utc_isoformat()
         return DetailedMetricsResponse(**cached_response)
 
     # Get performance monitor data
@@ -268,7 +273,7 @@ async def get_metrics(
 
     # Build response
     response = DetailedMetricsResponse(
-        timestamp=datetime.utcnow(),
+        timestamp=utc_now(),
         system_metrics={
             "total_operations": summary.get("total_operations", 0),
             "active_operations": len(getattr(perf_monitor, "_active_operations", {})),
@@ -328,7 +333,7 @@ async def get_security_metrics(
     security_monitor = get_api_security_monitor()
 
     return {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": utc_isoformat(),
         "statistics": security_monitor.get_stats(),
         "recent_events": [
             {
@@ -363,6 +368,6 @@ async def get_cache_metrics(
     cache = get_cache()
 
     return {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": utc_isoformat(),
         "cache": cache.stats(),
     }

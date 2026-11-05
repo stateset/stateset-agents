@@ -1,0 +1,53 @@
+{
+  "design": {
+    "layer": 23,
+    "neuron": 1998,
+    "up_unit": 44,
+    "gain": 4.0,
+    "lam": 100.0,
+    "write_norm": 3.0,
+    "activation_when_firing": 3.1268,
+    "heldout_detector_auc": 0.8816,
+    "heldout_activation_auc": 0.3797,
+    "heldout_fire_rate": {
+      "positive": 0.1448,
+      "negative": 0.0194
+    },
+    "heldout_mean_activation": {
+      "positive": 0.2379,
+      "negative": -0.0622
+    },
+    "heldout_fire_rate_by_group": {
+      "answer_newline": 0.1448,
+      "working_newline": 0.027,
+      "post_think": 0.0,
+      "answer_token": 0.0,
+      "intermediate_newline": 0.0533,
+      "nothink_newline": 0.0067,
+      "prose_newline": 0.0
+    },
+    "heldout_detector_auc_by_group": {
+      "working_newline": 0.8549,
+      "post_think": 0.9023,
+      "answer_token": 0.9485,
+      "intermediate_newline": 0.8023,
+      "nothink_newline": 0.9274,
+      "prose_newline": 0.9161
+    },
+    "reference": {
+      "spec": "conclude-neuron-L23_v3t",
+      "heldout_fire_rate_by_group": {
+        "answer_newline": 0.2,
+        "working_newline": 0.0405,
+        "post_think": 0.0,
+        "answer_token": 0.0,
+        "intermediate_newline": 0.1267,
+        "nothink_newline": 0.0067,
+        "prose_newline": 0.0
+      }
+    }
+  },
+  "spec_hash": "7664695121410597",
+  "control_hash": "4a3b2c4c896139c7",
+  "design_only": true
+}

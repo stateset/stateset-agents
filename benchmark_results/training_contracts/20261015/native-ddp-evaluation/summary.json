@@ -1,0 +1,91 @@
+{
+  "passed": true,
+  "queue_job": "b124f30f88ae",
+  "protocol": "stateset-native-ddp-evaluation-v1",
+  "typed_modules": 408,
+  "source_modules": 408,
+  "source_unchanged": true,
+  "test_sources_unchanged": true,
+  "wheel_source_matches": true,
+  "wheel_sha256": "4f99ecee47d0f6c6ac322a65599083b713dd817c88ff3068158c7f8d8385941b",
+  "regressions": {
+    "passed": 1917,
+    "skipped": 7,
+    "failed": 0
+  },
+  "source_distributed": {
+    "passed": 6,
+    "skipped": 0,
+    "failed": 0
+  },
+  "wheel_regressions": {
+    "passed": 586,
+    "skipped": 0,
+    "failed": 0
+  },
+  "wheel_distributed": {
+    "passed": 6,
+    "skipped": 0,
+    "failed": 0
+  },
+  "distributed": {
+    "source-distributed": {
+      "world_size": 2,
+      "backend": "gloo",
+      "evaluation_cases_per_peer": 28,
+      "rejection_recovery_cases_per_peer": 18,
+      "existing_contract_counts": {
+        "rank-0.json": 294,
+        "advantages-0.json": 48,
+        "learner-preflight-0.json": 40,
+        "replica-consensus-0.json": 32,
+        "native-ddp-checkpoint-0.json": 98
+      }
+    },
+    "wheel-distributed": {
+      "world_size": 2,
+      "backend": "gloo",
+      "evaluation_cases_per_peer": 28,
+      "rejection_recovery_cases_per_peer": 18,
+      "existing_contract_counts": {
+        "rank-0.json": 294,
+        "advantages-0.json": 48,
+        "learner-preflight-0.json": 40,
+        "replica-consensus-0.json": 32,
+        "native-ddp-checkpoint-0.json": 98
+      }
+    }
+  },
+  "runtime": {
+    "torch": "2.11.0",
+    "transformers": "5.14.1",
+    "accelerate": "1.14.0",
+    "numpy": "2.3.5"
+  },
+  "semantics": {
+    "means_and_population_variance": "weighted by valid samples",
+    "success_and_error_rates": "weighted by all attempted samples",
+    "empty_partitions": "neutral",
+    "empty_or_incomplete_global_evaluation": "no best selection or patience consumption",
+    "exact_success_count": "native private integer receipt; public JSON fields unchanged",
+    "selection": "globally identical metrics/best/patience and collective best publication; failed save restores prior selection",
+    "inference": "unwrapped local policy; buffer broadcast preference honored once; local buffers, RNGs, module modes and pending gradients preserved",
+    "cleanup_failure": "buffer restoration failure poisons training/evaluation until successful native checkpoint reload"
+  },
+  "wire": {
+    "status_int64_elements": 66,
+    "count_int64_elements": 4,
+    "moment_float64_elements": 3,
+    "pickled_objects": false
+  },
+  "cpu_native_ddp_evaluation_verified": true,
+  "gpu_verified": false,
+  "multi_node_verified": false,
+  "fsdp_verified": false,
+  "deepspeed_verified": false,
+  "multi_rank_accelerate_verified": false,
+  "full_training_loop_task_transitions_verified": false,
+  "model_quality_improvement_verified": false,
+  "boundaries": "Every live native DDP participant enters evaluation. Scenario inputs are local partitions; counts report attempts, not deduplicated unique cases. Collective timeout must cover slowest partition. Serialize with training and other process-global RNG consumers. Arbitrary callback/remote-service collectives, process failure recovery and environment-owned RNG/state are outside this protocol.",
+  "count_note": "Overlapping targeted source/wheel tests. Six actual distributed pytest contracts contain many scenarios; 28 evaluation scenarios per peer are not separate pytest cases."
+}

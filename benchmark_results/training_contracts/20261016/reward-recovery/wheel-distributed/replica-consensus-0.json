@@ -1,0 +1,500 @@
+[
+  {
+    "api": "legacy",
+    "case": "policy",
+    "rejected": true,
+    "message": "Native DDP replica values differ across ranks: ['policy']",
+    "value_checks": 2,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ],
+      [
+        98
+      ]
+    ]
+  },
+  {
+    "api": "legacy",
+    "case": "policy_nan",
+    "rejected": true,
+    "message": "Invalid native DDP replica state: {1: ['policy']}",
+    "value_checks": 2,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ],
+      [
+        98
+      ]
+    ]
+  },
+  {
+    "api": "legacy",
+    "case": "optimizer",
+    "rejected": true,
+    "message": "Native DDP replica values differ across ranks: ['optimizer']",
+    "value_checks": 2,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ],
+      [
+        98
+      ]
+    ]
+  },
+  {
+    "api": "legacy",
+    "case": "optimizer_nan",
+    "rejected": true,
+    "message": "Invalid native DDP replica state: {1: ['optimizer']}",
+    "value_checks": 2,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ],
+      [
+        98
+      ]
+    ]
+  },
+  {
+    "api": "legacy",
+    "case": "reference",
+    "rejected": true,
+    "message": "Native DDP replica values differ across ranks: ['reference']",
+    "value_checks": 2,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ],
+      [
+        98
+      ]
+    ]
+  },
+  {
+    "api": "legacy",
+    "case": "reference_nan",
+    "rejected": true,
+    "message": "Invalid native DDP replica state: {1: ['reference']}",
+    "value_checks": 2,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ],
+      [
+        98
+      ]
+    ]
+  },
+  {
+    "api": "legacy",
+    "case": "lambda_closure",
+    "rejected": true,
+    "message": "Native DDP learner preflight differs across ranks: ['optimization']",
+    "value_checks": 1,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ]
+    ]
+  },
+  {
+    "api": "legacy",
+    "case": "lambda_partial",
+    "rejected": true,
+    "message": "Native DDP learner preflight differs across ranks: ['optimization']",
+    "value_checks": 1,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ]
+    ]
+  },
+  {
+    "api": "legacy",
+    "case": "lambda_global",
+    "rejected": true,
+    "message": "Native DDP learner preflight differs across ranks: ['optimization']",
+    "value_checks": 1,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ]
+    ]
+  },
+  {
+    "api": "legacy",
+    "case": "lambda_composite",
+    "rejected": true,
+    "message": "Native DDP learner preflight differs across ranks: ['optimization']",
+    "value_checks": 1,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ]
+    ]
+  },
+  {
+    "api": "legacy",
+    "case": "lambda_source_error",
+    "rejected": true,
+    "message": "Invalid native DDP learner preflight components: {1: ['optimization']}",
+    "value_checks": 1,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ]
+    ]
+  },
+  {
+    "api": "legacy",
+    "case": "asymmetric_refresh",
+    "rejected": true,
+    "message": "Native DDP replica values differ across ranks: ['optimizer']",
+    "value_checks": 3,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ],
+      [
+        98
+      ]
+    ]
+  },
+  {
+    "api": "legacy",
+    "case": "failed_legacy_restore",
+    "rejected": false,
+    "message": "accepted",
+    "value_checks": 2,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": []
+  },
+  {
+    "api": "legacy",
+    "case": "failed_runtime_restore",
+    "rejected": false,
+    "message": "accepted",
+    "value_checks": 2,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": []
+  },
+  {
+    "api": "legacy",
+    "case": "cache",
+    "rejected": false,
+    "message": "accepted",
+    "value_checks": 1,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": []
+  },
+  {
+    "api": "legacy",
+    "case": "protocol_version",
+    "rejected": true,
+    "message": "Native DDP learner preflight protocol differs",
+    "value_checks": 1,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ]
+    ]
+  },
+  {
+    "api": "runtime",
+    "case": "policy",
+    "rejected": true,
+    "message": "Native DDP replica values differ across ranks: ['policy']",
+    "value_checks": 2,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ],
+      [
+        98
+      ]
+    ]
+  },
+  {
+    "api": "runtime",
+    "case": "policy_nan",
+    "rejected": true,
+    "message": "Invalid native DDP replica state: {1: ['policy']}",
+    "value_checks": 2,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ],
+      [
+        98
+      ]
+    ]
+  },
+  {
+    "api": "runtime",
+    "case": "optimizer",
+    "rejected": true,
+    "message": "Native DDP replica values differ across ranks: ['optimizer']",
+    "value_checks": 2,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ],
+      [
+        98
+      ]
+    ]
+  },
+  {
+    "api": "runtime",
+    "case": "optimizer_nan",
+    "rejected": true,
+    "message": "Invalid native DDP replica state: {1: ['optimizer']}",
+    "value_checks": 2,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ],
+      [
+        98
+      ]
+    ]
+  },
+  {
+    "api": "runtime",
+    "case": "reference",
+    "rejected": true,
+    "message": "Native DDP replica values differ across ranks: ['reference']",
+    "value_checks": 2,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ],
+      [
+        98
+      ]
+    ]
+  },
+  {
+    "api": "runtime",
+    "case": "reference_nan",
+    "rejected": true,
+    "message": "Invalid native DDP replica state: {1: ['reference']}",
+    "value_checks": 2,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ],
+      [
+        98
+      ]
+    ]
+  },
+  {
+    "api": "runtime",
+    "case": "lambda_closure",
+    "rejected": true,
+    "message": "Native DDP learner preflight differs across ranks: ['optimization']",
+    "value_checks": 1,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ]
+    ]
+  },
+  {
+    "api": "runtime",
+    "case": "lambda_partial",
+    "rejected": true,
+    "message": "Native DDP learner preflight differs across ranks: ['optimization']",
+    "value_checks": 1,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ]
+    ]
+  },
+  {
+    "api": "runtime",
+    "case": "lambda_global",
+    "rejected": true,
+    "message": "Native DDP learner preflight differs across ranks: ['optimization']",
+    "value_checks": 1,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ]
+    ]
+  },
+  {
+    "api": "runtime",
+    "case": "lambda_composite",
+    "rejected": true,
+    "message": "Native DDP learner preflight differs across ranks: ['optimization']",
+    "value_checks": 1,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ]
+    ]
+  },
+  {
+    "api": "runtime",
+    "case": "lambda_source_error",
+    "rejected": true,
+    "message": "Invalid native DDP learner preflight components: {1: ['optimization']}",
+    "value_checks": 1,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ]
+    ]
+  },
+  {
+    "api": "runtime",
+    "case": "asymmetric_refresh",
+    "rejected": true,
+    "message": "Native DDP replica values differ across ranks: ['optimizer']",
+    "value_checks": 3,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ],
+      [
+        98
+      ]
+    ]
+  },
+  {
+    "api": "runtime",
+    "case": "failed_legacy_restore",
+    "rejected": false,
+    "message": "accepted",
+    "value_checks": 2,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": []
+  },
+  {
+    "api": "runtime",
+    "case": "failed_runtime_restore",
+    "rejected": false,
+    "message": "accepted",
+    "value_checks": 2,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": []
+  },
+  {
+    "api": "runtime",
+    "case": "cache",
+    "rejected": false,
+    "message": "accepted",
+    "value_checks": 1,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": []
+  },
+  {
+    "api": "runtime",
+    "case": "protocol_version",
+    "rejected": true,
+    "message": "Native DDP learner preflight protocol differs",
+    "value_checks": 1,
+    "no_scoring_on_rejection": true,
+    "state_preserved_on_rejection": true,
+    "max_parameter_error": 0.0,
+    "wire_shapes": [
+      [
+        194
+      ]
+    ]
+  }
+]

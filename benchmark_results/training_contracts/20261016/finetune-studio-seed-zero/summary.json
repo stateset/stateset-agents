@@ -1,0 +1,30 @@
+{
+  "passed": true,
+  "scope": "Final rendering correction with current source/wheel TUI and agent regressions",
+  "source_tests": 613,
+  "installed_wheel_tests": 613,
+  "seed_cases": 63,
+  "zero_rendering_cases": 12,
+  "typed_modules": 429,
+  "queue_job": "d808523574bf",
+  "wheel_sha256": "f96defce4fdc49353fe79fc4cee6f77250fa2f5d619e0d202cf07439efb32dbd",
+  "source_and_test_python_unchanged": true,
+  "wheel_case_identities_match_source": true,
+  "broader_seed_baseline": "../finetune-studio-seeds/summary.json",
+  "baseline_source_tests": 1839,
+  "baseline_wheel_tests": 1728,
+  "changes_from_baseline": {
+    "source_sha256": [
+      "tui.py"
+    ],
+    "test_source_sha256": [
+      "tests/unit/test_finetune_seeds.py"
+    ]
+  },
+  "live_herdr_refreshed": true,
+  "draft_preserved": true,
+  "paid_run_launched": false,
+  "gpu_verified": false,
+  "quality_gain_verified": false,
+  "count_note": "Source and wheel cases overlap; broader baseline is for the preceding version before the isolated rendering correction."
+}

@@ -1,0 +1,802 @@
+[
+  {
+    "id": "66077d002339",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-hardening-dev.py"
+    ],
+    "created": 1792215766.987956,
+    "started": 1792215779.1072662,
+    "finished": 1792215818.6878755,
+    "wait_seconds": 12.119310140609741,
+    "elapsed_seconds": 39.58060932159424,
+    "reason": "",
+    "usage": {
+      "cpu_seconds": 35.6532,
+      "sampled_peak_rss_gb": 0.8970565795898438,
+      "samples": 66,
+      "observed_seconds": 39.575253924005665,
+      "observed_at": 1792215818.6877258,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    },
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 0.014078617095947266,
+        "job_capacity": 12.105231523513794
+      },
+      "total_seconds": 12.119310140609741,
+      "observed_seconds": 12.105231523513794,
+      "coverage": 0.9988383318082791,
+      "current_category": "job_capacity",
+      "current_blocker": null,
+      "last_observed_at": 1792215779.1072662,
+      "transitions": [
+        {
+          "at": 1792215767.0020347,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        }
+      ],
+      "transition_count": 1,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    }
+  },
+  {
+    "id": "783c846d1757",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-hardening-gates.py"
+    ],
+    "created": 1792239694.132,
+    "started": 1792239764.2187018,
+    "finished": 1792239797.3105366,
+    "wait_seconds": 70.0867018699646,
+    "elapsed_seconds": 33.09183478355408,
+    "reason": "",
+    "usage": {
+      "cpu_seconds": 21.7776,
+      "sampled_peak_rss_gb": 0.9126205444335938,
+      "samples": 54,
+      "observed_seconds": 33.03282597998623,
+      "observed_at": 1792239797.3103523,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    },
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 0.03409600257873535,
+        "job_capacity": 69.73514604568481,
+        "priority": 0.3174598217010498
+      },
+      "total_seconds": 70.0867018699646,
+      "observed_seconds": 70.05260586738586,
+      "coverage": 0.9995135168060555,
+      "current_category": "job_capacity",
+      "current_blocker": null,
+      "last_observed_at": 1792239764.2187018,
+      "transitions": [
+        {
+          "at": 1792239694.166096,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792239731.065353,
+          "category": "priority",
+          "blocking_job_id": "8992efbc7cb4"
+        },
+        {
+          "at": 1792239731.3828127,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        }
+      ],
+      "transition_count": 3,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    }
+  },
+  {
+    "id": "1e204ba66630",
+    "state": "queued",
+    "exit_code": null,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-studio-mobile-pipeline.py"
+    ],
+    "created": 1792215389.438823,
+    "started": null,
+    "finished": null,
+    "wait_seconds": 24433.329725265503,
+    "elapsed_seconds": 0,
+    "reason": "heavy job budget",
+    "usage": {},
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 108.27012467384338,
+        "heavy_capacity": 23522.610535383224,
+        "priority": 1.5456953048706055,
+        "job_capacity": 800.9033699035645
+      },
+      "total_seconds": 24433.329725265503,
+      "observed_seconds": 24325.05960059166,
+      "coverage": 0.9955687527696282,
+      "current_category": "heavy_capacity",
+      "current_blocker": null,
+      "last_observed_at": 1792239820.7467434,
+      "transitions": [
+        {
+          "at": 1792215413.1297834,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215468.1612759,
+          "category": "priority",
+          "blocking_job_id": "e1941d39147a"
+        },
+        {
+          "at": 1792215469.0919101,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215532.04937,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215532.3658335,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215555.4166262,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215567.8321733,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215574.2109053,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215574.826352,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215578.461111,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215585.4213715,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215589.971362,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215592.7414992,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215599.729718,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215600.0464406,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215604.6640444,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215654.076155,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215668.6307166,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215694.4034173,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215723.001216,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215723.622986,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215727.5650206,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215728.1802862,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215732.1137671,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215763.0308335,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215838.434644,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215847.2202425,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215928.410952,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215929.03306,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792215994.7609298,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792216022.044544,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792216023.2584422,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792216106.872551,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792216108.390453,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792216219.2633812,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792216259.2024128,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792216264.6363106,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792216269.4994936,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792216324.00534,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792216343.7265456,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792216362.2071812,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792216442.419334,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792216465.127951,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792216470.5848277,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792216927.403678,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792216941.0434287,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792217225.3657575,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792217233.2623365,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792217878.1181865,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792217909.035313,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792217957.1911137,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792217958.1063797,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792218012.7049372,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792218013.016794,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792239645.6913917,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792239731.0104122,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792239731.931418,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792239734.054897,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792239734.380805,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792239795.7867618,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792239796.41031,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792239798.2712255,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792239803.761709,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792239806.7915633,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        }
+      ],
+      "transition_count": 67,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    }
+  },
+  {
+    "id": "c0e0a6acf3be",
+    "state": "failed",
+    "exit_code": 1,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-studio-mobile-pipeline.py"
+    ],
+    "created": 1792208571.1486866,
+    "started": 1792212429.3586442,
+    "finished": 1792212456.140217,
+    "wait_seconds": 3858.20995759964,
+    "elapsed_seconds": 26.781572818756104,
+    "reason": "",
+    "usage": {
+      "cpu_seconds": 23.7929,
+      "sampled_peak_rss_gb": 0.9238395690917969,
+      "samples": 44,
+      "observed_seconds": 26.7704537580139,
+      "observed_at": 1792212456.1400616,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    },
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 0.025150299072265625,
+        "job_capacity": 647.7482223510742,
+        "heavy_capacity": 3173.3783547878265,
+        "priority": 3.094170093536377,
+        "ram_headroom": 33.96406006813049
+      },
+      "total_seconds": 3858.20995759964,
+      "observed_seconds": 3858.1848073005676,
+      "coverage": 0.9999934813555124,
+      "current_category": "heavy_capacity",
+      "current_blocker": null,
+      "last_observed_at": 1792212429.3586442,
+      "transitions": [
+        {
+          "at": 1792208571.173837,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208571.791029,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208591.4638424,
+          "category": "priority",
+          "blocking_job_id": "926806c0c5fa"
+        },
+        {
+          "at": 1792208591.7778625,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208600.565115,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208614.480094,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208622.3410387,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208628.6923687,
+          "category": "priority",
+          "blocking_job_id": "ccbeca071a51"
+        },
+        {
+          "at": 1792208629.3131907,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208638.4016783,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208655.0368974,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208665.025866,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208699.5153368,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208765.83906,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208766.7558534,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208773.1200325,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208785.2321322,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208794.3120663,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208798.8489354,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208800.66385,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208807.3307784,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208827.6328702,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208887.5920618,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208957.8199155,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208958.435332,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208959.951672,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792208960.265405,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792209031.7652934,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792209032.0769224,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792209068.089942,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792209131.0235305,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792209168.9282048,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792209878.9693637,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792209887.4536679,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792210218.5623844,
+          "category": "priority",
+          "blocking_job_id": "7fdef60f91de"
+        },
+        {
+          "at": 1792210219.4782019,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792210414.3222377,
+          "category": "priority",
+          "blocking_job_id": "9a6e3f240df0"
+        },
+        {
+          "at": 1792210414.6336124,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792210415.2477689,
+          "category": "priority",
+          "blocking_job_id": "dd0b29761993"
+        },
+        {
+          "at": 1792210415.8624332,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792210491.5546656,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792210492.487116,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792210498.5566418,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792210498.8721013,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792210530.7036512,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792210531.0241528,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792210605.078985,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792210605.3931842,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792210676.2293108,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792210690.1722908,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792210691.0932112,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792210971.7077413,
+          "category": "priority",
+          "blocking_job_id": "9ce5a97cf1f7"
+        },
+        {
+          "at": 1792210972.0252128,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792211251.2182474,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792211261.5262403,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792211321.921361,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792211333.468478,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792211844.8098388,
+          "category": "ram_headroom",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792211878.7738988,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        }
+      ],
+      "transition_count": 59,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    }
+  }
+]

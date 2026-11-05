@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "kind": "descriptive-archived-study-diagnostics",
+  "source_review_sha256": "1c040587619559e7568669348e97c24dfa39cc27b06622141c52f32cd0d49205",
+  "provider_requests": 0,
+  "model_changes": false,
+  "arms": {
+    "base": {
+      "source_reports": [
+        {
+          "path": "seed-2026101901/base-test.json",
+          "sha256": "79b9b90a62f8772f00e457c4b611ced40155d4472d5565a225149b569600e226"
+        },
+        {
+          "path": "seed-2026101902/base-test.json",
+          "sha256": "209570ba4c9900cdb57fd183d3533359e3358a04e71c32287ea7dfb2eefc3e3d"
+        },
+        {
+          "path": "seed-2026101903/base-test.json",
+          "sha256": "b85993c66cad33af3dad1dfd907fe3339b5650b905577ffb6fc78320a2def391"
+        },
+        {
+          "path": "seed-2026101904/base-test.json",
+          "sha256": "1fb3dd7d8ab8a0f73d1708a1ab975de36ea4c6ebdec0a0983db69b8d25b5d6bd"
+        },
+        {
+          "path": "seed-2026101905/base-test.json",
+          "sha256": "9e2a1eb582093d69a83ce1293fe3c9e4f348013345d26f7bb0b6a6b3c4aed9f6"
+        },
+        {
+          "path": "seed-2026101906/base-test.json",
+          "sha256": "19159d7b81afacdf62112f7ab19786c36518b4ae5bef015d6dfd6636169750e1"
+        }
+      ],
+      "failed_cases_by_family": {
+        "already_refunded": 1,
+        "eligible": 1,
+        "misleading_note": 28,
+        "outside_window": 1,
+        "partial_refund": 2,
+        "undelivered": 1,
+        "window_boundary": 25
+      },
+      "rejected_action_errors": {
+        "Action does not satisfy refund policy": 66,
+        "Wrong order or lookup arguments": 1
+      },
+      "error_count_scope": "Rejected tool actions, including repeated attempts within a failed case; not unique failed cases."
+    },
+    "sft": {
+      "source_reports": [
+        {
+          "path": "seed-2026101901/sft-test.json",
+          "sha256": "c2d6a9ef426e9aa92a31bfb6b82c8ef7339002464da402b2d334bd3dec2feab4"
+        },
+        {
+          "path": "seed-2026101902/sft-test.json",
+          "sha256": "9d7c07a1790b3eeb92f13c84a94b7cd759dde37522602f9009629f68f3e8a553"
+        },
+        {
+          "path": "seed-2026101903/sft-test.json",
+          "sha256": "fe96ab911108159b0c89c90566893668e69d1932840d06cb5e6cba7251fbbcc9"
+        },
+        {
+          "path": "seed-2026101904/sft-test.json",
+          "sha256": "5d5a425de8f2079f0088f8ed36a93d4890c0b6d3249e45525947c37872433f1b"
+        },
+        {
+          "path": "seed-2026101905/sft-test.json",
+          "sha256": "cae85a8e49fcd6eee7a044b19a833a1ddf5f46045b576882051e833e4a4bd0f3"
+        },
+        {
+          "path": "seed-2026101906/sft-test.json",
+          "sha256": "726e55d6701160ce67b6f294f1ca930864facd2eb77020d29e5129af78d1ee59"
+        }
+      ],
+      "failed_cases_by_family": {
+        "eligible": 7,
+        "misleading_note": 6,
+        "outside_window": 1,
+        "partial_refund": 6,
+        "undelivered": 1,
+        "window_boundary": 25
+      },
+      "rejected_action_errors": {
+        "Action does not satisfy refund policy": 113,
+        "Wrong order or lookup arguments": 7,
+        "finish takes no arguments": 9
+      },
+      "error_count_scope": "Rejected tool actions, including repeated attempts within a failed case; not unique failed cases."
+    },
+    "sft_rl": {
+      "source_reports": [
+        {
+          "path": "seed-2026101901/sft_rl/test_results.json",
+          "sha256": "b9abd8ca2cda9cd78ae71e257361779fd5333a8ec88422deee8b65bf7e90f6fb"
+        },
+        {
+          "path": "seed-2026101902/sft_rl/test_results.json",
+          "sha256": "f07cb0d11a85b5c7dd4e3b7136448ac03c7ecde0535569ae5b969e2ac29fd17b"
+        },
+        {
+          "path": "seed-2026101903/sft_rl/test_results.json",
+          "sha256": "910f6ed80d569840d918c24899d99e8c3eea1c1609161559ee53f4be9020273f"
+        },
+        {
+          "path": "seed-2026101904/sft_rl/test_results.json",
+          "sha256": "26f5f788e7dc16c4b43616145aa6adb5c386ef68d7c9ef86380b07e63944fba3"
+        },
+        {
+          "path": "seed-2026101905/sft_rl/test_results.json",
+          "sha256": "ae60b654522f5f7696efe683bfc2b00c0634e323cd95842ea4128d36074ce24d"
+        },
+        {
+          "path": "seed-2026101906/sft_rl/test_results.json",
+          "sha256": "9603cd35f317e497442731d8462b8243ebcfbd5c5ba66d32393a133659a8dc3f"
+        }
+      ],
+      "failed_cases_by_family": {
+        "already_refunded": 1,
+        "eligible": 6,
+        "misleading_note": 7,
+        "outside_window": 2,
+        "partial_refund": 3,
+        "undelivered": 1,
+        "window_boundary": 25
+      },
+      "rejected_action_errors": {
+        "Action does not satisfy refund policy": 106,
+        "Wrong order or lookup arguments": 2,
+        "finish takes no arguments": 11
+      },
+      "error_count_scope": "Rejected tool actions, including repeated attempts within a failed case; not unique failed cases."
+    }
+  },
+  "interpretation": "Descriptive audit of exposed held-out cases. Not a new model evaluation, training curriculum, or independent safety certification."
+}

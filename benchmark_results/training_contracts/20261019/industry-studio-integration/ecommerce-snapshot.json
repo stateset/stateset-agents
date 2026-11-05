@@ -1,0 +1,30 @@
+{
+  "dataset_provenance": {
+    "train": {
+      "industry_domains": [
+        "ecommerce"
+      ],
+      "status": "declared_not_independently_verified",
+      "synthetic_examples": 512,
+      "unannotated_examples": 0
+    },
+    "validation": {
+      "industry_domains": [
+        "ecommerce"
+      ],
+      "status": "declared_not_independently_verified",
+      "synthetic_examples": 64,
+      "unannotated_examples": 0
+    }
+  },
+  "dataset_sha256": {
+    "train": "3183f1bb2de62479d14c5ad6fdc2d4261574f0d119fecd20216b94f164f15aef",
+    "validation": "f2ef1a5df8d588a795fba52af6049d48eec6654f21ae4ee1890f2124a0c81cbd"
+  },
+  "train_examples": 512,
+  "training_content_sha256": {
+    "train": "af398cc19f684689ce5489275834504830f29a6d3bf6c91ce78fb34b23a50829",
+    "validation": "3360783044a8a5d361f22dc6ac147ec139cbcea76f7d2fdb1e23aff81035c72c"
+  },
+  "validation_examples": 64
+}

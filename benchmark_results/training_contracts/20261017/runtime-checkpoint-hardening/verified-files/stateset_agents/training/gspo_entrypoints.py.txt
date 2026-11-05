@@ -1,0 +1,325 @@
+"""
+Training entrypoints for GSPO workflows.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+from collections.abc import Mapping, Sequence
+from datetime import datetime
+from typing import Any, cast
+
+from stateset_agents.core.agent import Agent, AgentConfig, MultiTurnAgent
+from stateset_agents.core.environment import ConversationEnvironment
+from stateset_agents.rewards.multi_objective_reward import (
+    MultiObjectiveRewardFunction as MultiObjectiveReward,
+)
+
+from .callbacks import has_no_policy_signal
+from .config import get_config_for_task
+from .gspo_config import GSPOConfig
+from .runtime_state import _reject_unsupported_resume
+
+logger = logging.getLogger(__name__)
+
+
+#: Scenario keys that may hold the user-facing prompt text, in priority order.
+PROMPT_KEYS: tuple[str, ...] = ("prompt", "user_query", "query", "question", "context")
+ZERO_SIGNAL_WARN_AFTER = 5
+
+
+def queries_from_scenarios(
+    scenarios: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Turn environment scenarios into GSPO training queries.
+
+    The prompt is the first of :data:`PROMPT_KEYS` present; every other
+    scenario field (plus the contents of ``task``/``metadata`` mappings) is
+    passed to the reward as ``context`` so task rewards that need ground truth
+    (``gold_answer``, ``expected_tool``, ...) receive it. A scenario without
+    any prompt key is an error rather than a placeholder prompt.
+    """
+    queries: list[dict[str, Any]] = []
+    for index, scenario in enumerate(scenarios):
+        prompt_key = next(
+            (
+                k
+                for k in PROMPT_KEYS
+                if isinstance(scenario.get(k), str) and scenario[k]
+            ),
+            None,
+        )
+        if prompt_key is None:
+            raise ValueError(
+                f"scenario {index} has no prompt text under any of {PROMPT_KEYS}; "
+                "pass train_queries explicitly"
+            )
+        context: dict[str, Any] = {}
+        for nested in ("task", "metadata"):
+            value = scenario.get(nested)
+            if isinstance(value, Mapping):
+                context.update(value)
+        context.update(
+            {
+                k: v
+                for k, v in scenario.items()
+                if k != prompt_key and k not in ("task", "metadata")
+            }
+        )
+        context.setdefault("scenario_index", index)
+        queries.append({"prompt": str(scenario[prompt_key]), "context": context})
+    return queries
+
+
+def query_window(
+    queries: Sequence[Any], iteration: int, per_iteration: int
+) -> list[Any]:
+    """The rotating slice of ``queries`` trained on at ``iteration`` (wraps
+    around, so every query is visited before any repeats)."""
+    n = len(queries)
+    if n == 0:
+        return []
+    size = max(1, min(int(per_iteration), n))
+    start = (int(iteration) * size) % n
+    return [queries[(start + i) % n] for i in range(size)]
+
+
+def _reward_is_identically_zero(metrics: Mapping[str, Any]) -> bool:
+    """Legacy reward-only diagnostic; absent metrics are not evidence."""
+    return has_no_policy_signal(
+        {
+            key: metrics[key]
+            for key in ("average_reward", "reward_std")
+            if key in metrics
+        }
+    )
+
+
+async def train_with_gspo(
+    config: GSPOConfig,
+    agent: Agent,
+    environment: ConversationEnvironment,
+    reward_model: MultiObjectiveReward,
+    train_queries: list[str | dict[str, Any]] | None = None,
+    callbacks: list[Any] | None = None,
+) -> Agent:
+    """Train fresh with dedicated GSPO; explicit resume is unsupported."""
+    _reject_unsupported_resume(config, "train_with_gspo")
+    from .gspo_trainer import GSPOModelManager, GSPOTrainer, _require_wandb, wandb
+
+    logger.info("Initializing GSPO training")
+    logger.info("Configuration: %s", json.dumps(config.to_dict(), indent=2))
+
+    # Foot-gun guard: training without a KL anchor on a small corpus is the
+    # canonical "policy goes off the rails" setup. See whitepaper §10.5
+    # ('Reference-model drift') and benchmark_results/whitepaper_v1/
+    # customer_support_qwen3_5_0_8b_gspo.json for a documented case.
+    _has_kl_anchor = config.use_reference_model and config.beta > 0.0
+    _corpus_size = (
+        len(train_queries)
+        if train_queries
+        else (len(environment.scenarios) if hasattr(environment, "scenarios") else None)
+    )
+    if not _has_kl_anchor and _corpus_size is not None and _corpus_size < 100:
+        logger.warning(
+            "GSPO is running without a KL anchor (use_reference_model=%s, beta=%s) "
+            "on a small corpus (%s queries). This combination has been observed to "
+            "destabilize the policy on keyword-based rewards — the trained model "
+            "starts emitting incoherent token soup while still scoring nonzero on "
+            "the rubric. Recommended fix: set use_reference_model=True and beta>=0.05. "
+            "See whitepaper §10.5 'Reference-model drift'.",
+            config.use_reference_model,
+            config.beta,
+            _corpus_size,
+        )
+
+    os.makedirs(config.output_dir, exist_ok=True)
+
+    use_wandb = config.report_to == "wandb"
+    wb = None
+    if use_wandb:
+        _require_wandb()
+        wb = wandb
+        if config.wandb_project:
+            if wb is None:
+                raise ImportError("wandb is unavailable")
+            wb.init(
+                project=config.wandb_project,
+                name=config.run_name
+                or f"gspo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+                config=config.to_dict(),
+                tags=["gspo"] + (config.wandb_tags or []),
+            )
+        else:
+            logger.warning(
+                "report_to='wandb' but no wandb_project set; disabling wandb logging."
+            )
+            use_wandb = False
+
+    _is_stub = config.model_name.startswith("stub://") or getattr(
+        config, "use_stub_model", False
+    )
+
+    if _is_stub:
+        logger.info(
+            "Stub backend detected — skipping model manager, using agent's model"
+        )
+        model = agent.model
+        tokenizer = agent.tokenizer
+        model_manager = None
+    else:
+        model_manager = GSPOModelManager(config)
+        model, tokenizer = model_manager.load_model_and_tokenizer()
+        agent.model = model
+        agent.tokenizer = tokenizer
+        agent.generation_config = agent._build_generation_config()
+
+    queries: list[Any] = list(train_queries) if train_queries else []
+    if not queries:
+        logger.info("Generating training queries from environment scenarios...")
+        queries = list(queries_from_scenarios(environment.scenarios))
+
+    queries_per_iteration = max(1, int(config.generations_per_iteration))
+    logger.info(
+        "Training with %s queries (%s per iteration, rotating)",
+        len(queries),
+        min(queries_per_iteration, len(queries)),
+    )
+
+    trainer = GSPOTrainer(
+        config=config,
+        model=model,
+        tokenizer=tokenizer,
+        agent=agent,
+        environment=environment,
+        reward_model=reward_model,
+        ref_model=model_manager.ref_model if model_manager else None,
+    )
+
+    if config.use_vllm:
+        logger.info("Initializing vLLM for fast generation...")
+        vllm_success = await trainer.generator.initialize_vllm()
+        if vllm_success:
+            logger.info("vLLM initialized - generation will be 5-20x faster!")
+        else:
+            logger.warning("vLLM initialization failed - using HuggingFace generation")
+
+    _callbacks = callbacks or []
+    aborted = False
+    zero_signal_iterations = 0
+
+    for iteration in range(config.num_outer_iterations):
+        logger.info(
+            "=== Iteration %s/%s ===", iteration + 1, config.num_outer_iterations
+        )
+
+        window = query_window(queries, iteration, queries_per_iteration)
+        metrics = await trainer.train_step(queries=window, num_groups=len(window))
+        zero_signal_iterations = (
+            zero_signal_iterations + 1 if has_no_policy_signal(metrics) else 0
+        )
+        if zero_signal_iterations == ZERO_SIGNAL_WARN_AFTER:
+            logger.warning(
+                "GSPO policy advantages have been identically zero for %s consecutive "
+                "iterations: no learning signal from the policy advantage term. "
+                "Check rollout diversity, task difficulty and that the reward "
+                "receives the scenario context it "
+                "needs (for example gold_answer) and that prompts are the real task "
+                "prompts.",
+                ZERO_SIGNAL_WARN_AFTER,
+            )
+
+        logger.info("Metrics: %s", json.dumps(metrics, indent=2))
+
+        if use_wandb and wb is not None:
+            wb.log(metrics, step=iteration)
+
+        # Periodic checkpoint
+        if (iteration + 1) % config.save_steps == 0:
+            checkpoint_dir = os.path.join(
+                config.output_dir, f"checkpoint-{iteration + 1}"
+            )
+            trainer.save_model(checkpoint_dir)
+
+        # Notify callbacks via the dispatch layer
+        if _callbacks:
+            from .callbacks import notify_step_end
+
+            await notify_step_end(_callbacks, step=iteration, metrics=metrics)
+
+            # Check for early abort signals from any callback
+            for cb in _callbacks:
+                if getattr(cb, "should_abort", False):
+                    reason = getattr(cb, "abort_reason", "callback requested abort")
+                    logger.warning("Training aborted by callback: %s", reason)
+                    aborted = True
+                    break
+
+        if aborted:
+            break
+
+    final_model_path = os.path.join(config.output_dir, "final_model")
+    trainer.save_model(final_model_path)
+
+    if use_wandb and wb is not None:
+        wb.finish()
+
+    if aborted:
+        logger.info("GSPO training aborted early.")
+        reasons = [
+            str(getattr(cb, "abort_reason", "") or "")
+            for cb in _callbacks
+            if getattr(cb, "should_abort", False)
+        ]
+        cast(Any, agent)._training_aborted = (
+            "; ".join(r for r in reasons if r) or "aborted"
+        )
+    else:
+        logger.info("GSPO training completed successfully.")
+    setattr(agent, "_training_metrics", dict(trainer.training_metrics))  # noqa: B010
+    return agent
+
+
+async def train_customer_service_with_gspo(
+    model_name: str = "gpt2",
+    num_episodes: int = 100,
+    output_dir: str = "./outputs/gspo",
+    **kwargs,
+) -> Agent:
+    """Train a customer service agent using GSPO."""
+    base_config = get_config_for_task("customer_service", model_name=model_name)
+
+    config = GSPOConfig.from_training_config(
+        base_config, num_episodes=num_episodes, output_dir=output_dir, **kwargs
+    )
+    _reject_unsupported_resume(config, "train_customer_service_with_gspo")
+
+    agent_config = AgentConfig(
+        model_name=model_name,
+        system_prompt="You are a helpful and empathetic customer service representative.",
+    )
+    agent = MultiTurnAgent(agent_config)
+    await agent.initialize()
+
+    from stateset_agents.core.environment import CONVERSATION_CONFIGS
+
+    env_config = CONVERSATION_CONFIGS["customer_service"].copy()
+    environment = ConversationEnvironment(**env_config)
+
+    from stateset_agents.rewards.multi_objective_reward import (
+        create_customer_service_reward,
+    )
+
+    reward_model = create_customer_service_reward()
+
+    return await train_with_gspo(
+        config=config,
+        agent=agent,
+        environment=environment,
+        reward_model=reward_model,
+    )
+
+
+__all__ = ["train_with_gspo", "train_customer_service_with_gspo"]

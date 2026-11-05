@@ -1,0 +1,74 @@
+{
+  "passed": true,
+  "queue_job": "13cf424b8977",
+  "typed_modules": 411,
+  "source_unchanged": true,
+  "test_sources_unchanged": true,
+  "wheel_source_matches": true,
+  "wheel_sha256": "fd8424424212f6b3566418601adcd7b163514ac45605d4cce81771b9e7100ffb",
+  "regressions": {
+    "passed": 2014,
+    "skipped": 7
+  },
+  "source_distributed": {
+    "passed": 10,
+    "skipped": 0
+  },
+  "wheel_regressions": {
+    "passed": 741,
+    "skipped": 0
+  },
+  "wheel_distributed": {
+    "passed": 10,
+    "skipped": 0
+  },
+  "runtime": {
+    "torch": "2.11.0",
+    "transformers": "5.14.1",
+    "accelerate": "1.14.0",
+    "numpy": "2.3.5",
+    "tokenizers": "0.22.2"
+  },
+  "rollout_scenarios_per_peer": 21,
+  "population_cases": 12,
+  "rejection_recovery_cases": 5,
+  "full_loop_logger_cases": 4,
+  "existing_scenario_reports": {
+    "rank-0.json": 294,
+    "advantages-0.json": 48,
+    "learner-preflight-0.json": 40,
+    "replica-consensus-0.json": 32,
+    "native-ddp-checkpoint-0.json": 98,
+    "ddp-evaluation-0.json": 28,
+    "ddp-continual-0.json": 46,
+    "empty-population-0.json": 131,
+    "ddp-training-loop-0.json": 17
+  },
+  "semantics": {
+    "callbacks": "sample-weighted global raw rewards from newly generated episodes; replay excluded",
+    "training_log": "global learner population including replay, supplied as scalar metrics even when the main worker has no generated episodes",
+    "groups": "average size uses nonempty groups; diversity mean/std weights groups with at least two observed rewards",
+    "median": "exact float64 order selection by cumulative counts; canonical signed zero; correctly rounded even midpoint using two exact ratios",
+    "wire": "own DDP process group, controls with protocol agreement, 4 int64 counts and 8 float64 summaries; median uses at most 64 reductions of two int64 counts",
+    "resources": "O(local population) CPU storage, no gathering reward vectors, trajectories or text",
+    "failures": "coherent local admission/schema rejection preserves learner state and supports corrected inputs",
+    "logger_api": "optional keyword trajectory_metrics takes precedence over local groups; inspectable legacy logger gets global scalars without raw groups; bodies are called once",
+    "callback_isolation": "top-level metrics and nested population summaries copied before callback dispatch",
+    "protocol": "native loop v2 admission rejects mismatched loop generations before episodes"
+  },
+  "cpu_native_ddp_rollout_reporting_verified": true,
+  "gpu_verified": false,
+  "multi_node_verified": false,
+  "fsdp_verified": false,
+  "deepspeed_verified": false,
+  "multi_rank_accelerate_verified": false,
+  "model_quality_improvement_verified": false,
+  "workflow_validation": {
+    "queue_job": "12642fb4fbca",
+    "tool": "actionlint 1.7.12",
+    "path": ".github/workflows/training-contracts.yml",
+    "sha256": "bd0185e9c53f9695be594675b3c6e05911b0bf4d0255068a3d734e102acf9f60"
+  },
+  "boundaries": "Generated tiny FP32 CPU/Gloo learners and synthetic rewards. Diagnostic history and task/final flush reporting remain open. All live peers must enter the same operation; external callback/environment state, incompatible callback collectives and process loss are outside the protocol.",
+  "count_note": "Targeted source/wheel tests overlap. Ten actual two-worker pytest contracts contain multiple scenarios; the 21 new scenarios per peer are not separate pytest cases."
+}

@@ -427,14 +427,19 @@ async def test_invalid_progress_cannot_complete_or_break_status_json(
 
 @pytest.mark.asyncio
 async def test_accepted_configuration_isolated_from_caller_status_and_trainer_mutation(
-    service, request_data, monkeypatch
+    service, request_data, monkeypatch, tmp_path
 ):
     started, release = asyncio.Event(), asyncio.Event()
     request_data.environment_scenarios = [
         {"id": "case", "context": {"values": ["original"]}}
     ]
-    request_data.training_config_overrides = {"nested": {"schedule": [1, 2]}}
+    request_data.training_config_overrides = {"task_schedule": ["one", "two"]}
+    service.training_jobs["original-checkpoint"] = {
+        "user_id": "owner",
+        "output_dir": str(service.output_root() / "original-checkpoint"),
+    }
     request_data.resume_from_checkpoint = "original-checkpoint"
+    (service.output_root() / "original-checkpoint").mkdir()
     accepted = copy.deepcopy(request_data.model_dump())
     monkeypatch.setattr(
         module, "MultiTurnAgent", lambda config: SimpleNamespace(config=config)
@@ -453,7 +458,7 @@ async def test_accepted_configuration_isolated_from_caller_status_and_trainer_mu
             overrides=copy.deepcopy(kwargs["config_overrides"]),
         )
         kwargs["environment"].scenarios[0]["context"]["values"].append("trainer-only")
-        kwargs["config_overrides"]["nested"]["schedule"].append(99)
+        kwargs["config_overrides"]["task_schedule"].append(99)
 
     set_trainer(monkeypatch, train)
     job_id = await service.start_training(request_data, user_id="owner")
@@ -465,14 +470,14 @@ async def test_accepted_configuration_isolated_from_caller_status_and_trainer_mu
         request_data.resume_from_checkpoint = "caller-checkpoint"
         request_data.agent_config.model_name = "caller-model"
         request_data.environment_scenarios[0]["context"]["values"].append("caller-only")
-        request_data.training_config_overrides["nested"]["schedule"].append(3)
+        request_data.training_config_overrides["task_schedule"].append(3)
         await started.wait()
         snapshot = service.get_training_status(job_id, user_id="owner")
         assert snapshot["config"] == accepted
         snapshot["config"]["environment_scenarios"][0]["context"]["values"].append(
             "reader-only"
         )
-        snapshot["config"]["training_config_overrides"]["nested"]["schedule"].append(4)
+        snapshot["config"]["training_config_overrides"]["task_schedule"].append(4)
         snapshot.update(status="completed", user_id="intruder", current_episode=-1)
         snapshot["metrics"]["loss"] = float("nan")
         current = service.get_training_status(job_id, user_id="owner")
@@ -501,32 +506,36 @@ async def test_accepted_configuration_isolated_from_caller_status_and_trainer_mu
         "original",
         "caller-only",
     ]
-    assert request_data.training_config_overrides["nested"]["schedule"] == [1, 2, 3]
+    assert request_data.training_config_overrides["task_schedule"] == ["one", "two", 3]
 
 
 @pytest.mark.asyncio
 async def test_reused_request_does_not_share_mutable_training_inputs(
     service, request_data, monkeypatch
 ):
-    request_data.training_config_overrides = {"nested": {"value": "original"}}
+    request_data.training_config_overrides = {"objective_overrides": {"clip_low": 0.1}}
     observed = []
 
     async def train(**kwargs):
-        observed.append(kwargs["config_overrides"]["nested"]["value"])
-        kwargs["config_overrides"]["nested"]["value"] = "trainer-changed"
+        observed.append(kwargs["config_overrides"]["objective_overrides"]["clip_low"])
+        kwargs["config_overrides"]["objective_overrides"][
+            "clip_low"
+        ] = "trainer-changed"
 
     set_trainer(monkeypatch, train)
     first = await service.start_training(request_data)
     second = await service.start_training(request_data)
     await asyncio.gather(service._tasks[first], service._tasks[second])
-    assert observed == ["original", "original"]
-    assert request_data.training_config_overrides["nested"]["value"] == "original"
+    assert observed == [0.1, 0.1]
+    assert (
+        request_data.training_config_overrides["objective_overrides"]["clip_low"] == 0.1
+    )
     for job_id in (first, second):
         assert (
             service.get_training_status(job_id)["config"]["training_config_overrides"][
-                "nested"
-            ]["value"]
-            == "original"
+                "objective_overrides"
+            ]["clip_low"]
+            == 0.1
         )
 
 

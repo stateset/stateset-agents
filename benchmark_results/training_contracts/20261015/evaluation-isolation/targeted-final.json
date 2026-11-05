@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "job_id": "010afda17bb8",
+  "exit_code": 0,
+  "passed": 87,
+  "seconds": 13.07,
+  "log_sha256": "0834710b1b97f665005cdaad555db3ffeda0d55af90317d2b767233f580235cb",
+  "output": "$ env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 .venv/bin/python -m pytest -q -n0 -o addopts= --timeout=90 tests/unit/test_evaluation_integrity.py tests/unit/test_native_evaluation_isolation.py --tb=short\n........................................................................ [ 82%]\n...............                                                          [100%]\n87 passed in 13.07s\n"
+}

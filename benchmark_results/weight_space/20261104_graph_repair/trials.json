@@ -1,0 +1,2174 @@
+[
+  {
+    "regime": "continued",
+    "seed": 0,
+    "lr": 0.001,
+    "steps": 5000,
+    "message_targets": 92480000,
+    "selected_step": 4500,
+    "selection_key": [
+      1019,
+      -0.0021256343461573124
+    ],
+    "checkpoint": "continued_seed0_lr0.001.safetensors",
+    "history": [
+      {
+        "step": 0,
+        "n": 1024,
+        "exact_graphs": 1016,
+        "graph_accuracy": 0.9921875,
+        "node_accuracy": 0.9990808963775635,
+        "distance_mae": 0.0014935662038624287,
+        "raw_mae": 0.005650474689900875,
+        "max_raw_error": 3.4619903564453125,
+        "component": {
+          "n": 1589,
+          "max_error": 0.03664293885231018,
+          "mean_error": 0.014622284099459648
+        }
+      },
+      {
+        "step": 500,
+        "n": 1024,
+        "exact_graphs": 1014,
+        "graph_accuracy": 0.990234375,
+        "node_accuracy": 0.9990234375,
+        "distance_mae": 0.0015510109951719642,
+        "raw_mae": 0.0062662153504788876,
+        "max_raw_error": 3.199993133544922,
+        "component": {
+          "n": 1589,
+          "max_error": 0.03648608922958374,
+          "mean_error": 0.01439991407096386
+        }
+      },
+      {
+        "step": 1000,
+        "n": 1024,
+        "exact_graphs": 1014,
+        "graph_accuracy": 0.990234375,
+        "node_accuracy": 0.9990234375,
+        "distance_mae": 0.0014361212961375713,
+        "raw_mae": 0.004106624983251095,
+        "max_raw_error": 2.8008346557617188,
+        "component": {
+          "n": 1589,
+          "max_error": 0.03549635410308838,
+          "mean_error": 0.01384712290018797
+        }
+      },
+      {
+        "step": 1500,
+        "n": 1024,
+        "exact_graphs": 1017,
+        "graph_accuracy": 0.9931640625,
+        "node_accuracy": 0.9991957545280457,
+        "distance_mae": 0.0010914521990343928,
+        "raw_mae": 0.005784356966614723,
+        "max_raw_error": 2.376300811767578,
+        "component": {
+          "n": 1589,
+          "max_error": 0.034375935792922974,
+          "mean_error": 0.013243951834738255
+        }
+      },
+      {
+        "step": 2000,
+        "n": 1024,
+        "exact_graphs": 1019,
+        "graph_accuracy": 0.9951171875,
+        "node_accuracy": 0.9993106722831726,
+        "distance_mae": 0.0009765625,
+        "raw_mae": 0.004285246599465609,
+        "max_raw_error": 2.0958518981933594,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0330655574798584,
+          "mean_error": 0.01261062454432249
+        }
+      },
+      {
+        "step": 2500,
+        "n": 1024,
+        "exact_graphs": 1019,
+        "graph_accuracy": 0.9951171875,
+        "node_accuracy": 0.9993106722831726,
+        "distance_mae": 0.0007467831019312143,
+        "raw_mae": 0.0033253442961722612,
+        "max_raw_error": 1.7322273254394531,
+        "component": {
+          "n": 1589,
+          "max_error": 0.03101128339767456,
+          "mean_error": 0.011642811819911003
+        }
+      },
+      {
+        "step": 3000,
+        "n": 1024,
+        "exact_graphs": 1019,
+        "graph_accuracy": 0.9951171875,
+        "node_accuracy": 0.9994255304336548,
+        "distance_mae": 0.0006318934028968215,
+        "raw_mae": 0.002700370503589511,
+        "max_raw_error": 1.6365585327148438,
+        "component": {
+          "n": 1589,
+          "max_error": 0.030547738075256348,
+          "mean_error": 0.011440371163189411
+        }
+      },
+      {
+        "step": 3500,
+        "n": 1024,
+        "exact_graphs": 1019,
+        "graph_accuracy": 0.9951171875,
+        "node_accuracy": 0.9994255304336548,
+        "distance_mae": 0.0006318934028968215,
+        "raw_mae": 0.002514793071895838,
+        "max_raw_error": 1.5386924743652344,
+        "component": {
+          "n": 1589,
+          "max_error": 0.030153363943099976,
+          "mean_error": 0.01122965570539236
+        }
+      },
+      {
+        "step": 4000,
+        "n": 1024,
+        "exact_graphs": 1019,
+        "graph_accuracy": 0.9951171875,
+        "node_accuracy": 0.9994255304336548,
+        "distance_mae": 0.0005744485533796251,
+        "raw_mae": 0.004802124574780464,
+        "max_raw_error": 1.4674301147460938,
+        "component": {
+          "n": 1589,
+          "max_error": 0.029977768659591675,
+          "mean_error": 0.011114216409623623
+        }
+      },
+      {
+        "step": 4500,
+        "n": 1024,
+        "exact_graphs": 1019,
+        "graph_accuracy": 0.9951171875,
+        "node_accuracy": 0.9994255304336548,
+        "distance_mae": 0.0005744485533796251,
+        "raw_mae": 0.0021256343461573124,
+        "max_raw_error": 1.402069091796875,
+        "component": {
+          "n": 1589,
+          "max_error": 0.02974778413772583,
+          "mean_error": 0.010986062698066235
+        }
+      },
+      {
+        "step": 5000,
+        "n": 1024,
+        "exact_graphs": 1019,
+        "graph_accuracy": 0.9951171875,
+        "node_accuracy": 0.9994829893112183,
+        "distance_mae": 0.0005170037038624287,
+        "raw_mae": 0.0026195289101451635,
+        "max_raw_error": 1.3336944580078125,
+        "component": {
+          "n": 1589,
+          "max_error": 0.029589802026748657,
+          "mean_error": 0.010899386368691921
+        }
+      }
+    ],
+    "seconds": 64.04723037200165
+  },
+  {
+    "regime": "continued",
+    "seed": 0,
+    "lr": 0.003,
+    "steps": 5000,
+    "message_targets": 92480000,
+    "selected_step": 5000,
+    "selection_key": [
+      1021,
+      -0.002273647114634514
+    ],
+    "checkpoint": "continued_seed0_lr0.003.safetensors",
+    "history": [
+      {
+        "step": 0,
+        "n": 1024,
+        "exact_graphs": 1016,
+        "graph_accuracy": 0.9921875,
+        "node_accuracy": 0.9990808963775635,
+        "distance_mae": 0.0014935662038624287,
+        "raw_mae": 0.005650474689900875,
+        "max_raw_error": 3.4619903564453125,
+        "component": {
+          "n": 1589,
+          "max_error": 0.03664293885231018,
+          "mean_error": 0.014622284099459648
+        }
+      },
+      {
+        "step": 500,
+        "n": 1024,
+        "exact_graphs": 1014,
+        "graph_accuracy": 0.990234375,
+        "node_accuracy": 0.9990234375,
+        "distance_mae": 0.0014935662038624287,
+        "raw_mae": 0.005838603712618351,
+        "max_raw_error": 2.934032440185547,
+        "component": {
+          "n": 1589,
+          "max_error": 0.036096781492233276,
+          "mean_error": 0.014114719815552235
+        }
+      },
+      {
+        "step": 1000,
+        "n": 1024,
+        "exact_graphs": 1015,
+        "graph_accuracy": 0.9912109375,
+        "node_accuracy": 0.9990808963775635,
+        "distance_mae": 0.0013212315971031785,
+        "raw_mae": 0.003362692426890135,
+        "max_raw_error": 2.5303001403808594,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0349506139755249,
+          "mean_error": 0.013559483923017979
+        }
+      },
+      {
+        "step": 1500,
+        "n": 1024,
+        "exact_graphs": 1017,
+        "graph_accuracy": 0.9931640625,
+        "node_accuracy": 0.9992532134056091,
+        "distance_mae": 0.0010340074077248573,
+        "raw_mae": 0.004570981953293085,
+        "max_raw_error": 2.2396392822265625,
+        "component": {
+          "n": 1589,
+          "max_error": 0.033790796995162964,
+          "mean_error": 0.01299912016838789
+        }
+      },
+      {
+        "step": 2000,
+        "n": 1024,
+        "exact_graphs": 1018,
+        "graph_accuracy": 0.994140625,
+        "node_accuracy": 0.9993106722831726,
+        "distance_mae": 0.0008042279514484107,
+        "raw_mae": 0.003954605665057898,
+        "max_raw_error": 2.0087928771972656,
+        "component": {
+          "n": 1589,
+          "max_error": 0.03273040056228638,
+          "mean_error": 0.012501079589128494
+        }
+      },
+      {
+        "step": 2500,
+        "n": 1024,
+        "exact_graphs": 1019,
+        "graph_accuracy": 0.9951171875,
+        "node_accuracy": 0.9994255304336548,
+        "distance_mae": 0.0006318934028968215,
+        "raw_mae": 0.00228305347263813,
+        "max_raw_error": 1.6397666931152344,
+        "component": {
+          "n": 1589,
+          "max_error": 0.03083270788192749,
+          "mean_error": 0.011571899987757206
+        }
+      },
+      {
+        "step": 3000,
+        "n": 1024,
+        "exact_graphs": 1019,
+        "graph_accuracy": 0.9951171875,
+        "node_accuracy": 0.9994255304336548,
+        "distance_mae": 0.0005744485533796251,
+        "raw_mae": 0.0018426015740260482,
+        "max_raw_error": 1.492095947265625,
+        "component": {
+          "n": 1589,
+          "max_error": 0.030086129903793335,
+          "mean_error": 0.011196536011993885
+        }
+      },
+      {
+        "step": 3500,
+        "n": 1024,
+        "exact_graphs": 1019,
+        "graph_accuracy": 0.9951171875,
+        "node_accuracy": 0.9994255304336548,
+        "distance_mae": 0.0005744485533796251,
+        "raw_mae": 0.0026257564313709736,
+        "max_raw_error": 1.3987197875976562,
+        "component": {
+          "n": 1589,
+          "max_error": 0.029703915119171143,
+          "mean_error": 0.010985585860908031
+        }
+      },
+      {
+        "step": 4000,
+        "n": 1024,
+        "exact_graphs": 1019,
+        "graph_accuracy": 0.9951171875,
+        "node_accuracy": 0.9995404481887817,
+        "distance_mae": 0.0004595588252414018,
+        "raw_mae": 0.004592900164425373,
+        "max_raw_error": 1.3414840698242188,
+        "component": {
+          "n": 1589,
+          "max_error": 0.029537737369537354,
+          "mean_error": 0.010881887748837471
+        }
+      },
+      {
+        "step": 4500,
+        "n": 1024,
+        "exact_graphs": 1020,
+        "graph_accuracy": 0.99609375,
+        "node_accuracy": 0.9995979070663452,
+        "distance_mae": 0.0004021139757242054,
+        "raw_mae": 0.002005943562835455,
+        "max_raw_error": 1.2928504943847656,
+        "component": {
+          "n": 1589,
+          "max_error": 0.029302358627319336,
+          "mean_error": 0.010757820680737495
+        }
+      },
+      {
+        "step": 5000,
+        "n": 1024,
+        "exact_graphs": 1021,
+        "graph_accuracy": 0.9970703125,
+        "node_accuracy": 0.9997127652168274,
+        "distance_mae": 0.00028722427668981254,
+        "raw_mae": 0.002273647114634514,
+        "max_raw_error": 1.2267341613769531,
+        "component": {
+          "n": 1589,
+          "max_error": 0.029133468866348267,
+          "mean_error": 0.010667631402611732
+        }
+      }
+    ],
+    "seconds": 58.66900738299955
+  },
+  {
+    "regime": "continued",
+    "seed": 1,
+    "lr": 0.001,
+    "steps": 5000,
+    "message_targets": 92480000,
+    "selected_step": 4500,
+    "selection_key": [
+      1024,
+      -0.002243317198008299
+    ],
+    "checkpoint": "continued_seed1_lr0.001.safetensors",
+    "history": [
+      {
+        "step": 0,
+        "n": 1024,
+        "exact_graphs": 1012,
+        "graph_accuracy": 0.98828125,
+        "node_accuracy": 0.9983915686607361,
+        "distance_mae": 0.0021254594903439283,
+        "raw_mae": 0.04785223677754402,
+        "max_raw_error": 3.3720130920410156,
+        "component": {
+          "n": 1589,
+          "max_error": 0.05727285146713257,
+          "mean_error": 0.02174355648458004
+        }
+      },
+      {
+        "step": 500,
+        "n": 1024,
+        "exact_graphs": 1016,
+        "graph_accuracy": 0.9921875,
+        "node_accuracy": 0.9990808963775635,
+        "distance_mae": 0.0013212315971031785,
+        "raw_mae": 0.03665902093052864,
+        "max_raw_error": 2.8517799377441406,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0549049973487854,
+          "mean_error": 0.020976154133677483
+        }
+      },
+      {
+        "step": 1000,
+        "n": 1024,
+        "exact_graphs": 1021,
+        "graph_accuracy": 0.9970703125,
+        "node_accuracy": 0.9995979070663452,
+        "distance_mae": 0.0005170037038624287,
+        "raw_mae": 0.012449793517589569,
+        "max_raw_error": 1.9641799926757812,
+        "component": {
+          "n": 1589,
+          "max_error": 0.05069690942764282,
+          "mean_error": 0.019464896991848946
+        }
+      },
+      {
+        "step": 1500,
+        "n": 1024,
+        "exact_graphs": 1021,
+        "graph_accuracy": 0.9970703125,
+        "node_accuracy": 0.9996553063392639,
+        "distance_mae": 0.00034466912620700896,
+        "raw_mae": 0.017331883311271667,
+        "max_raw_error": 1.3330650329589844,
+        "component": {
+          "n": 1589,
+          "max_error": 0.04849648475646973,
+          "mean_error": 0.01856704242527485
+        }
+      },
+      {
+        "step": 2000,
+        "n": 1024,
+        "exact_graphs": 1021,
+        "graph_accuracy": 0.9970703125,
+        "node_accuracy": 0.9996553063392639,
+        "distance_mae": 0.00034466912620700896,
+        "raw_mae": 0.0179424025118351,
+        "max_raw_error": 1.0677680969238281,
+        "component": {
+          "n": 1589,
+          "max_error": 0.04713505506515503,
+          "mean_error": 0.01808258146047592
+        }
+      },
+      {
+        "step": 2500,
+        "n": 1024,
+        "exact_graphs": 1023,
+        "graph_accuracy": 0.9990234375,
+        "node_accuracy": 0.9999425411224365,
+        "distance_mae": 5.7444853155175224e-05,
+        "raw_mae": 0.02917533367872238,
+        "max_raw_error": 0.5087699890136719,
+        "component": {
+          "n": 1589,
+          "max_error": 0.04554218053817749,
+          "mean_error": 0.01722564920783043
+        }
+      },
+      {
+        "step": 3000,
+        "n": 1024,
+        "exact_graphs": 1023,
+        "graph_accuracy": 0.9990234375,
+        "node_accuracy": 0.9999425411224365,
+        "distance_mae": 5.7444853155175224e-05,
+        "raw_mae": 0.0016150425653904676,
+        "max_raw_error": 0.5381851196289062,
+        "component": {
+          "n": 1589,
+          "max_error": 0.04493457078933716,
+          "mean_error": 0.017019612714648247
+        }
+      },
+      {
+        "step": 3500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.0029752394184470177,
+        "max_raw_error": 0.45876312255859375,
+        "component": {
+          "n": 1589,
+          "max_error": 0.044302284717559814,
+          "mean_error": 0.016715575009584427
+        }
+      },
+      {
+        "step": 4000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.0036144612822681665,
+        "max_raw_error": 0.4053916931152344,
+        "component": {
+          "n": 1589,
+          "max_error": 0.04383230209350586,
+          "mean_error": 0.01651443913578987
+        }
+      },
+      {
+        "step": 4500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.002243317198008299,
+        "max_raw_error": 0.37770843505859375,
+        "component": {
+          "n": 1589,
+          "max_error": 0.04339319467544556,
+          "mean_error": 0.01633484661579132
+        }
+      },
+      {
+        "step": 5000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.008712315931916237,
+        "max_raw_error": 0.30319976806640625,
+        "component": {
+          "n": 1589,
+          "max_error": 0.042953312397003174,
+          "mean_error": 0.016135485842823982
+        }
+      }
+    ],
+    "seconds": 61.518747001999145
+  },
+  {
+    "regime": "continued",
+    "seed": 1,
+    "lr": 0.003,
+    "steps": 5000,
+    "message_targets": 92480000,
+    "selected_step": 5000,
+    "selection_key": [
+      1024,
+      -0.007458354812115431
+    ],
+    "checkpoint": "continued_seed1_lr0.003.safetensors",
+    "history": [
+      {
+        "step": 0,
+        "n": 1024,
+        "exact_graphs": 1012,
+        "graph_accuracy": 0.98828125,
+        "node_accuracy": 0.9983915686607361,
+        "distance_mae": 0.0021254594903439283,
+        "raw_mae": 0.04785223677754402,
+        "max_raw_error": 3.3720130920410156,
+        "component": {
+          "n": 1589,
+          "max_error": 0.05727285146713257,
+          "mean_error": 0.02174355648458004
+        }
+      },
+      {
+        "step": 500,
+        "n": 1024,
+        "exact_graphs": 1014,
+        "graph_accuracy": 0.990234375,
+        "node_accuracy": 0.9988511204719543,
+        "distance_mae": 0.0016084559028968215,
+        "raw_mae": 0.03638704493641853,
+        "max_raw_error": 3.2764053344726562,
+        "component": {
+          "n": 1589,
+          "max_error": 0.05721813440322876,
+          "mean_error": 0.0222825538367033
+        }
+      },
+      {
+        "step": 1000,
+        "n": 1024,
+        "exact_graphs": 1017,
+        "graph_accuracy": 0.9931640625,
+        "node_accuracy": 0.9992532134056091,
+        "distance_mae": 0.0010914521990343928,
+        "raw_mae": 0.0070292409509420395,
+        "max_raw_error": 2.5028457641601562,
+        "component": {
+          "n": 1589,
+          "max_error": 0.054559171199798584,
+          "mean_error": 0.021182987838983536
+        }
+      },
+      {
+        "step": 1500,
+        "n": 1024,
+        "exact_graphs": 1021,
+        "graph_accuracy": 0.9970703125,
+        "node_accuracy": 0.9996553063392639,
+        "distance_mae": 0.0004595588252414018,
+        "raw_mae": 0.02709658443927765,
+        "max_raw_error": 1.7666549682617188,
+        "component": {
+          "n": 1589,
+          "max_error": 0.05271965265274048,
+          "mean_error": 0.02022184617817402
+        }
+      },
+      {
+        "step": 2000,
+        "n": 1024,
+        "exact_graphs": 1021,
+        "graph_accuracy": 0.9970703125,
+        "node_accuracy": 0.9996553063392639,
+        "distance_mae": 0.0004021139757242054,
+        "raw_mae": 0.012881911359727383,
+        "max_raw_error": 1.5271949768066406,
+        "component": {
+          "n": 1589,
+          "max_error": 0.051365435123443604,
+          "mean_error": 0.019746264442801476
+        }
+      },
+      {
+        "step": 2500,
+        "n": 1024,
+        "exact_graphs": 1022,
+        "graph_accuracy": 0.998046875,
+        "node_accuracy": 0.9998276829719543,
+        "distance_mae": 0.00017233456310350448,
+        "raw_mae": 0.06144355237483978,
+        "max_raw_error": 0.8173141479492188,
+        "component": {
+          "n": 1589,
+          "max_error": 0.04949069023132324,
+          "mean_error": 0.018734974786639214
+        }
+      },
+      {
+        "step": 3000,
+        "n": 1024,
+        "exact_graphs": 1022,
+        "graph_accuracy": 0.998046875,
+        "node_accuracy": 0.9997702240943909,
+        "distance_mae": 0.0002297794126207009,
+        "raw_mae": 0.011681819334626198,
+        "max_raw_error": 0.7947959899902344,
+        "component": {
+          "n": 1589,
+          "max_error": 0.04882478713989258,
+          "mean_error": 0.018427537754178047
+        }
+      },
+      {
+        "step": 3500,
+        "n": 1024,
+        "exact_graphs": 1022,
+        "graph_accuracy": 0.998046875,
+        "node_accuracy": 0.9997702240943909,
+        "distance_mae": 0.0002297794126207009,
+        "raw_mae": 0.007625991944223642,
+        "max_raw_error": 0.7275543212890625,
+        "component": {
+          "n": 1589,
+          "max_error": 0.048303306102752686,
+          "mean_error": 0.018232543021440506
+        }
+      },
+      {
+        "step": 4000,
+        "n": 1024,
+        "exact_graphs": 1022,
+        "graph_accuracy": 0.998046875,
+        "node_accuracy": 0.999885082244873,
+        "distance_mae": 0.00011488970631035045,
+        "raw_mae": 0.0029713695403188467,
+        "max_raw_error": 0.5728836059570312,
+        "component": {
+          "n": 1589,
+          "max_error": 0.047717154026031494,
+          "mean_error": 0.01792548969388008
+        }
+      },
+      {
+        "step": 4500,
+        "n": 1024,
+        "exact_graphs": 1023,
+        "graph_accuracy": 0.9990234375,
+        "node_accuracy": 0.9999425411224365,
+        "distance_mae": 5.7444853155175224e-05,
+        "raw_mae": 0.002449711551889777,
+        "max_raw_error": 0.5284156799316406,
+        "component": {
+          "n": 1589,
+          "max_error": 0.047250568866729736,
+          "mean_error": 0.017703784629702568
+        }
+      },
+      {
+        "step": 5000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.007458354812115431,
+        "max_raw_error": 0.4427299499511719,
+        "component": {
+          "n": 1589,
+          "max_error": 0.04677361249923706,
+          "mean_error": 0.01745588704943657
+        }
+      }
+    ],
+    "seconds": 28.110193788998004
+  },
+  {
+    "regime": "continued",
+    "seed": 2,
+    "lr": 0.001,
+    "steps": 5000,
+    "message_targets": 92480000,
+    "selected_step": 5000,
+    "selection_key": [
+      942,
+      -0.10802184045314789
+    ],
+    "checkpoint": "continued_seed2_lr0.001.safetensors",
+    "history": [
+      {
+        "step": 0,
+        "n": 1024,
+        "exact_graphs": 352,
+        "graph_accuracy": 0.34375,
+        "node_accuracy": 0.7560891509056091,
+        "distance_mae": 0.2610868513584137,
+        "raw_mae": 0.30393242835998535,
+        "max_raw_error": 8.335592269897461,
+        "component": {
+          "n": 1589,
+          "max_error": 0.03654921054840088,
+          "mean_error": 0.018346572294831276
+        }
+      },
+      {
+        "step": 500,
+        "n": 1024,
+        "exact_graphs": 563,
+        "graph_accuracy": 0.5498046875,
+        "node_accuracy": 0.9105583429336548,
+        "distance_mae": 0.10701975971460342,
+        "raw_mae": 0.2277785837650299,
+        "max_raw_error": 7.844011306762695,
+        "component": {
+          "n": 1589,
+          "max_error": 0.03321397304534912,
+          "mean_error": 0.01671803742647171
+        }
+      },
+      {
+        "step": 1000,
+        "n": 1024,
+        "exact_graphs": 499,
+        "graph_accuracy": 0.4873046875,
+        "node_accuracy": 0.8748276829719543,
+        "distance_mae": 0.1331571638584137,
+        "raw_mae": 0.23272083699703217,
+        "max_raw_error": 6.304166793823242,
+        "component": {
+          "n": 1589,
+          "max_error": 0.02815943956375122,
+          "mean_error": 0.01386164128780365
+        }
+      },
+      {
+        "step": 1500,
+        "n": 1024,
+        "exact_graphs": 579,
+        "graph_accuracy": 0.5654296875,
+        "node_accuracy": 0.9148667454719543,
+        "distance_mae": 0.0908203125,
+        "raw_mae": 0.21123380959033966,
+        "max_raw_error": 5.253059387207031,
+        "component": {
+          "n": 1589,
+          "max_error": 0.024152040481567383,
+          "mean_error": 0.011698206886649132
+        }
+      },
+      {
+        "step": 2000,
+        "n": 1024,
+        "exact_graphs": 847,
+        "graph_accuracy": 0.8271484375,
+        "node_accuracy": 0.9735753536224365,
+        "distance_mae": 0.030905330553650856,
+        "raw_mae": 0.15319454669952393,
+        "max_raw_error": 4.655712127685547,
+        "component": {
+          "n": 1589,
+          "max_error": 0.020875751972198486,
+          "mean_error": 0.009952654130756855
+        }
+      },
+      {
+        "step": 2500,
+        "n": 1024,
+        "exact_graphs": 871,
+        "graph_accuracy": 0.8505859375,
+        "node_accuracy": 0.977653980255127,
+        "distance_mae": 0.02516084536910057,
+        "raw_mae": 0.150321826338768,
+        "max_raw_error": 4.121006011962891,
+        "component": {
+          "n": 1589,
+          "max_error": 0.019199490547180176,
+          "mean_error": 0.009117405861616135
+        }
+      },
+      {
+        "step": 3000,
+        "n": 1024,
+        "exact_graphs": 924,
+        "graph_accuracy": 0.90234375,
+        "node_accuracy": 0.9833409786224365,
+        "distance_mae": 0.019129136577248573,
+        "raw_mae": 0.12740446627140045,
+        "max_raw_error": 3.878559112548828,
+        "component": {
+          "n": 1589,
+          "max_error": 0.017772555351257324,
+          "mean_error": 0.008471240289509296
+        }
+      },
+      {
+        "step": 3500,
+        "n": 1024,
+        "exact_graphs": 935,
+        "graph_accuracy": 0.9130859375,
+        "node_accuracy": 0.9855813384056091,
+        "distance_mae": 0.016314338892698288,
+        "raw_mae": 0.12591928243637085,
+        "max_raw_error": 3.5415992736816406,
+        "component": {
+          "n": 1589,
+          "max_error": 0.016610383987426758,
+          "mean_error": 0.00788151565939188
+        }
+      },
+      {
+        "step": 4000,
+        "n": 1024,
+        "exact_graphs": 939,
+        "graph_accuracy": 0.9169921875,
+        "node_accuracy": 0.9868451356887817,
+        "distance_mae": 0.014763327315449715,
+        "raw_mae": 0.12056346237659454,
+        "max_raw_error": 3.3199996948242188,
+        "component": {
+          "n": 1589,
+          "max_error": 0.01576220989227295,
+          "mean_error": 0.007441574241966009
+        }
+      },
+      {
+        "step": 4500,
+        "n": 1024,
+        "exact_graphs": 919,
+        "graph_accuracy": 0.8974609375,
+        "node_accuracy": 0.9866153597831726,
+        "distance_mae": 0.014820772223174572,
+        "raw_mae": 0.12726786732673645,
+        "max_raw_error": 3.0895309448242188,
+        "component": {
+          "n": 1589,
+          "max_error": 0.015141487121582031,
+          "mean_error": 0.0071251834742724895
+        }
+      },
+      {
+        "step": 5000,
+        "n": 1024,
+        "exact_graphs": 942,
+        "graph_accuracy": 0.919921875,
+        "node_accuracy": 0.9875344634056091,
+        "distance_mae": 0.014016544446349144,
+        "raw_mae": 0.10802184045314789,
+        "max_raw_error": 3.0873985290527344,
+        "component": {
+          "n": 1589,
+          "max_error": 0.014614999294281006,
+          "mean_error": 0.0069184685125947
+        }
+      }
+    ],
+    "seconds": 29.07283950800047
+  },
+  {
+    "regime": "continued",
+    "seed": 2,
+    "lr": 0.003,
+    "steps": 5000,
+    "message_targets": 92480000,
+    "selected_step": 4500,
+    "selection_key": [
+      964,
+      -0.1198091208934784
+    ],
+    "checkpoint": "continued_seed2_lr0.003.safetensors",
+    "history": [
+      {
+        "step": 0,
+        "n": 1024,
+        "exact_graphs": 352,
+        "graph_accuracy": 0.34375,
+        "node_accuracy": 0.7560891509056091,
+        "distance_mae": 0.2610868513584137,
+        "raw_mae": 0.30393242835998535,
+        "max_raw_error": 8.335592269897461,
+        "component": {
+          "n": 1589,
+          "max_error": 0.03654921054840088,
+          "mean_error": 0.018346572294831276
+        }
+      },
+      {
+        "step": 500,
+        "n": 1024,
+        "exact_graphs": 643,
+        "graph_accuracy": 0.6279296875,
+        "node_accuracy": 0.9274471402168274,
+        "distance_mae": 0.08835018426179886,
+        "raw_mae": 0.21116581559181213,
+        "max_raw_error": 7.559164047241211,
+        "component": {
+          "n": 1589,
+          "max_error": 0.032292306423187256,
+          "mean_error": 0.01611095480620861
+        }
+      },
+      {
+        "step": 1000,
+        "n": 1024,
+        "exact_graphs": 639,
+        "graph_accuracy": 0.6240234375,
+        "node_accuracy": 0.926872730255127,
+        "distance_mae": 0.08180147409439087,
+        "raw_mae": 0.20542621612548828,
+        "max_raw_error": 6.310342788696289,
+        "component": {
+          "n": 1589,
+          "max_error": 0.02777153253555298,
+          "mean_error": 0.013706826604902744
+        }
+      },
+      {
+        "step": 1500,
+        "n": 1024,
+        "exact_graphs": 760,
+        "graph_accuracy": 0.7421875,
+        "node_accuracy": 0.9589269161224365,
+        "distance_mae": 0.04664522036910057,
+        "raw_mae": 0.17540383338928223,
+        "max_raw_error": 5.195079803466797,
+        "component": {
+          "n": 1589,
+          "max_error": 0.023428380489349365,
+          "mean_error": 0.011286038905382156
+        }
+      },
+      {
+        "step": 2000,
+        "n": 1024,
+        "exact_graphs": 873,
+        "graph_accuracy": 0.8525390625,
+        "node_accuracy": 0.9777688384056091,
+        "distance_mae": 0.025390625,
+        "raw_mae": 0.15508770942687988,
+        "max_raw_error": 4.383563995361328,
+        "component": {
+          "n": 1589,
+          "max_error": 0.020183026790618896,
+          "mean_error": 0.009546994231641293
+        }
+      },
+      {
+        "step": 2500,
+        "n": 1024,
+        "exact_graphs": 882,
+        "graph_accuracy": 0.861328125,
+        "node_accuracy": 0.9799517393112183,
+        "distance_mae": 0.022288603708148003,
+        "raw_mae": 0.15170136094093323,
+        "max_raw_error": 3.904857635498047,
+        "component": {
+          "n": 1589,
+          "max_error": 0.01849210262298584,
+          "mean_error": 0.008740364573895931
+        }
+      },
+      {
+        "step": 3000,
+        "n": 1024,
+        "exact_graphs": 928,
+        "graph_accuracy": 0.90625,
+        "node_accuracy": 0.9838579893112183,
+        "distance_mae": 0.018497243523597717,
+        "raw_mae": 0.11352123320102692,
+        "max_raw_error": 3.7856903076171875,
+        "component": {
+          "n": 1589,
+          "max_error": 0.017048239707946777,
+          "mean_error": 0.008160366676747799
+        }
+      },
+      {
+        "step": 3500,
+        "n": 1024,
+        "exact_graphs": 949,
+        "graph_accuracy": 0.9267578125,
+        "node_accuracy": 0.9889705777168274,
+        "distance_mae": 0.012637867592275143,
+        "raw_mae": 0.12637966871261597,
+        "max_raw_error": 3.285449981689453,
+        "component": {
+          "n": 1589,
+          "max_error": 0.01569133996963501,
+          "mean_error": 0.007418868597596884
+        }
+      },
+      {
+        "step": 4000,
+        "n": 1024,
+        "exact_graphs": 953,
+        "graph_accuracy": 0.9306640625,
+        "node_accuracy": 0.9893152713775635,
+        "distance_mae": 0.012120864354074001,
+        "raw_mae": 0.11426662653684616,
+        "max_raw_error": 3.114765167236328,
+        "component": {
+          "n": 1589,
+          "max_error": 0.014767706394195557,
+          "mean_error": 0.007004346698522568
+        }
+      },
+      {
+        "step": 4500,
+        "n": 1024,
+        "exact_graphs": 964,
+        "graph_accuracy": 0.94140625,
+        "node_accuracy": 0.9909811615943909,
+        "distance_mae": 0.009765625,
+        "raw_mae": 0.1198091208934784,
+        "max_raw_error": 2.88458251953125,
+        "component": {
+          "n": 1589,
+          "max_error": 0.014164566993713379,
+          "mean_error": 0.0066685061901807785
+        }
+      },
+      {
+        "step": 5000,
+        "n": 1024,
+        "exact_graphs": 957,
+        "graph_accuracy": 0.9345703125,
+        "node_accuracy": 0.9897748231887817,
+        "distance_mae": 0.011201746761798859,
+        "raw_mae": 0.09971216320991516,
+        "max_raw_error": 2.8741722106933594,
+        "component": {
+          "n": 1589,
+          "max_error": 0.013604581356048584,
+          "mean_error": 0.006442230194807053
+        }
+      }
+    ],
+    "seconds": 29.69029538399991
+  },
+  {
+    "regime": "coverage",
+    "seed": 0,
+    "lr": 0.001,
+    "steps": 5000,
+    "message_targets": 92480000,
+    "selected_step": 3000,
+    "selection_key": [
+      1024,
+      -0.0006087934598326683
+    ],
+    "checkpoint": "coverage_seed0_lr0.001.safetensors",
+    "history": [
+      {
+        "step": 0,
+        "n": 1024,
+        "exact_graphs": 1016,
+        "graph_accuracy": 0.9921875,
+        "node_accuracy": 0.9990808963775635,
+        "distance_mae": 0.0014935662038624287,
+        "raw_mae": 0.005650474689900875,
+        "max_raw_error": 3.4619903564453125,
+        "component": {
+          "n": 1589,
+          "max_error": 0.03664293885231018,
+          "mean_error": 0.014622284099459648
+        }
+      },
+      {
+        "step": 500,
+        "n": 1024,
+        "exact_graphs": 1023,
+        "graph_accuracy": 0.9990234375,
+        "node_accuracy": 0.9998276829719543,
+        "distance_mae": 0.00017233456310350448,
+        "raw_mae": 0.019476737827062607,
+        "max_raw_error": 0.6724967956542969,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0014723241329193115,
+          "mean_error": 0.00026831767172552645
+        }
+      },
+      {
+        "step": 1000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.009873089380562305,
+        "max_raw_error": 0.38494110107421875,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0010353028774261475,
+          "mean_error": 0.00015319371595978737
+        }
+      },
+      {
+        "step": 1500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.006066675763577223,
+        "max_raw_error": 0.19997024536132812,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0007600188255310059,
+          "mean_error": 7.870667468523607e-05
+        }
+      },
+      {
+        "step": 2000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.0010088736889883876,
+        "max_raw_error": 0.1561279296875,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0006838738918304443,
+          "mean_error": 3.441596345510334e-05
+        }
+      },
+      {
+        "step": 2500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.009456926956772804,
+        "max_raw_error": 0.20623016357421875,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0007054507732391357,
+          "mean_error": 6.1028797063045204e-05
+        }
+      },
+      {
+        "step": 3000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.0006087934598326683,
+        "max_raw_error": 0.124237060546875,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0006279349327087402,
+          "mean_error": 1.8624812582856975e-05
+        }
+      },
+      {
+        "step": 3500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.0019367808708921075,
+        "max_raw_error": 0.1357269287109375,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0006338059902191162,
+          "mean_error": 1.105208502849564e-05
+        }
+      },
+      {
+        "step": 4000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.0019536102190613747,
+        "max_raw_error": 0.13262939453125,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0006303489208221436,
+          "mean_error": 9.381628842675127e-06
+        }
+      },
+      {
+        "step": 4500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.001797339180484414,
+        "max_raw_error": 0.1311492919921875,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0006238222122192383,
+          "mean_error": 9.37231925490778e-06
+        }
+      },
+      {
+        "step": 5000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.0018780350219458342,
+        "max_raw_error": 0.13134002685546875,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0006239414215087891,
+          "mean_error": 8.920902473619208e-06
+        }
+      }
+    ],
+    "seconds": 29.576094957999885
+  },
+  {
+    "regime": "coverage",
+    "seed": 0,
+    "lr": 0.003,
+    "steps": 5000,
+    "message_targets": 92480000,
+    "selected_step": 2000,
+    "selection_key": [
+      1024,
+      -0.000757554778829217
+    ],
+    "checkpoint": "coverage_seed0_lr0.003.safetensors",
+    "history": [
+      {
+        "step": 0,
+        "n": 1024,
+        "exact_graphs": 1016,
+        "graph_accuracy": 0.9921875,
+        "node_accuracy": 0.9990808963775635,
+        "distance_mae": 0.0014935662038624287,
+        "raw_mae": 0.005650474689900875,
+        "max_raw_error": 3.4619903564453125,
+        "component": {
+          "n": 1589,
+          "max_error": 0.03664293885231018,
+          "mean_error": 0.014622284099459648
+        }
+      },
+      {
+        "step": 500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.021170420572161674,
+        "max_raw_error": 0.3979644775390625,
+        "component": {
+          "n": 1589,
+          "max_error": 0.001366943120956421,
+          "mean_error": 0.00025130342692136765
+        }
+      },
+      {
+        "step": 1000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.008895077742636204,
+        "max_raw_error": 0.19969940185546875,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0010184645652770996,
+          "mean_error": 0.00012522426550276577
+        }
+      },
+      {
+        "step": 1500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.001951610785908997,
+        "max_raw_error": 0.11781692504882812,
+        "component": {
+          "n": 1589,
+          "max_error": 0.000874638557434082,
+          "mean_error": 4.899181658402085e-05
+        }
+      },
+      {
+        "step": 2000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.000757554778829217,
+        "max_raw_error": 0.09519195556640625,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0007874369621276855,
+          "mean_error": 1.8932796592707746e-05
+        }
+      },
+      {
+        "step": 2500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.0018904439639300108,
+        "max_raw_error": 0.09707260131835938,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0007600784301757812,
+          "mean_error": 1.0743512575572822e-05
+        }
+      },
+      {
+        "step": 3000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.0018719406798481941,
+        "max_raw_error": 0.09587478637695312,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0007523000240325928,
+          "mean_error": 9.622413017496001e-06
+        }
+      },
+      {
+        "step": 3500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.0021732093300670385,
+        "max_raw_error": 0.09766387939453125,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0007501840591430664,
+          "mean_error": 9.221645086654462e-06
+        }
+      },
+      {
+        "step": 4000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.0019212656188756227,
+        "max_raw_error": 0.09546279907226562,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0007436871528625488,
+          "mean_error": 9.02849296835484e-06
+        }
+      },
+      {
+        "step": 4500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.002014852361753583,
+        "max_raw_error": 0.0941619873046875,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0007392764091491699,
+          "mean_error": 9.371039595862385e-06
+        }
+      },
+      {
+        "step": 5000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.0018812887137755752,
+        "max_raw_error": 0.0950927734375,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0007399618625640869,
+          "mean_error": 9.726502867124509e-06
+        }
+      }
+    ],
+    "seconds": 29.1414919020026
+  },
+  {
+    "regime": "coverage",
+    "seed": 1,
+    "lr": 0.001,
+    "steps": 5000,
+    "message_targets": 92480000,
+    "selected_step": 5000,
+    "selection_key": [
+      1024,
+      -0.003182003041729331
+    ],
+    "checkpoint": "coverage_seed1_lr0.001.safetensors",
+    "history": [
+      {
+        "step": 0,
+        "n": 1024,
+        "exact_graphs": 1012,
+        "graph_accuracy": 0.98828125,
+        "node_accuracy": 0.9983915686607361,
+        "distance_mae": 0.0021254594903439283,
+        "raw_mae": 0.04785223677754402,
+        "max_raw_error": 3.3720130920410156,
+        "component": {
+          "n": 1589,
+          "max_error": 0.05727285146713257,
+          "mean_error": 0.02174355648458004
+        }
+      },
+      {
+        "step": 500,
+        "n": 1024,
+        "exact_graphs": 1023,
+        "graph_accuracy": 0.9990234375,
+        "node_accuracy": 0.9999425411224365,
+        "distance_mae": 5.7444853155175224e-05,
+        "raw_mae": 0.07661508768796921,
+        "max_raw_error": 0.5680961608886719,
+        "component": {
+          "n": 1589,
+          "max_error": 0.004913628101348877,
+          "mean_error": 0.0005309742409735918
+        }
+      },
+      {
+        "step": 1000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.036728385835886,
+        "max_raw_error": 0.21601104736328125,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0038958191871643066,
+          "mean_error": 0.0003468345385044813
+        }
+      },
+      {
+        "step": 1500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.02292882278561592,
+        "max_raw_error": 0.0782470703125,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0030660033226013184,
+          "mean_error": 0.00026754438295029104
+        }
+      },
+      {
+        "step": 2000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.014757277444005013,
+        "max_raw_error": 0.116241455078125,
+        "component": {
+          "n": 1589,
+          "max_error": 0.002566516399383545,
+          "mean_error": 0.00020733184646815062
+        }
+      },
+      {
+        "step": 2500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.010560509748756886,
+        "max_raw_error": 0.0738677978515625,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0016861557960510254,
+          "mean_error": 0.00015604060899931937
+        }
+      },
+      {
+        "step": 3000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.011678952723741531,
+        "max_raw_error": 0.042346954345703125,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0013845562934875488,
+          "mean_error": 0.00011146577162435278
+        }
+      },
+      {
+        "step": 3500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.006635098718106747,
+        "max_raw_error": 0.024631500244140625,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0011646151542663574,
+          "mean_error": 9.295844938606024e-05
+        }
+      },
+      {
+        "step": 4000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.005743592977523804,
+        "max_raw_error": 0.019708633422851562,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0010046958923339844,
+          "mean_error": 7.726610056124628e-05
+        }
+      },
+      {
+        "step": 4500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.0049395328387618065,
+        "max_raw_error": 0.017251968383789062,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0008828043937683105,
+          "mean_error": 6.831141945440322e-05
+        }
+      },
+      {
+        "step": 5000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.003182003041729331,
+        "max_raw_error": 0.01584625244140625,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0007777214050292969,
+          "mean_error": 6.341470725601539e-05
+        }
+      }
+    ],
+    "seconds": 27.554342898998584
+  },
+  {
+    "regime": "coverage",
+    "seed": 1,
+    "lr": 0.003,
+    "steps": 5000,
+    "message_targets": 92480000,
+    "selected_step": 5000,
+    "selection_key": [
+      1024,
+      -0.0026456378400325775
+    ],
+    "checkpoint": "coverage_seed1_lr0.003.safetensors",
+    "history": [
+      {
+        "step": 0,
+        "n": 1024,
+        "exact_graphs": 1012,
+        "graph_accuracy": 0.98828125,
+        "node_accuracy": 0.9983915686607361,
+        "distance_mae": 0.0021254594903439283,
+        "raw_mae": 0.04785223677754402,
+        "max_raw_error": 3.3720130920410156,
+        "component": {
+          "n": 1589,
+          "max_error": 0.05727285146713257,
+          "mean_error": 0.02174355648458004
+        }
+      },
+      {
+        "step": 500,
+        "n": 1024,
+        "exact_graphs": 1023,
+        "graph_accuracy": 0.9990234375,
+        "node_accuracy": 0.9999425411224365,
+        "distance_mae": 5.7444853155175224e-05,
+        "raw_mae": 0.06335711479187012,
+        "max_raw_error": 0.5448112487792969,
+        "component": {
+          "n": 1589,
+          "max_error": 0.004705369472503662,
+          "mean_error": 0.0004985411069355905
+        }
+      },
+      {
+        "step": 1000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.02971060201525688,
+        "max_raw_error": 0.14660263061523438,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0036373138427734375,
+          "mean_error": 0.00030514810350723565
+        }
+      },
+      {
+        "step": 1500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.02573513612151146,
+        "max_raw_error": 0.08646965026855469,
+        "component": {
+          "n": 1589,
+          "max_error": 0.002870917320251465,
+          "mean_error": 0.00022379760048352182
+        }
+      },
+      {
+        "step": 2000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.017128918319940567,
+        "max_raw_error": 0.05879974365234375,
+        "component": {
+          "n": 1589,
+          "max_error": 0.002339482307434082,
+          "mean_error": 0.00016607977158855647
+        }
+      },
+      {
+        "step": 2500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.04442464932799339,
+        "max_raw_error": 0.2168121337890625,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0017121434211730957,
+          "mean_error": 0.00024440433480776846
+        }
+      },
+      {
+        "step": 3000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.011065860278904438,
+        "max_raw_error": 0.04385185241699219,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0012169480323791504,
+          "mean_error": 9.777540253708139e-05
+        }
+      },
+      {
+        "step": 3500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.00545593211427331,
+        "max_raw_error": 0.018953323364257812,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0009631514549255371,
+          "mean_error": 7.776167331030592e-05
+        }
+      },
+      {
+        "step": 4000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.005492471158504486,
+        "max_raw_error": 0.020130157470703125,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0008225440979003906,
+          "mean_error": 6.471040978794917e-05
+        }
+      },
+      {
+        "step": 4500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.0038331467658281326,
+        "max_raw_error": 0.013699531555175781,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0007374882698059082,
+          "mean_error": 5.7365556131117046e-05
+        }
+      },
+      {
+        "step": 5000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.0026456378400325775,
+        "max_raw_error": 0.009494781494140625,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0006426572799682617,
+          "mean_error": 5.251894981483929e-05
+        }
+      }
+    ],
+    "seconds": 30.835822749002546
+  },
+  {
+    "regime": "coverage",
+    "seed": 2,
+    "lr": 0.001,
+    "steps": 5000,
+    "message_targets": 92480000,
+    "selected_step": 4500,
+    "selection_key": [
+      1024,
+      -0.0013365314807742834
+    ],
+    "checkpoint": "coverage_seed2_lr0.001.safetensors",
+    "history": [
+      {
+        "step": 0,
+        "n": 1024,
+        "exact_graphs": 352,
+        "graph_accuracy": 0.34375,
+        "node_accuracy": 0.7560891509056091,
+        "distance_mae": 0.2610868513584137,
+        "raw_mae": 0.30393242835998535,
+        "max_raw_error": 8.335592269897461,
+        "component": {
+          "n": 1589,
+          "max_error": 0.03654921054840088,
+          "mean_error": 0.018346572294831276
+        }
+      },
+      {
+        "step": 500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.013337097130715847,
+        "max_raw_error": 0.07247734069824219,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0025995969772338867,
+          "mean_error": 8.565029565943405e-05
+        }
+      },
+      {
+        "step": 1000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.0034902116749435663,
+        "max_raw_error": 0.019422531127929688,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0012737512588500977,
+          "mean_error": 1.2019962014164776e-05
+        }
+      },
+      {
+        "step": 1500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.0015754568157717586,
+        "max_raw_error": 0.00931406021118164,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0008424520492553711,
+          "mean_error": 5.828557732456829e-06
+        }
+      },
+      {
+        "step": 2000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.002171645872294903,
+        "max_raw_error": 0.011869430541992188,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0006363391876220703,
+          "mean_error": 4.837700998905348e-06
+        }
+      },
+      {
+        "step": 2500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.002432446461170912,
+        "max_raw_error": 0.013391494750976562,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0005145072937011719,
+          "mean_error": 7.432144229824189e-06
+        }
+      },
+      {
+        "step": 3000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.0015791256446391344,
+        "max_raw_error": 0.008716583251953125,
+        "component": {
+          "n": 1589,
+          "max_error": 0.00042808055877685547,
+          "mean_error": 1.459197846997995e-06
+        }
+      },
+      {
+        "step": 3500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.001427790499292314,
+        "max_raw_error": 0.007921218872070312,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0003743171691894531,
+          "mean_error": 7.099667413967836e-07
+        }
+      },
+      {
+        "step": 4000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.0014104839647188783,
+        "max_raw_error": 0.007798194885253906,
+        "component": {
+          "n": 1589,
+          "max_error": 0.00033974647521972656,
+          "mean_error": 6.032297505953466e-07
+        }
+      },
+      {
+        "step": 4500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.0013365314807742834,
+        "max_raw_error": 0.007453441619873047,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0003142356872558594,
+          "mean_error": 7.573053153464571e-07
+        }
+      },
+      {
+        "step": 5000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.001348692225292325,
+        "max_raw_error": 0.0074863433837890625,
+        "component": {
+          "n": 1589,
+          "max_error": 0.00029528141021728516,
+          "mean_error": 4.912037638860056e-07
+        }
+      }
+    ],
+    "seconds": 30.772302522000246
+  },
+  {
+    "regime": "coverage",
+    "seed": 2,
+    "lr": 0.003,
+    "steps": 5000,
+    "message_targets": 92480000,
+    "selected_step": 5000,
+    "selection_key": [
+      1024,
+      -0.00550335505977273
+    ],
+    "checkpoint": "coverage_seed2_lr0.003.safetensors",
+    "history": [
+      {
+        "step": 0,
+        "n": 1024,
+        "exact_graphs": 352,
+        "graph_accuracy": 0.34375,
+        "node_accuracy": 0.7560891509056091,
+        "distance_mae": 0.2610868513584137,
+        "raw_mae": 0.30393242835998535,
+        "max_raw_error": 8.335592269897461,
+        "component": {
+          "n": 1589,
+          "max_error": 0.03654921054840088,
+          "mean_error": 0.018346572294831276
+        }
+      },
+      {
+        "step": 500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.039192572236061096,
+        "max_raw_error": 0.18437957763671875,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0023380517959594727,
+          "mean_error": 0.0002175744011765346
+        }
+      },
+      {
+        "step": 1000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.016871018335223198,
+        "max_raw_error": 0.07802486419677734,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0012121200561523438,
+          "mean_error": 6.164892693050206e-05
+        }
+      },
+      {
+        "step": 1500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.012180017307400703,
+        "max_raw_error": 0.05558300018310547,
+        "component": {
+          "n": 1589,
+          "max_error": 0.000851750373840332,
+          "mean_error": 2.7429483452579007e-05
+        }
+      },
+      {
+        "step": 2000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.00876967329531908,
+        "max_raw_error": 0.03958892822265625,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0006517171859741211,
+          "mean_error": 1.7883105101645924e-05
+        }
+      },
+      {
+        "step": 2500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.006951053161174059,
+        "max_raw_error": 0.03154754638671875,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0005359649658203125,
+          "mean_error": 1.5747302313684486e-05
+        }
+      },
+      {
+        "step": 3000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.005981529597193003,
+        "max_raw_error": 0.026809215545654297,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0004699230194091797,
+          "mean_error": 1.2770928151439875e-05
+        }
+      },
+      {
+        "step": 3500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.006307544652372599,
+        "max_raw_error": 0.028400421142578125,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0004305839538574219,
+          "mean_error": 7.525874025304802e-06
+        }
+      },
+      {
+        "step": 4000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.00630468875169754,
+        "max_raw_error": 0.028490066528320312,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0004037618637084961,
+          "mean_error": 5.7280476539744996e-06
+        }
+      },
+      {
+        "step": 4500,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.005843989551067352,
+        "max_raw_error": 0.02647686004638672,
+        "component": {
+          "n": 1589,
+          "max_error": 0.00037932395935058594,
+          "mean_error": 5.738705567637226e-06
+        }
+      },
+      {
+        "step": 5000,
+        "n": 1024,
+        "exact_graphs": 1024,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "raw_mae": 0.00550335505977273,
+        "max_raw_error": 0.025063037872314453,
+        "component": {
+          "n": 1589,
+          "max_error": 0.0003618001937866211,
+          "mean_error": 5.414260613179067e-06
+        }
+      }
+    ],
+    "seconds": 30.386238408998906
+  }
+]

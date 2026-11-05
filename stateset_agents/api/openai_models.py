@@ -21,12 +21,14 @@ class OpenAIChatMessage(BaseModel):
         ..., description="Message role"
     )
     content: str | list[dict[str, Any]] | None = Field(
-        None, description="Message content"
+        default=None, description="Message content"
     )
-    name: str | None = Field(None, description="Optional author name")
-    tool_call_id: str | None = Field(None, description="Tool call id (tool role)")
+    name: str | None = Field(default=None, description="Optional author name")
+    tool_call_id: str | None = Field(
+        default=None, description="Tool call id (tool role)"
+    )
     tool_calls: list[dict[str, Any]] | None = Field(
-        None, description="Tool call metadata (assistant role)"
+        default=None, description="Tool call metadata (assistant role)"
     )
 
 
@@ -38,16 +40,24 @@ class OpenAIChatCompletionRequest(BaseModel):
     model: str = Field(..., description="Model identifier")
     messages: list[OpenAIChatMessage] = Field(..., description="Chat messages")
 
-    max_tokens: int | None = Field(None, ge=1, description="Max tokens to generate")
-    temperature: float | None = Field(
-        None, ge=0.0, le=2.0, description="Sampling temperature"
+    max_tokens: int | None = Field(
+        default=None, ge=1, description="Max tokens to generate"
     )
-    top_p: float | None = Field(None, ge=0.0, le=1.0, description="Top-p sampling")
-    stream: bool = Field(False, description="Stream partial responses")
+    temperature: float | None = Field(
+        default=None, ge=0.0, le=2.0, description="Sampling temperature"
+    )
+    top_p: float | None = Field(
+        default=None, ge=0.0, le=1.0, description="Top-p sampling"
+    )
+    stream: bool = Field(default=False, description="Stream partial responses")
 
-    stop: str | list[str] | None = Field(None, description="Stop sequence(s)")
-    tools: list[dict[str, Any]] | None = Field(None, description="Tool definitions")
-    tool_choice: str | dict[str, Any] | None = Field(None, description="Tool choice")
+    stop: str | list[str] | None = Field(default=None, description="Stop sequence(s)")
+    tools: list[dict[str, Any]] | None = Field(
+        default=None, description="Tool definitions"
+    )
+    tool_choice: str | dict[str, Any] | None = Field(
+        default=None, description="Tool choice"
+    )
 
 
 class OpenAIChatCompletionResponse(BaseModel):

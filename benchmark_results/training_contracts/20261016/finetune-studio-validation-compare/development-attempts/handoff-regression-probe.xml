@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="11.252" timestamp="2026-10-16T19:46:50.361263-07:00" hostname="dom-xps-13-9310"><testcase classname="test_stateset_validation_handoff_binding" name="test_changed_anchor_cannot_replace_the_compared_protocol" time="8.497"><failure message="AssertionError: assert {'cases': '/t...ns': 192, ...} == {'cases': '',...ns': 192, ...}&#10;  &#10;  Omitting 8 identical items, use -vv to show&#10;  Differing items:&#10;  {'judge_revision': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'} != {'judge_revision': ''}&#10;  {'judge_model': 'changed/judge'} != {'judge_model': ''}&#10;  {'checkpoint': 'checkpoint-1'} != {'checkpoint': ''}&#10;  {'cases': '/tmp/pytest-of-dom/pytest-332/test_changed_anchor_cannot_rep0/workspace/20261017-024653-a118477e/evaluations/20261017-024653-7279e9f4/cases.json'} != {'cases': ''}&#10;  {'split': 'validation'} != {'split': 'test'}&#10;  Use -v to get more diff">/tmp/test_stateset_validation_handoff_binding.py:20: in test_changed_anchor_cannot_replace_the_compared_protocol
+    assert panel.values == before
+E   AssertionError: assert {'cases': '/t...ns': 192, ...} == {'cases': '',...ns': 192, ...}
+E     
+E     Omitting 8 identical items, use -vv to show
+E     Differing items:
+E     {'judge_revision': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'} != {'judge_revision': ''}
+E     {'judge_model': 'changed/judge'} != {'judge_model': ''}
+E     {'checkpoint': 'checkpoint-1'} != {'checkpoint': ''}
+E     {'cases': '/tmp/pytest-of-dom/pytest-332/test_changed_anchor_cannot_rep0/workspace/20261017-024653-a118477e/evaluations/20261017-024653-7279e9f4/cases.json'} != {'cases': ''}
+E     {'split': 'validation'} != {'split': 'test'}
+E     Use -v to get more diff</failure></testcase></testsuite></testsuites>

@@ -610,6 +610,7 @@ class AdvancedEvaluator:
         self.comparator = ComparativeAnalyzer()
         self.monitor = ContinuousMonitor()
         self.results_history = []
+        self.monitoring_task: asyncio.Task[None] | None = None
 
     async def comprehensive_evaluation(
         self,
@@ -673,10 +674,17 @@ class AdvancedEvaluator:
                 )
 
         # Start continuous monitoring if requested
-        if evaluation_config["include_monitoring"]:
-            # Run monitoring for the best agent
-            best_agent = max(results, key=lambda r: r.metrics.response_quality)
-            asyncio.create_task(self.monitor.start_monitoring(best_agent, environment))
+        if evaluation_config["include_monitoring"] and results:
+            # Run monitoring for the best agent. ``results`` is index-aligned
+            # with ``agents``; monitor the agent itself, not its result record.
+            best_index = max(
+                range(len(results)),
+                key=lambda i: results[i].metrics.response_quality,
+            )
+            # Keep a reference so the background task is not garbage-collected.
+            self.monitoring_task = asyncio.create_task(
+                self.monitor.start_monitoring(agents[best_index], environment)
+            )
 
         logger.info("Comprehensive evaluation completed")
         return results

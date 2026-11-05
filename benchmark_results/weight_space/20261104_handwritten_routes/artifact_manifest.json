@@ -1,0 +1,10 @@
+{
+  "evaluation.safetensors": "ee2b8d22be006d64bcfa5e06b874cd902329497d3099a32030f867fbfbaea52a",
+  "protocol.json": "7c7f4c445990aca58517648966a787e255979789b942b6ca71faf9b957ae6c6b",
+  "summary.json": "c6e6f281e70876ba147233c9fed8ac219b44348f3ad726d901ff6acec5fe8a1c",
+  "routes.safetensors": "6eba4e6fe3a7361cedf7cd95e11f325bf36ea2a536dfb1c9fa17110c5dfe4461",
+  "sources/handwritten_weighted_graph.py": "7540fda391dbc06afc75b800a5a53fbfe47f6f38e720874307012573fef87e0a",
+  "sources/handwritten_routes_job.py": "52b4b736f909697f0eb9919501ea3bda3d45b2babefb79ba90f1107a3c3777bf",
+  "sources/handwritten_weighted_graph_job.py": "837e4d6bc57278cae65da027cb6fa1d099a060f38a1b02abbd8544ae9a4237c0",
+  "sources/handwritten_routes.py": "8cd230945556fe39c278337b550b74c69c809c9c3901f14b7e146537b1f0bb36"
+}

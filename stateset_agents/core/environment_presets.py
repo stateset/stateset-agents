@@ -206,6 +206,11 @@ def _load_task_configs() -> dict[str, Any]:
                     "description": "Analyze the provided dataset and generate insights",
                     "goal": "Complete data analysis",
                     "type": "analysis",
+                    "instructions": (
+                        "Declare each step you complete as JSON, for example "
+                        '{"action": "load_data"}. Steps: load_data, '
+                        "explore_data, visualize, insights."
+                    ),
                     "required_actions": [
                         {"name": "load_data", "keywords": ["load", "read", "import"]},
                         {

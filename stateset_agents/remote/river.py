@@ -45,6 +45,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.data.source import DatasetSourceIdentity
 from stateset_agents.remote.executor import RemoteExecutionError, RemoteExecutor
 from stateset_agents.remote.job import JobHandle, JobStatus, RemoteJobSpec
 from stateset_agents.remote.ledger import CostEntry, record_entry
@@ -76,13 +77,18 @@ RIVER_API_KEY_ENV = "RIVER_API_KEY"
 
 def _sft_options(spec: RemoteJobSpec) -> dict[str, Any]:
     """Validate reproducibility options before constructing a River client."""
-    options = {"seed": 0, "shuffle": True}
+    options: dict[str, Any] = {
+        "seed": spec.seed if spec.seed is not None else 0,
+        "shuffle": True,
+    }
     supplied = spec.harvest or {}
-    unknown = supplied.keys() - options.keys()
+    unknown = supplied.keys() - (options.keys() | {"checkpoint"})
     if unknown:
         raise RemoteExecutionError(
             f"Unknown River SFT options: {sorted(unknown)}", provider="river"
         )
+    if spec.seed is not None and "seed" in supplied and supplied["seed"] != spec.seed:
+        raise RemoteExecutionError("Conflicting River SFT seeds", provider="river")
     options.update(supplied)
     if type(options["seed"]) is not int or options["seed"] < 0:
         raise RemoteExecutionError(
@@ -91,6 +97,10 @@ def _sft_options(spec: RemoteJobSpec) -> dict[str, Any]:
     if type(options["shuffle"]) is not bool:
         raise RemoteExecutionError(
             "River SFT shuffle must be boolean", provider="river"
+        )
+    if "checkpoint" in options:
+        options["checkpoint"] = _checkpoint_from_pointer(
+            options["checkpoint"], base_model=spec.base_model, lora_rank=spec.lora_r
         )
     return options
 
@@ -145,6 +155,8 @@ class _RiverJob:
     tokens: int | None = None
     duration_s: float | None = None
     cost_usd: float | None = None
+    dataset_source: DatasetSourceIdentity | None = None
+    sft_options: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -207,6 +219,7 @@ class RiverExecutor(RemoteExecutor):
     """
 
     name = "river"
+    supports_sft_seed = True
     supported_job_kinds = frozenset({"sft", "harvest", "rl"})
     result_kind = "hosted_pointer"
     compute_model = "managed-remote-autograd"
@@ -437,13 +450,15 @@ class RiverExecutor(RemoteExecutor):
         if spec.job_kind == "rl":
             return self._submit_rl(handle, job, spec)
 
-        _sft_options(spec)
+        job.sft_options = _sft_options(spec)
+        from stateset_agents.training.sft import parse_chat_dataset
+
+        source_path = Path(spec.dataset)
+        source_data = source_path.read_bytes()
+        rows = parse_chat_dataset(source_data)
+        job.dataset_source = DatasetSourceIdentity.from_bytes(source_path, source_data)
         client = None if spec.dry_run else self._checked_client(spec, job)
         tokenizer = self._get_tokenizer(spec.base_model)
-
-        from stateset_agents.training.sft import load_chat_dataset
-
-        rows = load_chat_dataset(Path(spec.dataset))
         data = build_sft_batch(rows, tokenizer, max_length=spec.max_length)
         if not data:
             job.status = JobStatus.FAILED
@@ -1172,7 +1187,7 @@ class RiverExecutor(RemoteExecutor):
         """The training loop River expects the caller to own."""
         logs = job.logs
         river = _river_module(client)
-        options = _sft_options(spec)
+        options = job.sft_options if job.sft_options is not None else _sft_options(spec)
         rng = random.Random(options["seed"])
         lora = river.LoraConfig(
             rank=spec.lora_r,
@@ -1184,7 +1199,15 @@ class RiverExecutor(RemoteExecutor):
         with _open_session(
             client, project=Path(spec.output_dir).name or None
         ) as session:
-            model = session.create_model(base_model=spec.base_model, lora=lora)
+            model = session.create_model(
+                base_model=spec.base_model,
+                lora=lora,
+                **(
+                    {"checkpoint": _inference_checkpoint(client, options["checkpoint"])}
+                    if options.get("checkpoint")
+                    else {}
+                ),
+            )
             logs.append(
                 f"created River model on {spec.base_model} "
                 f"(LoRA rank {spec.lora_r}, attn+mlp)"
@@ -1416,6 +1439,11 @@ class RiverExecutor(RemoteExecutor):
         spec = job.spec
         output_dir = Path(dest) if dest is not None else Path(spec.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
+        sft_options = (
+            (job.sft_options if job.sft_options is not None else _sft_options(spec))
+            if spec.job_kind == "sft"
+            else {}
+        )
 
         pointer = {
             "provider": self.name,
@@ -1440,7 +1468,7 @@ class RiverExecutor(RemoteExecutor):
             ),
         }
         if spec.job_kind == "sft":
-            pointer["sft_options"] = _sft_options(spec)
+            pointer["sft_options"] = sft_options
         atomic_json(output_dir / CHECKPOINT_POINTER_NAME, pointer)
 
         from stateset_agents.training.lineage import (
@@ -1449,12 +1477,21 @@ class RiverExecutor(RemoteExecutor):
             write_manifest,
         )
 
-        digest, rows = hash_dataset(Path(spec.dataset))
+        if spec.job_kind == "sft":
+            source = job.dataset_source
+            # Never turn a later version of the file into purported training
+            # evidence. Unknown legacy identities remain explicitly unknown.
+            digest = source.sha256 if source is not None else None
+            rows = source.rows if source is not None else None
+            source_path = source.path if source is not None else str(spec.dataset)
+        else:
+            digest, rows = hash_dataset(Path(spec.dataset))
+            source_path = str(spec.dataset)
         write_manifest(
             output_dir,
             AdapterManifest(
                 base_model=spec.base_model,
-                dataset_path=str(spec.dataset),
+                dataset_path=source_path,
                 dataset_sha256=digest,
                 dataset_rows=rows,
                 hyperparameters={
@@ -1462,7 +1499,18 @@ class RiverExecutor(RemoteExecutor):
                     **_sft_hyperparameters(spec),
                     "river_checkpoint": job.checkpoint_uri,
                     "steps": job.steps,
-                    **(_sft_options(spec) if spec.job_kind == "sft" else {}),
+                    **(
+                        {
+                            "dataset_provenance": (
+                                "captured_at_submission"
+                                if job.dataset_source
+                                else "unavailable"
+                            )
+                        }
+                        if spec.job_kind == "sft"
+                        else {}
+                    ),
+                    **sft_options,
                 },
                 parent_adapter=spec.parent_adapter,
                 package_version=spec.package_version,
@@ -1649,7 +1697,9 @@ def _rendered_prompts(
     raw text when no renderer knows the model.
     """
     try:
-        from river_client.renderers import get_renderer
+        from stateset_agents.remote.river_renderers import (
+            get_river_renderer as get_renderer,
+        )
 
         renderer = get_renderer(base_model, thinking=False)
         rendered = [
@@ -1659,6 +1709,11 @@ def _rendered_prompts(
         stops = list(renderer.get_stop_strings())
         return rendered, stops or None
     except Exception as exc:  # noqa: BLE001 - renderer coverage varies by model
+        if any(
+            family in base_model.lower()
+            for family in ("nemotron-3.5-bolt", "nemotron-3.5-super-vl")
+        ):
+            raise
         logger.warning("no River renderer for %s (%s); sampling raw", base_model, exc)
         return list(prompts), None
 
@@ -1683,10 +1738,17 @@ def _rl_sample_groups(
     ids the datums will carry.
     """
     try:
-        from river_client.renderers import get_renderer
+        from stateset_agents.remote.river_renderers import (
+            get_river_renderer as get_renderer,
+        )
 
         renderer = get_renderer(base_model, thinking=False)
     except Exception as exc:  # noqa: BLE001 - fakes/unknown models land here
+        if any(
+            family in base_model.lower()
+            for family in ("nemotron-3.5-bolt", "nemotron-3.5-super-vl")
+        ):
+            raise
         logger.warning(
             "no River renderer for %s (%s); sampling raw text and relying "
             "on echoed prompt ids",
@@ -1998,7 +2060,9 @@ def _rollout_episodes(
     branches across all scripts are sampled in ONE ``model.sample`` call
     (one prompt each), so a T-turn rollout costs T calls, not S*N*T.
     """
-    from river_client.renderers import get_renderer
+    from stateset_agents.remote.river_renderers import (
+        get_river_renderer as get_renderer,
+    )
 
     renderer = get_renderer(base_model, thinking=False)
     stops = list(renderer.get_stop_strings()) or None

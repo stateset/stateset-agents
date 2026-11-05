@@ -7,28 +7,22 @@ multi-turn conversational agents using Group Relative Policy Optimization.
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import inspect
 import logging
-from collections.abc import Callable
+import math
+from collections.abc import Iterator
 from typing import Any, TypeAlias
 
 import numpy as np
 
 from stateset_agents.core import trajectory as core_trajectory
-from stateset_agents.utils.async_calls import run_sync_owned
+from stateset_agents.core.reward_context import RewardUnavailableError
 
-from .callbacks import (
-    _maybe_await,
-    notify_checkpoint_saved,
-    notify_episode_end,
-    notify_evaluation_end,
-    notify_training_end,
-    notify_training_start,
-)
-from .config import estimate_grpo_optimizer_steps
+from .callbacks import _maybe_await, notify_checkpoint_saved
+from .config import config_value, estimate_grpo_optimizer_steps
 from .continual_learning import ContinualLearningManager
+from .ddp_population import run_token_local
 from .evaluation import EvaluationConfig, evaluate_agent
 from .loss_computation import (
     _compute_group_policy_loss,
@@ -53,6 +47,17 @@ from .multi_turn_scenarios import (
     get_environment_scenarios,
     split_scenarios,
 )
+from .profiling import (
+    TrainingProfiler,
+    _observed_assistant_tokens,
+    profile_learner_step,
+)
+from .runtime_state import validate_training_config
+from .spine.grpo_update import GRPOUpdateMixin
+from .spine.loop import SpineLoopMixin
+from .spine.rollouts import record_rollout_sync
+from .spine.scoring import EpisodeScorer, trajectory_reward_fallback
+from .spine.update import NonFiniteGradientError
 from .trainer_utils import (
     apply_dropout_setting,
     backward_training_loss,
@@ -175,7 +180,7 @@ MULTI_TRAINER_EXCEPTIONS = (
 )
 
 
-class MultiTurnGRPOTrainer:
+class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
     """
     GRPO trainer for multi-turn agents with HuggingFace and W&B integration
 
@@ -205,16 +210,22 @@ class MultiTurnGRPOTrainer:
         self.agent = agent
         self.environment = environment
         self.reward_fn = reward_fn
+        validate_training_config(config)
         self.config = config
         self.wandb_logger = wandb_logger
         self.callbacks = callbacks or []
+        self.profiler = TrainingProfiler()
 
         # Training state
         self.global_step = 0
         self.current_epoch = 0
+        self._next_episode = 0
+        #: Episodes the last rollout dropped for a reward fallback.
+        self.reward_fallback_episodes = 0
         self.best_eval_metric = float("-inf")
         self.steps_without_improvement = 0
         self._grad_accum_step = 0
+        self._grpo_accumulation: dict[str, Any] | None = None
 
         # HuggingFace components
         self.optimizer: Any | None = None
@@ -228,6 +239,7 @@ class MultiTurnGRPOTrainer:
         # GRPO enhancements
         self._global_reward_mean: float = 0.0
         self._global_reward_count: int = 0
+        self._loss_reward_baseline: dict[str, Any] | None = None
         self.reference_model = None
         self.continual_manager: ContinualLearningManager | None = None
         self._current_task_id: str | None = None
@@ -269,7 +281,7 @@ class MultiTurnGRPOTrainer:
 
         # Loss scaling guards fp16's narrow exponent range only; bf16 shares
         # fp32's range, and a GradScaler there just adds skipped steps.
-        if torch.cuda.is_available() and getattr(self.config, "fp16", False) is True:
+        if torch.cuda.is_available() and config_value(self.config, "fp16") is True:
             if amp is not None:
                 self.scaler = amp.GradScaler("cuda")
             else:  # pragma: no cover - AMP not available
@@ -278,17 +290,7 @@ class MultiTurnGRPOTrainer:
                     "proceeding without GradScaler."
                 )
 
-        # Optional reference model for KL penalty
-        try:
-            if (
-                getattr(self.config, "use_reference_model", False)
-                and self.reference_model is None
-            ):
-                self.reference_model = build_reference_model(self.agent.model)
-                logger.info("Reference model initialized for KL regularization")
-        except MULTI_TRAINER_EXCEPTIONS as ref_err:
-            logger.warning(f"Could not initialize reference model: {ref_err}")
-            self.reference_model = None
+        self._initialize_reference_model()
 
         # Initialize W&B if configured
         if (
@@ -316,7 +318,7 @@ class MultiTurnGRPOTrainer:
                 "params": [
                     p for n, p in model_params if not any(nd in n for nd in no_decay)
                 ],
-                "weight_decay": getattr(self.config, "weight_decay", 0.01),
+                "weight_decay": config_value(self.config, "weight_decay"),
             },
             {
                 "params": [
@@ -329,26 +331,54 @@ class MultiTurnGRPOTrainer:
         # Initialize optimizer
         self.optimizer = torch.optim.AdamW(
             optimizer_grouped_parameters,
-            lr=getattr(self.config, "learning_rate", 5e-6),
+            lr=config_value(self.config, "learning_rate"),
             betas=(
-                getattr(self.config, "adam_beta1", 0.9),
-                getattr(self.config, "adam_beta2", 0.99),
+                config_value(self.config, "adam_beta1"),
+                config_value(self.config, "adam_beta2"),
             ),
             eps=1e-8,
         )
 
         logger.info(
-            f"Optimizer initialized: AdamW with lr={getattr(self.config, 'learning_rate', 5e-6)}"
+            f"Optimizer initialized: AdamW with lr={config_value(self.config, 'learning_rate')}"
         )
+
+    def _initialize_reference_model(self) -> None:
+        """Create a required frozen reference, propagating allocation failures.
+
+        Stage the copy before assigning it: a failed clone/freeze cannot leave a
+        partial reference or silently remove an explicitly requested KL policy.
+        """
+        if (
+            float(config_value(self.config, "beta") or 0.0) > 0.0
+            and not config_value(self.config, "use_reference_model")
+            and self.reference_model is None
+        ):
+            logger.warning(
+                "beta=%s is set but use_reference_model=False: the KL penalty "
+                "is disabled. Set use_reference_model=True to apply it.",
+                self.config.beta,
+            )
+        if (
+            config_value(self.config, "use_reference_model")
+            and self.reference_model is None
+        ):
+            from copy import deepcopy
+
+            reference = deepcopy(self.agent.model).eval()
+            for parameter in reference.parameters():
+                parameter.requires_grad = False
+            self.reference_model = reference
+            logger.info("Reference model initialized for KL regularization")
 
     def _planned_optimizer_steps(self) -> int:
         """Optimizer-step budget implied by ``num_episodes`` (one rollout
         batch per episode), accumulation and inner updates."""
-        num_episodes = int(getattr(self.config, "num_episodes", 100) or 100)
+        num_episodes = int(config_value(self.config, "num_episodes"))
         return estimate_grpo_optimizer_steps(
             num_episodes,
             gradient_accumulation_steps=self._get_grad_accum_steps(),
-            num_gradient_updates=getattr(self.config, "num_gradient_updates", 1),
+            num_gradient_updates=config_value(self.config, "num_gradient_updates"),
         )
 
     def _setup_default_scheduler(self) -> None:
@@ -377,7 +407,7 @@ class MultiTurnGRPOTrainer:
         otherwise checkpointed blocks would see no grad-requiring input and
         the adapters would receive no gradient.
         """
-        if getattr(self.config, "gradient_checkpointing", False) is not True:
+        if config_value(self.config, "gradient_checkpointing") is not True:
             return False
         model = getattr(self.agent, "model", None)
         enable = getattr(model, "gradient_checkpointing_enable", None)
@@ -475,10 +505,10 @@ class MultiTurnGRPOTrainer:
             raise ImportError("transformers scheduler helpers are unavailable")
 
         num_warmup_steps = int(
-            num_training_steps * getattr(self.config, "warmup_ratio", 0.1)
+            num_training_steps * config_value(self.config, "warmup_ratio")
         )
 
-        lr_scheduler_type = getattr(self.config, "lr_scheduler_type", "cosine")
+        lr_scheduler_type = config_value(self.config, "lr_scheduler_type")
 
         if lr_scheduler_type == "cosine":
             self.lr_scheduler = cosine_schedule(
@@ -502,7 +532,7 @@ class MultiTurnGRPOTrainer:
             )
 
     def _get_grad_accum_steps(self) -> int:
-        steps = int(getattr(self.config, "gradient_accumulation_steps", 1) or 1)
+        steps = int(config_value(self.config, "gradient_accumulation_steps"))
         return max(1, steps)
 
     def _sync_rollout_backend(self) -> None:
@@ -513,14 +543,15 @@ class MultiTurnGRPOTrainer:
         agent has no ``sync_rollout_backend``).
         """
         self.last_rollout_sync = None
-        if not bool(getattr(self.config, "rollout_sync", True)):
+        if not bool(config_value(self.config, "rollout_sync")):
             return
         sync = getattr(self.agent, "sync_rollout_backend", None)
         if callable(sync):
-            self.last_rollout_sync = bool(sync())
+            # Applies config.rollout_sync_failure to a failed sync.
+            record_rollout_sync(self, bool(sync()), label="GRPO")
 
     def _apply_optimizer_step(self, torch, *, gradient_scale: float = 1.0) -> bool:
-        skip_policy = getattr(self.config, "nonfinite_grad_policy", "raise") == "skip"
+        skip_policy = config_value(self.config, "nonfinite_grad_policy") == "skip"
         # safe_optimizer_step discards gradients before raising, so record which
         # parameters were non-finite first (only when we will report and skip).
         self._nonfinite_params = (
@@ -530,12 +561,12 @@ class MultiTurnGRPOTrainer:
             applied = safe_optimizer_step(
                 self,
                 torch,
-                max_grad_norm=getattr(self.config, "max_grad_norm", 1.0),
+                max_grad_norm=config_value(self.config, "max_grad_norm"),
                 scaler=self.scaler,
                 gradient_scale=gradient_scale,
             )
-        except ValueError as error:
-            if "gradients must be finite" not in str(error) or not skip_policy:
+        except NonFiniteGradientError as error:
+            if not skip_policy:
                 raise
             return self._skip_nonfinite_update(error)
         if applied:
@@ -576,9 +607,9 @@ class MultiTurnGRPOTrainer:
         )
         if self.optimizer is not None:
             self.optimizer.zero_grad(set_to_none=True)
-        limit = int(getattr(self.config, "max_consecutive_nonfinite_skips", 3))
+        limit = int(config_value(self.config, "max_consecutive_nonfinite_skips"))
         if self._consecutive_nonfinite > limit:
-            raise ValueError(
+            raise NonFiniteGradientError(
                 f"{self._consecutive_nonfinite} consecutive non-finite updates "
                 f"(limit {limit})"
             ) from error
@@ -596,6 +627,9 @@ class MultiTurnGRPOTrainer:
 
     async def _init_wandb(self):
         """Initialize Weights & Biases tracking"""
+        wandb_logger = self.wandb_logger
+        if wandb_logger is None:
+            return
         try:
             # Prepare configuration for W&B
             config_dict = {
@@ -609,10 +643,10 @@ class MultiTurnGRPOTrainer:
             if hasattr(self.agent.config, "__dict__"):
                 config_dict.update(self.agent.config.__dict__)
 
-            self.wandb_logger.init_run(
+            wandb_logger.init_run(
                 config=config_dict,
-                name=getattr(self.config, "run_name", None),
-                tags=getattr(self.config, "wandb_tags", ["grpo", "multi-turn"]),
+                name=config_value(self.config, "run_name"),
+                tags=config_value(self.config, "wandb_tags"),
                 notes=f"Training {type(self.agent).__name__} with GRPO",
             )
 
@@ -640,8 +674,12 @@ class MultiTurnGRPOTrainer:
     ) -> list[TrajectoryGroup]:
         """Generate trajectory groups for training"""
         num_generations = int(
-            num_generations or getattr(self.config, "num_generations", 16) or 16
+            config_value(self.config, "num_generations")
+            if num_generations is None
+            else num_generations
         )
+        if num_generations < 1:
+            raise ValueError("num_generations must be a positive integer")
         trajectory_groups: list[TrajectoryGroup] = []
         # Prefer generate_turn: it returns the assistant turn with the generated
         # token ids and log-probs, which unlocks the batched per-token GRPO
@@ -657,7 +695,11 @@ class MultiTurnGRPOTrainer:
                     return turn
             return await self.agent.generate_response(history, context)
 
+        # Episodes whose reward is an opted-in fallback are dropped like an
+        # outage: a flagged episode is never trained on.
+        self.reward_fallback_episodes = 0
         batched = await self._generate_batched_trajectories(scenarios, num_generations)
+        attempted = 0
 
         for index, scenario in enumerate(scenarios):
             # Generate multiple trajectories for the same scenario
@@ -665,18 +707,39 @@ class MultiTurnGRPOTrainer:
 
             if batched is not None:
                 trajectories = batched[index]
+                attempted += num_generations
             for _ in range(num_generations if batched is None else 0):
+                trajectory = None
+                accepted = False
                 try:
                     await self._reset_agent()
 
                     # Generate trajectory
-                    trajectory = await self.environment.run_episode(agent_fn, scenario)
-                    await self._score_trajectory(trajectory, scenario)
-                    trajectories.append(trajectory)
+                    with self.profiler.measure("environment_rollout"):
+                        trajectory = await self.environment.run_episode(
+                            agent_fn, scenario
+                        )
 
-                except MULTI_TRAINER_EXCEPTIONS as e:
-                    logger.warning(f"Failed to generate trajectory: {e}")
+                    await self._score_trajectory(trajectory, scenario)
+                    if self._drop_reward_fallback(trajectory):
+                        continue
+                    trajectories.append(trajectory)
+                    accepted = True
+
+                except RewardUnavailableError as e:
+                    # Only a reward outage drops the episode; any other error
+                    # (a bug, bad data, a None or NaN reward) propagates.
+                    if getattr(self.reward_fn, "fail_on_error", False) or getattr(
+                        self, "_stateset_native_rollout", False
+                    ):
+                        raise
+                    logger.warning(
+                        "Dropping an episode: its reward is unavailable: %s", e
+                    )
                     continue
+                finally:
+                    attempted += 1
+                    self._record_rollout(trajectory, accepted=accepted)
 
             if trajectories:
                 group_trajectories: list[Trajectory | MultiTurnTrajectory] = list(
@@ -691,7 +754,39 @@ class MultiTurnGRPOTrainer:
                 )
                 trajectory_groups.append(group)
 
+        if attempted and not trajectory_groups:
+            # Training on nothing would silently stall: every attempted
+            # episode lost its reward to an outage or a reward fallback.
+            flagged = self.reward_fallback_episodes
+            raise RewardUnavailableError(
+                f"No episode got a reward: all {attempted} attempted episodes "
+                f"were dropped ({attempted - flagged} with an unavailable "
+                f"reward, {flagged} with a reward fallback)"
+            )
         return trajectory_groups
+
+    def _drop_reward_fallback(self, trajectory: MultiTurnTrajectory) -> bool:
+        """Whether a scored episode is a reward fallback to leave out
+        (``spine.scoring.trajectory_reward_fallback``); counts it."""
+        reason = trajectory_reward_fallback(trajectory)
+        if reason is None:
+            return False
+        self.reward_fallback_episodes = int(self.reward_fallback_episodes) + 1
+        logger.warning("Dropping an episode: its reward is a fallback (%s)", reason)
+        return True
+
+    def _record_rollout(
+        self, trajectory: MultiTurnTrajectory | None, *, accepted: bool
+    ) -> None:
+        """Record collection acceptance and only explicitly observed token IDs."""
+        evidence = None
+        tokens = 0
+        if trajectory is not None:
+            evidence = (trajectory.final_state or {}).get("task_success")
+            if type(evidence) is not bool:
+                evidence = None
+            tokens = _observed_assistant_tokens(trajectory)
+        self.profiler.record_rollout(accepted=accepted, success=evidence, tokens=tokens)
 
     async def _reset_agent(self) -> None:
         reset_fn = getattr(self.agent, "reset", None)
@@ -701,14 +796,33 @@ class MultiTurnGRPOTrainer:
     async def _score_trajectory(
         self, trajectory: MultiTurnTrajectory, scenario: dict[str, Any]
     ) -> None:
-        """Apply the trainer's reward function, if any, to a finished episode."""
-        if self.reward_fn:
-            reward_result = await self.reward_fn.compute_reward(
-                trajectory.turns, scenario
+        """Give a finished episode its one reward (spine ``EpisodeScorer``,
+        i.e. ``reward_context.score_episode``).
+
+        Training, periodic evaluation, post-training evaluation and the
+        distributed trainer share that helper, so the same episode earns the
+        same reward on every path. A failed reward raises, and the caller
+        drops the episode.
+        """
+        if not self.reward_fn and (
+            trajectory.metadata.get("reward_source") == "default_length_heuristic"
+        ):
+            self._warn_default_reward()
+        with self.profiler.measure("reward_evaluation"):
+            await EpisodeScorer(self.reward_fn, self.environment).score(
+                trajectory, scenario
             )
-            score, breakdown = await self._coerce_reward_result(reward_result)
-            trajectory.total_reward = score
-            trajectory.metadata["reward_breakdown"] = breakdown
+
+    def _warn_default_reward(self) -> None:
+        if getattr(self, "_warned_default_reward", False):
+            return
+        self._warned_default_reward = True
+        logger.warning(
+            "Training on the environment's built-in length heuristic: neither the "
+            "trainer nor %s has a reward_fn, so rewards measure reply length "
+            "only. Pass reward_fn=... for a meaningful training signal.",
+            type(self.environment).__name__,
+        )
 
     async def _generate_batched_trajectories(
         self, scenarios: list[dict[str, Any]], num_generations: int
@@ -724,7 +838,7 @@ class MultiTurnGRPOTrainer:
         batch_turns = getattr(self.agent, "generate_turns_batch", None)
         run_batched = getattr(self.environment, "run_episodes_batched", None)
         if (
-            not getattr(self.config, "batched_rollouts", True)
+            not config_value(self.config, "batched_rollouts")
             or not inspect.iscoroutinefunction(batch_turns)
             or not inspect.iscoroutinefunction(run_batched)
             or getattr(self.environment, "supports_concurrent_episodes", False)
@@ -732,22 +846,61 @@ class MultiTurnGRPOTrainer:
         ):
             return None
         flat = [s for s in scenarios for _ in range(num_generations)]
+        strict = bool(
+            getattr(self.reward_fn, "fail_on_error", False)
+            or getattr(self, "_stateset_native_rollout", False)
+        )
         try:
             await self._reset_agent()
-            episodes = await run_batched(
-                lambda histories, contexts: batch_turns(histories, contexts), flat
-            )
-            for trajectory, scenario in zip(episodes, flat, strict=True):
-                await self._score_trajectory(trajectory, scenario)
-        except MULTI_TRAINER_EXCEPTIONS as e:
+            with self.profiler.measure("environment_rollout"):
+                episodes: list[MultiTurnTrajectory] = await run_batched(
+                    lambda histories, contexts: batch_turns(histories, contexts), flat
+                )
+        except BaseException as e:
+            # Discarded work remains attempted even when the sequential
+            # fallback succeeds.
+            for _ in flat:
+                self._record_rollout(None, accepted=False)
+            if strict or not isinstance(e, MULTI_TRAINER_EXCEPTIONS):
+                raise
             logger.warning(
                 "Batched rollout failed (%s); rolling episodes out one at a time", e
             )
             return None
-        return [
-            list(episodes[i * num_generations : (i + 1) * num_generations])
-            for i in range(len(scenarios))
-        ]
+
+        # Score each episode on its own: one failed reward drops that episode
+        # rather than the whole batch (which used to roll every episode out
+        # again). A strict failure still rejects the batch as a whole.
+        scored: list[bool] = []
+        for index, (trajectory, scenario) in enumerate(
+            zip(episodes, flat, strict=True)
+        ):
+            try:
+                await self._score_trajectory(trajectory, scenario)
+                if self._drop_reward_fallback(trajectory):
+                    scored.append(False)
+                    continue
+            except BaseException as e:
+                # Only a reward outage drops the episode; any other error (a
+                # bug, bad data, a None or NaN reward) rejects the batch.
+                if strict or not isinstance(e, RewardUnavailableError):
+                    for observed in episodes:
+                        self._record_rollout(observed, accepted=False)
+                    raise
+                logger.warning(
+                    "Dropping episode %d: its reward is unavailable: %s", index, e
+                )
+                scored.append(False)
+            else:
+                scored.append(True)
+        groups: list[list[MultiTurnTrajectory]] = [[] for _ in scenarios]
+        for index, (trajectory, accepted) in enumerate(
+            zip(episodes, scored, strict=True)
+        ):
+            self._record_rollout(trajectory, accepted=accepted)
+            if accepted:
+                groups[index // num_generations].append(trajectory)
+        return groups
 
     async def _coerce_reward_result(
         self, reward_result: Any
@@ -772,21 +925,51 @@ class MultiTurnGRPOTrainer:
         ``update_stats=False`` keeps this batch out of it, so repeated inner
         updates on one batch count it once and share one baseline.
         """
-        mean, count = reward_stats or (
-            self._global_reward_mean,
-            self._global_reward_count,
-        )
+        baseline = self._reward_baseline_kwargs()
+        if reward_stats is not None:
+            baseline.update(
+                global_reward_mean=reward_stats[0],
+                global_reward_count=reward_stats[1],
+                global_reward_sum=None,
+            )
+        if not update_stats:
+            baseline["update_global_stats"] = None
         loss_dict: dict[str, Any] = compute_grpo_loss(
             trajectory_groups=trajectory_groups,
             config=self.config,
             agent=self.agent,
-            global_reward_mean=mean,
-            global_reward_count=count,
-            update_global_stats=self._update_global_stats if update_stats else None,
-            old_logprobs=old_logprobs,
+            **baseline,
             backward_fn=getattr(self, "_loss_backward_fn", None),
+            old_logprobs=old_logprobs,
         )
         return loss_dict
+
+    def _reward_baseline_kwargs(self) -> dict[str, Any]:
+        """Return the rollout's frozen baseline or the current running state."""
+        frozen = getattr(self, "_loss_reward_baseline", None)
+        if frozen is not None:
+            return dict(frozen)
+        return {
+            "global_reward_mean": self._global_reward_mean,
+            "global_reward_count": self._global_reward_count,
+            "global_reward_sum": getattr(self, "_global_reward_sum", None),
+            "update_global_stats": self._update_global_stats,
+        }
+
+    @contextlib.contextmanager
+    def _frozen_reward_baseline(
+        self, snapshot: dict[str, Any], *, update: bool
+    ) -> Iterator[None]:
+        """Reuse one rollout baseline while observing its rewards only once."""
+        previous = getattr(self, "_loss_reward_baseline", None)
+        self._loss_reward_baseline = {
+            **snapshot,
+            "update_global_stats": self._update_global_stats if update else None,
+        }
+        try:
+            yield
+        finally:
+            self._loss_reward_baseline = previous
 
     def _compute_group_policy_loss(
         self, group: TrajectoryGroup, advantages: Any
@@ -811,10 +994,15 @@ class MultiTurnGRPOTrainer:
     ) -> dict[str, Any]:
         """Enhanced GRPO loss computation with KL penalty (see
         :meth:`compute_grpo_loss` for ``reward_stats``/``update_stats``)."""
-        mean, count = reward_stats or (
-            self._global_reward_mean,
-            self._global_reward_count,
-        )
+        baseline = self._reward_baseline_kwargs()
+        if reward_stats is not None:
+            baseline.update(
+                global_reward_mean=reward_stats[0],
+                global_reward_count=reward_stats[1],
+                global_reward_sum=None,
+            )
+        if not update_stats:
+            baseline["update_global_stats"] = None
         loss_dict: dict[str, Any] = compute_enhanced_grpo_loss(
             trajectory_groups=trajectory_groups,
             beta=beta,
@@ -822,9 +1010,7 @@ class MultiTurnGRPOTrainer:
             agent=self.agent,
             reference_model=self.reference_model,
             old_logprobs=old_logprobs,
-            global_reward_mean=mean,
-            global_reward_count=count,
-            update_global_stats=self._update_global_stats if update_stats else None,
+            **baseline,
             backward_fn=getattr(self, "_loss_backward_fn", None),
         )
         return loss_dict
@@ -833,7 +1019,7 @@ class MultiTurnGRPOTrainer:
         """Extract a task id from scenario metadata when available."""
         if not isinstance(scenario, dict) or self.config is None:
             return None
-        task_key = getattr(self.config, "task_id_key", "task_id")
+        task_key = config_value(self.config, "task_id_key")
         if task_key and task_key in scenario:
             value = scenario.get(task_key)
             return str(value) if value is not None else None
@@ -841,7 +1027,11 @@ class MultiTurnGRPOTrainer:
 
     def _maybe_handle_task_switch(self, task_id: str | None) -> None:
         """Handle task boundary transitions for continual learning."""
-        if self.continual_manager is None or task_id is None:
+        if (
+            self.continual_manager is None
+            or task_id is None
+            or not getattr(self.continual_manager, "enabled", True)
+        ):
             return
 
         if self._current_task_id is None:
@@ -849,13 +1039,43 @@ class MultiTurnGRPOTrainer:
             return
 
         if task_id != self._current_task_id:
-            self.continual_manager.on_task_end(
-                agent=self.agent, task_id=self._current_task_id
-            )
-            reference_model = getattr(self.continual_manager, "reference_model", None)
-            if reference_model is not None:
-                self.reference_model = reference_model
+            self._finish_current_task()
             self._current_task_id = task_id
+
+    def _task_boundary_receipt(self) -> dict[str, Any]:
+        """Identify completed memory at this policy update and replay population."""
+        return {
+            "task_id": self._current_task_id,
+            "global_step": self.global_step,
+            "buffer_sequence": getattr(
+                getattr(self.continual_manager, "buffer", None), "_sequence", 0
+            ),
+        }
+
+    def _finish_current_task(self) -> None:
+        """Commit prior pending updates before capturing task memory once."""
+        manager = self.continual_manager
+        if self._grad_accum_step % self._get_grad_accum_steps():
+            self._flush_accumulation(require_torch())
+        self._grad_accum_step = 0
+        if (
+            manager is None
+            or self._current_task_id is None
+            or not getattr(manager, "enabled", True)
+        ):
+            return
+        receipt = self._task_boundary_receipt()
+        if (
+            isinstance(manager, ContinualLearningManager)
+            and manager._task_boundary == receipt
+        ):
+            return
+        manager.on_task_end(agent=self.agent, task_id=self._current_task_id)
+        reference_model = getattr(manager, "reference_model", None)
+        if reference_model is not None:
+            self.reference_model = reference_model
+        if isinstance(manager, ContinualLearningManager):
+            manager._task_boundary = receipt
 
     def _maybe_mix_replay(
         self, new_groups: list[TrajectoryGroup], task_id: str | None
@@ -923,145 +1143,109 @@ class MultiTurnGRPOTrainer:
         formatted: str = format_trajectory_for_model(self.agent, trajectory)
         return formatted
 
+    @profile_learner_step
     async def training_step(
         self, trajectory_groups: list[TrajectoryGroup]
     ) -> dict[str, Any]:
-        """Execute a single training step"""
-        torch = require_torch()
-        amp = get_amp()
-
+        """Execute a single training step (the spine's ``GRPOUpdateMixin``)."""
         self.agent.model.train()
+        _loss_dict, metrics = self._grpo_update(trajectory_groups)
+        return metrics
 
-        # Compute GRPO loss
-        use_amp = bool(
-            getattr(self.config, "bf16", False) or getattr(self.config, "fp16", False)
+    # --- GRPOUpdateMixin hooks ------------------------------------------------
+
+    def _update_modules(self) -> tuple[Any, Any]:
+        return require_torch(), get_amp()
+
+    def _update_old_logprobs(
+        self, trajectory_groups: list[TrajectoryGroup]
+    ) -> list[Any] | None:
+        old: list[Any] | None = run_token_local(
+            self.agent.model,
+            "old-policy",
+            lambda: compute_token_old_logprobs(
+                trajectory_groups, self.config, self.agent
+            ),
         )
-        device_type = "cuda" if torch.cuda.is_available() else "cpu"
-        base_beta = float(getattr(self.config, "beta", 0.0))
-        if self.continual_manager is not None:
-            reference_model = getattr(self.continual_manager, "reference_model", None)
-            if reference_model is not None:
-                self.reference_model = reference_model
-            base_beta = self.continual_manager.get_effective_beta(base_beta)
+        return old
 
-        use_enhanced = bool(
-            base_beta > 0.0
-            or getattr(self.config, "use_reference_model", False)
-            or self.reference_model is not None
-        )
+    def _update_baseline(self) -> dict[str, Any]:
+        return self._reward_baseline_kwargs()
 
-        autocast_ctx = (
-            amp.autocast(device_type=device_type, enabled=use_amp)
-            if amp is not None
+    def _update_loss(
+        self,
+        trajectory_groups: list[Any],
+        *,
+        enhanced: bool,
+        beta: float,
+        old_logprobs: list[Any] | None,
+        baseline: dict[str, Any] | None,
+        update_stats: bool,
+        backward_fn: Any,
+    ) -> dict[str, Any]:
+        frozen = (
+            self._frozen_reward_baseline(baseline, update=update_stats)
+            if baseline is not None
             else contextlib.nullcontext()
         )
-
-        inner = max(1, int(getattr(self.config, "num_gradient_updates", 1) or 1))
-        if inner > 1:
-            # Same precision as the inner-update losses, so the first ratio is 1.
-            with (
-                amp.autocast(device_type=device_type, enabled=use_amp)
-                if amp is not None
-                else contextlib.nullcontext()
-            ):
-                old_logprobs = compute_token_old_logprobs(
-                    trajectory_groups, self.config, self.agent
-                )
+        with frozen, self._loss_backward(backward_fn):
+            # Call shapes as before the extraction (spies see the same calls).
             if old_logprobs is None:
-                self._warn_inner_updates_unavailable()
-            else:
-                return self._inner_update_steps(
-                    trajectory_groups,
-                    inner,
-                    old_logprobs,
-                    use_enhanced=use_enhanced,
-                    beta=base_beta,
-                    autocast_ctx_factory=lambda: (
-                        amp.autocast(device_type=device_type, enabled=use_amp)
-                        if amp is not None
-                        else contextlib.nullcontext()
-                    ),
-                    torch=torch,
+                if enhanced:
+                    return self.compute_enhanced_grpo_loss(trajectory_groups, beta=beta)
+                return self.compute_grpo_loss(trajectory_groups)
+            if enhanced:
+                return self.compute_enhanced_grpo_loss(
+                    trajectory_groups, beta=beta, old_logprobs=old_logprobs
                 )
+            return self.compute_grpo_loss(trajectory_groups, old_logprobs=old_logprobs)
 
-        grad_accum_steps = self._get_grad_accum_steps()
-        with (
-            autocast_ctx,
-            self._chunked_backward(torch, amp, device_type, grad_accum_steps),
-        ):
-            if use_enhanced:
-                loss_dict = self.compute_enhanced_grpo_loss(
-                    trajectory_groups, beta=base_beta
-                )
-            else:
-                loss_dict = self.compute_grpo_loss(trajectory_groups)
+    def _update_regularizer(self, loss_dict: dict[str, Any]) -> tuple[Any, Any]:
+        return self._regularized_loss(loss_dict)
+
+    def _update_commit(self, torch: Any) -> bool:
+        return bool(self._apply_optimizer_step(torch))
+
+    def _update_flush(self, torch: Any) -> bool:
+        return self._flush_accumulation(torch)
+
+    def _regularized_loss(self, loss_dict: dict[str, Any]) -> tuple[Any, Any]:
+        """Coordinate local continual penalties before entering backward phases."""
+
+        def local() -> tuple[Any, Any]:
             loss = loss_dict["total_loss"]
             self._last_loss_scalars = _loss_scalars(loss_dict)
-
-            ewc_penalty = None
+            penalty = None
             if self.continual_manager is not None:
-                ewc_penalty = self.continual_manager.compute_ewc_penalty(self.agent)
-            if ewc_penalty is not None:
-                loss = loss + ewc_penalty
-                loss_dict["ewc_penalty"] = ewc_penalty
+                penalty = self.continual_manager.compute_ewc_penalty(self.agent)
+            if penalty is not None:
+                loss = loss + penalty
+                loss_dict["ewc_penalty"] = penalty
+            return loss, penalty
 
-        self._backward_remaining(
-            loss_dict, loss, ewc_penalty, torch, divisor=grad_accum_steps
-        )
+        return run_token_local(self.agent.model, "regularizer", local)
 
-        self._grad_accum_step += 1
-        optimizer_step = False
-        if self._grad_accum_step % grad_accum_steps == 0:
-            optimizer_step = self._apply_optimizer_step(torch)
-
-        # Prepare metrics
-        optimizer = self.optimizer
-        metrics = {
-            **{k: v.item() if torch.is_tensor(v) else v for k, v in loss_dict.items()},
-            "learning_rate": (
-                optimizer.param_groups[0]["lr"] if optimizer is not None else 0.0
-            ),
-            "global_step": self.global_step,
-            "optimizer_step": optimizer_step,
-            "optimizer_updates": int(optimizer_step),
-            "grad_accum_step": self._grad_accum_step,
-            "inner_updates": 1,
-        }
-
-        return metrics
+    @contextlib.contextmanager
+    def _loss_backward(self, backward_fn: Any) -> Iterator[Any]:
+        """Install the backward closure ``compute_*_grpo_loss`` stream into."""
+        previous = getattr(self, "_loss_backward_fn", None)
+        self._loss_backward_fn: Any = backward_fn
+        try:
+            yield backward_fn
+        finally:
+            self._loss_backward_fn = previous
 
     @contextlib.contextmanager
     def _chunked_backward(
         self, torch: Any, amp: Any, device_type: str, divisor: int
     ) -> Any:
-        """Let the token-path loss backpropagate each row chunk as it goes.
+        """Stream chunks while preserving population and entropy gradient banks."""
+        from .grpo_accumulation import NativeChunkedBackward
 
-        While active, :meth:`compute_grpo_loss` and
-        :meth:`compute_enhanced_grpo_loss` hand the loss a ``backward_fn``
-        that divides a chunk's share by ``divisor`` (``gradient_accumulation_
-        steps`` on the accumulation path) and backpropagates it through the
-        GradScaler, outside autocast. Peak activation memory is then one
-        chunk's graph instead of the whole batch's. Losses that return
-        ``backward_done`` must not be backpropagated again
-        (:meth:`_backward_remaining`).
-        """
-
-        def backward_fn(share: Any) -> None:
-            with (
-                amp.autocast(device_type=device_type, enabled=False)
-                if amp is not None
-                else contextlib.nullcontext()
-            ):
-                backward_training_loss(self, share / divisor, torch, scaler=self.scaler)
-
-        previous: Callable[[Any], None] | None = getattr(
-            self, "_loss_backward_fn", None
-        )
-        self._loss_backward_fn: Callable[[Any], None] | None = backward_fn
-        try:
+        with self._loss_backward(
+            NativeChunkedBackward(self, torch, steps=divisor, scaler=self.scaler)
+        ) as backward_fn:
             yield backward_fn
-        finally:
-            self._loss_backward_fn = previous
 
     def _backward_remaining(
         self,
@@ -1093,304 +1277,63 @@ class MultiTurnGRPOTrainer:
             "update is applied."
         )
 
-    def _inner_update_steps(
-        self,
-        trajectory_groups: list[TrajectoryGroup],
-        inner: int,
-        old_logprobs: list[Any],
-        *,
-        use_enhanced: bool,
-        beta: float,
-        autocast_ctx_factory: Any,
-        torch: Any,
-    ) -> dict[str, Any]:
-        """PPO/DAPO-style mini-epochs: ``inner`` full optimizer steps against
-        the frozen old-policy log-probs of this rollout batch."""
-        ratio_means: list[float] = []
-        # old_logprobs was frozen before this flush. The first inner loss must
-        # therefore account for any policy change caused by the pending update.
-        accumulation_flush_updates = int(self._flush_accumulation(torch))
-        optimizer_updates = accumulation_flush_updates
-        loss_dict: dict[str, Any] = {}
-        # Every inner update scores the batch against the same baseline, and
-        # the batch enters the running reward statistics once.
-        reward_stats = (self._global_reward_mean, self._global_reward_count)
-        amp = get_amp()
-        device_type = "cuda" if torch.cuda.is_available() else "cpu"
-        for step_idx in range(inner):
-            with (
-                autocast_ctx_factory(),
-                self._chunked_backward(torch, amp, device_type, 1),
-            ):
-                if use_enhanced:
-                    loss_dict = self.compute_enhanced_grpo_loss(
-                        trajectory_groups,
-                        beta=beta,
-                        old_logprobs=old_logprobs,
-                        reward_stats=reward_stats,
-                        update_stats=step_idx == 0,
-                    )
-                else:
-                    loss_dict = self.compute_grpo_loss(
-                        trajectory_groups,
-                        old_logprobs=old_logprobs,
-                        reward_stats=reward_stats,
-                        update_stats=step_idx == 0,
-                    )
-                loss = loss_dict["total_loss"]
-                self._last_loss_scalars = _loss_scalars(loss_dict)
-                ewc_penalty = None
-                if self.continual_manager is not None:
-                    ewc_penalty = self.continual_manager.compute_ewc_penalty(self.agent)
-                if ewc_penalty is not None:
-                    loss = loss + ewc_penalty
-                    loss_dict["ewc_penalty"] = ewc_penalty
-            self._backward_remaining(loss_dict, loss, ewc_penalty, torch, divisor=1)
-            optimizer_updates += int(self._apply_optimizer_step(torch))
-            ratio_means.append(float(loss_dict.get("ratio_mean", 1.0)))
+    async def _evaluate_local(
+        self, eval_scenarios: list[dict[str, Any]], num_eval_episodes: int
+    ) -> dict[str, float]:
+        """Evaluate local episodes without advancing training RNGs or modes."""
+        from stateset_agents.evaluation.isolation import isolated_evaluation
 
-        optimizer = self.optimizer
-        return {
-            **{k: v.item() if torch.is_tensor(v) else v for k, v in loss_dict.items()},
-            "learning_rate": (
-                optimizer.param_groups[0]["lr"] if optimizer is not None else 0.0
-            ),
-            "global_step": self.global_step,
-            "optimizer_step": optimizer_updates > 0,
-            "optimizer_updates": optimizer_updates,
-            "accumulation_flush_updates": accumulation_flush_updates,
-            "grad_accum_step": self._grad_accum_step,
-            "inner_updates": inner,
-            "ratio_mean_last": ratio_means[-1] if ratio_means else 1.0,
-        }
+        if type(num_eval_episodes) is not int or num_eval_episodes < 0:
+            raise ValueError("num_eval_episodes must be a nonnegative integer")
+        concurrency = int(config_value(self.config, "rollout_concurrency") or 1)
+        num_generations = int(config_value(self.config, "eval_num_generations") or 4)
+        seed = config_value(self.config, "seed")
+        if seed is None:
+            seed = 42
+        with isolated_evaluation(seed=seed, model=self.agent.model):
+            metrics = await evaluate_agent(
+                agent=self.agent,
+                environment=self.environment,
+                scenarios=eval_scenarios[:num_eval_episodes],
+                reward_fn=self.reward_fn,
+                config=EvaluationConfig(
+                    num_episodes=min(num_eval_episodes, len(eval_scenarios)),
+                    num_generations=num_generations,
+                    max_turns=config_value(self.config, "max_steps_per_episode"),
+                    seed=seed,
+                    concurrency=concurrency,
+                ),
+            )
+        return metrics
+
+    async def _update_best_checkpoint(self, metrics: dict[str, float]) -> None:
+        """Select only complete evaluations and roll back a failed best save."""
+        if (
+            metrics.get("eval_complete") != 1
+            or metrics.get("eval_num_episodes", 0) <= 0
+        ):
+            return
+        current_metric = metrics["eval_reward"]
+        if not math.isfinite(current_metric):
+            raise ValueError("Best-checkpoint selection requires a finite reward")
+        if current_metric > self.best_eval_metric:
+            previous = self.best_eval_metric, self.steps_without_improvement
+            self.best_eval_metric, self.steps_without_improvement = current_metric, 0
+            try:
+                await self.save_checkpoint(is_best=True)
+            except BaseException:
+                self.best_eval_metric, self.steps_without_improvement = previous
+                raise
+        else:
+            self.steps_without_improvement += 1
 
     async def evaluate(
         self, eval_scenarios: list[dict[str, Any]], num_eval_episodes: int = 10
     ) -> dict[str, float]:
-        """Evaluate the agent"""
-        self.agent.model.eval()
-
-        concurrency = int(getattr(self.config, "rollout_concurrency", 1) or 1)
-        num_generations = int(getattr(self.config, "eval_num_generations", 4) or 4)
-
-        eval_metrics = await evaluate_agent(
-            agent=self.agent,
-            environment=self.environment,
-            scenarios=eval_scenarios[:num_eval_episodes],
-            reward_fn=self.reward_fn,
-            config=EvaluationConfig(
-                num_episodes=min(num_eval_episodes, len(eval_scenarios)),
-                num_generations=num_generations,
-                max_turns=getattr(self.config, "max_steps_per_episode", None),
-                seed=getattr(self.config, "seed", None),
-                concurrency=concurrency,
-            ),
-        )
-
-        # Check for best model
-        current_metric = eval_metrics["eval_reward"]
-        if current_metric > self.best_eval_metric:
-            self.best_eval_metric = current_metric
-            self.steps_without_improvement = 0
-
-            # Save best checkpoint
-            await self.save_checkpoint(is_best=True)
-        else:
-            self.steps_without_improvement += 1
-
-        typed_eval_metrics: dict[str, float] = eval_metrics
-        return typed_eval_metrics
-
-    async def train(self) -> Any:
-        """Train, finalizing checkpoints only after a successful loop exit."""
-        logger.info("Starting GRPO training")
-        errored = False
-        cancelled = False
-        try:
-            # Calculate total training steps
-            num_episodes = int(getattr(self.config, "num_episodes", 100) or 100)
-            grad_accum_steps = self._get_grad_accum_steps()
-            total_steps = self._planned_optimizer_steps()
-
-            # Setup learning rate scheduler
-            self._setup_scheduler(total_steps)
-
-            resume_from = getattr(self.config, "resume_from_checkpoint", None)
-            resumed = False
-            if resume_from is not None:
-                if isinstance(resume_from, str) and not resume_from.strip():
-                    raise ValueError("resume_from_checkpoint cannot be empty")
-                resumed = self.load_checkpoint(resume_from)
-                if resumed is not True:
-                    raise ValueError(
-                        "Requested training checkpoint could not be restored; "
-                        "refusing to start a fresh run instead of resuming"
-                    )
-
-            # Training scenarios (this would come from your dataset)
-            training_scenarios = self._get_training_scenarios()
-            eval_scenarios = self._get_eval_scenarios()
-
-            await notify_training_start(
-                self.callbacks, trainer=self, config=self.config
-            )
-
-            start_episode = 0
-            if resumed:
-                start_episode = min(num_episodes, max(0, int(self.current_epoch) + 1))
-            for episode in range(start_episode, num_episodes):
-                self.current_epoch = episode
-                scenario = self._episode_scenario(training_scenarios, episode)
-                task_id = self._resolve_task_id(scenario)
-                self._maybe_handle_task_switch(task_id)
-
-                # Generate trajectory groups
-                new_groups = await self.generate_trajectories([scenario])
-
-                if not new_groups:
-                    logger.warning(
-                        f"No trajectory groups generated for episode {episode}"
-                    )
-                    continue
-
-                training_groups, replay_groups = self._maybe_mix_replay(
-                    new_groups, task_id
-                )
-
-                # Training step
-                step_before = self.global_step
-                metrics = await self.training_step(training_groups)
-                if replay_groups:
-                    metrics["replay_group_count"] = len(replay_groups)
-                    if self.continual_manager is not None:
-                        metrics["replay_buffer_size"] = (
-                            self.continual_manager.buffer.size
-                        )
-
-                # Callback: episode end (include reward signal for generic monitors)
-                episode_rewards = [
-                    float(getattr(traj, "total_reward", 0.0))
-                    for group in new_groups
-                    for traj in group.trajectories
-                ]
-                avg_episode_reward = (
-                    float(np.mean(episode_rewards)) if episode_rewards else 0.0
-                )
-                await notify_episode_end(
-                    self.callbacks,
-                    episode=episode,
-                    metrics={
-                        **metrics,
-                        "total_reward": avg_episode_reward,
-                        "episode_reward": avg_episode_reward,
-                    },
-                )
-
-                # Periodic work fires once per interval boundary crossed by this
-                # episode's optimizer steps: not again on accumulation-only
-                # episodes (global_step unchanged), and not skipped when one
-                # episode takes several steps past a multiple.
-                def crossed(every: int, before: int = step_before) -> bool:
-                    every = max(1, int(every))
-                    return self.global_step // every > before // every
-
-                logging_steps = getattr(self.config, "logging_steps", 10)
-                if crossed(logging_steps):
-                    await self._log_training_metrics(metrics, training_groups)
-
-                # Evaluation (only after first optimizer step)
-                eval_steps = getattr(self.config, "eval_steps", 50)
-                if crossed(eval_steps):
-                    eval_metrics = await self.evaluate(eval_scenarios)
-                    await self._log_eval_metrics(eval_metrics)
-                    await notify_evaluation_end(
-                        self.callbacks, metrics=dict(eval_metrics)
-                    )
-
-                    logger.info(
-                        f"Step {self.global_step}: "
-                        f"Train Loss = {metrics['total_loss']:.4f}, "
-                        f"Eval Reward = {eval_metrics['eval_reward']:.4f}"
-                    )
-
-                # Save checkpoint (only after first optimizer step)
-                save_steps = getattr(self.config, "save_steps", 100)
-                if crossed(save_steps):
-                    await self.save_checkpoint()
-
-                # Early stopping check
-                early_stopping = getattr(self.config, "early_stopping", False)
-                patience = getattr(self.config, "patience", 50)
-                if early_stopping and self.steps_without_improvement >= patience:
-                    logger.info(f"Early stopping at step {self.global_step}")
-                    break
-
-            # Finalization closes the accumulation window. Saved state must not
-            # make a resumed, already-complete run flush an empty window again.
-            if self._grad_accum_step % grad_accum_steps:
-                self._flush_accumulation(require_torch())
-            self._grad_accum_step = 0
-
-            if self.continual_manager is not None and self._current_task_id is not None:
-                self.continual_manager.on_task_end(
-                    agent=self.agent, task_id=self._current_task_id
-                )
-                reference_model = getattr(
-                    self.continual_manager, "reference_model", None
-                )
-                if reference_model is not None:
-                    self.reference_model = reference_model
-
-            # A failed final save is a failed run, not a successful completion
-            # with a silently missing output artifact.
-            await self.save_checkpoint()
-            await notify_training_end(
-                self.callbacks,
-                metrics={
-                    "final_step": self.global_step,
-                    "best_eval_metric": self.best_eval_metric,
-                },
-            )
-        except BaseException as error:
-            # Cancellation and interrupts must not flush pending gradients or
-            # enter success finalization. Already committed updates stay intact.
-            errored = True
-            cancelled = isinstance(error, (asyncio.CancelledError, KeyboardInterrupt))
-            logger.info(
-                "Training stopped without successful finalization: %s",
-                type(error).__name__,
-            )
-            if self.optimizer is not None:
-                try:
-                    self.optimizer.zero_grad(set_to_none=True)
-                except Exception as cleanup_error:
-                    logger.warning(
-                        "Could not discard pending gradients: %s", cleanup_error
-                    )
-            self._grad_accum_step = 0
-            raise
-        finally:
-            if self.wandb_logger:
-                try:
-                    await run_sync_owned(
-                        self.wandb_logger.finish_run,
-                        {
-                            "final_step": self.global_step,
-                            "best_eval_metric": self.best_eval_metric,
-                            "errored": errored,
-                            "cancelled": cancelled,
-                        },
-                    )
-                except Exception as cleanup_error:
-                    if not errored:
-                        raise
-                    logger.warning(
-                        "Tracking cleanup failed after training stopped: %s",
-                        cleanup_error,
-                    )
-
-        logger.info("Training completed")
-        return self.agent
+        """Evaluate without disturbing training and select a completed best save."""
+        metrics = await self._evaluate_local(eval_scenarios, num_eval_episodes)
+        await self._update_best_checkpoint(metrics)
+        return metrics
 
     async def run_post_training_evaluation(
         self,
@@ -1430,7 +1373,7 @@ class MultiTurnGRPOTrainer:
         """
         import random
 
-        seed_value = getattr(self.config, "seed", None)
+        seed_value = config_value(self.config, "seed")
         if seed_value is None:
             return False
         rank, world = self._data_parallel_rank_world()
@@ -1480,7 +1423,7 @@ class MultiTurnGRPOTrainer:
         """Log training metrics"""
         if self.wandb_logger:
             self.wandb_logger.log_training_step(
-                losses={k: v for k, v in metrics.items() if "loss" in k},
+                losses=self._training_log_scalars(metrics),
                 learning_rate=metrics["learning_rate"],
                 step=self.global_step,
                 trajectory_groups=trajectory_groups,
@@ -1516,6 +1459,12 @@ class MultiTurnGRPOTrainer:
             checkpoint_path: Directory written by :meth:`save_checkpoint`.
             trusted: Pass ``True`` only for checkpoints from a source you
                 control; the default unpickles with ``weights_only=True``.
+
+        A model-only or metadata-only import returns ``False``. Imported agent
+        weights remain available for inference, but a mutated learner stays
+        quarantined until full recovery. Construct a fresh trainer for a
+        deliberate warm start. Full recovery includes rollout publication unless
+        ``rollout_sync=False`` explicitly opts out.
         """
         loaded: bool = load_multi_turn_checkpoint(
             self,
@@ -1529,8 +1478,7 @@ class MultiTurnGRPOTrainer:
                 # Per-rank streams were not saved; continue on fresh,
                 # rank-distinct streams instead of replaying step 0's.
                 self._seed_everything(require_torch(), step=self.global_step)
-            # An attached rollout engine still holds the pre-resume weights.
-            self._sync_rollout_backend()
+            # The transactional loader already published the restored policy.
         return loaded
 
 

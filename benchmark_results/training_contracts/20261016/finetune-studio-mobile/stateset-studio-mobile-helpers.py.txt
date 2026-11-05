@@ -1,0 +1,30 @@
+"""Adapt frozen acceptance to phone controls and installed snapshot dimensions."""
+from pathlib import Path
+old='stateset-studio-nomination-history'; new='stateset-studio-mobile'
+changed=['stateset_agents/tui.py','stateset_agents/cli.py','tests/unit/test_finetune_mobile.py']
+for suffix in ['pipeline','prepare','wheel','finish','gates']:
+    value=Path('/tmp',old+'-'+suffix+'.py').read_text().replace(old,new)
+    if suffix in {'prepare','finish'}:
+        value=value.replace("['tests/unit/test_finetune_nomination_history.py'", "['tests/unit/test_finetune_mobile.py','tests/unit/test_finetune_nomination_history.py'")
+        value=value.replace("['tests/unit/test_mypy_allowlist_ratchet.py','tests/unit/test_finetune_nomination_history.py'", "['tests/unit/test_mypy_allowlist_ratchet.py','tests/unit/test_finetune_mobile.py','tests/unit/test_finetune_nomination_history.py'")
+    if suffix=='gates':
+        begin=value.index('for name in ['); end=value.index(':\n',begin)
+        value=value[:begin]+'for name in '+repr(changed)+value[end:]
+    if suffix=='finish':
+        position=value.index('\nexcept Exception as exc:')
+        extra='''
+    from rich.cells import cell_len
+    phone_workspace=out/'snapshot-only-workspace'
+    phone_sizes=[]
+    for columns,rows in [(32,16),(40,24),(100,16)]:
+        name=f'phone-snapshot-{columns}x{rows}'
+        run(name,[sys.executable,'-m','stateset_agents.cli','tui','--snapshot','--workspace',str(phone_workspace),'--columns',str(columns),'--rows',str(rows)],environment=wheel_env,cwd=checks)
+        frame=(out/(name+'.log')).read_text().splitlines()
+        assert len(frame)==rows and all(cell_len(line)<=columns for line in frame)
+        assert any('2/8' in line for line in frame) and not phone_workspace.exists()
+        phone_sizes.append({'columns':columns,'rows':rows,'path':name+'.log'})
+    (out/'phone-snapshot-verification.json').write_text(json.dumps({'passed':True,'sizes':phone_sizes,'workspace_created':False,'inference_started':False,'source':'actual installed CLI processes'},indent=2)+'\\n')
+'''
+        value=value[:position]+extra+value[position:]
+    Path('/tmp',new+'-'+suffix+'.py').write_text(value)
+print('Prepared mobile acceptance helpers.')

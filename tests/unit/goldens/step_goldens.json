@@ -1,0 +1,613 @@
+{
+  "_environment": {
+    "machine": "x86_64",
+    "numpy": "2.3.5",
+    "python": "3.12",
+    "system": "Linux",
+    "torch": "2.11.0+cu130",
+    "transformers": "5.14.1"
+  },
+  "dapo_k1": {
+    "clip_norms": [
+      9.68957565934049
+    ],
+    "global_step": 1,
+    "grad_norms": {
+      "policy": [
+        0.9999998326628148
+      ]
+    },
+    "lr": {
+      "policy": 0.005
+    },
+    "metrics": {
+      "accuracy": 0.3333333333333333,
+      "average_reward": 0.38888888888888884,
+      "avg_sequence_length": 2.6666666666666665,
+      "filtered_ratio": 0.0,
+      "global_step": 1.0,
+      "learning_rate": 0.005,
+      "optimizer_updates": 1.0,
+      "policy_loss": 0.04902912676334381
+    },
+    "optimizer_steps": {
+      "policy": 1
+    },
+    "param_delta_norm": 0.6423881728574693,
+    "param_delta_probe": -0.14295283656713792,
+    "scheduler_last_epoch": {
+      "policy": 1
+    }
+  },
+  "dapo_k2": {
+    "clip_norms": [
+      9.68957565934049,
+      1.3970496873004872
+    ],
+    "global_step": 1,
+    "grad_norms": {
+      "policy": [
+        0.9999998326628148,
+        0.9999993234812583
+      ]
+    },
+    "lr": {
+      "policy": 0.005
+    },
+    "metrics": {
+      "accuracy": 0.3333333333333333,
+      "average_reward": 0.38888888888888884,
+      "avg_sequence_length": 2.6666666666666665,
+      "filtered_ratio": 0.0,
+      "global_step": 1.0,
+      "learning_rate": 0.005,
+      "optimizer_updates": 2.0,
+      "policy_loss": -0.03462405689060688
+    },
+    "optimizer_steps": {
+      "policy": 2
+    },
+    "param_delta_norm": 1.040569217038017,
+    "param_delta_probe": -0.3370807111736288,
+    "scheduler_last_epoch": {
+      "policy": 2
+    }
+  },
+  "gepo_k1": {
+    "clip_norms": [
+      7.778136181734554
+    ],
+    "global_step": 1,
+    "grad_norms": {
+      "policy": [
+        0.99999989194023
+      ]
+    },
+    "lr": {
+      "policy": 0.0048776412907378846
+    },
+    "metrics": {
+      "advantage_std": 0.9999999637499661,
+      "average_reward": 0.38888888888888884,
+      "gepo_coefficient_mean": 0.35099207136469585,
+      "gepo_coefficient_std": 0.4772806048195307,
+      "global_step": 1,
+      "learning_rate": 0.0048776412907378846,
+      "optimizer_updates": 1,
+      "policy_loss": 0.2295975685119629
+    },
+    "optimizer_steps": {
+      "policy": 1
+    },
+    "param_delta_norm": 0.6216303778732917,
+    "param_delta_probe": 0.044679500923359684,
+    "scheduler_last_epoch": {
+      "policy": 1
+    }
+  },
+  "gepo_k2": {
+    "clip_norms": [
+      7.77813621500234,
+      0.04941360098366805
+    ],
+    "global_step": 1,
+    "grad_norms": {
+      "policy": [
+        0.9999998969775125,
+        0.04941360098366805
+      ]
+    },
+    "lr": {
+      "policy": 0.0048776412907378846
+    },
+    "metrics": {
+      "advantage_std": 0.9999999637499661,
+      "average_reward": 0.38888888888888884,
+      "gepo_coefficient_mean": 0.5074116572116812,
+      "gepo_coefficient_std": 0.7033173987844425,
+      "global_step": 1,
+      "learning_rate": 0.0048776412907378846,
+      "optimizer_updates": 2,
+      "policy_loss": 0.205032616853714
+    },
+    "optimizer_steps": {
+      "policy": 2
+    },
+    "param_delta_norm": 1.0247848811091422,
+    "param_delta_probe": 0.017224464800465387,
+    "scheduler_last_epoch": {
+      "policy": 2
+    }
+  },
+  "gspo_k1": {
+    "clip_norms": [
+      3.398428089881981
+    ],
+    "global_step": null,
+    "grad_norms": {
+      "policy": [
+        0.9999998585725461
+      ]
+    },
+    "lr": {
+      "policy": 0.0048776412907378846
+    },
+    "metrics": {
+      "advantage_group_count": 2.0,
+      "average_reward": 0.38888888888888884,
+      "clipping_fraction": 0.0,
+      "generation_log_prob_gap": 2.645176370938619,
+      "learning_rate": 0.0048776412907378846,
+      "nonzero_advantage_fraction": 1.0,
+      "optimizer_updates": 1.0,
+      "policy_loss": 9.934107225717526e-08,
+      "reward_std": 0.2832788618662658,
+      "sequence_importance_ratio": 1.0,
+      "zero_advantage_group_fraction": 0.0
+    },
+    "optimizer_steps": {
+      "policy": 1
+    },
+    "param_delta_norm": 0.6357887925059477,
+    "param_delta_probe": 0.09372179108123203,
+    "scheduler_last_epoch": {
+      "policy": 1
+    }
+  },
+  "gspo_k2": {
+    "clip_norms": [
+      3.398428089881981,
+      1.2973884065036612
+    ],
+    "global_step": null,
+    "grad_norms": {
+      "policy": [
+        0.9999998585725461,
+        0.9999993700056118
+      ]
+    },
+    "lr": {
+      "policy": 0.0048776412907378846
+    },
+    "metrics": {
+      "advantage_group_count": 2.0,
+      "average_reward": 0.38888888888888884,
+      "clipping_fraction": 0.5,
+      "generation_log_prob_gap": 2.645176370938619,
+      "learning_rate": 0.0048776412907378846,
+      "nonzero_advantage_fraction": 1.0,
+      "optimizer_updates": 2.0,
+      "policy_loss": 0.0339659390350171,
+      "reward_std": 0.2832788618662658,
+      "sequence_importance_ratio": 0.9219456861416498,
+      "zero_advantage_group_fraction": 0.0
+    },
+    "optimizer_steps": {
+      "policy": 2
+    },
+    "param_delta_norm": 1.0135080783948816,
+    "param_delta_probe": 0.26847180848877267,
+    "scheduler_last_epoch": {
+      "policy": 2
+    }
+  },
+  "gspo_token_k1": {
+    "clip_norms": [
+      3.3984280545563017
+    ],
+    "global_step": null,
+    "grad_norms": {
+      "policy": [
+        0.9999998499108284
+      ]
+    },
+    "lr": {
+      "policy": 0.0048776412907378846
+    },
+    "metrics": {
+      "advantage_group_count": 2.0,
+      "average_reward": 0.38888888888888884,
+      "clipping_fraction": 0.0,
+      "generation_log_prob_gap": 2.645176370938619,
+      "learning_rate": 0.0048776412907378846,
+      "nonzero_advantage_fraction": 1.0,
+      "optimizer_updates": 1.0,
+      "policy_loss": 5.960464477539063e-08,
+      "reward_std": 0.2832788618662658,
+      "sequence_importance_ratio": 1.0,
+      "zero_advantage_group_fraction": 0.0
+    },
+    "optimizer_steps": {
+      "policy": 1
+    },
+    "param_delta_norm": 0.6357887940639111,
+    "param_delta_probe": 0.09372168559657162,
+    "scheduler_last_epoch": {
+      "policy": 1
+    }
+  },
+  "gspo_token_k2": {
+    "clip_norms": [
+      3.3984280545563017,
+      1.297388018278463
+    ],
+    "global_step": null,
+    "grad_norms": {
+      "policy": [
+        0.9999998499108284,
+        0.999999301050482
+      ]
+    },
+    "lr": {
+      "policy": 0.0048776412907378846
+    },
+    "metrics": {
+      "advantage_group_count": 2.0,
+      "average_reward": 0.38888888888888884,
+      "clipping_fraction": 0.5,
+      "generation_log_prob_gap": 2.645176370938619,
+      "learning_rate": 0.0048776412907378846,
+      "nonzero_advantage_fraction": 1.0,
+      "optimizer_updates": 2.0,
+      "policy_loss": 0.033965952694416046,
+      "reward_std": 0.2832788618662658,
+      "sequence_importance_ratio": 0.921945720911026,
+      "zero_advantage_group_fraction": 0.0
+    },
+    "optimizer_steps": {
+      "policy": 2
+    },
+    "param_delta_norm": 1.013508078660981,
+    "param_delta_probe": 0.2684718055308138,
+    "scheduler_last_epoch": {
+      "policy": 2
+    }
+  },
+  "multi_turn_grpo_k1": {
+    "clip_norms": [
+      9.397854261990979
+    ],
+    "global_step": 1,
+    "grad_norms": {
+      "policy": [
+        0.9999999449005799
+      ]
+    },
+    "lr": {
+      "policy": 0.0048776412907378846
+    },
+    "metrics": {
+      "advantage_std": 0.9999999637499661,
+      "backward_done": true,
+      "clip_fraction": 0.0,
+      "entropy": 4.810751795768738,
+      "entropy_measured": true,
+      "global_step": 1,
+      "grad_accum_step": 1,
+      "inner_updates": 1,
+      "kl_penalty": 0.0,
+      "learning_rate": 0.0048776412907378846,
+      "mean_advantage": -9.934107462565105e-08,
+      "nonzero_advantage_fraction": 1.0,
+      "num_rows": 6,
+      "num_tokens": 16,
+      "num_trajectories": 6,
+      "objective": "grpo",
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "optimizer_step": true,
+      "optimizer_updates": 1,
+      "path": "token",
+      "policy_denominator": 6,
+      "policy_loss": -0.048107460141181946,
+      "policy_objective_loss": 5.960464477539063e-08,
+      "ratio_mean": 1.0,
+      "total_loss": -0.048107460141181946
+    },
+    "optimizer_steps": {
+      "policy": 1
+    },
+    "param_delta_norm": 0.6411322013789148,
+    "param_delta_probe": -0.09954208735354979,
+    "scheduler_last_epoch": {
+      "policy": 1
+    }
+  },
+  "multi_turn_grpo_k2": {
+    "clip_norms": [
+      9.397854112355864,
+      0.8612633260132678
+    ],
+    "global_step": 2,
+    "grad_norms": {
+      "policy": [
+        0.9999999284762877,
+        0.8612633260132678
+      ]
+    },
+    "lr": {
+      "policy": 0.0045225424859373685
+    },
+    "metrics": {
+      "accumulation_flush_updates": 0,
+      "advantage_std": 0.9999999637499661,
+      "backward_done": true,
+      "clip_fraction": 0.75,
+      "entropy": 4.800341248512268,
+      "entropy_measured": true,
+      "global_step": 2,
+      "grad_accum_step": 0,
+      "inner_updates": 2,
+      "kl_penalty": 0.0,
+      "learning_rate": 0.0045225424859373685,
+      "mean_advantage": -9.934107462565105e-08,
+      "nonzero_advantage_fraction": 1.0,
+      "num_rows": 6,
+      "num_tokens": 16,
+      "num_trajectories": 6,
+      "objective": "grpo",
+      "off_policy": true,
+      "old_logprobs_source": "snapshot",
+      "optimizer_step": true,
+      "optimizer_updates": 2,
+      "path": "token",
+      "policy_denominator": 6,
+      "policy_loss": -0.18312138319015503,
+      "policy_objective_loss": -0.13511797785758972,
+      "ratio_mean": 1.0903279036283493,
+      "ratio_mean_last": 1.0903279036283493,
+      "total_loss": -0.18312138319015503
+    },
+    "optimizer_steps": {
+      "policy": 2
+    },
+    "param_delta_norm": 1.0359956640279835,
+    "param_delta_probe": -0.25675489668418006,
+    "scheduler_last_epoch": {
+      "policy": 2
+    }
+  },
+  "single_turn_grpo_k1": {
+    "clip_norms": [
+      10.18609436470516
+    ],
+    "global_step": 1,
+    "grad_norms": {
+      "policy": [
+        0.9999998939868445
+      ]
+    },
+    "lr": {
+      "policy": 0.0
+    },
+    "metrics": {
+      "advantage_std": 0.9999999637499661,
+      "backward_done": true,
+      "clip_fraction": 0.0,
+      "entropy": 4.809821605682373,
+      "entropy_measured": true,
+      "kl_penalty": 0.0,
+      "mean_advantage": -9.934107462565105e-08,
+      "nonzero_advantage_fraction": 1.0,
+      "num_rows": 3,
+      "num_tokens": 8,
+      "num_trajectories": 3,
+      "objective": "grpo",
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "path": "token",
+      "policy_denominator": 3,
+      "policy_loss": -0.04809815436601639,
+      "policy_objective_loss": 5.960464477539063e-08,
+      "ratio_mean": 1.0,
+      "step": 1,
+      "total_loss": -0.04809815436601639
+    },
+    "optimizer_steps": {
+      "policy": 1
+    },
+    "param_delta_norm": 0.6402628336932361,
+    "param_delta_probe": -0.19748141137008982,
+    "scheduler_last_epoch": {
+      "policy": 1
+    }
+  },
+  "single_turn_grpo_k2": {
+    "clip_norms": [
+      10.186094603214672,
+      1.6408385664966119
+    ],
+    "global_step": 2,
+    "grad_norms": {
+      "policy": [
+        0.9999999182461861,
+        0.9999994526457012
+      ]
+    },
+    "lr": {
+      "policy": 0.0
+    },
+    "metrics": {
+      "advantage_std": 0.9999999637499661,
+      "backward_done": true,
+      "clip_fraction": 0.625,
+      "entropy": 4.799046158790588,
+      "entropy_measured": true,
+      "kl_penalty": 0.0,
+      "mean_advantage": -9.934107462565105e-08,
+      "nonzero_advantage_fraction": 1.0,
+      "num_rows": 3,
+      "num_tokens": 8,
+      "num_trajectories": 3,
+      "objective": "grpo",
+      "off_policy": true,
+      "old_logprobs_source": "snapshot",
+      "path": "token",
+      "policy_denominator": 3,
+      "policy_loss": -0.16254815459251404,
+      "policy_objective_loss": -0.11455769836902618,
+      "ratio_mean": 1.0822612345218658,
+      "step": 1,
+      "total_loss": -0.16254815459251404
+    },
+    "optimizer_steps": {
+      "policy": 2
+    },
+    "param_delta_norm": 0.822616628203734,
+    "param_delta_probe": -0.246056380220617,
+    "scheduler_last_epoch": {
+      "policy": 2
+    }
+  },
+  "single_turn_grpo_partial_window_k1": {
+    "clip_norms": [
+      10.18609331032325
+    ],
+    "global_step": 1,
+    "grad_norms": {
+      "policy": [
+        0.9999998686871886
+      ]
+    },
+    "lr": {
+      "policy": 0.0
+    },
+    "metrics": {
+      "advantage_std": 0.9999999637499661,
+      "backward_done": true,
+      "clip_fraction": 0.0,
+      "entropy": 4.809821605682373,
+      "entropy_measured": true,
+      "kl_penalty": 0.0,
+      "mean_advantage": -9.934107462565105e-08,
+      "nonzero_advantage_fraction": 1.0,
+      "num_rows": 3,
+      "num_tokens": 8,
+      "num_trajectories": 3,
+      "objective": "grpo",
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "path": "token",
+      "policy_denominator": 3,
+      "policy_loss": -0.04809815436601639,
+      "policy_objective_loss": 5.960464477539063e-08,
+      "ratio_mean": 1.0,
+      "step": 1,
+      "total_loss": -0.04809815436601639
+    },
+    "optimizer_steps": {
+      "policy": 1
+    },
+    "param_delta_norm": 0.6402628403601728,
+    "param_delta_probe": -0.1974815253343134,
+    "scheduler_last_epoch": {
+      "policy": 1
+    }
+  },
+  "vapo_k1": {
+    "clip_norms": [
+      28.036838789638978,
+      0.9417784974809823
+    ],
+    "global_step": 1,
+    "grad_norms": {
+      "actor": [
+        0.9999999102307731
+      ],
+      "critic": [
+        0.9417784974809823
+      ]
+    },
+    "lr": {
+      "actor": 0.0048776412907378846,
+      "critic": 0.0048776412907378846
+    },
+    "metrics": {
+      "accuracy": 0.3333333333333333,
+      "actor_lr": 0.0048776412907378846,
+      "average_reward": 0.38888888888888884,
+      "critic_lr": 0.0048776412907378846,
+      "explained_variance": 0.004153549671173096,
+      "global_step": 1,
+      "optimizer_updates": 1,
+      "policy_loss": 7.450580596923828e-09,
+      "positive_lm_loss": 4.994580268859863,
+      "value_loss": 0.1801687851548195
+    },
+    "optimizer_steps": {
+      "actor": 1,
+      "critic": 1
+    },
+    "param_delta_norm": 0.9916064875676761,
+    "param_delta_probe": 0.05859523784045965,
+    "scheduler_last_epoch": {
+      "actor": 1,
+      "critic": 1
+    }
+  },
+  "vapo_k2": {
+    "clip_norms": [
+      28.036838789638978,
+      0.9417784974809823,
+      0.5412180046659485,
+      4.579973376821452
+    ],
+    "global_step": 1,
+    "grad_norms": {
+      "actor": [
+        0.9999999102307731,
+        0.5412180046659485
+      ],
+      "critic": [
+        0.9417784974809823,
+        0.9999996878096614
+      ]
+    },
+    "lr": {
+      "actor": 0.0048776412907378846,
+      "critic": 0.0048776412907378846
+    },
+    "metrics": {
+      "accuracy": 0.3333333333333333,
+      "actor_lr": 0.0048776412907378846,
+      "average_reward": 0.38888888888888884,
+      "critic_lr": 0.0048776412907378846,
+      "explained_variance": 0.051238834857940674,
+      "global_step": 1,
+      "optimizer_updates": 2,
+      "policy_loss": -0.15152880549430847,
+      "positive_lm_loss": 5.020076751708984,
+      "value_loss": 0.7161993682384491
+    },
+    "optimizer_steps": {
+      "actor": 2,
+      "critic": 2
+    },
+    "param_delta_norm": 1.441738852812835,
+    "param_delta_probe": -0.0015693368806723115,
+    "scheduler_last_epoch": {
+      "actor": 2,
+      "critic": 2
+    }
+  }
+}

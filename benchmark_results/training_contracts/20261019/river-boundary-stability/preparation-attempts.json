@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "scope": "offline_dataset_preparation",
+  "attempts": [
+    {
+      "directory": ".",
+      "seed_range": [2026101951, 2026101956],
+      "status": "rejected_overlap_before_evaluation",
+      "reason": "The proposed first validation seed reused 32 cases from the previous six-parent study.",
+      "provider_requests": 0,
+      "holdout_outcomes_observed": 0,
+      "artifacts": "Preserved without alteration."
+    },
+    {
+      "directory": "attempt-2",
+      "seed_range": [2026102901, 2026102906],
+      "status": "rejected_observable_fact_overlap_before_evaluation",
+      "scope": "New offline preparation; no model retry or test resampling after outcomes.",
+      "provider_requests": 0,
+      "holdout_outcomes_observed": 0,
+      "artifacts": "All six complete training curricula and partially published heldouts preserved."
+    },
+    {
+      "directory": "attempt-3",
+      "status": "completed_offline_preparation",
+      "scope": "Reaudit the retained training curricula. Reject colliding input seeds before publication using inputs alone, with a finite 100-candidate limit per parent.",
+      "provider_requests": 0,
+      "holdout_outcomes_observed": 0,
+      "seed_selection_log": "attempt-3/readiness.json",
+      "exclusions": "All historical cases, all new training cases, previously published unused holdouts and other newly selected holdouts."
+    }
+  ]
+}

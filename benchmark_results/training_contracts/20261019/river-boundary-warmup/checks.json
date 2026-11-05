@@ -1,0 +1,11 @@
+{
+  "unit_tests_passed": 370,
+  "scripted_sdk_integration_tests_passed": 19,
+  "type_checked_sources": 445,
+  "ruff": "passed",
+  "black": "passed",
+  "isort": "passed",
+  "repository_hygiene": "passed",
+  "asyncio_wakeup": "passed",
+  "sdk_integration_provider_calls": 0
+}

@@ -1,0 +1,412 @@
+"""Explicitly enabled operator API for the shared fine-tuning studio workspace.
+
+These routes never launch training or accept arbitrary server file paths.
+Workspace access requires the existing admin role and server configuration.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import re
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+
+from fastapi import APIRouter, Depends, Query, Request
+
+from stateset_agents.finetune_inspection import inspect_workflow
+from stateset_agents.finetune_quality import (
+    MAX_EVIDENCE_BYTES,
+    inspect_quality,
+    record_quality_document,
+)
+from stateset_agents.finetune_recovery import inspect_checkpoints
+from stateset_agents.finetune_workspace import (
+    BACKENDS,
+    check_config_values,
+    finetune_schema,
+    list_runs,
+    read_run_plan,
+    redact_finetune_secrets,
+    request_stop,
+    run_status,
+    run_terminal_status,
+)
+from stateset_agents.utils.async_calls import run_sync_owned
+
+from ..dependencies import AuthenticatedUser, get_strict_current_user
+from ..errors import APIError, ErrorCode, ErrorDetail
+
+
+async def _operator(
+    user: AuthenticatedUser = Depends(get_strict_current_user),
+) -> AuthenticatedUser:
+    if "admin" not in user.roles:
+        raise _error(
+            403, "admin_required", "Operator workspace access requires the admin role."
+        )
+    return user
+
+
+router = APIRouter(
+    prefix="/finetune",
+    tags=["finetune"],
+    dependencies=[Depends(_operator)],
+)
+
+
+def _json_body(schema: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "requestBody": {
+            "required": True,
+            "content": {"application/json": {"schema": schema}},
+        }
+    }
+
+
+def _error(status: int, code: str, message: str) -> APIError:
+    category = {
+        400: ErrorCode.BAD_REQUEST,
+        403: ErrorCode.FORBIDDEN,
+        404: ErrorCode.NOT_FOUND,
+        413: ErrorCode.PAYLOAD_TOO_LARGE,
+        429: ErrorCode.RATE_LIMIT_EXCEEDED,
+        503: ErrorCode.SERVICE_UNAVAILABLE,
+    }.get(status, ErrorCode.OPERATION_FAILED)
+    return APIError(
+        category, message, status, details=[ErrorDetail(code=code, message=message)]
+    )
+
+
+def _workspace() -> Path:
+    configured = os.environ.get("STATESET_FINETUNE_WORKSPACE", "")
+    path = Path(configured)
+    if (
+        not configured
+        or not path.is_absolute()
+        or path.is_symlink()
+        or not path.is_dir()
+    ):
+        raise _error(
+            503,
+            "workspace_unavailable",
+            "Configure an existing absolute STATESET_FINETUNE_WORKSPACE for operator access.",
+        )
+    return path.resolve()
+
+
+def _run(run_id: str) -> Path:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", run_id):
+        raise _error(400, "invalid_run_id", "Choose a single retained run ID.")
+    run = _workspace() / run_id
+    if run.is_symlink() or not run.is_dir() or (run / "plan.json").is_symlink():
+        raise _error(404, "run_not_found", "No regular retained run has that ID.")
+    return run
+
+
+def _reply(command: str, result: dict[str, Any]) -> dict[str, Any]:
+    response: dict[str, Any] = redact_finetune_secrets(
+        {"schema_version": 1, "ok": True, "command": command, "result": result}
+    )
+    try:
+        json.dumps(response, allow_nan=False, ensure_ascii=False).encode("utf-8")
+    except (ValueError, TypeError, RecursionError):
+        raise _error(
+            400, "invalid_record", "Stored metadata cannot be safely serialized."
+        ) from None
+    return response
+
+
+async def _body(request: Request, limit: int) -> dict[str, Any]:
+    raw = bytearray()
+    async for chunk in request.stream():
+        if len(raw) + len(chunk) > limit:
+            raise _error(
+                413,
+                "request_too_large",
+                "The request exceeds the operation's byte limit.",
+            )
+        raw.extend(chunk)
+    try:
+        value = json.loads(raw)
+        if not isinstance(value, dict):
+            raise ValueError("Expected an object")
+        json.dumps(value, allow_nan=False, ensure_ascii=False).encode("utf-8")
+        return value
+    except (ValueError, TypeError, RecursionError):
+        raise _error(
+            400, "invalid_json", "Expected a bounded JSON object with finite values."
+        ) from None
+
+
+async def _inspect(
+    request: Request, function: Callable[[], dict[str, Any]]
+) -> dict[str, Any]:
+    # One weight-hashing/setup operation per app. Cancellation drains the owned
+    # thread before releasing capacity, so disconnects cannot detach hash workers.
+    gate = getattr(request.app.state, "finetune_inspection_gate", None)
+    if gate is None:
+        gate = asyncio.Semaphore(1)
+        request.app.state.finetune_inspection_gate = gate
+    if gate.locked():
+        raise _error(
+            429, "inspection_busy", "An inspection is active; retry after it finishes."
+        )
+    async with gate:
+        try:
+            return await run_sync_owned(function)
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            RecursionError,
+            OverflowError,
+        ):
+            raise _error(
+                400,
+                "invalid_evidence_or_run",
+                "Cannot verify the run or evidence. Check completed artifacts, report formats, hashes and file limits.",
+            ) from None
+
+
+@router.get("/capabilities")
+async def capabilities() -> dict[str, Any]:
+    """Describe supported operator actions without reading a workspace."""
+    return _reply(
+        "capabilities",
+        {
+            "backends": BACKENDS,
+            "config_schema": finetune_schema()["config_schema"],
+            "requires_role": "admin",
+            "workspace_environment": "STATESET_FINETUNE_WORKSPACE",
+            "quality_upload_max_bytes": MAX_EVIDENCE_BYTES,
+            "quality_receipt_max_bytes": MAX_EVIDENCE_BYTES + 128 * 1024,
+            "quality_evidence": {
+                "schema_version": 1,
+                "baselines": "held-out evaluation reports",
+                "candidates": "paired held-out reports; exactly one matches this run's artifact",
+            },
+            "launch_supported": False,
+            "remote_stop_supported": False,
+            "checkpoint_resume_supported": True,
+            "checkpoint_recovery": finetune_schema()["checkpoint_recovery"],
+            "http_recovery_prepare_supported": False,
+            "effects": {
+                "validate": "configuration_only",
+                "run_get": "reviewed_plan_and_status_metadata",
+                "workflow": "local_inspection",
+                "quality_get": "reads_artifact_and_evidence",
+                "quality_post": "retains_private_evidence",
+                "stop": "cooperative_local_stop",
+                "checkpoints": "reads_local_recovery_artifacts",
+            },
+        },
+    )
+
+
+@router.post(
+    "/validate",
+    openapi_extra=_json_body(
+        {
+            "type": "object",
+            "description": "Draft configuration; inspect capabilities.config_schema for supported fields. Invalid fields are reported, not silently dropped.",
+        }
+    ),
+)
+async def validate(request: Request) -> dict[str, Any]:
+    """Check draft configuration without reading paths or preparing a run."""
+    values = await _body(request, 64 * 1024)
+    _, issues = check_config_values(values)
+    return _reply(
+        "validate",
+        {
+            "valid": not issues,
+            "issues": [
+                {"field": issue.field, "code": issue.code, "message": issue.message}
+                for issue in issues
+            ],
+            "dataset_contents_checked": False,
+            "training_started": False,
+        },
+    )
+
+
+@router.get("/runs")
+async def runs(
+    request: Request, limit: int = Query(20, ge=1, le=100)
+) -> dict[str, Any]:
+    """List bounded operator workspace metadata; transcripts and logs stay private."""
+    workspace = _workspace()
+
+    def describe() -> dict[str, Any]:
+        rows = list_runs(workspace, limit=limit)
+        return {
+            "runs": [
+                {
+                    "run_id": row["id"],
+                    "status": row["state"]["status"],
+                    "terminal": run_terminal_status(row["state"]),
+                    "execution_unconfirmed": row["state"].get("execution_unconfirmed")
+                    is True,
+                    "stop_requested": row["state"].get("stop_requested", False),
+                    "config": {
+                        key: row["plan"].get("config", {}).get(key)
+                        for key in ("model", "provider", "method")
+                    },
+                }
+                for row in rows
+            ]
+        }
+
+    try:
+        result = await run_sync_owned(describe)
+    except (OSError, ValueError, TypeError, KeyError, RecursionError):
+        raise _error(
+            400, "invalid_run_metadata", "Cannot inspect retained run metadata."
+        ) from None
+    return _reply("status", result)
+
+
+@router.get("/runs/{run_id}")
+async def run_detail(run_id: str) -> dict[str, Any]:
+    """Read safe run metadata and the exact checksum required for a stop review."""
+    run = _run(run_id)
+
+    def describe() -> dict[str, Any]:
+        plan, digest = read_run_plan(run)
+        state = run_status(run)
+        config = plan.get("config")
+        if not isinstance(config, dict) or not isinstance(state.get("status"), str):
+            raise ValueError("Invalid run metadata")
+        fields = {key: config.get(key) for key in ("model", "provider", "method")}
+        if any(
+            value is not None and not isinstance(value, str)
+            for value in fields.values()
+        ):
+            raise ValueError("Invalid run configuration metadata")
+        return {
+            "run_id": run.name,
+            "plan_sha256": digest,
+            "status": state["status"],
+            "terminal": run_terminal_status(state),
+            "execution_unconfirmed": state.get("execution_unconfirmed") is True,
+            "stop_requested": state.get("stop_requested") is True,
+            "config": fields,
+        }
+
+    try:
+        result = await run_sync_owned(describe)
+    except (OSError, ValueError, TypeError, KeyError, RecursionError):
+        raise _error(
+            400, "invalid_run_metadata", "Cannot inspect retained run metadata."
+        ) from None
+    return _reply("run", result)
+
+
+@router.get("/runs/{run_id}/workflow")
+async def workflow(run_id: str, request: Request) -> dict[str, Any]:
+    """Check retained inputs using their server-owned snapshot, never client paths."""
+    run = _run(run_id)
+
+    def describe() -> dict[str, Any]:
+        plan, _ = read_run_plan(run)
+        data = run / "dataset"
+        if data.is_symlink():
+            raise ValueError("Dataset snapshot must be regular")
+        return inspect_workflow({**plan["config"], "dataset": str(data)}, run.parent)
+
+    return _reply("workflow", await _inspect(request, describe))
+
+
+@router.get("/runs/{run_id}/quality")
+async def quality(run_id: str, request: Request) -> dict[str, Any]:
+    """Recompute paired outcomes and bind them to current completed weights."""
+    run = _run(run_id)
+    return _reply("quality", await _inspect(request, lambda: inspect_quality(run)))
+
+
+@router.get("/runs/{run_id}/checkpoints")
+async def checkpoints(run_id: str, request: Request) -> dict[str, Any]:
+    """Hash plan-bound recovery choices; preparation uses a separate CLI/TUI review."""
+    run = _run(run_id)
+    return _reply(
+        "checkpoints", await _inspect(request, lambda: inspect_checkpoints(run))
+    )
+
+
+@router.post(
+    "/runs/{run_id}/quality",
+    openapi_extra=_json_body(
+        {
+            "type": "object",
+            "required": ["schema_version", "baselines", "candidates"],
+            "properties": {
+                "schema_version": {"const": 1},
+                "baselines": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 64,
+                    "items": {"type": "object"},
+                },
+                "candidates": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 64,
+                    "items": {"type": "object"},
+                },
+                "review": {"type": "object"},
+            },
+        }
+    ),
+)
+async def import_quality(run_id: str, request: Request) -> dict[str, Any]:
+    """Validate and retain bounded JSON evidence without running models or judges."""
+    run = _run(run_id)
+    evidence = await _body(request, MAX_EVIDENCE_BYTES)
+    return _reply(
+        "quality",
+        await _inspect(request, lambda: record_quality_document(run, evidence)),
+    )
+
+
+@router.post(
+    "/runs/{run_id}/stop",
+    openapi_extra=_json_body(
+        {
+            "type": "object",
+            "required": ["expected_plan_sha256"],
+            "additionalProperties": False,
+            "properties": {
+                "expected_plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+            },
+        }
+    ),
+)
+async def stop(run_id: str, request: Request) -> dict[str, Any]:
+    """Request a cooperative local stop with a matching reviewed plan checksum."""
+    run = _run(run_id)
+    value = await _body(request, 4096)
+    digest = value.get("expected_plan_sha256")
+    if (
+        set(value) != {"expected_plan_sha256"}
+        or not isinstance(digest, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", digest)
+    ):
+        raise _error(
+            400,
+            "invalid_stop_review",
+            "Provide only expected_plan_sha256 as a 64-character checksum.",
+        )
+    try:
+        # Lifecycle controls remain available while an unrelated weight hash runs.
+        result = await run_sync_owned(request_stop, run, expected_plan_sha256=digest)
+    except (OSError, ValueError, TypeError, KeyError, RecursionError):
+        raise _error(
+            400,
+            "stop_unavailable",
+            "Cannot stop this run. Check the reviewed checksum and local backend support.",
+        ) from None
+    return _reply("stop", result)

@@ -144,6 +144,8 @@ class CoreWeaveExecutor(RemoteExecutor):
     """Run packaged StateSet SFT jobs as Kubernetes Jobs on CKS."""
 
     name = "coreweave"
+    supports_sft_seed = True
+    uses_packaged_training = True
     supported_job_kinds = frozenset({"sft"})
     durable_handles = True
     managed_deployments = True

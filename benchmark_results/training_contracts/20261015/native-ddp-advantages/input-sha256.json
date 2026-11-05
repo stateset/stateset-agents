@@ -1,0 +1,19 @@
+{
+  "stateset_agents/training/distributed_advantages.py": "66ba1de61f7b3605c0f2efb42ce0910ecb811309b0a6a851d0015a4daa38e3bf",
+  "stateset_agents/training/loss_computation.py": "6375a109ebad59f66fcef4bfce7d6ad7e504cedcb1a04fd9b165a219367d4d65",
+  "stateset_agents/training/grpo_accumulation.py": "a829c4953b466983435e7a40031ea33ef0f002a404414e507ddf856f69e2fbf0",
+  "stateset_agents/training/metric_reduction.py": "47d5808a05673759247f92f1e6fccc1612aaa39701bcfa54352ea872977d442f",
+  "stateset_agents/training/distributed.py": "b734cc6c9cfd9028c181d54cc344f8d7e9a4acb108be55e9a507efcf9270ea6b",
+  "stateset_agents/training/multi_turn_trainer.py": "b68500e91d8b43cbf835a298a069617de7a13ea87e2158839af078b23e5d2e27",
+  "stateset_agents/training/single_turn_trainer.py": "8281a48e6f7da39ce397f49e162abb45674c07c147a73dd9dfe495665d7a5c8a",
+  "tests/unit/test_distributed_advantages.py": "91888e6d79846e8a6095c8b966664c28ca0df99a939b6afc5e6776ab54763d67",
+  "tests/integration/test_distributed_advantages.py": "748077bbf038b2b7c0c268c3dfb54b5a9e2bd6562365beb5eb71c23d1e53d32f",
+  "tests/unit/test_token_group_aggregation.py": "2dca34e9d23eadfee6b56ed8c2aca23c1bbe36a758097543f83cbe466d968b8b",
+  "tests/integration/test_distributed_grpo_weighting.py": "6a98a32eeca75169d6ede7a934ff2355888e352df019e397b5b64150d4091740",
+  "tests/unit/test_mypy_allowlist_ratchet.py": "12183285e17efe944789046eb1e65ccf6bc90b21c525b43a9fcde537145628c9",
+  ".github/workflows/training-contracts.yml": "2f7d69c71093fcfd5bdfa9e427a96e921627cb932f0e33867fdd37f70641bf53",
+  "pyproject.toml": "5eaaebdaa2c22e3adf21cc51ef7a939b18ed27d9890366b9f376649508f7c3b9",
+  "docs/OBJECTIVES.md": "bb2d57743f428bcac778fcca799165937edb66f0fe2387aa5a463e3c90b18267",
+  "docs/ROADMAP.md": "2275f7e12093e1ad41f92f2b499508b4b19f9b3afa6eff2720bbc5e39fe08211",
+  "CHANGELOG.md": "8cd3162dfe2e9f3277961b94c85b870456e9b3d58ea757b3ec0f2f702cec320b"
+}

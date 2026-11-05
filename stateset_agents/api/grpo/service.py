@@ -10,8 +10,9 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
 from typing import Any
+
+from stateset_agents.utils.clock import utc_isoformat
 
 try:
     import uvicorn
@@ -44,7 +45,10 @@ from .state import get_state_manager
 logger = get_logger(__name__)
 
 GRPO_INIT_EXCEPTIONS = MODEL_IO_EXCEPTIONS
-GRPO_REQUEST_EXCEPTIONS = (HTTPException, *INFERENCE_EXCEPTIONS)
+GRPO_REQUEST_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    HTTPException,
+    *INFERENCE_EXCEPTIONS,
+)
 
 
 # Global services and handlers
@@ -84,7 +88,7 @@ def _build_error_response(
         "error": {"message": message, "status_code": status_code},
         "request_id": request_id,
         "path": str(request.url.path),
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": utc_isoformat(),
     }
     if details is not None:
         payload["error"]["details"] = details
@@ -287,11 +291,11 @@ async def lifespan(app: FastAPI):
     try:
         from stateset_agents.core.multiturn_agent import (
             DialogueDatabase,
-            MultiTurnAgent,
+            DialogueSessionAgent,
         )
 
         model_config = {"model_type": "gpt-oss", "model_name": "openai/gpt-oss-120b"}
-        _services["multiturn_agent"] = MultiTurnAgent(
+        _services["multiturn_agent"] = DialogueSessionAgent(
             model_config,
             dialogue_database=DialogueDatabase([]),
         )
@@ -311,8 +315,8 @@ async def lifespan(app: FastAPI):
         pending_jobs = [
             job_id
             for job_id in list(state.jobs.keys())
-            if state.get_job(job_id)
-            and state.get_job(job_id).status in ("starting", "running")
+            if (job := state.get_job(job_id)) is not None
+            and job.status in ("starting", "running")
         ]
         for job_id in pending_jobs:
             state.update_job(job_id, status="cancelled")
@@ -338,7 +342,7 @@ async def lifespan(app: FastAPI):
         state = get_state_manager()
         for engine_id in list(state.engines.keys()):
             engine = state.unregister_engine(engine_id)
-            if hasattr(engine, "cleanup"):
+            if engine is not None and hasattr(engine, "cleanup"):
                 engine.cleanup()
             logger.debug("Cleaned up engine: %s", engine_id)
 

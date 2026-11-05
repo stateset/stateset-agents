@@ -1,0 +1,117 @@
+[
+  {
+    "id": "74b783ca242d",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-studio-quality-api-prepare.py"
+    ],
+    "created": 1792188177.931971,
+    "started": 1792188311.8826873,
+    "finished": 1792188775.5410588,
+    "wait_seconds": 133.95071625709534,
+    "elapsed_seconds": 463.65837144851685,
+    "reason": ""
+  },
+  {
+    "id": "2f23da8268c6",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      "/home/dom/stateset-agents/.venv/bin/python",
+      "/tmp/stateset-studio-quality-api-wheel.py",
+      "/tmp/stateset-studio-quality-api-20261016-retry3",
+      "1"
+    ],
+    "created": 1792189216.4716532,
+    "started": 1792189425.9212897,
+    "finished": 1792189607.7852135,
+    "wait_seconds": 209.4496364593506,
+    "elapsed_seconds": 181.86392378807068,
+    "reason": ""
+  },
+  {
+    "id": "6cf2e0f8fdf6",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      "/home/dom/stateset-agents/.venv/bin/python",
+      "/tmp/stateset-studio-quality-api-wheel.py",
+      "/tmp/stateset-studio-quality-api-20261016-retry3",
+      "2"
+    ],
+    "created": 1792189216.4603941,
+    "started": 1792189344.7373438,
+    "finished": 1792189414.2908306,
+    "wait_seconds": 128.27694964408875,
+    "elapsed_seconds": 69.55348682403564,
+    "reason": ""
+  },
+  {
+    "id": "54f71e7251ea",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      "/home/dom/stateset-agents/.venv/bin/python",
+      "/tmp/stateset-studio-quality-api-wheel.py",
+      "/tmp/stateset-studio-quality-api-20261016-retry3",
+      "3"
+    ],
+    "created": 1792189216.4988182,
+    "started": 1792189607.7986956,
+    "finished": 1792189638.9760437,
+    "wait_seconds": 391.2998774051666,
+    "elapsed_seconds": 31.177348136901855,
+    "reason": ""
+  },
+  {
+    "id": "07bc3da201b9",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-studio-quality-api-finish.py",
+      "/tmp/stateset-studio-quality-api-20261016-retry3"
+    ],
+    "created": 1792189666.9378452,
+    "started": 1792189682.5438256,
+    "finished": 1792189708.4768054,
+    "wait_seconds": 15.605980396270752,
+    "elapsed_seconds": 25.932979822158813,
+    "reason": ""
+  },
+  {
+    "id": "6678588e5e5c",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      "env",
+      "OMP_NUM_THREADS=1",
+      "MKL_NUM_THREADS=1",
+      "OPENBLAS_NUM_THREADS=1",
+      "RAYON_NUM_THREADS=2",
+      "TOKENIZERS_PARALLELISM=false",
+      ".venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "-n0",
+      "-o",
+      "addopts=",
+      "--timeout=150",
+      "--tb=short",
+      "tests/unit/test_finetune_quality.py",
+      "tests/unit/test_finetune_studio.py",
+      "tests/unit/test_cli_finetune.py",
+      "tests/unit/test_finetune_failures.py",
+      "--junitxml=/tmp/stateset-studio-quality-focused-final.xml"
+    ],
+    "created": 1792185929.4663243,
+    "started": 1792185929.4991395,
+    "finished": 1792186020.9173348,
+    "wait_seconds": 0.03281521797180176,
+    "elapsed_seconds": 91.41819524765015,
+    "reason": ""
+  }
+]

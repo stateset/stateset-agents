@@ -1,0 +1,10 @@
+{
+  "provider_sampling_behavior_independently_attested": false,
+  "sdk_version": "0.11.0",
+  "source_sha256": {
+    "client.py": "b504b743800e123434d58df0b1a01a0259b5d847f63ef3b60aeec69b2d463f78",
+    "rl/engine.py": "03f95175ba23698affd93ad2c074b9eef69b81561483930248ac3ec6c9413409",
+    "rl/evaluation.py": "65519ff3b426092eea43624a26b0b3530a9d58e424be4357509604559bfdb445"
+  },
+  "zero_temperature_forwarding_verified_by_native_transport_test": true
+}

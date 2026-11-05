@@ -1,0 +1,134 @@
+{
+  "id": "5144a33d926b",
+  "state": "succeeded",
+  "created": 1792250825.8921394,
+  "started": 1792250840.9283795,
+  "finished": 1792251034.488754,
+  "owner_pid": 2394383,
+  "owner_start": "24072088",
+  "child_pid": 2395844,
+  "child_start": "24073602",
+  "cwd": "/home/dom/stateset-agents",
+  "command": "[\".venv/bin/python\", \"/tmp/stateset-deepseek-1017-verify.py\"]",
+  "backend": "local",
+  "lane": "quick",
+  "slots": 1,
+  "memory_gb": 3,
+  "resource_key": "/home/dom/stateset-agents",
+  "exit_code": 0,
+  "reason": "",
+  "cancel_requested": 0,
+  "image": "",
+  "timeout": 1800,
+  "herdr": "{\"pane_id\": \"w1:pZ\", \"tab_id\": \"w1:tY\", \"workspace_id\": \"w1\"}",
+  "min_free_gb": 0,
+  "scratch_gb": 0.5,
+  "wait_context": {},
+  "usage": {
+    "cpu_seconds": 121.3514,
+    "sampled_peak_rss_gb": 1.3787651062011719,
+    "samples": 314,
+    "observed_seconds": 193.54945913297706,
+    "observed_at": 1792251034.488675,
+    "source": "local_process_tree",
+    "complete": true,
+    "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+  },
+  "policy_version": "protected-verification-v5",
+  "source": {},
+  "wait_history": {
+    "version": 1,
+    "last_at": 1792250840.9283795,
+    "current_category": "job_capacity",
+    "current_blocker": null,
+    "seconds": {
+      "unobserved": 0.02367687225341797,
+      "job_capacity": 15.012563228607178
+    },
+    "transitions": [
+      {
+        "at": 1792250825.9158163,
+        "category": "job_capacity",
+        "blocking_job_id": null
+      }
+    ],
+    "transition_count": 1
+  },
+  "runner_version": "0.26.1.dev0",
+  "lock_protocol": 1,
+  "resource_keys": [
+    "/home/dom/stateset-agents"
+  ],
+  "batch": {},
+  "admission": {
+    "cpu_slots": 6,
+    "max_running": 4,
+    "max_heavy": 2,
+    "memory_gb": 16,
+    "quick_reserve_slots": 2,
+    "quick_reserve_jobs": 2,
+    "quick_reserve_memory_gb": 4,
+    "protected_quick": true,
+    "aging_seconds": 120
+  },
+  "reserve_protocol": 2,
+  "input_protocol": 0,
+  "input_owner_epoch": 0,
+  "storage_state": "succeeded",
+  "locks": [],
+  "argv": [
+    ".venv/bin/python",
+    "/tmp/stateset-deepseek-1017-verify.py"
+  ],
+  "command_display": ".venv/bin/python /tmp/stateset-deepseek-1017-verify.py",
+  "log_path": "/home/dom/.local/state/agent-builds/logs/5144a33d926b.log",
+  "origin": {
+    "pane_id": "w1:pZ",
+    "tab_id": "w1:tY",
+    "workspace_id": "w1"
+  },
+  "worker_budget": {
+    "environment": {
+      "CARGO_BUILD_JOBS": "1",
+      "RUST_TEST_THREADS": "1"
+    },
+    "cargo_build": {
+      "queue_default": 1,
+      "configured_value": 1,
+      "source": "queue_environment"
+    },
+    "rust_tests": {
+      "queue_default": 1,
+      "configured_value": 1,
+      "source": "queue_environment"
+    },
+    "direct_cargo_command": false,
+    "runtime_concurrency_measured": false,
+    "inspection_scope": "direct Cargo argv; shell scripts, custom harnesses, and subprocess settings are not inspected"
+  },
+  "wait_seconds": 15.036240100860596,
+  "wait_breakdown": {
+    "recorded": true,
+    "seconds": {
+      "unobserved": 0.02367687225341797,
+      "job_capacity": 15.012563228607178
+    },
+    "total_seconds": 15.036240100860596,
+    "observed_seconds": 15.012563228607178,
+    "coverage": 0.9984253462238832,
+    "current_category": "job_capacity",
+    "current_blocker": null,
+    "last_observed_at": 1792250840.9283795,
+    "transitions": [
+      {
+        "at": 1792250825.9158163,
+        "category": "job_capacity",
+        "blocking_job_id": null
+      }
+    ],
+    "transition_count": 1,
+    "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+  },
+  "elapsed_seconds": 193.5603744983673,
+  "age_seconds": 208.5966145992279
+}

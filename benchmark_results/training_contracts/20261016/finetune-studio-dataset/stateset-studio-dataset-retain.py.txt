@@ -1,0 +1,114 @@
+"""Retain completed staged acceptance and sanitized queue evidence."""
+from pathlib import Path
+import hashlib
+import json
+import shutil
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+import zipfile
+
+root = Path('/home/dom/stateset-agents')
+source = Path(sys.argv[1])
+final_job, prepare_job, *wheel_jobs = sys.argv[2:]
+assert len(wheel_jobs) == 3
+v = json.loads((source/'verification.json').read_text())
+prepared = json.loads((source/'prepare-verification.json').read_text())
+assert v['phase']=='complete' and v['passed'] and prepared['phase']=='prepare' and prepared['passed']
+package = {p.relative_to(root/'stateset_agents').as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'stateset_agents').rglob('*.py'))}
+tests = {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'tests').rglob('*.py'))}
+assert package == v['source_sha256'] == prepared['source_sha256']
+assert tests == v['test_source_sha256'] == prepared['test_source_sha256']
+assert 'Success: no issues found in 423 source files' in (source/'types.log').read_text()
+with zipfile.ZipFile(next((source/'dist').glob('*.whl'))) as wheel:
+    packed = {n.removeprefix('stateset_agents/'): hashlib.sha256(wheel.read(n)).hexdigest() for n in wheel.namelist() if n.startswith('stateset_agents/') and n.endswith('.py')}
+    assert packed == package
+    for name in ['stateset_agents/config/presets/experiments/support_recovery_preflight6.json', 'stateset_agents/evaluation/rubrics/support_rubric_v4.md']:
+        assert wheel.read(name) == (root/name).read_bytes()
+
+def counts(filename):
+    suites = list(ET.parse(source/filename).getroot().iter('testsuite'))
+    assert not sum(int(s.get('errors',0))+int(s.get('failures',0)) for s in suites)
+    skipped = sum(int(s.get('skipped',0)) for s in suites)
+    return dict(passed=sum(int(s.get('tests',0)) for s in suites)-skipped, skipped=skipped)
+
+receipts = []
+for handle in [prepare_job, *wheel_jobs, final_job, 'b511d1a755ac']:
+    record = json.loads(subprocess.check_output(['/home/dom/agent-builds/buildr','show','--json',handle],text=True))
+    assert record['state']=='succeeded' and record['exit_code']==0
+    receipts.append({key:record.get(key) for key in ['id','state','exit_code','argv','created','started','finished','wait_seconds','elapsed_seconds','reason']})
+assert not json.loads((source/'preflight6-plan.json').read_text())['ready_for_paid_execution']
+live = Path('/tmp/stateset-studio-dataset-live.txt')
+draft = Path('/tmp/stateset-studio-dataset-draft.txt')
+summary = dict(passed=True, prepare_queue_job=prepare_job, wheel_queue_jobs=wheel_jobs, final_queue_job=final_job, source_regressions=counts('regressions.xml'), wheel_regressions=counts('wheel.xml'), typed_modules=423, source_unchanged=True, test_sources_unchanged=True, wheel_source_matches=True, wheel_profile_matches=True, wheel_rubric_matches=True, wheel_case_identities_match=True, wheel_sha256=v['wheel_sha256'], real_terminal_dataset_inspection_verified=True, live_herdr_refreshed=live.exists(), draft_preserved=json.loads(draft.read_text())['draft_preserved'] if draft.exists() else None, gpu_verified=False, quality_gain_verified=False, paid_run_launched=False, count_note='Targeted source and wheel counts overlap; provider/worker boundaries use CPU fixtures and mocks.')
+out = root/'benchmark_results/training_contracts/20261016/finetune-studio-dataset'
+out.mkdir(parents=True,exist_ok=False)
+(out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+(out/'queue-receipts.json').write_text(json.dumps(receipts,indent=2)+'\n')
+for name in ['verification.json','prepare-verification.json','frozen-inventory.json','stage-checkpoint.json','regressions.xml','wheel.xml','wheel-shards.json','wheel-shard-1.xml','wheel-shard-2.xml','wheel-shard-3.xml','gates.log','types.log','wheel-origin.log','wheel-test-configuration.json','workflow-lint.log','reward-audit.json','preflight6-plan.json','free-recovery-plan.log','studio-snapshot.log','studio-narrow-snapshot.log','agent-schema.log','agent-models.log','agent-validation.log','agent-invalid-validation.log','agent-data-inspection.log','agent-data-samples.log']:
+    shutil.copy2(source/name,out/name)
+for name in ['stateset-studio-dataset-prepare.py','stateset-studio-dataset-finish.py','stateset-studio-dataset-retain.py','stateset-studio-dataset-gates.py']:
+    shutil.copy2(Path('/tmp')/name,out/(name+'.txt'))
+for path,name in [(live,'herdr-live.txt'),(draft,'herdr-draft.txt')]:
+    if path.exists():
+        shutil.copy2(path,out/name)
+focused = Path('/tmp/stateset-studio-dataset-focused.xml')
+if focused.exists():
+    shutil.copy2(focused,out/'focused.xml')
+for previous in sorted(Path('/tmp').glob('stateset-studio-dataset-20261016*')):
+    if previous == source or not (previous/'verification.json').exists():
+        continue
+    prior=json.loads((previous/'verification.json').read_text())
+    if prior.get('passed'):
+        continue
+    attempt=out/'verification-attempts'/previous.name
+    attempt.mkdir(parents=True)
+    for name in ['verification.json','gates.log','types.log','stage-checkpoint.json']:
+        if (previous/name).exists():
+            shutil.copy2(previous/name,attempt/name)
+(out/'README.md').write_text(f'''# Fine-tuning dataset inspector: acceptance
+
+{summary['source_regressions']['passed']} targeted source regressions and
+{summary['wheel_regressions']['passed']} installed-wheel regressions passed
+(counts overlap). All 423 package modules passed typing. Repository lint,
+serial formatting for changed Python, hygiene, release governance, stable API compatibility and
+workflow lint passed. Preparation job `{prepare_job}` froze package/test Python
+and packaged assets, ran source checks and built/installed the matching wheel.
+Three queued wheel groups cover exactly the expected source-case identities,
+without errors, skips, failures or duplicates. Final job `{final_job}` combined
+the reports and completed offline audit, recovery-planner and real CLI checks.
+Queue IDs, argv, outcomes and timings are retained separately. The initial
+preparation attempt found an unused test import; it was removed before the
+final frozen acceptance. Its failure report is retained under verification-attempts.
+
+Dataset contracts cover strict SFT and native GRPO/GSPO/DAPO data, captured
+hashes/bytes, Unicode character counts, nearest-rank distributions, explicit
+turn definitions, duplicate definitions, observed dominant replies, immutable
+report bytes, opt-in first-three excerpts, 4096-character clipping, no text in
+default JSON, known-credential redaction and fresh root CLI use without Torch
+or Transformers imports. Regular-file symlinks remain supported. Shared reads
+reject missing/directory/FIFO/oversized inputs, enforce bounds during appends
+and preserve preparation's existing invalid-dataset error contract.
+
+TUI checks cover background responsiveness, leaving an active scan, changed
+path/method reports, controlled unexpected failures and retry, hidden samples,
+sample switching, scrolling at 72x22/74x44/110x32, unchanged drafts and no
+workspace/run creation. Real PTYs open the inspector, wait for statistics,
+reveal a private fixture excerpt and Escape at 74x44 and 110x32 before exercising
+the existing log/review/comparison flow, without launching workers.
+
+The installed wheel's real CLI inspects a synthetic chat with and without
+explicit sample opt-in. Existing backend, validation, handoff, comparison,
+logging, worker, tiny CPU SFT, provider and reward/recovery contracts provide
+regressions. Provider/worker boundaries are mocked or use tiny CPU fixtures;
+no paid training, provider authentication or GPU quality certification occurred.
+The installed recovery planner still blocks paid execution. Historical broad
+distributed matrices were not repeated. Dataset statistics do not certify
+quality, token fit or launch readiness; data is captured again at preparation.
+
+The live Herdr split was refreshed: {summary['live_herdr_refreshed']}; private draft
+preserved: {summary['draft_preserved']}. It has no retained runs or configured
+dataset; only the new shortcut and controlled missing-input report are checked
+live. Private sample behavior uses temporary test fixtures.
+''')
+print(json.dumps({'path':str(out),'summary':summary},indent=2))

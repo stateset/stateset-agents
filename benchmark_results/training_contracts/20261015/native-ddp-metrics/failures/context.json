@@ -1,0 +1,5 @@
+{
+  "job": "0c71dafb300e",
+  "kind": "test_fixture_failure",
+  "explanation": "The new nonzero-KL cases finished in enhanced-loss mode. The old error-injection fixture replaced only compute_grpo_loss; correcting the fixture to replace both plain and enhanced loss restored the intended failure check."
+}

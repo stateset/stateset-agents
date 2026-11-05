@@ -1,0 +1,15 @@
+{
+  "id": "b163151a6298",
+  "state": "failed",
+  "exit_code": 1,
+  "argv": [
+    ".venv/bin/python",
+    "/tmp/stateset-studio-comparison-resume.py"
+  ],
+  "created": 1792181755.404677,
+  "started": 1792181818.057972,
+  "finished": 1792181937.7699249,
+  "wait_seconds": 62.653295040130615,
+  "elapsed_seconds": 119.7119529247284,
+  "reason": "OperationalError: database is locked"
+}

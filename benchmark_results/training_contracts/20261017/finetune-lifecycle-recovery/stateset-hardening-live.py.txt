@@ -1,0 +1,34 @@
+"""Retain live TUI identity without altering its private draft or run history."""
+from pathlib import Path
+import hashlib
+import json
+import stat
+import subprocess
+import sys
+import time
+
+root = Path('/home/dom/stateset-agents')
+workspace = root/'outputs/finetune'
+def capture():
+    path = workspace/'draft.json'
+    return {'sha256':hashlib.sha256(path.read_bytes()).hexdigest(), 'mode':stat.S_IMODE(path.stat().st_mode), 'run_plans':sorted(str(p.relative_to(workspace)) for p in workspace.glob('*/plan.json'))}
+if sys.argv[1] == 'before':
+    Path('/tmp/stateset-hardening-live-before.json').write_text(json.dumps(capture(),indent=2)+'\n')
+    print('Saved draft and run-history fingerprint')
+else:
+    before = json.loads(Path('/tmp/stateset-hardening-live-before.json').read_text())
+    after = capture()
+    assert before == after
+    inputs = json.loads(Path('/tmp/stateset-hardening-live-inputs.json').read_text())
+    process = inputs['process']
+    foreground = process['result']['process_info']['foreground_processes']
+    assert len(foreground)==1 and foreground[0]['name']=='python'
+    assert foreground[0]['argv']==[str(root/'.venv/bin/python'),'-m','stateset_agents.cli','tui','--workspace',str(workspace)]
+    live = inputs['screen']
+    normalized = ' '.join(live.split())
+    assert ('Phone terminals: 32 columns x 16 rows minimum.' in normalized or
+            'Paused: terminal too small. Need 32 columns x 16 rows.' in normalized)
+    Path('/tmp/stateset-studio-mobile-live.txt').write_text(live)
+    report={'created_at':time.time(),'pane':'w1:p1A','pid':foreground[0]['pid'],'source_sha256':{p.relative_to(root/'stateset_agents').as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'stateset_agents').rglob('*.py')},'test_source_sha256':{p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'tests').rglob('*.py')},'draft_preserved':True,'before':before,'after':after,'training_launched':False,'focused_job':'12cf089a9943','full_job':'1e204ba66630','full_status_at_refresh':'pending'}
+    Path('/tmp/stateset-hardening-live.json').write_text(json.dumps(report,indent=2)+'\n')
+    print(json.dumps({k:report[k] for k in ['pane','pid','draft_preserved','training_launched']}))

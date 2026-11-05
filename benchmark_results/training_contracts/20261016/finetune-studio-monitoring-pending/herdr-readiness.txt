@@ -1,0 +1,44 @@
+STATESET / FINE-TUNING STUDIO
+[CONFIGURE] Runs | Tab switches views
+==========================================================================
+LOCAL READINESS / i refreshes this snapshot
+
+Checks do not load models, authenticate providers or provision compute.
+
+Draft model: Qwen/Qwen3.5-0.8B
+Compute: local
+
+2 failed checks | 2 warnings
+
+[FAIL] Settings
+Set the dataset path first
+
+[FAIL] Dataset
+Choose an existing dataset with f. Contents have not been validated.
+
+[PASS] Local disk
+10.2 GiB free; 5 GiB requested scratch. Queue headroom and model storage
+are additional.
+
+[PASS] Training packages
+Training packages are installed; runtime/model version compatibility is
+unchecked.
+
+[WARNING] NVIDIA hardware
+nvidia-smi is unavailable. GPU readiness is unchecked; the worker requires
+CUDA.
+
+[WARNING] Shared queue
+Requested 2 CPUs/4 GiB; configured 6 CPUs/16 GiB. 2 running, 4 queued.
+Snapshot only; admission may wait. All 4 waiting jobs need disk space |
+10.2 GiB free / at least 10.3 required | short by 0.1 GiB
+
+A passing local check is not GPU/model conformance or a provider quote.
+Press p separately to validate dataset contents and prepare a launch
+review.
+
+
+
+--------------------------------------------------------------------------
+Choose a model and dataset. Preview is free.
+i recheck | PgUp/Dn scroll | Esc back

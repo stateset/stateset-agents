@@ -1,0 +1,22 @@
+"""Bind the final RNG fault injector to this scenario's original callable."""
+from pathlib import Path
+import fcntl
+import hashlib
+import json
+import time
+
+root = Path('/home/dom/stateset-agents')
+lock = Path('/tmp/stateset-studio-mobile-source.lock').open('a')
+fcntl.flock(lock.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+path = root/'tests/integration/test_ddp_checkpoint_publication.py'
+before = path.read_bytes()
+text = before.decode()
+old = 'def fail_final_rng(state, torch_module):'
+assert text.count(old)==1
+text = text.replace(old,'def fail_final_rng(state, torch_module, restore_saved=restore):')
+old = 'return restore(state, torch_module)'
+assert text.count(old)==1
+text = text.replace(old,'return restore_saved(state, torch_module)')
+path.write_text(text)
+Path('/tmp/stateset-publication-lint-fix.json').write_text(json.dumps({'applied_at':time.time(),'files':{path.relative_to(root).as_posix():{'before':hashlib.sha256(before).hexdigest(),'after':hashlib.sha256(path.read_bytes()).hexdigest()}},'reason':'Bind the scenario-local callable explicitly; resolves Ruff B023.'},indent=2)+'\n')
+print('Bound final RNG injector callable')

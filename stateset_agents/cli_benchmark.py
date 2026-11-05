@@ -18,7 +18,7 @@ import typer
 
 from stateset_agents import cli as _cli
 from stateset_agents.cli import app
-from stateset_agents.training.river_progress import DEFAULT_ZERO_UPDATE_PATIENCE
+from stateset_agents.evaluation.river_progress import DEFAULT_ZERO_UPDATE_PATIENCE
 
 _echo = _cli._echo
 
@@ -384,7 +384,7 @@ def plan_agent_study(
     """Freeze a four-arm campaign with commands and split hashes; runs no jobs."""
     from pathlib import Path
 
-    from stateset_agents.evaluation.agent_study import StudyConfig, prepare_study
+    from stateset_agents.verticals.agent_study import StudyConfig, prepare_study
 
     try:
         config = StudyConfig(
@@ -418,8 +418,8 @@ def prepare_agent_study_data(
     import asyncio
     from pathlib import Path
 
-    from stateset_agents.evaluation.study_preflight import prepare_study_data
     from stateset_agents.remote.river_rl import atomic_json
+    from stateset_agents.verticals.study_preflight import prepare_study_data
 
     directory = Path(study_dir)
     try:
@@ -443,8 +443,8 @@ def preflight_agent_study(
     """Check local data, Python, SDK, and credential presence without provider calls."""
     from pathlib import Path
 
-    from stateset_agents.evaluation.study_preflight import preflight_study
     from stateset_agents.remote.river_rl import atomic_json
+    from stateset_agents.verticals.study_preflight import preflight_study
 
     directory = Path(study_dir)
     try:
@@ -481,8 +481,8 @@ def audit_agent_study(
     import asyncio
     from pathlib import Path
 
-    from stateset_agents.evaluation.agent_study import audit_study
     from stateset_agents.remote.river_rl import atomic_json
+    from stateset_agents.verticals.agent_study import audit_study
 
     try:
         directory = Path(study_dir)
@@ -529,6 +529,64 @@ def prepare_refund_data_command(
     _echo(
         f"Prepared {manifest['selected']} verified reference demonstrations: {output}/train.jsonl"
     )
+
+
+@benchmark_app.command("prepare-refund-curriculum")
+def prepare_refund_curriculum_command(
+    data_dir: str = typer.Option(..., "--data-dir", help="Prepared reference dataset."),
+    output: str = typer.Option(..., "--output", "-o", help="Fresh training directory."),
+    policy: str = typer.Option(
+        "adjacent_boundary_v1",
+        "--policy",
+        help=(
+            "adjacent_boundary_v1, policy_parameter_contrasts_v1, "
+            "or borrow_boundary_contrasts_v1."
+        ),
+    ),
+) -> None:
+    """Build versioned training-only policy contrasts offline."""
+    import asyncio
+    from pathlib import Path
+
+    from stateset_agents.data.refund_curriculum import prepare_refund_curriculum
+
+    try:
+        manifest = asyncio.run(
+            prepare_refund_curriculum(Path(data_dir), Path(output), policy=policy)
+        )
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        _echo(f"Cannot prepare refund curriculum: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    _echo(
+        f"Prepared {manifest['selected']} verified training demonstrations "
+        f"({manifest['derived_cases']} derived): {output}/train.jsonl"
+    )
+
+
+@benchmark_app.command("audit-refund-curriculum")
+def audit_refund_curriculum_command(
+    data_dir: str = typer.Option(..., "--data-dir", help="Original prepared dataset."),
+    output: str = typer.Option(..., "--output", "-o", help="Curriculum to audit."),
+    policy: str = typer.Option(
+        "adjacent_boundary_v1",
+        "--policy",
+        help="Expected curriculum policy; must match the prepared bundle.",
+    ),
+) -> None:
+    """Reconstruct training provenance and replay the curriculum offline."""
+    import asyncio
+    from pathlib import Path
+
+    from stateset_agents.data.refund_curriculum import audit_refund_curriculum
+
+    try:
+        report = asyncio.run(
+            audit_refund_curriculum(Path(data_dir), Path(output), policy=policy)
+        )
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        _echo(f"Invalid refund curriculum: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    _echo(f"PASS: reconstructed {report['replayed_demonstrations']} demonstrations")
 
 
 @benchmark_app.command("filter-refund-data")

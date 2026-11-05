@@ -322,3 +322,40 @@ async def test_prometheus_metrics_endpoint(monkeypatch, preserve_api_config):
     assert response.status_code == 200
     assert "text/plain" in response.headers.get("content-type", "")
     assert "# HELP" in response.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("response_format", "status"),
+    [
+        ({"type": "text"}, 200),
+        ({"type": "json_object"}, 422),
+        ({"type": "json_schema", "json_schema": {"name": "x"}}, 422),
+        ("openai", 422),
+    ],
+)
+async def test_openai_response_format_is_not_a_server_error(
+    monkeypatch, preserve_api_config, response_format, status
+):
+    """OpenAI's response_format must not leak into the gateway's own
+    Messages response_format field (which used to raise a 500)."""
+    monkeypatch.setenv("API_REQUIRE_AUTH", "false")
+    monkeypatch.setenv("INFERENCE_BACKEND", "stub")
+    monkeypatch.setenv("INFERENCE_DEFAULT_MODEL", "moonshotai/Kimi-K2.5")
+    api_config.reload_config()
+
+    from stateset_agents.api.main import create_app
+
+    app = create_app()
+    async with _client_for_app(app) as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "moonshotai/Kimi-K2.5",
+                "max_tokens": 16,
+                "messages": [{"role": "user", "content": "Hello"}],
+                "response_format": response_format,
+            },
+        )
+
+    assert response.status_code == status, response.text

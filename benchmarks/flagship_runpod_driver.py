@@ -622,6 +622,7 @@ _METRIC_KEYS = (
     "baseline_score",
     "final_score",
     "judge_self_disagreement",
+    "judge_parse_failure_rate",
     "train_examples",
     "eval_examples",
     "peak_vram_mb",
@@ -670,7 +671,12 @@ def _workload_problems(
             problems.append(f"metrics.{key} missing or non-numeric")
     if problems:
         return problems
-    for key in ("baseline_score", "final_score", "judge_self_disagreement"):
+    for key in (
+        "baseline_score",
+        "final_score",
+        "judge_self_disagreement",
+        "judge_parse_failure_rate",
+    ):
         if not 0 <= float(metrics[key]) <= 1:
             problems.append(f"metrics.{key} outside [0, 1]")
     if metrics["train_examples"] < config["num_train_examples"]:

@@ -1,0 +1,37 @@
+{
+  "num_epochs": 2,
+  "optimizer_updates": 2,
+  "final_metrics": {
+    "policy_loss": 0.32955479621887207,
+    "nll": 0.3718684911727905,
+    "advantage_mean": -0.39003902673721313,
+    "policy_weight_mean": 0.878871738910675,
+    "grad_norm": 1.1977852582931519,
+    "optimizer_updates": 1.0,
+    "training_step": 2.0,
+    "supervised_tokens": 2.0
+  },
+  "training_metrics": [
+    {
+      "policy_loss": 0.3602295219898224,
+      "nll": 0.4075392484664917,
+      "advantage_mean": -0.39003902673721313,
+      "policy_weight_mean": 0.878871738910675,
+      "grad_norm": 1.7298165559768677,
+      "optimizer_updates": 1.0,
+      "training_step": 1.0,
+      "supervised_tokens": 2.0
+    },
+    {
+      "policy_loss": 0.32955479621887207,
+      "nll": 0.3718684911727905,
+      "advantage_mean": -0.39003902673721313,
+      "policy_weight_mean": 0.878871738910675,
+      "grad_norm": 1.1977852582931519,
+      "optimizer_updates": 1.0,
+      "training_step": 2.0,
+      "supervised_tokens": 2.0
+    }
+  ],
+  "dataset_sha256": "154822dba93a928102d5ca31b3b08c762c45fff05569e4e5493bf8045ee2dbfe"
+}

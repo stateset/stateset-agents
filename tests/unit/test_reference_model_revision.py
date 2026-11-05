@@ -79,7 +79,7 @@ def test_base_reference_model_uses_policy_revision(
     monkeypatch.setattr(base_trainer, "_AutoModelForCausalLM", model_cls)
     manager = _manager(BaseModelManager, _config())
 
-    manager._load_reference_model({"torch_dtype": torch.float32})
+    manager._load_reference_model(model_cls, {"torch_dtype": torch.float32})
 
     [(_, kwargs)] = model_cls.calls
     assert kwargs["revision"] == REVISION

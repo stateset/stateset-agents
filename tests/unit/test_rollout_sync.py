@@ -106,6 +106,33 @@ async def test_failed_sync_marks_stale_and_keeps_error():
     assert agent.rollout_backend_error is None
 
 
+class _BuggySyncBackend(_SyncBackend):
+    def sync_weights(self, model) -> None:
+        raise TypeError("sync_weights() got an unexpected keyword argument")
+
+
+@pytest.mark.asyncio
+async def test_io_failure_during_sync_marks_stale():
+    class _DiskFullBackend(_SyncBackend):
+        def sync_weights(self, model) -> None:
+            raise OSError("no space left on device")
+
+    agent = await _agent()
+    agent.set_rollout_backend(_DiskFullBackend())
+    assert agent.sync_rollout_backend() is False
+    assert agent.rollout_backend_error.startswith("OSError")
+
+
+@pytest.mark.asyncio
+async def test_a_bug_in_sync_propagates_instead_of_going_stale():
+    """Only engine runtime/I-O failures mean "stale"; a TypeError is a bug."""
+    agent = await _agent()
+    agent.set_rollout_backend(_BuggySyncBackend())
+    with pytest.raises(TypeError, match="unexpected keyword"):
+        agent.sync_rollout_backend()
+    assert agent.rollout_backend_stale is False
+
+
 @pytest.mark.asyncio
 async def test_sync_without_backend_is_a_noop():
     agent = await _agent()
@@ -215,7 +242,11 @@ def test_single_turn_optimizer_step_syncs_rollout_backend():
 
 def test_rollout_sync_can_be_disabled():
     agent = _SyncingAgent(_model())
-    trainer = _multi_turn_trainer(agent, rollout_sync=False)
+    # Asynchronous rollouts need sampler log-probs (TrainingConfig's rule,
+    # now enforced for duck-typed configs too).
+    trainer = _multi_turn_trainer(
+        agent, rollout_sync=False, old_logprobs_source="sampler"
+    )
     _fake_grad(agent.model)
     trainer._apply_optimizer_step(torch)
     assert agent.sync_calls == 0

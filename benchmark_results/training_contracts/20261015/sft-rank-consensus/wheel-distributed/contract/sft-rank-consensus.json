@@ -1,0 +1,246 @@
+{
+  "passed": true,
+  "backend": "gloo",
+  "world_size": 2,
+  "scope": "two real local CPU ranks; fixed-size tensor collectives; no FSDP, GPU or model-weight loading",
+  "ranks": {
+    "0": [
+      {
+        "scenario": "agree",
+        "rejected": false,
+        "receipt": {
+          "protocol": "stateset-sft-consensus-v1",
+          "world_size": 2,
+          "backend": "gloo",
+          "verified": true,
+          "identity_sha256": "71181bd1ac8cfa91abb354e46063ed4a3eb723c8412059737cf1aa45ac93a306",
+          "components_sha256": {
+            "model": "4d3ee0dce66e93dba4f7ef8607eae46c7bb1f48c27859ea0d6d46879b555081c",
+            "revision": "71d9122d8b0bd74721d471ef9758abbee8b1c28b777517938d4c7c3a92be946a",
+            "training_config": "65bc544ad5ec3c918ff82813310056de9869caccc44628a40cf917b3fc585071",
+            "dataset": "05b0782acba42232681f432a97f33f0194e13cf2e62c83a4d4b0ebc4d7fd1b85",
+            "tokenizer": "238c008472acabbb5cfbc04b121ec23b929135a785a63323bf03633a6d9bd3bf",
+            "encoded_data": "71e2433a2d6299e7640cbce0f9f6b4fb67a276b1d9607e1984240f87e580e11b",
+            "runtime": "dcc2ec4281b34da01bc8d305258b4ffdc1d9cae4f2e54ec379ab24ba1ec3c078",
+            "implementation": "28688bbea0b705f25fec626f5d2c16809b1ae19a8dd5e9d3ed8d8b3c27fd51de"
+          }
+        }
+      },
+      {
+        "scenario": "model",
+        "rejected": true,
+        "error": "SFT preflight disagreement across ranks: model"
+      },
+      {
+        "scenario": "revision",
+        "rejected": true,
+        "error": "SFT preflight disagreement across ranks: revision"
+      },
+      {
+        "scenario": "training_config",
+        "rejected": true,
+        "error": "SFT preflight disagreement across ranks: training_config"
+      },
+      {
+        "scenario": "dataset",
+        "rejected": true,
+        "error": "SFT preflight disagreement across ranks: dataset"
+      },
+      {
+        "scenario": "tokenizer",
+        "rejected": true,
+        "error": "SFT preflight disagreement across ranks: tokenizer"
+      },
+      {
+        "scenario": "encoded_data",
+        "rejected": true,
+        "error": "SFT preflight disagreement across ranks: encoded_data"
+      },
+      {
+        "scenario": "runtime",
+        "rejected": true,
+        "error": "SFT preflight disagreement across ranks: runtime"
+      },
+      {
+        "scenario": "implementation",
+        "rejected": true,
+        "error": "SFT preflight disagreement across ranks: implementation"
+      },
+      {
+        "scenario": "missing_field",
+        "rejected": true,
+        "error": "Invalid SFT rank identity on ranks [1]"
+      },
+      {
+        "scenario": "extra_field",
+        "rejected": true,
+        "error": "Invalid SFT rank identity on ranks [1]"
+      },
+      {
+        "scenario": "nonfinite",
+        "rejected": true,
+        "error": "Invalid SFT rank identity on ranks [1]"
+      },
+      {
+        "scenario": "wrong_world_size",
+        "rejected": true,
+        "error": "SFT rank consensus WORLD_SIZE differs from the process group"
+      },
+      {
+        "scenario": "builder_failure",
+        "rejected": true,
+        "error": "Invalid SFT rank identity on ranks [1]"
+      },
+      {
+        "scenario": "missing_local_source",
+        "rejected": true,
+        "error": "Invalid SFT rank identity on ranks [1]"
+      },
+      {
+        "scenario": "overflow_world_size",
+        "rejected": true,
+        "error": "Invalid SFT rank identity on ranks [1]"
+      },
+      {
+        "scenario": "agree_after_failures",
+        "rejected": false,
+        "receipt": {
+          "protocol": "stateset-sft-consensus-v1",
+          "world_size": 2,
+          "backend": "gloo",
+          "verified": true,
+          "identity_sha256": "71181bd1ac8cfa91abb354e46063ed4a3eb723c8412059737cf1aa45ac93a306",
+          "components_sha256": {
+            "model": "4d3ee0dce66e93dba4f7ef8607eae46c7bb1f48c27859ea0d6d46879b555081c",
+            "revision": "71d9122d8b0bd74721d471ef9758abbee8b1c28b777517938d4c7c3a92be946a",
+            "training_config": "65bc544ad5ec3c918ff82813310056de9869caccc44628a40cf917b3fc585071",
+            "dataset": "05b0782acba42232681f432a97f33f0194e13cf2e62c83a4d4b0ebc4d7fd1b85",
+            "tokenizer": "238c008472acabbb5cfbc04b121ec23b929135a785a63323bf03633a6d9bd3bf",
+            "encoded_data": "71e2433a2d6299e7640cbce0f9f6b4fb67a276b1d9607e1984240f87e580e11b",
+            "runtime": "dcc2ec4281b34da01bc8d305258b4ffdc1d9cae4f2e54ec379ab24ba1ec3c078",
+            "implementation": "28688bbea0b705f25fec626f5d2c16809b1ae19a8dd5e9d3ed8d8b3c27fd51de"
+          }
+        }
+      }
+    ],
+    "1": [
+      {
+        "scenario": "agree",
+        "rejected": false,
+        "receipt": {
+          "protocol": "stateset-sft-consensus-v1",
+          "world_size": 2,
+          "backend": "gloo",
+          "verified": true,
+          "identity_sha256": "71181bd1ac8cfa91abb354e46063ed4a3eb723c8412059737cf1aa45ac93a306",
+          "components_sha256": {
+            "model": "4d3ee0dce66e93dba4f7ef8607eae46c7bb1f48c27859ea0d6d46879b555081c",
+            "revision": "71d9122d8b0bd74721d471ef9758abbee8b1c28b777517938d4c7c3a92be946a",
+            "training_config": "65bc544ad5ec3c918ff82813310056de9869caccc44628a40cf917b3fc585071",
+            "dataset": "05b0782acba42232681f432a97f33f0194e13cf2e62c83a4d4b0ebc4d7fd1b85",
+            "tokenizer": "238c008472acabbb5cfbc04b121ec23b929135a785a63323bf03633a6d9bd3bf",
+            "encoded_data": "71e2433a2d6299e7640cbce0f9f6b4fb67a276b1d9607e1984240f87e580e11b",
+            "runtime": "dcc2ec4281b34da01bc8d305258b4ffdc1d9cae4f2e54ec379ab24ba1ec3c078",
+            "implementation": "28688bbea0b705f25fec626f5d2c16809b1ae19a8dd5e9d3ed8d8b3c27fd51de"
+          }
+        }
+      },
+      {
+        "scenario": "model",
+        "rejected": true,
+        "error": "SFT preflight disagreement across ranks: model"
+      },
+      {
+        "scenario": "revision",
+        "rejected": true,
+        "error": "SFT preflight disagreement across ranks: revision"
+      },
+      {
+        "scenario": "training_config",
+        "rejected": true,
+        "error": "SFT preflight disagreement across ranks: training_config"
+      },
+      {
+        "scenario": "dataset",
+        "rejected": true,
+        "error": "SFT preflight disagreement across ranks: dataset"
+      },
+      {
+        "scenario": "tokenizer",
+        "rejected": true,
+        "error": "SFT preflight disagreement across ranks: tokenizer"
+      },
+      {
+        "scenario": "encoded_data",
+        "rejected": true,
+        "error": "SFT preflight disagreement across ranks: encoded_data"
+      },
+      {
+        "scenario": "runtime",
+        "rejected": true,
+        "error": "SFT preflight disagreement across ranks: runtime"
+      },
+      {
+        "scenario": "implementation",
+        "rejected": true,
+        "error": "SFT preflight disagreement across ranks: implementation"
+      },
+      {
+        "scenario": "missing_field",
+        "rejected": true,
+        "error": "Invalid SFT rank identity on ranks [1]"
+      },
+      {
+        "scenario": "extra_field",
+        "rejected": true,
+        "error": "Invalid SFT rank identity on ranks [1]"
+      },
+      {
+        "scenario": "nonfinite",
+        "rejected": true,
+        "error": "Invalid SFT rank identity on ranks [1]"
+      },
+      {
+        "scenario": "wrong_world_size",
+        "rejected": true,
+        "error": "SFT rank consensus WORLD_SIZE differs from the process group"
+      },
+      {
+        "scenario": "builder_failure",
+        "rejected": true,
+        "error": "Invalid SFT rank identity on ranks [1]"
+      },
+      {
+        "scenario": "missing_local_source",
+        "rejected": true,
+        "error": "Invalid SFT rank identity on ranks [1]"
+      },
+      {
+        "scenario": "overflow_world_size",
+        "rejected": true,
+        "error": "Invalid SFT rank identity on ranks [1]"
+      },
+      {
+        "scenario": "agree_after_failures",
+        "rejected": false,
+        "receipt": {
+          "protocol": "stateset-sft-consensus-v1",
+          "world_size": 2,
+          "backend": "gloo",
+          "verified": true,
+          "identity_sha256": "71181bd1ac8cfa91abb354e46063ed4a3eb723c8412059737cf1aa45ac93a306",
+          "components_sha256": {
+            "model": "4d3ee0dce66e93dba4f7ef8607eae46c7bb1f48c27859ea0d6d46879b555081c",
+            "revision": "71d9122d8b0bd74721d471ef9758abbee8b1c28b777517938d4c7c3a92be946a",
+            "training_config": "65bc544ad5ec3c918ff82813310056de9869caccc44628a40cf917b3fc585071",
+            "dataset": "05b0782acba42232681f432a97f33f0194e13cf2e62c83a4d4b0ebc4d7fd1b85",
+            "tokenizer": "238c008472acabbb5cfbc04b121ec23b929135a785a63323bf03633a6d9bd3bf",
+            "encoded_data": "71e2433a2d6299e7640cbce0f9f6b4fb67a276b1d9607e1984240f87e580e11b",
+            "runtime": "dcc2ec4281b34da01bc8d305258b4ffdc1d9cae4f2e54ec379ab24ba1ec3c078",
+            "implementation": "28688bbea0b705f25fec626f5d2c16809b1ae19a8dd5e9d3ed8d8b3c27fd51de"
+          }
+        }
+      }
+    ]
+  }
+}

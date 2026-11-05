@@ -39,7 +39,9 @@ retains stdout/stderr and failed attempts, and refuses partial matrices.
    headline; per-seed JSONs committed under `benchmark_results/flagship_v1/`
    (the schema in `benchmark_results/SCHEMA.md` applies).
 2. **Judge stability** — every seed records the cross-family judge's measured
-   self-disagreement; any value above 0.05 invalidates the matrix.
+   self-disagreement (over items whose two passes both parsed) and its
+   parse-failure rate (failed passes / all passes); a self-disagreement above
+   0.05 or a parse-failure rate above 0.02 invalidates the matrix.
 3. **Baseline parity** — the pre-training eval uses the identical prompt
    template, decoding params, and judge as the post-training eval
    (`--skip-baseline` is forbidden for the flagship).

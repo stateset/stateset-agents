@@ -1,0 +1,507 @@
+{
+  "accepted": true,
+  "cost_usd": null,
+  "decisions": {
+    "greedy-validation": {
+      "cells": {
+        "family:authorization_revoked": {
+          "parent_passed": 8,
+          "passed": true,
+          "rl_passed": 8,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 8
+        },
+        "family:clean": {
+          "parent_passed": 8,
+          "passed": true,
+          "rl_passed": 8,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 8
+        },
+        "family:lookup_transient": {
+          "parent_passed": 8,
+          "passed": true,
+          "rl_passed": 8,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 8
+        },
+        "family:lost_ack_applied": {
+          "parent_passed": 8,
+          "passed": true,
+          "rl_passed": 8,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 8
+        },
+        "family:lost_ack_not_applied": {
+          "parent_passed": 8,
+          "passed": true,
+          "rl_passed": 8,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 8
+        },
+        "family:reconcile_pending": {
+          "parent_passed": 8,
+          "passed": true,
+          "rl_passed": 8,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 8
+        },
+        "family:reconcile_unavailable": {
+          "parent_passed": 8,
+          "passed": true,
+          "rl_passed": 8,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 8
+        },
+        "family:stale_chargeback": {
+          "parent_passed": 8,
+          "passed": true,
+          "rl_passed": 8,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 8
+        },
+        "family:stale_refund": {
+          "parent_passed": 8,
+          "passed": true,
+          "rl_passed": 8,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 8
+        },
+        "family:unauthorized": {
+          "parent_passed": 8,
+          "passed": true,
+          "rl_passed": 8,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 8
+        },
+        "overall": {
+          "parent_passed": 80,
+          "passed": true,
+          "rl_passed": 80,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 80
+        }
+      },
+      "diagnostic_cases": {
+        "parent": {
+          "completion_outcome": 0,
+          "format": 0,
+          "premature_finish": 0,
+          "reconciliation": 0,
+          "tool_contract": 0,
+          "unsafe_retry": 0
+        },
+        "rl": {
+          "completion_outcome": 0,
+          "format": 0,
+          "premature_finish": 0,
+          "reconciliation": 0,
+          "tool_contract": 0,
+          "unsafe_retry": 0
+        }
+      },
+      "diagnostic_nonregression": true,
+      "passed": true,
+      "strict_formatting_and_success_improvement": false,
+      "zero_semantic_errors": true
+    },
+    "stochastic-validation": {
+      "cells": {
+        "family:authorization_revoked": {
+          "parent_passed": 8,
+          "passed": true,
+          "rl_passed": 8,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 8
+        },
+        "family:clean": {
+          "parent_passed": 8,
+          "passed": true,
+          "rl_passed": 8,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 8
+        },
+        "family:lookup_transient": {
+          "parent_passed": 8,
+          "passed": true,
+          "rl_passed": 8,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 8
+        },
+        "family:lost_ack_applied": {
+          "parent_passed": 8,
+          "passed": true,
+          "rl_passed": 8,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 8
+        },
+        "family:lost_ack_not_applied": {
+          "parent_passed": 8,
+          "passed": true,
+          "rl_passed": 8,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 8
+        },
+        "family:reconcile_pending": {
+          "parent_passed": 8,
+          "passed": true,
+          "rl_passed": 8,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 8
+        },
+        "family:reconcile_unavailable": {
+          "parent_passed": 8,
+          "passed": true,
+          "rl_passed": 8,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 8
+        },
+        "family:stale_chargeback": {
+          "parent_passed": 8,
+          "passed": true,
+          "rl_passed": 8,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 8
+        },
+        "family:stale_refund": {
+          "parent_passed": 6,
+          "passed": true,
+          "rl_passed": 8,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 8
+        },
+        "family:unauthorized": {
+          "parent_passed": 8,
+          "passed": true,
+          "rl_passed": 8,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 8
+        },
+        "overall": {
+          "parent_passed": 78,
+          "passed": true,
+          "rl_passed": 80,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 80
+        }
+      },
+      "diagnostic_cases": {
+        "parent": {
+          "completion_outcome": 0,
+          "format": 2,
+          "premature_finish": 0,
+          "reconciliation": 0,
+          "tool_contract": 0,
+          "unsafe_retry": 0
+        },
+        "rl": {
+          "completion_outcome": 0,
+          "format": 0,
+          "premature_finish": 0,
+          "reconciliation": 0,
+          "tool_contract": 0,
+          "unsafe_retry": 0
+        }
+      },
+      "diagnostic_nonregression": true,
+      "passed": true,
+      "strict_formatting_and_success_improvement": true,
+      "zero_semantic_errors": true
+    },
+    "test": {
+      "cells": {
+        "family:authorization_revoked": {
+          "parent_passed": 15,
+          "passed": true,
+          "rl_passed": 16,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 16
+        },
+        "family:clean": {
+          "parent_passed": 16,
+          "passed": true,
+          "rl_passed": 16,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 16
+        },
+        "family:lookup_transient": {
+          "parent_passed": 16,
+          "passed": true,
+          "rl_passed": 16,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 16
+        },
+        "family:lost_ack_applied": {
+          "parent_passed": 16,
+          "passed": true,
+          "rl_passed": 16,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 16
+        },
+        "family:lost_ack_not_applied": {
+          "parent_passed": 16,
+          "passed": true,
+          "rl_passed": 16,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 16
+        },
+        "family:reconcile_pending": {
+          "parent_passed": 14,
+          "passed": true,
+          "rl_passed": 16,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 16
+        },
+        "family:reconcile_unavailable": {
+          "parent_passed": 16,
+          "passed": true,
+          "rl_passed": 16,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 16
+        },
+        "family:stale_chargeback": {
+          "parent_passed": 15,
+          "passed": true,
+          "rl_passed": 16,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 16
+        },
+        "family:stale_refund": {
+          "parent_passed": 15,
+          "passed": true,
+          "rl_passed": 16,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 16
+        },
+        "family:unauthorized": {
+          "parent_passed": 16,
+          "passed": true,
+          "rl_passed": 16,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 16
+        },
+        "overall": {
+          "parent_passed": 155,
+          "passed": true,
+          "rl_passed": 160,
+          "rl_truncated": 0,
+          "rl_violation_cases": 0,
+          "total": 160
+        }
+      },
+      "diagnostic_cases": {
+        "parent": {
+          "completion_outcome": 0,
+          "format": 5,
+          "premature_finish": 0,
+          "reconciliation": 0,
+          "tool_contract": 0,
+          "unsafe_retry": 0
+        },
+        "rl": {
+          "completion_outcome": 0,
+          "format": 0,
+          "premature_finish": 0,
+          "reconciliation": 0,
+          "tool_contract": 0,
+          "unsafe_retry": 0
+        }
+      },
+      "diagnostic_nonregression": true,
+      "passed": true,
+      "strict_formatting_and_success_improvement": true,
+      "zero_semantic_errors": true
+    }
+  },
+  "effective_evaluation_settings": {
+    "greedy-validation": {
+      "group_size": 1,
+      "max_context_tokens": 8192,
+      "max_generated_tokens": 1024,
+      "max_turn_tokens": 256,
+      "max_turns": 6,
+      "temperature": 0,
+      "thinking": false,
+      "top_k": -1,
+      "top_p": 1.0,
+      "truncation_reward": -1.0
+    },
+    "stochastic-validation": {
+      "group_size": 4,
+      "max_context_tokens": 8192,
+      "max_generated_tokens": 1024,
+      "max_turn_tokens": 256,
+      "max_turns": 6,
+      "temperature": 1.0,
+      "thinking": false,
+      "top_k": -1,
+      "top_p": 1.0,
+      "truncation_reward": -1.0
+    },
+    "test": {
+      "group_size": 4,
+      "max_context_tokens": 8192,
+      "max_generated_tokens": 1024,
+      "max_turn_tokens": 256,
+      "max_turns": 6,
+      "temperature": 1.0,
+      "thinking": false,
+      "top_k": -1,
+      "top_p": 1.0,
+      "truncation_reward": -1.0
+    }
+  },
+  "evaluations": {
+    "parent-greedy-validation": {
+      "diagnostic_cases": {
+        "completion_outcome": 0,
+        "format": 0,
+        "premature_finish": 0,
+        "reconciliation": 0,
+        "tool_contract": 0,
+        "unsafe_retry": 0
+      },
+      "passed": 80,
+      "total": 80,
+      "truncation_rate": 0.0
+    },
+    "parent-stochastic-validation": {
+      "diagnostic_cases": {
+        "completion_outcome": 0,
+        "format": 2,
+        "premature_finish": 0,
+        "reconciliation": 0,
+        "tool_contract": 0,
+        "unsafe_retry": 0
+      },
+      "passed": 78,
+      "total": 80,
+      "truncation_rate": 0.0
+    },
+    "parent-test": {
+      "diagnostic_cases": {
+        "completion_outcome": 0,
+        "format": 5,
+        "premature_finish": 0,
+        "reconciliation": 0,
+        "tool_contract": 0,
+        "unsafe_retry": 0
+      },
+      "passed": 155,
+      "total": 160,
+      "truncation_rate": 0.0
+    },
+    "rl-greedy-validation": {
+      "diagnostic_cases": {
+        "completion_outcome": 0,
+        "format": 0,
+        "premature_finish": 0,
+        "reconciliation": 0,
+        "tool_contract": 0,
+        "unsafe_retry": 0
+      },
+      "passed": 80,
+      "total": 80,
+      "truncation_rate": 0.0
+    },
+    "rl-stochastic-validation": {
+      "diagnostic_cases": {
+        "completion_outcome": 0,
+        "format": 0,
+        "premature_finish": 0,
+        "reconciliation": 0,
+        "tool_contract": 0,
+        "unsafe_retry": 0
+      },
+      "passed": 80,
+      "total": 80,
+      "truncation_rate": 0.0
+    },
+    "rl-test": {
+      "diagnostic_cases": {
+        "completion_outcome": 0,
+        "format": 0,
+        "premature_finish": 0,
+        "reconciliation": 0,
+        "tool_contract": 0,
+        "unsafe_retry": 0
+      },
+      "passed": 160,
+      "total": 160,
+      "truncation_rate": 0.0
+    }
+  },
+  "exact_native_datums_independently_reconstructed": 4,
+  "nonzero_variance_groups": 1,
+  "old_arithmetic_test_cases_unattempted": 308,
+  "old_recovery_test_cases_unattempted": 80,
+  "paired_case_counts": {
+    "greedy-validation": {
+      "cases_improved": 0,
+      "cases_regressed": 0,
+      "cases_tied": 80
+    },
+    "stochastic-validation": {
+      "cases_improved": 1,
+      "cases_regressed": 0,
+      "cases_tied": 19
+    },
+    "test": {
+      "cases_improved": 5,
+      "cases_regressed": 0,
+      "cases_tied": 35
+    }
+  },
+  "passed": true,
+  "plan_hash": "c9a700053dd385fe1f23785c767ba3caa4e434e3ef5374ee98dfdf81a3158b2e",
+  "prior_artifacts_unchanged": 691,
+  "provider_calls_during_review": 0,
+  "provider_reported_grad_norm": 0.02118874341249466,
+  "provider_reported_loss": -4.4481439545052126e-05,
+  "replayed_outcomes": 716,
+  "rl_updates": 1,
+  "sft_updates": 0,
+  "test_attempted": true,
+  "training_diagnostic_cases": {
+    "completion_outcome": 0,
+    "format": 1,
+    "premature_finish": 0,
+    "reconciliation": 0,
+    "tool_contract": 0,
+    "unsafe_retry": 0
+  },
+  "training_passed": 75,
+  "training_rollouts": 76
+}

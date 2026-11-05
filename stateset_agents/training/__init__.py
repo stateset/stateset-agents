@@ -19,6 +19,9 @@ Generation backends:
 Training engines:
 - Versioned backend-neutral experiment and result contracts
 - Capability-checked, shell-free external command adapters
+
+Stability: this namespace is provisional. Only names re-exported from
+``stateset_agents.__all__`` are covered by docs/API_COMPATIBILITY.md.
 """
 
 import importlib

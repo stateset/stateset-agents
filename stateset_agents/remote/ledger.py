@@ -4,12 +4,13 @@ Rented GPUs bill by the second, and the framework provisions them on the
 user's behalf — so the money spent is the framework's responsibility to
 account for, not the user's to reconstruct from a provider dashboard.
 
-Every remote run appends one line here: what it ran, on what hardware, for
-how long, and the resulting dollar amount. ``stateset-agents costs`` reads
-it back. The ledger is advisory bookkeeping derived from the provider's
-own ``costPerHr`` and the measured pod lifetime; it is not a bill, and it
-deliberately over-reports rather than under-reports by counting the pod
-from creation (when billing starts) rather than from job start.
+Remote providers append advisory cost records; RunPod records every known
+allocation attempt, so retries can share one logical job ID. The amounts
+come from the provider quote and an observed elapsed interval, not a bill.
+For RunPod, observation starts when a usable allocation identity returns and
+ends after the cleanup request. API latency and any continued billing after
+failed or unverified cleanup are outside that interval; provider billing
+records remain authoritative.
 """
 
 from __future__ import annotations
@@ -20,6 +21,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from stateset_agents.core.errors import ErrorCode, ResourceError
 
 #: Where the ledger lives unless overridden. Kept outside the repo: it is
 #: per-user accounting, not project state.
@@ -122,8 +125,11 @@ def summarize(entries: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-class BudgetExceeded(Exception):
+class BudgetExceeded(ResourceError):
     """A run would cost more than the caller's ``max_cost_usd`` ceiling."""
+
+    message_only_str = True
+    default_code = ErrorCode.RES_EXHAUSTED
 
 
 def check_budget(

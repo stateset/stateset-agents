@@ -1,0 +1,16 @@
+{
+  "draft_preserved": true,
+  "before": {
+    "sha256": "4f964e2e989d86a1ceb5027d76f9d22102c2b5c76ba29682b9183b9c2118dd21",
+    "mode": 384,
+    "run_plans": []
+  },
+  "after": {
+    "sha256": "4f964e2e989d86a1ceb5027d76f9d22102c2b5c76ba29682b9183b9c2118dd21",
+    "mode": 384,
+    "run_plans": []
+  },
+  "pane": "w1:p1A",
+  "training_launched": false,
+  "full_verification_status": "pending at preview refresh"
+}

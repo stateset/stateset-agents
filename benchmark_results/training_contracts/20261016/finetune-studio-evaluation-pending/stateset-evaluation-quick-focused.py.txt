@@ -1,0 +1,30 @@
+"""Verify current evaluation behavior with independent temporary outputs."""
+from pathlib import Path
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+
+root = Path('/home/dom/stateset-agents')
+os.chdir(root)
+os.environ['PATH'] = str(root/'.venv/bin') + os.pathsep + os.environ['PATH']
+os.environ.update(OMP_NUM_THREADS='1', MKL_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', NUMEXPR_NUM_THREADS='1', RAYON_NUM_THREADS='1', TOKENIZERS_PARALLELISM='false', HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1', PYTHONDONTWRITEBYTECODE='1')
+
+def inventory():
+    return {p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for directory in ['stateset_agents','tests'] for p in (root/directory).rglob('*.py')}
+
+before = inventory()
+xml = Path('/tmp/stateset-evaluation-current-focused.xml')
+argv = [sys.executable, '-m', 'pytest', '-q', '-n0', '-p', 'no:cacheprovider', '-o', 'addopts=', '--timeout=150', '--tb=short', 'tests/unit/test_finetune_evaluation.py', '--junitxml='+str(xml)]
+code = subprocess.call(argv)
+unchanged = before == inventory()
+counts = {key:0 for key in ['tests','failures','errors','skipped']}
+if xml.exists():
+    for suite in ET.parse(xml).getroot().iter('testsuite'):
+        for key in counts:
+            counts[key] += int(suite.get(key,0))
+passed = code == 0 and unchanged and counts['tests'] > 0 and not any(counts[key] for key in ['failures','errors','skipped'])
+Path('/tmp/stateset-evaluation-current-focused.json').write_text(json.dumps({'passed':passed, 'exit_code':code, 'source_unchanged':unchanged, 'source_and_tests_sha256':before, 'counts':counts, 'argv':argv},indent=2)+'\n')
+raise SystemExit(0 if passed else 1)

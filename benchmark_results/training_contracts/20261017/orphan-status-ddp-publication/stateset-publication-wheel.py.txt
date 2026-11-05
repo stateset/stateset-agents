@@ -1,0 +1,43 @@
+"""Verify reviewed contracts against a wheel whose Python bytes match source."""
+from pathlib import Path
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import xml.etree.ElementTree as ET
+import zipfile
+
+root = Path('/home/dom/stateset-agents')
+out = Path(tempfile.mkdtemp(prefix='stateset-publication-wheel-',dir='/tmp'))
+checks = out/'checks'
+selection = ['tests/unit/test_finetune_worker_terminal.py', 'tests/unit/test_cli_finetune_records.py', 'tests/integration/test_ddp_checkpoint_publication.py', 'tests/integration/test_native_ddp_checkpoint.py']
+env = dict(os.environ, PYTHONPATH=str(out/'site-packages'), STATESET_DISTRIBUTED_CONTRACT_REPORT_DIR=str(out/'distributed'))
+subprocess.run([sys.executable,'-m','build','--wheel','--no-isolation','--outdir',str(out/'dist')],cwd=root,check=True)
+wheel = next((out/'dist').glob('*.whl'))
+source = {p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'stateset_agents').rglob('*.py'))}
+with zipfile.ZipFile(wheel) as archive:
+    packed = {name:hashlib.sha256(archive.read(name)).hexdigest() for name in archive.namelist() if name.startswith('stateset_agents/') and name.endswith('.py')}
+assert source==packed
+subprocess.run([sys.executable,'-m','pip','install','--no-deps','--target',str(out/'site-packages'),str(wheel)],cwd=root,check=True)
+for directory in ('unit','integration','fixtures'):
+    shutil.copytree(root/'tests'/directory,checks/'tests'/directory,ignore=shutil.ignore_patterns('__pycache__'))
+for filename in ('__init__.py','conftest.py','_module_stubs.py'):
+    shutil.copy2(root/'tests'/filename,checks/'tests'/filename)
+shutil.copy2(root/'pytest.ini',checks/'pytest.ini')
+subprocess.run([sys.executable,'-c',"from pathlib import Path; import stateset_agents.finetune_worker as w, stateset_agents.cli_finetune as c, stateset_agents.training.ddp_checkpoint as d; import sys; assert all(Path(m.__file__).resolve().is_relative_to(Path(sys.argv[1])) for m in (w,c,d)); print('Installed module origins verified')",str(out/'site-packages')],cwd=checks,env=env,check=True)
+argv = [sys.executable,'-m','pytest','-q','-n0','-o','addopts=','--timeout=140','--tb=short',*selection,'--junitxml=/tmp/stateset-publication-wheel.xml']
+subprocess.run(argv,cwd=checks,env=env,check=True)
+def cases(path):
+    tree = ET.parse(path).getroot()
+    assert not any(list(tree.iter(tag)) for tag in ('failure','error','skipped'))
+    return [(c.get('classname'),c.get('name')) for c in tree.iter('testcase')]
+modules = [name.removesuffix('.py').replace('/','.') for name in selection]
+expected = [case for group in ('native','operator','distributed') for case in cases('/tmp/stateset-publication-'+group+'.xml') if any(case[0]==module or case[0].startswith(module+'.') for module in modules)]
+actual = cases('/tmp/stateset-publication-wheel.xml')
+assert actual and len(actual)==len(set(actual)) and set(actual)==set(expected)
+result = {'passed':True,'out':str(out),'wheel_sha256':hashlib.sha256(wheel.read_bytes()).hexdigest(),'wheel_source_matches':True,'module_origins_verified':True,'case_identities_match_source':True,'test_count':len(actual),'selection':selection,'source_sha256':source,'argv':argv,'distributed_reports':str(out/'distributed')}
+Path('/tmp/stateset-publication-wheel.json').write_text(json.dumps(result,indent=2)+'\n')
+print(json.dumps({key:result[key] for key in ('out','passed','test_count','wheel_sha256','case_identities_match_source')},indent=2),flush=True)

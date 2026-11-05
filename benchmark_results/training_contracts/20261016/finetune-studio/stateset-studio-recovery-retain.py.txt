@@ -1,0 +1,67 @@
+from pathlib import Path
+import hashlib,json,shutil,sys,xml.etree.ElementTree as ET,zipfile
+root=Path('/home/dom/stateset-agents')
+source=Path(sys.argv[1]);job=sys.argv[2]
+v=json.loads((source/'verification.json').read_text())
+assert v['passed'] and v['source_unchanged'] and v['tests_unchanged']
+package={p.relative_to(root/'stateset_agents').as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'stateset_agents').rglob('*.py'))}
+assert package==v['source_sha256']
+assert 'Success: no issues found in 421 source files' in (source/'types.log').read_text()
+with zipfile.ZipFile(next((source/'dist').glob('*.whl'))) as wheel:
+    packed={n.removeprefix('stateset_agents/'):hashlib.sha256(wheel.read(n)).hexdigest() for n in wheel.namelist() if n.startswith('stateset_agents/') and n.endswith('.py')}
+    assert packed==package
+    for name in ['stateset_agents/evaluation/rubrics/support_rubric_v4.md','stateset_agents/config/presets/experiments/support_recovery_preflight6.json']:
+        assert wheel.read(name)==(root/name).read_bytes()
+def counts(name):
+    suites=list(ET.parse(source/name).getroot().iter('testsuite'))
+    assert not sum(int(s.get('errors',0))+int(s.get('failures',0)) for s in suites)
+    skipped=sum(int(s.get('skipped',0)) for s in suites)
+    return dict(passed=sum(int(s.get('tests',0)) for s in suites)-skipped,skipped=skipped)
+plan=json.loads((source/'preflight6-plan.json').read_text())
+assert not plan['ready_for_paid_execution'] and plan['estimated_total_cost_usd'] is None
+assert plan['training_rollout_episodes']==8000 and plan['planned_validation_evaluations']==11
+assert not (source/'unused-studio-workspace').exists()
+summary=dict(passed=True,queue_job=job,typed_modules=421,source_unchanged=True,test_sources_unchanged=True,wheel_source_matches=True,wheel_profile_matches=True,wheel_rubric_matches=True,wheel_sha256=v['wheel_sha256'],source_regressions=counts('regressions.xml'),wheel_regressions=counts('wheel.xml'),real_terminal_navigation_verified=True,studio_worker_tests='CPU fixtures and mocked CUDA/provider boundaries; no real GPU training',recorded_judge_tests='Synthetic replies and offline replay; not remote model attestation',distributed_contracts_repeated=False,gpu_verified=False,quality_gain_verified=False,paid_run_launched=False,count_note='Targeted source and wheel regression counts overlap.')
+out=root/'benchmark_results/training_contracts/20261016/finetune-studio';out.mkdir(parents=True,exist_ok=False)
+(out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+for name in ['verification.json','regressions.xml','wheel.xml','gates.log','types.log','wheel-origin.log','workflow-lint.log','wheel-test-configuration.json','reward-audit.json','preflight6-plan.json','studio-snapshot.log','free-recovery-plan.log']:
+    shutil.copy2(source/name,out/name)
+for name in ['stateset-studio-recovery-verify.py','stateset-studio-recovery-retain.py','stateset-platform-gates.py']:
+    shutil.copy2(Path('/tmp')/name,out/(name+'.txt'))
+(out/'README.md').write_text(f'''# Fine-tuning studio and recorded recovery acceptance
+
+Buildr job `{job}` verified frozen package/test Python and an isolated installed
+wheel, including exact packaged recovery profile and rubric bytes.
+
+- {summary['source_regressions']['passed']:,} targeted source regressions passed ({summary['source_regressions']['skipped']} skips).
+- {summary['wheel_regressions']['passed']:,} targeted installed-wheel regressions passed ({summary['wheel_regressions']['skipped']} skips).
+- All 421 package modules passed typing; lint, serial formatting, repository
+  hygiene, release governance, stable API compatibility and workflow lint passed.
+- Real terminal navigation exercised curses startup, model search, run-view
+  switching and clean exit against source and the isolated installed wheel.
+- Free installed-wheel planning produced 8,000 training episodes and 11
+  validation evaluations, with paid execution explicitly blocked.
+
+Studio tests exercise private reviewed input snapshots, code/data tampering,
+detached shell-free launch, exclusive submission, queue argv and worker budgets,
+required completion receipts and real nonempty weight artifacts, rejecting CPU
+dry-run substitution, immutable RunPod resources/budgets, retained provider
+handles, native objective/reference settings and committed-update budgets,
+metrics, log sanitation, stale/reused process identity and damaged records.
+Provider/GPU boundaries use synthetic fixtures, not live infrastructure.
+
+The recovery contract includes two actual tiny CPU optimizer updates with
+canned trajectory groups and a synthetic recorded judge. It checks four
+scenarios/eight generations, changing policy/fixed reference, baseline-preserving
+selection and replayable evidence. Greedy validation restores both decoding
+configuration objects on success and failure. Requested reference clone errors
+propagate. These checks do not certify 9B GPU capacity, remote model identity,
+quality gains or provider costs. Existing distributed evidence was not rerun.
+
+No paid run was launched. Full preflight-5 transcripts and the complete 200-pair
+audit remain unavailable; the retained reward audit covers three development
+pairs only. The fresh reviewed dataset, live image/backend conformance and a
+current complete provider/judging/storage quote remain gates for preflight-6.
+Source and wheel regression counts overlap.
+''')
+print(json.dumps(dict(path=str(out),summary=summary),indent=2))

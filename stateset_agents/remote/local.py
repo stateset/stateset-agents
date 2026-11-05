@@ -44,6 +44,8 @@ class LocalExecutor(RemoteExecutor):
     """Executes the job synchronously in a subprocess on the local machine."""
 
     name = "local"
+    supports_sft_seed = True
+    uses_packaged_training = True
     compute_model = "self-managed-local"
     verification_status = "unit-tested"
     supported_job_kinds = frozenset({"sft", "harvest"})

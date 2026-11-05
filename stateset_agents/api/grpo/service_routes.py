@@ -472,7 +472,7 @@ def register_routes(
                 await websocket.close(code=1008, reason="Unauthorized")
                 return
 
-            limit_key = f"ws:{credential_fingerprint(api_key)}"
+            limit_key = f"ws:{credential_fingerprint(matched_key)}"
             if not rate_limiter.allow(limit_key, config.rate_limit_per_minute):
                 await websocket.close(code=1008, reason="Rate limit exceeded")
                 return

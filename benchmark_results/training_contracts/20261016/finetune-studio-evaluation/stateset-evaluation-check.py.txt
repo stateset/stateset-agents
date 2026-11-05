@@ -1,0 +1,24 @@
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+root = Path('/home/dom/stateset-agents')
+os.chdir(root)
+os.environ.update(OMP_NUM_THREADS='1', MKL_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', NUMEXPR_NUM_THREADS='1', RAYON_NUM_THREADS='2', TOKENIZERS_PARALLELISM='false', HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1')
+os.environ['PATH'] = str(root/'.venv/bin') + os.pathsep + os.environ['PATH']
+files = ['stateset_agents/finetune_evaluation.py', 'stateset_agents/finetune_evaluation_worker.py', 'stateset_agents/finetune_evaluation_tui.py', 'stateset_agents/tui.py', 'stateset_agents/cli_finetune.py', 'stateset_agents/finetune_workspace.py', 'stateset_agents/finetune_recovery.py', 'tests/unit/test_evaluation_case_picker.py', 'tests/unit/test_finetune_evaluation.py', 'tests/unit/test_mypy_allowlist_ratchet.py']
+import black
+import isort
+for name in files:
+    path = Path(name)
+    isort.file(path)
+    black.format_file_in_place(path, fast=False, mode=black.Mode(), write_back=black.WriteBack.YES)
+def run(args):
+    print('$', ' '.join(args), flush=True)
+    subprocess.run(args, check=True)
+run(['ruff','check', *files])
+if '--format-only' in sys.argv:
+    raise SystemExit(0)
+run([sys.executable, '-m', 'pytest', '-q', '-n0', '-o', 'addopts=', '--timeout=150', '--tb=short', 'tests/unit/test_finetune_evaluation.py', '--junitxml=/tmp/stateset-evaluation-focused.xml'])
+run([sys.executable, 'scripts/check_types.py', '--all'])

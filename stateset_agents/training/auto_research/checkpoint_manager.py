@@ -17,7 +17,17 @@ import uuid
 from pathlib import Path
 from typing import Any, cast
 
+from stateset_agents.core.errors import ModelError
+from stateset_agents.exceptions import IMPORT_EXCEPTIONS, MODEL_IO_EXCEPTIONS
+
 logger = logging.getLogger(__name__)
+
+#: Loading a saved state_dict: model I/O failures, plus the ModelError
+#: ``load_checkpoint_file`` raises when it refuses or cannot read the file.
+_STATE_DICT_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    *MODEL_IO_EXCEPTIONS,
+    ModelError,
+)
 
 
 class CheckpointManager:
@@ -246,11 +256,11 @@ class CheckpointManager:
                             (path / "base_model_name.txt").write_text(
                                 base_name, encoding="utf-8"
                             )
-                except Exception:
-                    pass
+                except IMPORT_EXCEPTIONS as exc:  # peft missing or the note unwritable
+                    logger.debug("Could not record the PEFT base model: %s", exc)
 
                 return
-        except Exception as exc:
+        except MODEL_IO_EXCEPTIONS as exc:
             logger.debug("save_pretrained failed: %s", exc)
 
         # Fallback: save state_dict via torch
@@ -298,7 +308,7 @@ class CheckpointManager:
                             path,
                         )
                         return True
-                    except Exception as wrap_exc:
+                    except MODEL_IO_EXCEPTIONS as wrap_exc:
                         logger.warning(
                             "Could not wrap base model with PEFT adapter: %s. "
                             "Falling back to state_dict.",
@@ -306,7 +316,7 @@ class CheckpointManager:
                         )
             except ImportError:
                 logger.warning("PEFT not installed; cannot restore adapter")
-            except Exception as exc:
+            except MODEL_IO_EXCEPTIONS as exc:
                 logger.warning("PEFT adapter restore failed: %s", exc)
 
         # Strategy 2: state_dict
@@ -318,7 +328,7 @@ class CheckpointManager:
                 model.load_state_dict(state_dict, strict=False)
                 logger.info("Restored state_dict from %s", state_pt)
                 return True
-            except Exception as exc:
+            except _STATE_DICT_EXCEPTIONS as exc:
                 logger.warning("state_dict restore failed: %s", exc)
 
         # Strategy 3: from_pretrained
@@ -332,7 +342,7 @@ class CheckpointManager:
                     del new_model
                     logger.info("Restored via from_pretrained from %s", path)
                     return True
-            except Exception as exc:
+            except MODEL_IO_EXCEPTIONS as exc:
                 logger.warning("from_pretrained restore failed: %s", exc)
 
         logger.warning("No restorable model state found in %s", path)

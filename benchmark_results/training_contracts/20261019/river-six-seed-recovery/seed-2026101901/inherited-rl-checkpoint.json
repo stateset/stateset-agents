@@ -1,0 +1,20 @@
+{
+  "checkpoint": {
+    "checkpoint_type": "inference",
+    "path": "river://364d82d9-492b-4efa-a54a-e4048a7d6f19/sampler_weights/rl-eval-00000002",
+    "policy_version": null,
+    "step": 2
+  },
+  "selected_validation_step": 2,
+  "source": "/home/dom/stateset-agents/outputs/river-six-seed-20261019/seed-2026101901/sft_rl",
+  "source_test_report_hash": "264aa1a4339b8801b5eca1671650e38cab9c4feb602a1d2bc3ec54dcaa4876c7",
+  "training_activity": {
+    "completed_batches": 2,
+    "observed_optimizer_updates": 2,
+    "observed_skipped_batches": 0,
+    "schema_version": 1,
+    "scope": "SDK-reported run activity; not proof of nonzero gradients, selected-checkpoint changes, learning gains, or provider cost",
+    "status": "updates_observed",
+    "unknown_update_batches": 0
+  }
+}

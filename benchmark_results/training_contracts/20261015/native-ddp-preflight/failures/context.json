@@ -1,0 +1,12 @@
+[
+  {
+    "job": "4d2c6a0a58ca",
+    "kind": "test_fixture_failure",
+    "explanation": "New fixtures used index 1 for assistant turns, but the independent tiny rollout fixture has assistant turns starting at index 0. The selected one-token response also made a one-element likelihood array valid."
+  },
+  {
+    "job": "ad1d83045a21",
+    "kind": "test_fixture_failure",
+    "explanation": "The two-rank fault injection used a one-element likelihood array for a one-token response. The length fault now always adds one element; 26 preceding rejection/recovery cases had passed."
+  }
+]

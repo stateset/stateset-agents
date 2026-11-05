@@ -1,0 +1,259 @@
+{
+  "start_spec": "conclude-neuron-L23_v3t",
+  "start_spec_hash": "f221470a088d0860",
+  "start_activation_when_firing": 3.1646,
+  "grid": [
+    {
+      "name": "conclude-neuron-L23_v3t_b-1.0_w2.0",
+      "spec": "conclude-neuron-L23_v3t_b-1.0_w2.0_spec.json",
+      "spec_hash": "6ae85f629a8adbb2",
+      "bias": -1.0,
+      "write_norm": 2.0,
+      "write_scale": 0.549627,
+      "offline_fire_rate_by_group": {
+        "answer_newline": 0.631,
+        "working_newline": 0.0439,
+        "post_think": 0.0133,
+        "answer_token": 0.0,
+        "math_answer_newline": 0.5311,
+        "math_working_newline": 0.065,
+        "intermediate_newline": 0.19,
+        "math_intermediate_newline": 0.1767,
+        "nothink_newline": 0.0167,
+        "post_close_newline": 0.1854,
+        "prose_newline": 0.0
+      }
+    },
+    {
+      "name": "conclude-neuron-L23_v3t_b-1.0_w3.0",
+      "spec": "conclude-neuron-L23_v3t_b-1.0_w3.0_spec.json",
+      "spec_hash": "60308af0b3654402",
+      "bias": -1.0,
+      "write_norm": 3.0,
+      "write_scale": 0.824441,
+      "offline_fire_rate_by_group": {
+        "answer_newline": 0.631,
+        "working_newline": 0.0439,
+        "post_think": 0.0133,
+        "answer_token": 0.0,
+        "math_answer_newline": 0.5311,
+        "math_working_newline": 0.065,
+        "intermediate_newline": 0.19,
+        "math_intermediate_newline": 0.1767,
+        "nothink_newline": 0.0167,
+        "post_close_newline": 0.1854,
+        "prose_newline": 0.0
+      }
+    },
+    {
+      "name": "conclude-neuron-L23_v3t_b-1.0_w4.0",
+      "spec": "conclude-neuron-L23_v3t_b-1.0_w4.0_spec.json",
+      "spec_hash": "1f978fd111701c53",
+      "bias": -1.0,
+      "write_norm": 4.0,
+      "write_scale": 1.099255,
+      "offline_fire_rate_by_group": {
+        "answer_newline": 0.631,
+        "working_newline": 0.0439,
+        "post_think": 0.0133,
+        "answer_token": 0.0,
+        "math_answer_newline": 0.5311,
+        "math_working_newline": 0.065,
+        "intermediate_newline": 0.19,
+        "math_intermediate_newline": 0.1767,
+        "nothink_newline": 0.0167,
+        "post_close_newline": 0.1854,
+        "prose_newline": 0.0
+      }
+    },
+    {
+      "name": "conclude-neuron-L23_v3t_b+0.0_w2.0",
+      "spec": "conclude-neuron-L23_v3t_b+0.0_w2.0_spec.json",
+      "spec_hash": "a2dd8469d9430bfe",
+      "bias": 0.0,
+      "write_norm": 2.0,
+      "write_scale": 0.666667,
+      "offline_fire_rate_by_group": {
+        "answer_newline": 0.5793,
+        "working_newline": 0.0236,
+        "post_think": 0.0,
+        "answer_token": 0.0,
+        "math_answer_newline": 0.4407,
+        "math_working_newline": 0.0226,
+        "intermediate_newline": 0.11,
+        "math_intermediate_newline": 0.09,
+        "nothink_newline": 0.0067,
+        "post_close_newline": 0.1722,
+        "prose_newline": 0.0
+      }
+    },
+    {
+      "name": "conclude-neuron-L23_v3t_b+0.0_w3.0",
+      "spec": "conclude-neuron-L23_v3t_b+0.0_w3.0_spec.json",
+      "spec_hash": "f221470a088d0860",
+      "bias": 0.0,
+      "write_norm": 3.0,
+      "write_scale": 1.0,
+      "offline_fire_rate_by_group": {
+        "answer_newline": 0.5793,
+        "working_newline": 0.0236,
+        "post_think": 0.0,
+        "answer_token": 0.0,
+        "math_answer_newline": 0.4407,
+        "math_working_newline": 0.0226,
+        "intermediate_newline": 0.11,
+        "math_intermediate_newline": 0.09,
+        "nothink_newline": 0.0067,
+        "post_close_newline": 0.1722,
+        "prose_newline": 0.0
+      }
+    },
+    {
+      "name": "conclude-neuron-L23_v3t_b+0.0_w4.0",
+      "spec": "conclude-neuron-L23_v3t_b+0.0_w4.0_spec.json",
+      "spec_hash": "72c1d8d8c40de507",
+      "bias": 0.0,
+      "write_norm": 4.0,
+      "write_scale": 1.333333,
+      "offline_fire_rate_by_group": {
+        "answer_newline": 0.5793,
+        "working_newline": 0.0236,
+        "post_think": 0.0,
+        "answer_token": 0.0,
+        "math_answer_newline": 0.4407,
+        "math_working_newline": 0.0226,
+        "intermediate_newline": 0.11,
+        "math_intermediate_newline": 0.09,
+        "nothink_newline": 0.0067,
+        "post_close_newline": 0.1722,
+        "prose_newline": 0.0
+      }
+    },
+    {
+      "name": "conclude-neuron-L23_v3t_b+1.0_w2.0",
+      "spec": "conclude-neuron-L23_v3t_b+1.0_w2.0_spec.json",
+      "spec_hash": "c4ce66a70a97a6f5",
+      "bias": 1.0,
+      "write_norm": 2.0,
+      "write_scale": 0.907127,
+      "offline_fire_rate_by_group": {
+        "answer_newline": 0.5345,
+        "working_newline": 0.0135,
+        "post_think": 0.0,
+        "answer_token": 0.0,
+        "math_answer_newline": 0.3757,
+        "math_working_newline": 0.0056,
+        "intermediate_newline": 0.04,
+        "math_intermediate_newline": 0.04,
+        "nothink_newline": 0.0067,
+        "post_close_newline": 0.1258,
+        "prose_newline": 0.0
+      }
+    },
+    {
+      "name": "conclude-neuron-L23_v3t_b+1.0_w3.0",
+      "spec": "conclude-neuron-L23_v3t_b+1.0_w3.0_spec.json",
+      "spec_hash": "efae812819cec461",
+      "bias": 1.0,
+      "write_norm": 3.0,
+      "write_scale": 1.36069,
+      "offline_fire_rate_by_group": {
+        "answer_newline": 0.5345,
+        "working_newline": 0.0135,
+        "post_think": 0.0,
+        "answer_token": 0.0,
+        "math_answer_newline": 0.3757,
+        "math_working_newline": 0.0056,
+        "intermediate_newline": 0.04,
+        "math_intermediate_newline": 0.04,
+        "nothink_newline": 0.0067,
+        "post_close_newline": 0.1258,
+        "prose_newline": 0.0
+      }
+    },
+    {
+      "name": "conclude-neuron-L23_v3t_b+1.0_w4.0",
+      "spec": "conclude-neuron-L23_v3t_b+1.0_w4.0_spec.json",
+      "spec_hash": "5d7f8d8c08362d84",
+      "bias": 1.0,
+      "write_norm": 4.0,
+      "write_scale": 1.814253,
+      "offline_fire_rate_by_group": {
+        "answer_newline": 0.5345,
+        "working_newline": 0.0135,
+        "post_think": 0.0,
+        "answer_token": 0.0,
+        "math_answer_newline": 0.3757,
+        "math_working_newline": 0.0056,
+        "intermediate_newline": 0.04,
+        "math_intermediate_newline": 0.04,
+        "nothink_newline": 0.0067,
+        "post_close_newline": 0.1258,
+        "prose_newline": 0.0
+      }
+    },
+    {
+      "name": "conclude-neuron-L23_v3t_b+2.0_w2.0",
+      "spec": "conclude-neuron-L23_v3t_b+2.0_w2.0_spec.json",
+      "spec_hash": "37976064d832c771",
+      "bias": 2.0,
+      "write_norm": 2.0,
+      "write_scale": 1.324113,
+      "offline_fire_rate_by_group": {
+        "answer_newline": 0.4448,
+        "working_newline": 0.0101,
+        "post_think": 0.0,
+        "answer_token": 0.0,
+        "math_answer_newline": 0.2684,
+        "math_working_newline": 0.0028,
+        "intermediate_newline": 0.0233,
+        "math_intermediate_newline": 0.0167,
+        "nothink_newline": 0.0033,
+        "post_close_newline": 0.0464,
+        "prose_newline": 0.0
+      }
+    },
+    {
+      "name": "conclude-neuron-L23_v3t_b+2.0_w3.0",
+      "spec": "conclude-neuron-L23_v3t_b+2.0_w3.0_spec.json",
+      "spec_hash": "80dd4c89309a3547",
+      "bias": 2.0,
+      "write_norm": 3.0,
+      "write_scale": 1.986169,
+      "offline_fire_rate_by_group": {
+        "answer_newline": 0.4448,
+        "working_newline": 0.0101,
+        "post_think": 0.0,
+        "answer_token": 0.0,
+        "math_answer_newline": 0.2684,
+        "math_working_newline": 0.0028,
+        "intermediate_newline": 0.0233,
+        "math_intermediate_newline": 0.0167,
+        "nothink_newline": 0.0033,
+        "post_close_newline": 0.0464,
+        "prose_newline": 0.0
+      }
+    },
+    {
+      "name": "conclude-neuron-L23_v3t_b+2.0_w4.0",
+      "spec": "conclude-neuron-L23_v3t_b+2.0_w4.0_spec.json",
+      "spec_hash": "62e4117102ed9db0",
+      "bias": 2.0,
+      "write_norm": 4.0,
+      "write_scale": 2.648225,
+      "offline_fire_rate_by_group": {
+        "answer_newline": 0.4448,
+        "working_newline": 0.0101,
+        "post_think": 0.0,
+        "answer_token": 0.0,
+        "math_answer_newline": 0.2684,
+        "math_working_newline": 0.0028,
+        "intermediate_newline": 0.0233,
+        "math_intermediate_newline": 0.0167,
+        "nothink_newline": 0.0033,
+        "post_close_newline": 0.0464,
+        "prose_newline": 0.0
+      }
+    }
+  ]
+}

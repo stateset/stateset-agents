@@ -1,0 +1,34 @@
+{
+  "passed": true,
+  "source_regressions": {
+    "passed": 1265,
+    "skipped": 0
+  },
+  "wheel_regressions": {
+    "passed": 1154,
+    "skipped": 0
+  },
+  "typed_modules": 429,
+  "pipeline_queue_job": "16e925fa033f",
+  "focused_queue_job": "0f94032359ed",
+  "focused_wheel_queue_job": "0f94032359ed",
+  "focused_tests": 142,
+  "picker_post_integration_tests": 12,
+  "picker_real_terminal_checks": 2,
+  "wheel_sha256": "703a6fae21e4bda80ec809d0b7d40976758ff24765504f7bd6ae0dfa78590c0c",
+  "source_unchanged": true,
+  "test_sources_unchanged": true,
+  "wheel_source_matches": true,
+  "wheel_case_identities_match": true,
+  "real_cpu_policy_and_adapter_generation": true,
+  "recorded_judge_replay_verified": true,
+  "judge_generation_in_contracts": "injected deterministic synthetic replies; no live judge model quality claim",
+  "real_terminal_configuration_and_review_verified": true,
+  "live_herdr_refreshed": true,
+  "draft_preserved": true,
+  "gpu_verified": false,
+  "paid_run_launched": false,
+  "quality_gain_verified": false,
+  "remote_evaluation_verified": false,
+  "count_note": "Source/wheel counts overlap; provider boundaries and positive judge transport use mocks."
+}

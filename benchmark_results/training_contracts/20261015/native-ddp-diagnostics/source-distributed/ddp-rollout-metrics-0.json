@@ -1,0 +1,102 @@
+[
+  {
+    "case": "unequal",
+    "population_equal": true,
+    "learner_state_preserved": true
+  },
+  {
+    "case": "empty_main",
+    "population_equal": true,
+    "learner_state_preserved": true
+  },
+  {
+    "case": "empty_peer",
+    "population_equal": true,
+    "learner_state_preserved": true
+  },
+  {
+    "case": "all_empty",
+    "population_equal": true,
+    "learner_state_preserved": true
+  },
+  {
+    "case": "empty_groups",
+    "population_equal": true,
+    "learner_state_preserved": true
+  },
+  {
+    "case": "singleton",
+    "population_equal": true,
+    "learner_state_preserved": true
+  },
+  {
+    "case": "ties",
+    "population_equal": true,
+    "learner_state_preserved": true
+  },
+  {
+    "case": "signed_zero",
+    "population_equal": true,
+    "learner_state_preserved": true
+  },
+  {
+    "case": "extremes",
+    "population_equal": true,
+    "learner_state_preserved": true
+  },
+  {
+    "case": "same_extreme",
+    "population_equal": true,
+    "learner_state_preserved": true
+  },
+  {
+    "case": "subnormal",
+    "population_equal": true,
+    "learner_state_preserved": true
+  },
+  {
+    "case": "skewed_medians",
+    "population_equal": true,
+    "learner_state_preserved": true
+  },
+  {
+    "case": "missing",
+    "coherent_rejection_and_recovery": true
+  },
+  {
+    "case": "nan",
+    "coherent_rejection_and_recovery": true
+  },
+  {
+    "case": "infinite",
+    "coherent_rejection_and_recovery": true
+  },
+  {
+    "case": "schema",
+    "coherent_rejection_and_recovery": true
+  },
+  {
+    "case": "details",
+    "coherent_rejection_and_recovery": true
+  },
+  {
+    "case": "wandb",
+    "episode_and_training_populations_separate": true,
+    "empty_main_logs_global": true
+  },
+  {
+    "case": "legacy",
+    "episode_and_training_populations_separate": true,
+    "empty_main_logs_global": true
+  },
+  {
+    "case": "logger_type_error",
+    "episode_and_training_populations_separate": true,
+    "empty_main_logs_global": true
+  },
+  {
+    "case": "callback_mutation",
+    "episode_and_training_populations_separate": true,
+    "empty_main_logs_global": true
+  }
+]

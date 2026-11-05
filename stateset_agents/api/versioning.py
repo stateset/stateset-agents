@@ -504,7 +504,7 @@ class RequestMigrator:
         request_data = migrator.migrate(old_data, APIVersion.V1, APIVersion.V2)
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.steps: dict[tuple, MigrationStep] = {}
 
     def add_step(self, step: MigrationStep) -> None:

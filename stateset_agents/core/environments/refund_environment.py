@@ -117,7 +117,7 @@ class RefundEnvironment(Environment):
                     observation = {"denied": True}
                 else:
                     raise ValueError("Unknown tool")
-        except (ValueError, TypeError) as exc:
+        except ValueError as exc:
             context["violations"] += 1
             observation = {"error": str(exc)}
         done = finish or state.turn_count >= self.max_turns

@@ -297,10 +297,15 @@ def golden_grpo_enhanced() -> dict:
     ref = deterministic_weights(tiny_model(), seed=1)
     agent = SimpleNamespace(tokenizer=_Tok(), model=model)
     cfg = SimpleNamespace(
+        allow_sequence_fallback=True,
         max_prompt_length=32,
         max_completion_length=32,
         clip_ratio=0.2,
         seq_clip_ratio=3e-4,
+        # Pins the policy + KL terms without the entropy bonus. Set
+        # explicitly: a config without the field now reads TrainingConfig's
+        # entropy_coef (0.01) instead of the loss's old inline 0.0.
+        entropy_coef=0.0,
         bf16=False,
         fp16=False,
     )

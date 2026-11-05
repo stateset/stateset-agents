@@ -80,10 +80,12 @@ def _scheduler_lrs(steps: int, **config_kwargs) -> list[float]:
     return lrs
 
 
-def test_schedule_is_sized_by_optimizer_steps_not_num_iterations():
-    # train_step takes one optimizer step per outer iteration; num_iterations
-    # previously stretched the cosine so the LR barely decayed.
-    lrs = _scheduler_lrs(4, num_outer_iterations=4, num_iterations=3, warmup_ratio=0)
+def test_schedule_is_sized_by_optimizer_steps_taken():
+    # train_step takes num_iterations optimizer steps per outer iteration, so
+    # the cosine spans outer * iterations steps: it decays to zero exactly at
+    # the end of training, not after the first third of it.
+    lrs = _scheduler_lrs(12, num_outer_iterations=4, num_iterations=3, warmup_ratio=0)
+    assert lrs[3] > 0.5 * lrs[0]
     assert lrs[-1] == pytest.approx(0.0, abs=1e-9)
 
 

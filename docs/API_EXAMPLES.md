@@ -1,5 +1,91 @@
 # API Request/Response Examples
 
+The [fine-tuning operator API](FINETUNING_AGENTS.md#http-operator-api) shares
+the Herdr studio workspace: discover capabilities, validate configuration,
+inspect retained setup, import/reverify paired quality evidence and request a
+reviewed local stop. It requires strict admin authentication and server-selected
+workspace configuration. These routes do not launch training or control remote
+resources.
+
+## Durable training workers
+
+Set `API_TRAINING_QUEUE_PATH` on each API replica and run independent workers:
+
+```bash
+export API_TRAINING_QUEUE_PATH=/var/lib/stateset/training.sqlite3
+export API_TRAINING_MAX_CONCURRENT_JOBS=2
+python -m stateset_agents.api.training_worker \
+  --queue "$API_TRAINING_QUEUE_PATH" --max-concurrent-jobs 2
+```
+
+SQLite supports processes sharing a local persistent filesystem, not a network
+filesystem. For multiple hosts, install `[workers]` and supply a PostgreSQL DSN
+through `API_TRAINING_QUEUE_PATH`. All replicas and workers must agree on global
+capacity. Production defaults to a persistent local queue; development retains
+the embedded service unless configured otherwise.
+
+Submissions return `queued` after committing inputs. An `Idempotency-Key` header
+binds one owner and request; reusing it with different inputs is rejected. Worker
+leases renew on a separate thread. Cancellation works across replicas, and
+expired owners cannot publish progress or terminal results. Expired work becomes
+failed with an explicit checkpoint-resume instruction; it is never blindly
+replayed. Each attempt writes to a distinct artifact directory. Graceful API
+shutdown leaves durable workers independent of request-process lifetimes.
+
+Lease checks use the time after the database transaction lock is acquired.
+PostgreSQL uses its own server clock, so clock differences between worker hosts
+cannot revive expired leases. Claim and heartbeat durations must be finite
+numbers from 1 to 3600 seconds. A lease expires at its deadline. A worker that
+loses a lease stops publishing that attempt and continues processing other jobs;
+repeated cancellation still waits for its heartbeat thread to finish cleanup.
+
+Durable submission, status, listing, and cancellation run database I/O off the
+API event loop. Shutdown waits for accepted submissions to commit or roll back;
+disconnecting a caller does not undo an accepted job. Retry with the same
+`Idempotency-Key` to retrieve that job after a lost response. A key that already
+binds different inputs returns HTTP 409. The global limit of 1,000 pending jobs
+returns HTTP 429 for new submissions; accepted idempotent retries still succeed.
+
+Listings filter ownership and status in the database and decode only the
+requested page. The total and rows share one read snapshot, including when other
+replicas change jobs concurrently. Equal creation times are ordered by descending
+job ID. Python clients can use `aget_training_status()`, `acancel_training()`, and
+`list_training_jobs()` for async access; existing synchronous methods remain
+available.
+
+To reproduce the synthetic history benchmark:
+
+```bash
+python -m benchmarks.training_queue_pagination --jobs 10000 --page-size 20
+```
+
+The retained run in
+`benchmark_results/training_contracts/20261014/api-pagination.json` returned
+identical pages while reducing measured Python heap peaks from approximately
+32.7 MB to 115 KB. Timings include `tracemalloc` instrumentation; this measures
+synthetic SQLite metadata access rather than a production latency guarantee.
+
+Training rewards default to verified reference agreement:
+
+```json
+{
+  "agent_config": {"model_name": "your/model"},
+  "environment_scenarios": [
+    {"id": "case-1", "context": "Confirm completion", "expected_response": "Resolved"}
+  ],
+  "reward_config": {"mode": "outcome"},
+  "num_episodes": 50
+}
+```
+
+`TaskOutcomeReward` requires trusted evaluator references and, when tool results
+are scored, an environment-executed trace. Violating policy disqualifies success.
+Missing evidence raises instead of returning a neutral reward. Keep evaluator
+references out of model observations. `mode="environment"` uses an environment's
+own reward; `mode="heuristic"` explicitly selects the starter helpfulness/safety
+heuristics. Scores describe the chosen evaluator, not independently established
+real-world quality.
+
 Comprehensive examples for all StateSet Agents API endpoints with realistic request/response payloads.
 
 ## Table of Contents
@@ -1037,15 +1123,18 @@ request or a result from `get_training_status()` cannot change the running job,
 its owner, or its recorded settings. The legacy `jobs`/`training_jobs` mappings
 remain live internal state; use the status method for detached reads.
 
-`POST /training` admits one active training job per API process by default.
+With the embedded development service, `POST /training` admits one active
+training job per API process by default.
 Set `API_TRAINING_MAX_CONCURRENT_JOBS` to a positive integer to allow more, or pass
 `max_concurrent_jobs` to `TrainingService` when constructing it programmatically.
 Submissions above the limit receive HTTP 429 before an agent or job record is
 created; they are not queued. Cancelling jobs keep their slots until cleanup
 finishes. Normal completion, failure, and cancellation release the slot.
 This is an admission limit, not a measurement of GPU memory or provider quotas;
-multiple API worker processes each have their own limit. Size it for the actual
-training workload and available resources.
+multiple embedded API processes each have their own limit. With the durable
+queue described above, admission and worker capacity are coordinated in the
+database across replicas. Size either mode for the actual training workload
+and available resources.
 
 ---
 

@@ -4,6 +4,80 @@ Use `stateset-agents --help` to see the current runtime command list.
 
 ## Commands
 
+### `stateset-agents tui`
+
+Open the fine-tuning terminal studio in Herdr or another POSIX terminal.
+Configure local SFT/GRPO/GSPO/DAPO or RunPod/Modal/River SFT, preview inputs/resources,
+review a launch, and reconnect to retained logs and trainer metrics.
+
+```bash
+stateset-agents tui --workspace outputs/finetune
+stateset-agents tui --config outputs/finetune/draft.json
+stateset-agents tui --snapshot
+stateset-agents tui --snapshot --columns 40 --rows 24
+```
+
+Phone terminals work from 32 columns by 16 rows. Compact screens use `2`/`8`
+to move, `3`/`9` to page, `0` to go back, and `4` to switch the main views;
+digits remain literal in text editors and filters. `--columns` (32–300) and
+`--rows` (16–120) require `--snapshot`; interactive mode follows the real
+terminal size. Resizes below the minimum pause actions until the interface can
+be shown again. Enter remains the explicit launch confirmation.
+
+Press `b` for backends and `v` for a field-addressable settings checklist.
+Previewing is free; remote launches require backend authentication and a
+reviewed launch. RunPod enforces a pod ceiling; Modal/River require explicit
+provider-billed policy without an enforced dollar cap. Quitting preserves jobs. See
+[Fine-tuning in Herdr](FINETUNING_TUI.md) for controls and data formats.
+
+### `stateset-agents finetune`
+
+Use the same studio workspace from AI agents through a versioned JSON CLI.
+No interactive terminal is needed.
+
+```bash
+stateset-agents finetune schema
+stateset-agents finetune models
+stateset-agents finetune inspect-data --dataset chat.jsonl --method sft
+stateset-agents finetune validate --config config.json
+stateset-agents finetune prepare --config config.json --workspace outputs/finetune
+stateset-agents finetune status --workspace outputs/finetune
+stateset-agents finetune compare REFERENCE_ID CANDIDATE_ID --workspace outputs/finetune
+stateset-agents finetune workflow --config config.json --workspace outputs/finetune
+stateset-agents finetune quality RUN_ID --evidence paired-reports.json --workspace outputs/finetune
+stateset-agents finetune stop RUN_ID --expected-plan-sha256 SHA --workspace outputs/finetune
+stateset-agents finetune checkpoints RUN_ID --workspace outputs/finetune
+stateset-agents finetune prepare-resume RUN_ID --checkpoint checkpoint-10 --expected-recovery-sha256 SHA --workspace outputs/finetune
+stateset-agents finetune evaluation-plan RUN_ID --config evaluation.json
+stateset-agents finetune evaluation-targets RUN_ID
+stateset-agents finetune validation-compare RUN_ID ANCHOR_EVALUATION_ID
+stateset-agents finetune validation-comparison-status RUN_ID COMPARISON_ID
+stateset-agents finetune nomination-plan RUN_ID COMPARISON_ID
+stateset-agents finetune nomination-prepare RUN_ID COMPARISON_ID --expected-plan-sha256 SHA256
+stateset-agents finetune nominations RUN_ID
+stateset-agents finetune nomination-status RUN_ID NOMINATION_ID
+stateset-agents finetune nomination-config RUN_ID NOMINATION_ID --expected-plan-sha256 SHA256
+stateset-agents finetune evaluation-prepare RUN_ID --config evaluation.json --expected-plan-sha256 SHA
+stateset-agents finetune evaluation-launch RUN_ID EVALUATION_ID --expected-plan-sha256 SHA
+stateset-agents finetune evaluation-status RUN_ID EVALUATION_ID --verify
+```
+
+Commands cover settings validation, readiness, immutable preparation, exact-plan launch, status and
+bounded logs and read-only experiment comparison. Comparison shows saved settings,
+dataset identities and latest training metric deltas; it does not rank quality.
+Launch requires the reviewed plan checksum; repeated submissions
+start no new worker. Every remote launch also requires `--allow-paid` and backend
+authentication. `validate` reports all primary field issues without data/provider
+access: inspect `result.valid`; a completed invalid report still has `ok: true`.
+See the [agent protocol](FINETUNING_AGENTS.md) for JSON
+responses, data formats, retries and spending controls.
+
+`evaluation-*` and `evaluations` share the TUI's `j` workflow: review a local
+base/adapter comparison, submit through Buildr, inspect progress, replay retained
+judge scores or request an evaluation-only stop. They require cached models,
+immutable pins and reviewed held-out cases. This diagnostic preserves training
+and existing quality evidence; it does not automatically rank checkpoints or certify a
+multi-seed quality gain. See [local paired evaluations](FINETUNING_AGENTS.md#local-paired-evaluations).
 ### `stateset-agents reward-audit`
 
 Exercise a reward on reviewed candidate groups before RL training, retaining
@@ -20,6 +94,81 @@ stateset-agents reward-audit examples/data/reward_audit_gsm8k.json \
 refused. Exit codes: 0 for passing checks, 1 for failed checks with a report,
 2 for invalid inputs or execution setup errors. See [REWARD_AUDIT.md](REWARD_AUDIT.md)
 for the suite schema, custom factories, and limitations.
+
+### `stateset-agents preference`
+
+Train a policy on preference data (DPO, conservative DPO, IPO, SimPO, KTO,
+ORPO) or a Bradley-Terry reward model (`--method rm`). Provisional; see
+[PREFERENCE_TRAINING.md](PREFERENCE_TRAINING.md).
+
+```bash
+# Validate data, split and settings without loading a model (torch-free)
+stateset-agents preference --train-data pairs.jsonl --validation-fraction 0.05 --dry-run
+# DPO with a LoRA adapter (the reference is the adapter-disabled policy)
+stateset-agents preference --method dpo --model Qwen/Qwen3.5-0.8B \
+  --train-data pairs.jsonl --validation-fraction 0.05 --lora --output-dir outputs/dpo
+# Reward model with explicit held-out data
+stateset-agents preference --method rm --model Qwen/Qwen3.5-0.8B \
+  --train-data pairs.jsonl --eval-data heldout.jsonl --output-dir outputs/rm
+```
+
+Options: `--train-data` (required JSONL), `--model` (Hugging Face id or local
+directory; required unless `--dry-run`), `--method`
+(`dpo`/`ipo`/`simpo`/`kto`/`orpo`/`rm`, default `dpo`), `--eval-data`
+(must not share prompts, groups or sources with the training data) or
+`--validation-fraction` (prompt-disjoint held-out groups), `--output-dir`
+(final checkpoint in `<dir>/final` plus a metrics JSON), `--config` (JSON
+object of `PreferenceConfig`/`RewardModelConfig` fields; unknown keys are
+refused; flags override it), `--model-revision`, `--beta`, `--learning-rate`,
+`--epochs`, `--max-steps`, `--batch-size`, `--gradient-accumulation-steps`,
+`--max-length`, `--max-prompt-length`, `--label-smoothing`, `--simpo-gamma`,
+`--lora/--no-lora` (LoRA adapters on the policy, or on the reward-model
+backbone with `--method rm`),
+`--precompute-reference/--no-precompute-reference`, `--seed`, `--device`,
+`--dry-run`. Policy-only flags are refused with `--method rm`. Prints a JSON plan (dry run) or report; exits 2 on invalid
+data or settings.
+
+### `stateset-agents distill`
+
+Distil a frozen teacher into a student: offline logit KD (forward KL, reverse
+KL or generalized JSD over response tokens, with temperature; optionally from
+a top-k teacher cache) or on-policy GKD (`--lmbda`). Provisional; see
+[DISTILLATION.md](DISTILLATION.md).
+
+```bash
+# Validate data, split and settings without loading a model (torch-free)
+stateset-agents distill --train-data distill.jsonl --validation-fraction 0.05 --dry-run
+# Offline KD; shared alignment handles padded embedding widths
+stateset-agents distill --model Qwen/Qwen3.5-0.8B --teacher Qwen/Qwen3.5-9B \
+  --train-data distill.jsonl --validation-fraction 0.05 --vocab-alignment shared \
+  --lora --output-dir outputs/kd
+# On-policy GKD, half the batches on student samples
+stateset-agents distill --model student --teacher teacher --train-data distill.jsonl \
+  --lmbda 0.5 --divergence jsd --jsd-beta 0.5 --max-new-tokens 256
+# Build and save a top-k teacher cache, then train from it without the teacher
+stateset-agents distill --model student --teacher teacher --train-data distill.jsonl \
+  --teacher-top-k 32 --save-teacher-cache top32.pt
+stateset-agents distill --model student --teacher-cache top32.pt --teacher-top-k 32 \
+  --train-data distill.jsonl
+```
+
+Options: `--train-data` (required JSONL of `prompt`/`messages` with an
+optional `completion`; completions are required unless `--lmbda 1`),
+`--model` (student) and `--teacher` (Hugging Face ids or local directories;
+required unless `--dry-run`, the teacher unless `--teacher-cache`),
+`--eval-data` (must not share prompts, groups or sources with the training
+data) or `--validation-fraction`, `--output-dir` (final checkpoint in
+`<dir>/final` plus `distillation_metrics.json`), `--config` (JSON object of
+`DistillationConfig` fields; unknown keys are refused; flags override it),
+`--divergence` (`forward_kl`/`reverse_kl`/`jsd`), `--jsd-beta`,
+`--temperature`, `--lmbda`, `--on-policy-loss` (`full`/`sampled`),
+`--max-new-tokens`, `--teacher-top-k`, `--teacher-cache`,
+`--save-teacher-cache`, `--vocab-alignment` (`strict`/`shared`),
+`--learning-rate`, `--epochs`, `--max-steps`, `--batch-size`,
+`--gradient-accumulation-steps`, `--max-length`, `--max-prompt-length`,
+`--lora/--no-lora`, `--seed`, `--device`, `--model-revision`,
+`--teacher-revision`, `--dry-run`. Prints a JSON plan (dry run) or report;
+exits 2 on invalid data or settings (including a vocabulary mismatch).
 
 ### `stateset-agents provider-canary`
 
@@ -71,6 +220,12 @@ stateset-agents train --objective rloo --no-dry-run
 
 ### `stateset-agents train-remote`
 
+Use `--seed INTEGER` to choose an explicit SFT seed (0–4294967295) on seed-capable
+providers. The studio and agent JSON config expose the same value as `seed`,
+default 42. Omitting the remote CLI flag preserves provider defaults. Unsupported
+providers reject an explicit seed; remote worker packages must contain this
+feature. See [training seed semantics](FINETUNING_AGENTS.md#training-seeds).
+
 Run the SFT job from `improve` on local or rented GPU compute. Picks up where
 `improve` leaves off — it consumes `curated.jsonl` and writes a trained adapter.
 
@@ -105,6 +260,37 @@ stateset-agents train-remote --dataset improved/curated.jsonl \
 
 The job itself is `stateset_agents.training.sft` — identical whichever provider
 runs it (`scripts/sft_from_curated.py` is a thin CLI over the same code).
+
+#### QLoRA: 4-bit and 8-bit SFT
+
+The SFT job can load the frozen base model through bitsandbytes and train the
+LoRA adapter on top (QLoRA), cutting base-weight memory roughly 4× (4-bit) or
+2× (8-bit):
+
+```bash
+pip install 'stateset-agents[qlora]'   # bitsandbytes; needs a CUDA GPU
+python -m stateset_agents.training.sft --dataset improved/curated.jsonl \
+    --base-model Qwen/Qwen3.5-9B --output-dir outputs/sft_qlora \
+    --quantization 4bit                  # NF4 + double quant, bf16 compute
+```
+
+- `--quantization [none|4bit|8bit]` (default `none`): 4-bit uses QLoRA's NF4
+  storage with double quantization; 8-bit uses LLM.int8.
+- `--quant-type [nf4|fp4]` (default `nf4`), `--compute-dtype
+  [bfloat16|float16|float32]` (default `bfloat16`; use `float16` on GPUs
+  without bf16), `--no-double-quant`.
+
+The base is placed at load time (`device_map="auto"`) and prepared with
+`peft.prepare_model_for_kbit_training` (gradient checkpointing on) before the
+adapter is attached. The adapter manifest records the quantization settings.
+On a CPU-only host, `--dry-run` and the training plan still work; an actual run
+stops before any download with "4-bit/8-bit (QLoRA) loading needs a CUDA GPU".
+A missing bitsandbytes names the `qlora` extra. `train-remote` does not
+forward these flags yet; run the job directly on the GPU host. The code lives
+in `stateset_agents.training.quantization` (`QuantizationConfig`,
+`build_bnb_config`) for reuse by other trainers. CPU tests cover the
+configuration objects and failure paths; QLoRA SFT on a GPU has no retained
+evidence in this repo yet.
 Remote runs install a pinned published `stateset-agents[training]` rather than
 syncing your working tree, so a remote run is reproducible; the tradeoff is
 that testing an unreleased change remotely needs a dev release.
@@ -301,7 +487,7 @@ locally built wheel instead of PyPI (the pinned version cannot resolve before
 it is published):
 
 ```python
-RunPodExecutor(wheel=Path("dist/stateset_agents-0.65.0-py3-none-any.whl"))
+RunPodExecutor(wheel=Path("dist/stateset_agents-0.71.5-py3-none-any.whl"))
 ```
 
 ### `stateset-agents undeploy`
@@ -356,19 +542,33 @@ Delete a managed deployment. For CoreWeave, add `--gateway-id <id>
 --delete-gateway` only when the deployment handle says `owns_gateway: true`.
 Omitting that flag preserves shared gateways.
 
-### `stateset-agents qwen3-5-0-8b`
+### `stateset-agents model`
+
+Preview or run a packaged per-model GSPO starter. Every preset has the same
+options; `stateset-agents model --help` lists the presets.
+
+```bash
+stateset-agents model --help
+stateset-agents model qwen3-5-0-8b --list-profiles --json-output
+```
+
+The pre-0.68 top-level spellings (for example `stateset-agents qwen3-5-0-8b`)
+were deprecated in v0.68.0 and have been removed; use `stateset-agents model
+<preset>`.
+
+#### `stateset-agents model qwen3-5-0-8b`
 
 Preview or run the dedicated starter path for `Qwen/Qwen3.5-0.8B`.
 The command defaults to a dry-run so you can inspect the resolved config before loading a model.
 
 ```bash
-stateset-agents qwen3-5-0-8b
-stateset-agents qwen3-5-0-8b --json-output
-stateset-agents qwen3-5-0-8b --starter-profile memory --json-output
-stateset-agents qwen3-5-0-8b --list-profiles --json-output
-stateset-agents qwen3-5-0-8b --write-config ./qwen3_5_0_8b.json
-stateset-agents qwen3-5-0-8b --config ./qwen3_5_0_8b.json --no-dry-run
-stateset-agents qwen3-5-0-8b --no-dry-run --task customer_service --use-4bit
+stateset-agents model qwen3-5-0-8b
+stateset-agents model qwen3-5-0-8b --json-output
+stateset-agents model qwen3-5-0-8b --starter-profile memory --json-output
+stateset-agents model qwen3-5-0-8b --list-profiles --json-output
+stateset-agents model qwen3-5-0-8b --write-config ./qwen3_5_0_8b.json
+stateset-agents model qwen3-5-0-8b --config ./qwen3_5_0_8b.json --no-dry-run
+stateset-agents model qwen3-5-0-8b --no-dry-run --task customer_service --use-4bit
 ```
 
 #### Options
@@ -389,19 +589,19 @@ stateset-agents qwen3-5-0-8b --no-dry-run --task customer_service --use-4bit
 - `--dry-run / --no-dry-run`: Preview or execute the starter workflow.
 - `--json-output`: Emit a machine-readable preview/result payload.
 
-### `stateset-agents kimi-k2-6`
+#### `stateset-agents model kimi-k2-6`
 
 Preview or run the dedicated starter path for `moonshotai/Kimi-K2.6`.
 The command defaults to a dry-run so you can inspect the resolved config before loading a model.
 
 ```bash
-stateset-agents kimi-k2-6
-stateset-agents kimi-k2-6 --json-output
-stateset-agents kimi-k2-6 --starter-profile memory --json-output
-stateset-agents kimi-k2-6 --list-profiles --json-output
-stateset-agents kimi-k2-6 --write-config ./kimi_k2_6.json
-stateset-agents kimi-k2-6 --config ./kimi_k2_6.json --no-dry-run
-stateset-agents kimi-k2-6 --no-dry-run --task customer_service --use-4bit
+stateset-agents model kimi-k2-6
+stateset-agents model kimi-k2-6 --json-output
+stateset-agents model kimi-k2-6 --starter-profile memory --json-output
+stateset-agents model kimi-k2-6 --list-profiles --json-output
+stateset-agents model kimi-k2-6 --write-config ./kimi_k2_6.json
+stateset-agents model kimi-k2-6 --config ./kimi_k2_6.json --no-dry-run
+stateset-agents model kimi-k2-6 --no-dry-run --task customer_service --use-4bit
 ```
 
 #### Options
@@ -422,20 +622,20 @@ stateset-agents kimi-k2-6 --no-dry-run --task customer_service --use-4bit
 - `--dry-run / --no-dry-run`: Preview or execute the starter workflow.
 - `--json-output`: Emit a machine-readable preview/result payload.
 
-### `stateset-agents kimi-k3`
+#### `stateset-agents model kimi-k3`
 
 Preview or run the dedicated starter path for `moonshotai/Kimi-K3`.
 The command defaults to a dry-run so you can inspect the resolved config before loading a model.
-Note: the `moonshotai/Kimi-K3` ID is provisional — HF weights are not yet published (as of 2026-07-16).
+The released `moonshotai/Kimi-K3` checkpoint is now pinned with published KDA/MLA targets. Its native MXFP4 training loader remains blocked; inspect `stateset-agents frontier-models --model kimi-k3` and the [frontier guide](FRONTIER_FINETUNING.md).
 
 ```bash
-stateset-agents kimi-k3
-stateset-agents kimi-k3 --json-output
-stateset-agents kimi-k3 --starter-profile memory --json-output
-stateset-agents kimi-k3 --list-profiles --json-output
-stateset-agents kimi-k3 --write-config ./kimi_k3.json
-stateset-agents kimi-k3 --config ./kimi_k3.json --no-dry-run
-stateset-agents kimi-k3 --no-dry-run --task customer_service --use-4bit
+stateset-agents model kimi-k3
+stateset-agents model kimi-k3 --json-output
+stateset-agents model kimi-k3 --starter-profile memory --json-output
+stateset-agents model kimi-k3 --list-profiles --json-output
+stateset-agents model kimi-k3 --write-config ./kimi_k3.json
+stateset-agents model kimi-k3 --config ./kimi_k3.json --no-dry-run
+stateset-agents model kimi-k3 --no-dry-run --task customer_service --use-4bit
 ```
 
 #### Options
@@ -456,20 +656,20 @@ stateset-agents kimi-k3 --no-dry-run --task customer_service --use-4bit
 - `--dry-run / --no-dry-run`: Preview or execute the starter workflow.
 - `--json-output`: Emit a machine-readable preview/result payload.
 
-### `stateset-agents muse-glimmer`
+#### `stateset-agents model muse-glimmer`
 
 Preview or run the dedicated starter path for `meta-models/Muse-Glimmer-30B`,
 Meta's open agentic model (Aug 2026; dense 30B, 131K ctx, Apache-2.0).
 The command defaults to a dry-run so you can inspect the resolved config before loading a model.
 
 ```bash
-stateset-agents muse-glimmer
-stateset-agents muse-glimmer --json-output
-stateset-agents muse-glimmer --starter-profile memory --json-output
-stateset-agents muse-glimmer --list-profiles --json-output
-stateset-agents muse-glimmer --write-config ./muse_glimmer.json
-stateset-agents muse-glimmer --config ./muse_glimmer.json --no-dry-run
-stateset-agents muse-glimmer --no-dry-run --task customer_service --use-4bit
+stateset-agents model muse-glimmer
+stateset-agents model muse-glimmer --json-output
+stateset-agents model muse-glimmer --starter-profile memory --json-output
+stateset-agents model muse-glimmer --list-profiles --json-output
+stateset-agents model muse-glimmer --write-config ./muse_glimmer.json
+stateset-agents model muse-glimmer --config ./muse_glimmer.json --no-dry-run
+stateset-agents model muse-glimmer --no-dry-run --task customer_service --use-4bit
 ```
 
 #### Options
@@ -490,20 +690,71 @@ stateset-agents muse-glimmer --no-dry-run --task customer_service --use-4bit
 - `--dry-run / --no-dry-run`: Preview or execute the starter workflow.
 - `--json-output`: Emit a machine-readable preview/result payload.
 
-### `stateset-agents nemotron-3-5`
+### `stateset-agents nemotron-3-5-super-vl`
+
+Image-conditioned LoRA SFT for NVIDIA's pinned Super VL BF16 checkpoint.
+Install `[nemotron-vl]` and compatible CUDA Mamba kernels for execution.
+
+```bash
+stateset-agents nemotron-3-5-super-vl --train-data data/train.jsonl --write-config super-vl.json
+stateset-agents nemotron-3-5-super-vl --config super-vl.json --check-data
+stateset-agents nemotron-3-5-super-vl --config super-vl.json --no-dry-run
+```
+
+Options: `--config PATH`, `--train-data PATH`, `--validation-data PATH`,
+`--image-root PATH`, `--output-dir PATH`, `--max-steps N`, `--fsdp/--no-fsdp`,
+`--write-config PATH`, `--check-data`, and `--dry-run/--no-dry-run` (dry-run is
+the default). Configuration is JSON; `--write-config` exits without training.
+For FSDP, launch the saved configuration with `torchrun` as described in the
+[Super VL and Bolt guide](NEMOTRON_3_5_VL.md). Full-size GPU training is unverified.
+
+### `stateset-agents nemotron-3-5-bolt`
+
+The same image-conditioned SFT workflow for NVIDIA's Bolt **BF16** checkpoint.
+Options match `nemotron-3-5-super-vl`; configurations must select `model=bolt`.
+
+```bash
+stateset-agents nemotron-3-5-bolt --train-data data/train.jsonl --write-config bolt.json
+stateset-agents nemotron-3-5-bolt --config bolt.json --check-data
+stateset-agents nemotron-3-5-bolt --config bolt.json --no-dry-run
+```
+
+The quantized 24GB and GGUF releases are inference variants; their footprint
+does not describe BF16 training. See [the guide](NEMOTRON_3_5_VL.md) for datasets,
+environment requirements, adapter export/reload, and current verification limits.
+
+### `stateset-agents muse-spark-open`
+
+Configure revision-pinned Muse Spark Open BF16 distributed text LoRA SFT.
+The default is a dry run. Full-size GPU training is not yet certified.
+
+```bash
+stateset-agents muse-spark-open --train-data data/train.jsonl --write-config muse-spark.json
+stateset-agents muse-spark-open --config muse-spark.json --check-data
+```
+
+Options: `--config PATH`, `--train-data PATH`, `--validation-data PATH`,
+`--output-dir PATH`, `--write-config PATH`, `--check-data`, and
+`--dry-run/--no-dry-run`. Execution requires BF16 CUDA, gated checkpoint access,
+and torchrun with a world divisible by the configured expert-parallel size.
+Use the [Muse Spark guide](MUSE_SPARK_OPEN.md) for multi-node launch, memory,
+assistant-loss boundaries, adapter output, and the separate native GSPO preset.
+Load-time sharded SFT saves adapters only; optimizer resume is unsupported.
+
+#### `stateset-agents model nemotron-3-5`
 
 Preview or run the dedicated starter path for `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16`,
 NVIDIA's hybrid Mamba-2/attention/MoE open model (Aug 2026; 30B total / ~3B active, 256K ctx, OpenMDW-1.1).
 The command defaults to a dry-run so you can inspect the resolved config before loading a model.
 
 ```bash
-stateset-agents nemotron-3-5
-stateset-agents nemotron-3-5 --json-output
-stateset-agents nemotron-3-5 --starter-profile memory --json-output
-stateset-agents nemotron-3-5 --list-profiles --json-output
-stateset-agents nemotron-3-5 --write-config ./nemotron_3_5.json
-stateset-agents nemotron-3-5 --config ./nemotron_3_5.json --no-dry-run
-stateset-agents nemotron-3-5 --no-dry-run --task customer_service --use-4bit
+stateset-agents model nemotron-3-5
+stateset-agents model nemotron-3-5 --json-output
+stateset-agents model nemotron-3-5 --starter-profile memory --json-output
+stateset-agents model nemotron-3-5 --list-profiles --json-output
+stateset-agents model nemotron-3-5 --write-config ./nemotron_3_5.json
+stateset-agents model nemotron-3-5 --config ./nemotron_3_5.json --no-dry-run
+stateset-agents model nemotron-3-5 --no-dry-run --task customer_service --use-4bit
 ```
 
 #### Options
@@ -524,7 +775,7 @@ stateset-agents nemotron-3-5 --no-dry-run --task customer_service --use-4bit
 - `--dry-run / --no-dry-run`: Preview or execute the starter workflow.
 - `--json-output`: Emit a machine-readable preview/result payload.
 
-### `stateset-agents qwen3-8-27b`
+#### `stateset-agents model qwen3-8-27b`
 
 Preview or run the dedicated starter path for `Qwen/Qwen3.8-27B`,
 Alibaba's multimodal hybrid-attention open model (2026-08-05; 27.8B params, 256K ctx, Apache-2.0).
@@ -533,13 +784,13 @@ This is a ~56GB BF16 checkpoint — budget ~160GB of disk and an 80GB card (or `
 The command defaults to a dry-run so you can inspect the resolved config before loading a model.
 
 ```bash
-stateset-agents qwen3-8-27b
-stateset-agents qwen3-8-27b --json-output
-stateset-agents qwen3-8-27b --starter-profile memory --json-output
-stateset-agents qwen3-8-27b --list-profiles --json-output
-stateset-agents qwen3-8-27b --write-config ./qwen3_8_27b.json
-stateset-agents qwen3-8-27b --config ./qwen3_8_27b.json --no-dry-run
-stateset-agents qwen3-8-27b --no-dry-run --task customer_service --use-4bit
+stateset-agents model qwen3-8-27b
+stateset-agents model qwen3-8-27b --json-output
+stateset-agents model qwen3-8-27b --starter-profile memory --json-output
+stateset-agents model qwen3-8-27b --list-profiles --json-output
+stateset-agents model qwen3-8-27b --write-config ./qwen3_8_27b.json
+stateset-agents model qwen3-8-27b --config ./qwen3_8_27b.json --no-dry-run
+stateset-agents model qwen3-8-27b --no-dry-run --task customer_service --use-4bit
 ```
 
 #### Options
@@ -560,20 +811,20 @@ stateset-agents qwen3-8-27b --no-dry-run --task customer_service --use-4bit
 - `--dry-run / --no-dry-run`: Preview or execute the starter workflow.
 - `--json-output`: Emit a machine-readable preview/result payload.
 
-### `stateset-agents qwen3-coder`
+#### `stateset-agents model qwen3-coder`
 
 Preview or run the dedicated starter path for `Qwen/Qwen3-Coder-30B-A3B-Instruct`,
 Alibaba's open coding MoE model (30B total / ~3B active, 128 experts / 8 active, 256K ctx, Apache-2.0).
 The command defaults to a dry-run so you can inspect the resolved config before loading a model.
 
 ```bash
-stateset-agents qwen3-coder
-stateset-agents qwen3-coder --json-output
-stateset-agents qwen3-coder --starter-profile memory --json-output
-stateset-agents qwen3-coder --list-profiles --json-output
-stateset-agents qwen3-coder --write-config ./qwen3_coder.json
-stateset-agents qwen3-coder --config ./qwen3_coder.json --no-dry-run
-stateset-agents qwen3-coder --no-dry-run --task customer_service --use-4bit
+stateset-agents model qwen3-coder
+stateset-agents model qwen3-coder --json-output
+stateset-agents model qwen3-coder --starter-profile memory --json-output
+stateset-agents model qwen3-coder --list-profiles --json-output
+stateset-agents model qwen3-coder --write-config ./qwen3_coder.json
+stateset-agents model qwen3-coder --config ./qwen3_coder.json --no-dry-run
+stateset-agents model qwen3-coder --no-dry-run --task customer_service --use-4bit
 ```
 
 #### Options
@@ -594,20 +845,20 @@ stateset-agents qwen3-coder --no-dry-run --task customer_service --use-4bit
 - `--dry-run / --no-dry-run`: Preview or execute the starter workflow.
 - `--json-output`: Emit a machine-readable preview/result payload.
 
-### `stateset-agents gpt-oss`
+#### `stateset-agents model gpt-oss`
 
 Preview or run the dedicated starter path for `openai/gpt-oss-20b`,
 OpenAI's open-weight reasoning MoE model (32 experts / 4 active, 131K ctx, Apache-2.0).
 The command defaults to a dry-run so you can inspect the resolved config before loading a model.
 
 ```bash
-stateset-agents gpt-oss
-stateset-agents gpt-oss --json-output
-stateset-agents gpt-oss --starter-profile memory --json-output
-stateset-agents gpt-oss --list-profiles --json-output
-stateset-agents gpt-oss --write-config ./gpt_oss.json
-stateset-agents gpt-oss --config ./gpt_oss.json --no-dry-run
-stateset-agents gpt-oss --no-dry-run --task customer_service --use-4bit
+stateset-agents model gpt-oss
+stateset-agents model gpt-oss --json-output
+stateset-agents model gpt-oss --starter-profile memory --json-output
+stateset-agents model gpt-oss --list-profiles --json-output
+stateset-agents model gpt-oss --write-config ./gpt_oss.json
+stateset-agents model gpt-oss --config ./gpt_oss.json --no-dry-run
+stateset-agents model gpt-oss --no-dry-run --task customer_service --use-4bit
 ```
 
 #### Options
@@ -628,20 +879,20 @@ stateset-agents gpt-oss --no-dry-run --task customer_service --use-4bit
 - `--dry-run / --no-dry-run`: Preview or execute the starter workflow.
 - `--json-output`: Emit a machine-readable preview/result payload.
 
-### `stateset-agents deepseek-v4`
+#### `stateset-agents model deepseek-v4`
 
 Preview or run the dedicated starter path for `deepseek-ai/DeepSeek-V4-Flash`,
 DeepSeek's large MoE with MLA attention (256 routed experts / 6 active, up to 1M positions, MIT; QLoRA-only, vLLM generation).
 The command defaults to a dry-run so you can inspect the resolved config before loading a model.
 
 ```bash
-stateset-agents deepseek-v4
-stateset-agents deepseek-v4 --json-output
-stateset-agents deepseek-v4 --starter-profile memory --json-output
-stateset-agents deepseek-v4 --list-profiles --json-output
-stateset-agents deepseek-v4 --write-config ./deepseek_v4.json
-stateset-agents deepseek-v4 --config ./deepseek_v4.json --no-dry-run
-stateset-agents deepseek-v4 --no-dry-run --task customer_service --use-4bit
+stateset-agents model deepseek-v4
+stateset-agents model deepseek-v4 --json-output
+stateset-agents model deepseek-v4 --starter-profile memory --json-output
+stateset-agents model deepseek-v4 --list-profiles --json-output
+stateset-agents model deepseek-v4 --write-config ./deepseek_v4.json
+stateset-agents model deepseek-v4 --config ./deepseek_v4.json --no-dry-run
+stateset-agents model deepseek-v4 --no-dry-run --task customer_service --use-4bit
 ```
 
 #### Options
@@ -1029,16 +1280,24 @@ or hosted chat modes. See [River provider](RIVER_PROVIDER.md).
 
 ### `stateset-agents runpod-orphans`
 
-Inspect locally recorded cleanup leases for RunPod training pods whose
-submitting process exited before cleanup. The default is read-only.
+Inspect locally recorded cleanup leases for RunPod training pods. Each lease
+records the submitting process (PID, start-time token and host), and the
+read-only listing shows whether that process is still running, has exited, or
+cannot be verified (older leases, another host).
 
 ```bash
 stateset-agents runpod-orphans
 stateset-agents runpod-orphans --terminate
+stateset-agents runpod-orphans --terminate --force
 ```
 
-- `--terminate`: Terminate every leased pod and remove a lease only after the
-  provider confirms deletion. Review the read-only output first.
+- `--terminate`: Terminate only pods whose submitting process has provably
+  exited, removing each lease after the provider confirms deletion (an
+  already-deleted pod counts as cleaned up). A live job's pod is kept, since
+  ending it would make that job rent a replacement.
+- `--force`: With `--terminate`, also terminate pods whose process is still
+  running or cannot be verified. Use only after checking that no job needs
+  them.
 
 ### `stateset-agents model-support`
 
@@ -1077,7 +1336,10 @@ stateset-agents flywheel --base-model meta-models/Muse-Glimmer-30B \
   `{prompt, expect, forbid}` specs sampled during harvest. The checks
   define success; they are mandatory.
 - `--eval-prompts PATH` (required): JSON list of specs that score each
-  generation. Keep disjoint from the harvest prompts.
+  generation. Must be disjoint from the harvest prompts even with digits
+  (reference numbers) masked; an overlap is rejected as a usage error. Every
+  spec in both files needs `expect`, `forbid` or (for episode scripts)
+  `turn_expect` checks: a spec without checks passes trivially.
 - `--output-root PATH`: Where generations and the report land (default
   `outputs/flywheel`).
 - `--initial-adapter PATH`: Existing adapter to start from (defaults to the
@@ -1142,6 +1404,42 @@ stateset-agents ingest
 - `--input, -i TEXT`: Path to the source log file. For --format openai: JSONL, one conversation per line ({'messages': [...]} or a bare message list). For --format langchain: a single JSON file (see stateset_agents.data.trajectory_ingest docstring for supported shapes).
 - `--output, -o TEXT`: Output path. If it ends in .jsonl, all conversations are concatenated into one graded-history JSONL file (turns from different conversations are separated by a blank line — note the grader treats such a file as ONE transcript; use directory mode to grade conversations separately). Otherwise it is treated as a directory and one <output>/conversation_<N>.jsonl file is written per conversation — feed any of them to `python scripts/grade_transcript.py --history <file>`.
 
+### `stateset-agents data`
+
+Inspect and clean training data. `data decontaminate` finds eval-set text in
+training files by exact 13-gram overlap on normalized words (optionally plus
+MinHash near duplicates), writes the evidence, and can filter or flag the
+contaminated rows. See [Decontamination](DECONTAMINATION.md).
+
+```bash
+stateset-agents data decontaminate --train sft_train.jsonl \
+    --eval held_out.jsonl --eval builtin:gsm8k-test --report contamination.json
+stateset-agents data decontaminate --train sft_train.jsonl --eval held_out.jsonl \
+    --action filter --output sft_train.clean.jsonl
+```
+
+- `--train, -t TEXT` (repeatable): training JSONL or JSON (chat/SFT, preference,
+  RL prompt or scenario rows), `NAME=PATH`, or `builtin:NAME` (report only).
+- `--eval, -e TEXT` (repeatable): an eval file, `NAME=PATH`, or
+  `builtin:NAME` (`support-bench`, `tool-calling-bench`, `gsm8k-test`,
+  `gsm8k-train`).
+- `--report PATH`: write the full JSON report (new file): per eval set, every
+  contaminated row with its overlapping n-grams, overlap fraction, example
+  training rows and near-duplicate match.
+- `--action [report|filter|flag]` (default `report`) with `--output PATH`
+  (new `.jsonl` or `.json` file): drop the contaminated rows, or keep them with
+  `metadata.contamination`. `--target train` (default) changes the single
+  `--train` file; `--target eval` writes a clean subset of the single `--eval`
+  file.
+- Matching: `--ngram-size` (default `13`), `--min-tokens` (default `8`; shorter
+  eval segments are matched whole), `--min-overlap` (fraction of an eval row's
+  n-grams that must be found; default `0` = any), `--mask-digits`,
+  `--include-system`, `--field KEY` (repeatable).
+- Near duplicates: `--near-duplicates`, `--threshold` (exact Jaccard, default
+  `0.8`).
+- `--fail-on-contamination`: exit `1` when any eval row is contaminated, after
+  writing outputs. Invalid input or an existing output path exits `2`.
+
 ### `stateset-agents mcp`
 
 Run the StateSet Agents MCP server (stdio transport by default).
@@ -1153,6 +1451,64 @@ stateset-agents mcp
 #### Options
 
 - `--transport TEXT`: MCP transport to serve over (default: stdio).
+- `--weight-space`: Also expose the experimental ws_* weight-space programming tools (loads models into the server process).
+
+### `stateset-agents weight-edit`
+
+Apply, verify, control and compare direct weight edits (experimental; see
+`stateset_agents.experimental.weight_space`). An edit spec is JSON:
+
+```json
+{"name": "w5t15", "edits": [
+  {"kind": "token_rows", "ids": [13784, 13428], "scale": 0.5},
+  {"kind": "token_rows", "ids": [248069], "scale": 1.5},
+  {"kind": "down_cols", "layer": 23, "neurons": [742], "scale": 1.3}
+]}
+```
+
+A `neuron_rewrite` edit replaces one MLP neuron outright —
+`{"kind": "neuron_rewrite", "layer": 23, "neuron": 1998, "gate": [...], "up": [...], "down": [...]}`
+(each a hidden-size vector; build one with
+`stateset_agents.experimental.weight_space.design_conditional_neuron`).
+
+`token_rows` scales those rows of every token matrix (the embedding, and
+`lm_head` when the checkpoint stores one); `down_cols` scales MLP neuron
+columns of one layer's `down_proj`; `neuron_rewrite` sets a neuron's
+`gate_proj` and `up_proj` rows and `down_proj` column. `control` keeps a
+rewritten neuron's read vectors and draws a random write direction of the
+same norm.
+
+```bash
+stateset-agents weight-edit apply spec.json --base Qwen/Qwen3.5-0.8B --revision <sha> --out ./edited
+stateset-agents weight-edit verify spec.json --base Qwen/Qwen3.5-0.8B --revision <sha> --edited ./edited
+stateset-agents weight-edit control spec.json --base ./edited --seed 0 > control.json
+stateset-agents weight-edit compare base_results.jsonl edited_results.jsonl
+```
+
+#### Subcommands
+
+- `apply SPEC --base DIR|HUB_ID --out DIR [--revision SHA]`: copy the base
+  checkpoint with the spec applied and write `weight_space_spec.json`
+  (spec, content hash, weights changed). Refuses to overwrite `--out`.
+- `verify SPEC --base DIR|HUB_ID --edited DIR [--revision SHA] [--tolerance F]`:
+  exit 0 only if every tensor of the edited checkpoint equals base + spec;
+  prints `MISMATCH: ...` and exits 1 otherwise.
+- `control SPEC --base DIR|HUB_ID [--seed N]`: print a structure-matched
+  control spec (same kinds, layers and scales on random targets).
+- `compare BASE.jsonl OTHER.jsonl [--seed N] [--strict] [--end-think TEXT]`:
+  paired statistics on shared problem ids (rows need `id` and `correct`):
+  gained, lost, delta, bootstrap 95% CI, exact McNemar p. `--strict` credits
+  a row only if it finished on its own with exactly one end-of-thinking marker
+  (rows also need `finish` and `text`). Use it for any edit that touches the
+  `</think>` token: such edits can emit it inline while the model keeps
+  reasoning, which a grader that splits on the first marker rewards.
+- `atlas --base DIR|HUB_ID --token-id ID [--token-id ID ...] [--top N] [--against]
+  [--norm auto|zero-centered|plain]`: weight-only (no forward passes) list of
+  the MLP neurons whose `down_proj` columns write most directly toward (or,
+  with `--against`, away from) the tokens' logit direction, each with the
+  token ids it promotes. `auto` reads the final-norm convention from
+  `config.json` (Qwen3.5 / Gemma use `x * (1 + w)`). Atlas neurons are
+  candidates to test, not causes.
 
 ### `stateset-agents auto-research`
 
@@ -1294,16 +1650,16 @@ stateset-agents init-config
 - `--task TEXT`: Task preset for model-specific starter presets.
 - `--starter-profile TEXT`: Starter profile for model-specific starter presets.
 
-### `stateset-agents qwen3-5-2b`
+#### `stateset-agents model qwen3-5-2b`
 
 Preview or run text-only LoRA/QLoRA training of `Qwen/Qwen3.5-2B`.
 Install `stateset-agents[small-models]`. Default output:
 `./outputs/qwen3_5_2b_gspo`.
 
 ```bash
-stateset-agents qwen3-5-2b --starter-profile memory --json
-stateset-agents qwen3-5-2b --starter-profile memory --write-config qwen3-5-2b.json
-stateset-agents qwen3-5-2b --config qwen3-5-2b.json --no-dry-run
+stateset-agents model qwen3-5-2b --starter-profile memory --json
+stateset-agents model qwen3-5-2b --starter-profile memory --write-config qwen3-5-2b.json
+stateset-agents model qwen3-5-2b --config qwen3-5-2b.json --no-dry-run
 ```
 
 Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
@@ -1315,16 +1671,16 @@ Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
 Preview is the default. Apache-2.0; hybrid attention and MLP adapters.
 See the [small-model guide](../examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid).
 
-### `stateset-agents qwen3-5-4b`
+#### `stateset-agents model qwen3-5-4b`
 
 Preview or run text-only LoRA/QLoRA training of `Qwen/Qwen3.5-4B`.
 Install `stateset-agents[small-models]`. Default output:
 `./outputs/qwen3_5_4b_gspo`.
 
 ```bash
-stateset-agents qwen3-5-4b --starter-profile memory --json
-stateset-agents qwen3-5-4b --starter-profile memory --write-config qwen3-5-4b.json
-stateset-agents qwen3-5-4b --config qwen3-5-4b.json --no-dry-run
+stateset-agents model qwen3-5-4b --starter-profile memory --json
+stateset-agents model qwen3-5-4b --starter-profile memory --write-config qwen3-5-4b.json
+stateset-agents model qwen3-5-4b --config qwen3-5-4b.json --no-dry-run
 ```
 
 Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
@@ -1336,16 +1692,16 @@ Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
 Preview is the default. Apache-2.0; hybrid attention and MLP adapters.
 See the [small-model guide](../examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid).
 
-### `stateset-agents qwen3-5-9b`
+#### `stateset-agents model qwen3-5-9b`
 
 Preview or run text-only LoRA/QLoRA training of `Qwen/Qwen3.5-9B`.
 Install `stateset-agents[small-models]`. Default output:
 `./outputs/qwen3_5_9b_gspo`.
 
 ```bash
-stateset-agents qwen3-5-9b --starter-profile memory --json
-stateset-agents qwen3-5-9b --starter-profile memory --write-config qwen3-5-9b.json
-stateset-agents qwen3-5-9b --config qwen3-5-9b.json --no-dry-run
+stateset-agents model qwen3-5-9b --starter-profile memory --json
+stateset-agents model qwen3-5-9b --starter-profile memory --write-config qwen3-5-9b.json
+stateset-agents model qwen3-5-9b --config qwen3-5-9b.json --no-dry-run
 ```
 
 Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
@@ -1357,16 +1713,16 @@ Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
 Preview is the default. Apache-2.0; hybrid attention and MLP adapters.
 See the [small-model guide](../examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid).
 
-### `stateset-agents granite-4-micro`
+#### `stateset-agents model granite-4-micro`
 
 Preview or run LoRA/QLoRA training of `ibm-granite/granite-4.0-micro`.
 Install `stateset-agents[small-models]`. Profiles: `balanced`, `memory`, `quality`.
 Default output: `./outputs/granite_4_micro_gspo`.
 
 ```bash
-stateset-agents granite-4-micro --starter-profile memory --json
-stateset-agents granite-4-micro --starter-profile memory --write-config granite-4-micro.json
-stateset-agents granite-4-micro --config granite-4-micro.json --no-dry-run
+stateset-agents model granite-4-micro --starter-profile memory --json
+stateset-agents model granite-4-micro --starter-profile memory --write-config granite-4-micro.json
+stateset-agents model granite-4-micro --config granite-4-micro.json --no-dry-run
 ```
 
 Supports the shared starter options: `--task`, `--model`, `--list-profiles`,
@@ -1377,16 +1733,16 @@ Supports the shared starter options: `--task`, `--model`, `--list-profiles`,
 Preview is the default. Apache-2.0; dense attention variant, not the hybrid H-Micro.
 See the [additional small-model guide](../examples/README.md#additional-small-models-and-functiongemma).
 
-### `stateset-agents llama-3-2-1b`
+#### `stateset-agents model llama-3-2-1b`
 
 Preview or run LoRA/QLoRA training of `meta-llama/Llama-3.2-1B-Instruct`.
 Install `stateset-agents[small-models]`. Profiles: `balanced`, `memory`, `quality`.
 Default output: `./outputs/llama_3_2_1b_gspo`.
 
 ```bash
-stateset-agents llama-3-2-1b --starter-profile memory --json
-stateset-agents llama-3-2-1b --starter-profile memory --write-config llama-3-2-1b.json
-stateset-agents llama-3-2-1b --config llama-3-2-1b.json --no-dry-run
+stateset-agents model llama-3-2-1b --starter-profile memory --json
+stateset-agents model llama-3-2-1b --starter-profile memory --write-config llama-3-2-1b.json
+stateset-agents model llama-3-2-1b --config llama-3-2-1b.json --no-dry-run
 ```
 
 Supports the shared starter options: `--task`, `--model`, `--list-profiles`,
@@ -1397,16 +1753,16 @@ Supports the shared starter options: `--task`, `--model`, `--list-profiles`,
 Preview is the default. Llama 3.2 community license; gated checkpoint.
 See the [additional small-model guide](../examples/README.md#additional-small-models-and-functiongemma).
 
-### `stateset-agents llama-3-2-3b`
+#### `stateset-agents model llama-3-2-3b`
 
 Preview or run LoRA/QLoRA training of `meta-llama/Llama-3.2-3B-Instruct`.
 Install `stateset-agents[small-models]`. Profiles: `balanced`, `memory`, `quality`.
 Default output: `./outputs/llama_3_2_3b_gspo`.
 
 ```bash
-stateset-agents llama-3-2-3b --starter-profile memory --json
-stateset-agents llama-3-2-3b --starter-profile memory --write-config llama-3-2-3b.json
-stateset-agents llama-3-2-3b --config llama-3-2-3b.json --no-dry-run
+stateset-agents model llama-3-2-3b --starter-profile memory --json
+stateset-agents model llama-3-2-3b --starter-profile memory --write-config llama-3-2-3b.json
+stateset-agents model llama-3-2-3b --config llama-3-2-3b.json --no-dry-run
 ```
 
 Supports the shared starter options: `--task`, `--model`, `--list-profiles`,
@@ -1417,16 +1773,16 @@ Supports the shared starter options: `--task`, `--model`, `--list-profiles`,
 Preview is the default. Llama 3.2 community license; gated checkpoint.
 See the [additional small-model guide](../examples/README.md#additional-small-models-and-functiongemma).
 
-### `stateset-agents qwen3-4b-instruct`
+#### `stateset-agents model qwen3-4b-instruct`
 
 Preview or run LoRA/QLoRA training of `Qwen/Qwen3-4B-Instruct-2507`.
 Install `stateset-agents[small-models]`. Profiles: `balanced`, `memory`, `quality`.
 Default output: `./outputs/qwen3_4b_instruct_gspo`.
 
 ```bash
-stateset-agents qwen3-4b-instruct --starter-profile memory --json
-stateset-agents qwen3-4b-instruct --starter-profile memory --write-config qwen3-4b-instruct.json
-stateset-agents qwen3-4b-instruct --config qwen3-4b-instruct.json --no-dry-run
+stateset-agents model qwen3-4b-instruct --starter-profile memory --json
+stateset-agents model qwen3-4b-instruct --starter-profile memory --write-config qwen3-4b-instruct.json
+stateset-agents model qwen3-4b-instruct --config qwen3-4b-instruct.json --no-dry-run
 ```
 
 Supports the shared starter options: `--task`, `--model`, `--list-profiles`,
@@ -1437,16 +1793,16 @@ Supports the shared starter options: `--task`, `--model`, `--list-profiles`,
 Preview is the default. Apache-2.0; non-thinking text model.
 See the [additional small-model guide](../examples/README.md#additional-small-models-and-functiongemma).
 
-### `stateset-agents olmo-3-7b`
+#### `stateset-agents model olmo-3-7b`
 
 Preview or run LoRA/QLoRA training of `allenai/Olmo-3-7B-Instruct`.
 Install `stateset-agents[small-models]`. Profiles: `balanced`, `memory`, `quality`.
 Default output: `./outputs/olmo_3_7b_gspo`.
 
 ```bash
-stateset-agents olmo-3-7b --starter-profile memory --json
-stateset-agents olmo-3-7b --starter-profile memory --write-config olmo-3-7b.json
-stateset-agents olmo-3-7b --config olmo-3-7b.json --no-dry-run
+stateset-agents model olmo-3-7b --starter-profile memory --json
+stateset-agents model olmo-3-7b --starter-profile memory --write-config olmo-3-7b.json
+stateset-agents model olmo-3-7b --config olmo-3-7b.json --no-dry-run
 ```
 
 Supports the shared starter options: `--task`, `--model`, `--list-profiles`,
@@ -1457,16 +1813,16 @@ Supports the shared starter options: `--task`, `--model`, `--list-profiles`,
 Preview is the default. Apache-2.0; native Olmo3 implementation.
 See the [additional small-model guide](../examples/README.md#additional-small-models-and-functiongemma).
 
-### `stateset-agents deepseek-r1-1-5b`
+#### `stateset-agents model deepseek-r1-1-5b`
 
 Preview or run LoRA/QLoRA training of `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B`.
 Install `stateset-agents[small-models]`. Profiles: `balanced`, `memory`, `quality`.
 Default output: `./outputs/deepseek_r1_1_5b_gspo`.
 
 ```bash
-stateset-agents deepseek-r1-1-5b --starter-profile memory --json
-stateset-agents deepseek-r1-1-5b --starter-profile memory --write-config deepseek-r1-1-5b.json
-stateset-agents deepseek-r1-1-5b --config deepseek-r1-1-5b.json --no-dry-run
+stateset-agents model deepseek-r1-1-5b --starter-profile memory --json
+stateset-agents model deepseek-r1-1-5b --starter-profile memory --write-config deepseek-r1-1-5b.json
+stateset-agents model deepseek-r1-1-5b --config deepseek-r1-1-5b.json --no-dry-run
 ```
 
 Supports the shared starter options: `--task`, `--model`, `--list-profiles`,
@@ -1477,16 +1833,16 @@ Supports the shared starter options: `--task`, `--model`, `--list-profiles`,
 Preview is the default. MIT; Qwen2-based reasoning model. Budget for reasoning before final answers.
 See the [additional small-model guide](../examples/README.md#additional-small-models-and-functiongemma).
 
-### `stateset-agents deepseek-r1-7b`
+#### `stateset-agents model deepseek-r1-7b`
 
 Preview or run LoRA/QLoRA training of `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B`.
 Install `stateset-agents[small-models]`. Profiles: `balanced`, `memory`, `quality`.
 Default output: `./outputs/deepseek_r1_7b_gspo`.
 
 ```bash
-stateset-agents deepseek-r1-7b --starter-profile memory --json
-stateset-agents deepseek-r1-7b --starter-profile memory --write-config deepseek-r1-7b.json
-stateset-agents deepseek-r1-7b --config deepseek-r1-7b.json --no-dry-run
+stateset-agents model deepseek-r1-7b --starter-profile memory --json
+stateset-agents model deepseek-r1-7b --starter-profile memory --write-config deepseek-r1-7b.json
+stateset-agents model deepseek-r1-7b --config deepseek-r1-7b.json --no-dry-run
 ```
 
 Supports the shared starter options: `--task`, `--model`, `--list-profiles`,
@@ -1497,16 +1853,16 @@ Supports the shared starter options: `--task`, `--model`, `--list-profiles`,
 Preview is the default. MIT; Qwen2-based reasoning model. Budget for reasoning before final answers.
 See the [additional small-model guide](../examples/README.md#additional-small-models-and-functiongemma).
 
-### `stateset-agents smollm3-3b`
+#### `stateset-agents model smollm3-3b`
 
 Preview or run text-only LoRA/QLoRA training of `HuggingFaceTB/SmolLM3-3B`.
 Install `stateset-agents[small-models]`. Default output:
 `./outputs/smollm3_3b_gspo`.
 
 ```bash
-stateset-agents smollm3-3b --starter-profile memory --json
-stateset-agents smollm3-3b --starter-profile memory --write-config smollm3-3b.json
-stateset-agents smollm3-3b --config smollm3-3b.json --no-dry-run
+stateset-agents model smollm3-3b --starter-profile memory --json
+stateset-agents model smollm3-3b --starter-profile memory --write-config smollm3-3b.json
+stateset-agents model smollm3-3b --config smollm3-3b.json --no-dry-run
 ```
 
 Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
@@ -1518,16 +1874,16 @@ Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
 Preview is the default. Apache-2.0; text-only multilingual reasoning model.
 See the [small-model guide](../examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid).
 
-### `stateset-agents phi-4-mini`
+#### `stateset-agents model phi-4-mini`
 
 Preview or run text-only LoRA/QLoRA training of `microsoft/Phi-4-mini-instruct`.
 Install `stateset-agents[small-models]`. Default output:
 `./outputs/phi_4_mini_gspo`.
 
 ```bash
-stateset-agents phi-4-mini --starter-profile memory --json
-stateset-agents phi-4-mini --starter-profile memory --write-config phi-4-mini.json
-stateset-agents phi-4-mini --config phi-4-mini.json --no-dry-run
+stateset-agents model phi-4-mini --starter-profile memory --json
+stateset-agents model phi-4-mini --starter-profile memory --write-config phi-4-mini.json
+stateset-agents model phi-4-mini --config phi-4-mini.json --no-dry-run
 ```
 
 Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
@@ -1539,16 +1895,16 @@ Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
 Preview is the default. MIT; fused Phi projections; use native Transformers implementation.
 See the [small-model guide](../examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid).
 
-### `stateset-agents ministral-3-3b`
+#### `stateset-agents model ministral-3-3b`
 
 Preview or run text-only LoRA/QLoRA training of `mistralai/Ministral-3-3B-Instruct-2512-BF16`.
 Install `stateset-agents[small-models]`. Default output:
 `./outputs/ministral_3_3b_gspo`.
 
 ```bash
-stateset-agents ministral-3-3b --starter-profile memory --json
-stateset-agents ministral-3-3b --starter-profile memory --write-config ministral-3-3b.json
-stateset-agents ministral-3-3b --config ministral-3-3b.json --no-dry-run
+stateset-agents model ministral-3-3b --starter-profile memory --json
+stateset-agents model ministral-3-3b --starter-profile memory --write-config ministral-3-3b.json
+stateset-agents model ministral-3-3b --config ministral-3-3b.json --no-dry-run
 ```
 
 Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
@@ -1560,16 +1916,16 @@ Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
 Preview is the default. Apache-2.0; official BF16 checkpoint for LoRA/QLoRA; text training only.
 See the [small-model guide](../examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid).
 
-### `stateset-agents ministral-3-8b`
+#### `stateset-agents model ministral-3-8b`
 
 Preview or run text-only LoRA/QLoRA training of `mistralai/Ministral-3-8B-Instruct-2512-BF16`.
 Install `stateset-agents[small-models]`. Default output:
 `./outputs/ministral_3_8b_gspo`.
 
 ```bash
-stateset-agents ministral-3-8b --starter-profile memory --json
-stateset-agents ministral-3-8b --starter-profile memory --write-config ministral-3-8b.json
-stateset-agents ministral-3-8b --config ministral-3-8b.json --no-dry-run
+stateset-agents model ministral-3-8b --starter-profile memory --json
+stateset-agents model ministral-3-8b --starter-profile memory --write-config ministral-3-8b.json
+stateset-agents model ministral-3-8b --config ministral-3-8b.json --no-dry-run
 ```
 
 Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
@@ -1581,16 +1937,16 @@ Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
 Preview is the default. Apache-2.0; official BF16 checkpoint for LoRA/QLoRA; text training only.
 See the [small-model guide](../examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid).
 
-### `stateset-agents lfm2-5-2-6b`
+#### `stateset-agents model lfm2-5-2-6b`
 
 Preview or run text-only LoRA/QLoRA training of `LiquidAI/LFM2.5-2.6B`.
 Install `stateset-agents[small-models]`. Default output:
 `./outputs/lfm2_5_2_6b_gspo`.
 
 ```bash
-stateset-agents lfm2-5-2-6b --starter-profile memory --json
-stateset-agents lfm2-5-2-6b --starter-profile memory --write-config lfm2-5-2-6b.json
-stateset-agents lfm2-5-2-6b --config lfm2-5-2-6b.json --no-dry-run
+stateset-agents model lfm2-5-2-6b --starter-profile memory --json
+stateset-agents model lfm2-5-2-6b --starter-profile memory --write-config lfm2-5-2-6b.json
+stateset-agents model lfm2-5-2-6b --config lfm2-5-2-6b.json --no-dry-run
 ```
 
 Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
@@ -1602,16 +1958,16 @@ Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
 Preview is the default. Experimental; custom LFM license; always thinks; hybrid convolution/attention adapters.
 See the [small-model guide](../examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid).
 
-### `stateset-agents gemma-4-e2b`
+#### `stateset-agents model gemma-4-e2b`
 
 Preview or run text-only Gemma 4 E2B GSPO training. Install
 `pip install 'stateset-agents[gemma4]'` for the model dependencies. Defaults
 to a preview; training requires `--no-dry-run` and a suitable CUDA GPU.
 
 ```bash
-stateset-agents gemma-4-e2b --starter-profile memory --json
-stateset-agents gemma-4-e2b --starter-profile memory --write-config gemma-e2b.json
-stateset-agents gemma-4-e2b --config gemma-e2b.json --no-dry-run
+stateset-agents model gemma-4-e2b --starter-profile memory --json
+stateset-agents model gemma-4-e2b --starter-profile memory --write-config gemma-e2b.json
+stateset-agents model gemma-4-e2b --config gemma-e2b.json --no-dry-run
 ```
 
 `balanced` uses BF16 LoRA; `memory` uses 4-bit NF4 QLoRA with shorter
@@ -1639,26 +1995,26 @@ Options shared by both small Gemma commands:
 - `--dry-run / --no-dry-run`: Preview (default) or train.
 - `--json, --json-output`: Emit machine-readable output.
 
-### `stateset-agents gemma-4-e4b`
+#### `stateset-agents model gemma-4-e4b`
 
 Same options and profiles as `gemma-4-e2b`, defaulting to
 `google/gemma-4-E4B-it` and `./outputs/gemma4_e4b_gspo`.
 
 ```bash
-stateset-agents gemma-4-e4b --starter-profile memory --json
-stateset-agents gemma-4-e4b --starter-profile memory --no-dry-run
+stateset-agents model gemma-4-e4b --starter-profile memory --json
+stateset-agents model gemma-4-e4b --starter-profile memory --no-dry-run
 ```
 
 These are effective parameter sizes; embeddings substantially increase the
 weight memory. Full-checkpoint GPU memory and training quality remain
 unbenchmarked. See the [small Gemma guide](../examples/README.md#small-gemma-models-e2b-and-e4b).
 
-### `stateset-agents gemma-4-31b`
+#### `stateset-agents model gemma-4-31b`
 
 Preview or run the dedicated Gemma 4 31B GSPO starter path.
 
 ```bash
-stateset-agents gemma-4-31b
+stateset-agents model gemma-4-31b
 ```
 
 #### Options
@@ -1776,3 +2132,18 @@ extras. Evaluation works without ML dependencies and scores exact reference/tool
 agreement, not autonomous task success or business outcomes. Synthetic starter
 data cannot pass the gate. See the industry guide for prediction bundle and
 Python callback contracts.
+
+### `stateset-agents frontier-models`
+
+List pinned official checkpoints, attention adapter targets and training blockers
+as JSON. `--model` selects a preset key or exact repository ID. This command is
+offline and does not import training dependencies.
+
+### `stateset-agents frontier-sft`
+
+Preview or run assistant-only distributed text LoRA. Options: `--model`,
+`--config`, `--train-data`, `--validation-data`, `--output-dir`, `--write-config`,
+`--check-data`, `--dry-run/--no-dry-run` (preview by default). Use `torchrun -m
+stateset_agents.training.frontier_sft --config FILE --execute` on the configured
+cluster. See [the frontier guide](FRONTIER_FINETUNING.md) for supported paths,
+explicit loader blockers and unverified full-size GPU scope.

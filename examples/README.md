@@ -58,6 +58,56 @@ python examples/quick_start.py
 
 ## 🎓 Training Examples
 
+### Handwritten neural algorithms
+
+These examples construct every neural parameter analytically, without training
+or downloading a model. Run them from the repository root with `PYTHONPATH=.`:
+
+- [`handwritten_decoder.py`](handwritten_decoder.py): recover an encoded byte
+  after up to 95 bit flips using a 100,616-parameter ReLU network.
+- [`handwritten_shortest_paths.py`](handwritten_shortest_paths.py): compute exact
+  hop distances on directed twelve-node graphs with shared Linear/ReLU layers.
+- [`handwritten_weighted_shortest_paths.py`](handwritten_weighted_shortest_paths.py):
+  compute minimum costs on weighted seventeen-node graphs using exactly
+  2,000,000 stored parameters, including 5,679 nonzero coefficients.
+- [`handwritten_weighted_routes.py`](handwritten_weighted_routes.py): return
+  minimum costs and complete routes with deterministic tie handling, using
+  3,920,670 stored parameters and 13,792 nonzero coefficients.
+
+### Refund resolution tool
+
+[`refund_resolution_tool.py`](refund_resolution_tool.py) delegates an explicit
+refund intent to a tool that selects the synthetic policy action and exact cents
+from trusted facts. Run `python -m examples.refund_resolution_tool` for 128 local
+sandbox contract checks and an intent/action trace. No model or provider is used.
+See the [backend contract](../docs/REFUND_RESOLUTION_TOOL.md) for authorization,
+atomic fact checks, idempotency, and uncertain-outcome handling.
+
+[`river_refund_delegation_study.py`](river_refund_delegation_study.py) prepares a
+fresh, bounded comparison of the raw-model and delegated-tool protocols through
+River. Preparation and replay audit are offline; launch uses paid inference and
+a hidden credential prompt. It freezes both inputs and runtime before sampling.
+
+[`refund_recovery.py`](refund_recovery.py) prepares and audits train-only
+fine-tuning transcripts for ten synthetic authorization and recovery scenarios,
+including lost acknowledgments, safe retry fences, and reconciliation handoffs.
+It runs locally without model calls and keeps validation/test cases separate.
+
+### Logged-policy improvement loop
+
+[`offline_improvement_pipeline.py`](offline_improvement_pipeline.py) runs trace
+curation, real SFT and IQL policy updates, paired synthetic evaluation, reusable
+exports, and reload for local inference with a tiny transformer and no downloads.
+Install the training extra, then run:
+
+```bash
+OMP_NUM_THREADS=1 python examples/offline_improvement_pipeline.py --output /tmp/offline-improvement
+```
+
+The result verifies mechanics and explicitly records no production approval.
+See the [pipeline guide](../docs/IMPROVEMENT_PIPELINE.md) for reviewed data and
+promotion requirements.
+
 ### Small Gemma models: E2B and E4B
 
 The `gemma4-e2b` and `gemma4-e4b` presets target
@@ -84,9 +134,9 @@ python examples/finetune_gspo.py --model gemma4-e4b --config gemma4-e4b.json --n
 The same starters also ship as installed commands, without an examples checkout:
 
 ```bash
-stateset-agents gemma-4-e2b --starter-profile memory --json
-stateset-agents gemma-4-e4b --starter-profile memory --write-config gemma4-e4b.json
-stateset-agents gemma-4-e4b --config gemma4-e4b.json --no-dry-run
+stateset-agents model gemma-4-e2b --starter-profile memory --json
+stateset-agents model gemma-4-e4b --starter-profile memory --write-config gemma4-e4b.json
+stateset-agents model gemma-4-e4b --config gemma4-e4b.json --no-dry-run
 ```
 
 Their default output directories are `outputs/gemma4_e2b_gspo` and
@@ -116,8 +166,9 @@ CUDA it prints a plan instead of training. Gemma 2 2B
 (`google/gemma-3-4b-it`) can also be selected through `--base-model`; obtain
 Hugging Face access for gated checkpoints first. Older Gemma chat templates
 may require putting instructions in the first user message instead of a
-separate system message. The legacy `gemma3` preset still points to Gemma 2
-9B for compatibility; it does not select a Gemma 3 checkpoint.
+separate system message. The Gemma 2 9B preset is `gemma2-9b`; its old name
+`gemma3` (which never selected a Gemma 3 checkpoint) is a deprecated alias
+until v0.72.0.
 
 Google's E2B/E4B labels mean **effective** parameters: their model cards list
 about 5.1B/8B parameters including embeddings. Budget memory for embeddings,
@@ -135,23 +186,23 @@ containing these starters).
 
 | Preset | Installed command | Checkpoint |
 |---|---|---|
-| `qwen3.5-2b` | `stateset-agents qwen3-5-2b` | [`Qwen/Qwen3.5-2B`](https://huggingface.co/Qwen/Qwen3.5-2B) |
-| `qwen3.5-4b` | `stateset-agents qwen3-5-4b` | [`Qwen/Qwen3.5-4B`](https://huggingface.co/Qwen/Qwen3.5-4B) |
-| `qwen3.5-9b` | `stateset-agents qwen3-5-9b` | [`Qwen/Qwen3.5-9B`](https://huggingface.co/Qwen/Qwen3.5-9B) |
-| `smollm3-3b` | `stateset-agents smollm3-3b` | [`HuggingFaceTB/SmolLM3-3B`](https://huggingface.co/HuggingFaceTB/SmolLM3-3B) |
-| `phi4-mini` | `stateset-agents phi-4-mini` | [`microsoft/Phi-4-mini-instruct`](https://huggingface.co/microsoft/Phi-4-mini-instruct) |
-| `ministral3-3b` | `stateset-agents ministral-3-3b` | [`mistralai/Ministral-3-3B-Instruct-2512-BF16`](https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-BF16) |
-| `ministral3-8b` | `stateset-agents ministral-3-8b` | [`mistralai/Ministral-3-8B-Instruct-2512-BF16`](https://huggingface.co/mistralai/Ministral-3-8B-Instruct-2512-BF16) |
-| `lfm2.5-2.6b` | `stateset-agents lfm2-5-2-6b` | [`LiquidAI/LFM2.5-2.6B`](https://huggingface.co/LiquidAI/LFM2.5-2.6B) |
+| `qwen3.5-2b` | `stateset-agents model qwen3-5-2b` | [`Qwen/Qwen3.5-2B`](https://huggingface.co/Qwen/Qwen3.5-2B) |
+| `qwen3.5-4b` | `stateset-agents model qwen3-5-4b` | [`Qwen/Qwen3.5-4B`](https://huggingface.co/Qwen/Qwen3.5-4B) |
+| `qwen3.5-9b` | `stateset-agents model qwen3-5-9b` | [`Qwen/Qwen3.5-9B`](https://huggingface.co/Qwen/Qwen3.5-9B) |
+| `smollm3-3b` | `stateset-agents model smollm3-3b` | [`HuggingFaceTB/SmolLM3-3B`](https://huggingface.co/HuggingFaceTB/SmolLM3-3B) |
+| `phi4-mini` | `stateset-agents model phi-4-mini` | [`microsoft/Phi-4-mini-instruct`](https://huggingface.co/microsoft/Phi-4-mini-instruct) |
+| `ministral3-3b` | `stateset-agents model ministral-3-3b` | [`mistralai/Ministral-3-3B-Instruct-2512-BF16`](https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-BF16) |
+| `ministral3-8b` | `stateset-agents model ministral-3-8b` | [`mistralai/Ministral-3-8B-Instruct-2512-BF16`](https://huggingface.co/mistralai/Ministral-3-8B-Instruct-2512-BF16) |
+| `lfm2.5-2.6b` | `stateset-agents model lfm2-5-2-6b` | [`LiquidAI/LFM2.5-2.6B`](https://huggingface.co/LiquidAI/LFM2.5-2.6B) |
 
 All commands default to previews. They accept `--starter-profile balanced|memory|quality`,
 `--write-config`, `--config`, `--output-dir`, and `--no-dry-run`.
 The example driver accepts the preset names above through `--model`.
 
 ```bash
-stateset-agents qwen3-5-4b --starter-profile memory --json
-stateset-agents phi-4-mini --starter-profile memory --write-config phi-mini.json
-stateset-agents phi-4-mini --config phi-mini.json --no-dry-run
+stateset-agents model qwen3-5-4b --starter-profile memory --json
+stateset-agents model phi-4-mini --starter-profile memory --write-config phi-mini.json
+stateset-agents model phi-4-mini --config phi-mini.json --no-dry-run
 python examples/finetune_gspo.py --model smollm3-3b --starter-profile memory --dry-run
 ```
 
@@ -198,18 +249,18 @@ presets with the same balanced, memory (NF4 QLoRA), and quality profiles:
 
 | Preset | Model card | CLI command |
 |---|---|---|
-| `granite4-micro` | [`ibm-granite/granite-4.0-micro`](https://huggingface.co/ibm-granite/granite-4.0-micro) | `stateset-agents granite-4-micro` |
-| `llama3.2-1b` | [`meta-llama/Llama-3.2-1B-Instruct`](https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct) | `stateset-agents llama-3-2-1b` |
-| `llama3.2-3b` | [`meta-llama/Llama-3.2-3B-Instruct`](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct) | `stateset-agents llama-3-2-3b` |
-| `qwen3-4b-instruct` | [`Qwen/Qwen3-4B-Instruct-2507`](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507) | `stateset-agents qwen3-4b-instruct` |
-| `olmo3-7b` | [`allenai/Olmo-3-7B-Instruct`](https://huggingface.co/allenai/Olmo-3-7B-Instruct) | `stateset-agents olmo-3-7b` |
-| `deepseek-r1-1.5b` | [`deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B`](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B) | `stateset-agents deepseek-r1-1-5b` |
-| `deepseek-r1-7b` | [`deepseek-ai/DeepSeek-R1-Distill-Qwen-7B`](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B) | `stateset-agents deepseek-r1-7b` |
+| `granite4-micro` | [`ibm-granite/granite-4.0-micro`](https://huggingface.co/ibm-granite/granite-4.0-micro) | `stateset-agents model granite-4-micro` |
+| `llama3.2-1b` | [`meta-llama/Llama-3.2-1B-Instruct`](https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct) | `stateset-agents model llama-3-2-1b` |
+| `llama3.2-3b` | [`meta-llama/Llama-3.2-3B-Instruct`](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct) | `stateset-agents model llama-3-2-3b` |
+| `qwen3-4b-instruct` | [`Qwen/Qwen3-4B-Instruct-2507`](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507) | `stateset-agents model qwen3-4b-instruct` |
+| `olmo3-7b` | [`allenai/Olmo-3-7B-Instruct`](https://huggingface.co/allenai/Olmo-3-7B-Instruct) | `stateset-agents model olmo-3-7b` |
+| `deepseek-r1-1.5b` | [`deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B`](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B) | `stateset-agents model deepseek-r1-1-5b` |
+| `deepseek-r1-7b` | [`deepseek-ai/DeepSeek-R1-Distill-Qwen-7B`](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B) | `stateset-agents model deepseek-r1-7b` |
 
 ```bash
-stateset-agents granite-4-micro --starter-profile memory --json
-stateset-agents granite-4-micro --starter-profile memory --write-config granite.json
-stateset-agents granite-4-micro --config granite.json --no-dry-run
+stateset-agents model granite-4-micro --starter-profile memory --json
+stateset-agents model granite-4-micro --starter-profile memory --write-config granite.json
+stateset-agents model granite-4-micro --config granite.json --no-dry-run
 ```
 
 Granite Micro targets both attention and its fused `input_linear` /
@@ -259,7 +310,7 @@ refund ledger, selects checkpoints on validation, and records per-case held-out
 test evidence. Prepare cases offline with
 `python examples/river_refund_rl.py --dry-run --output outputs/refund-42`.
 Training and evaluation-only runs require the River extra and credentials.
-The same runner ships in wheels as `python -m stateset_agents.training.river_refund`.
+The same runner ships in wheels as `python -m stateset_agents.verticals.river_refund`.
 Use `benchmark plan-agent-study` to freeze a six-seed, four-arm campaign and
 `benchmark audit-agent-study --strict` to check its provenance and learning gates.
 Compare matched runs using `stateset-agents benchmark compare-agents`; see the
@@ -428,8 +479,10 @@ python examples/finetune_gspo.py --model glm5.1 --task customer_service --no-dry
 ```
 
 Use it for a quick preview of any supported preset (`muse-glimmer`, `nemotron-3-5`, `qwen3.8-27b`, `qwen3.8-flash-next`, `qwen3-coder`, `gpt-oss`, `deepseek-v4`, `kimi-k3`, `kimi-k2.5`,
-`kimi-k2.6`, `glm5.1`, `glm5.2`, `glm5.3-flash`, `qwen3`, `qwen3.5-0.8b`, `qwen3.5-27b`,
-`gemma3`, `gemma4-31b`, `llama3`, `mistral`), or a full real run. `--dry-run`
+`kimi-k2.6`, `glm5.1`, `glm5.2`, `glm5.3-flash`, `qwen2.5-7b`, `qwen3.5-0.8b`, `qwen3.5-27b`,
+`gemma2-9b`, `gemma4-31b`, `llama3`, `mistral`), or a full real run. The former
+`qwen3` and `gemma3` names (which loaded Qwen2.5 7B and Gemma 2 9B) still resolve
+to `qwen2.5-7b` and `gemma2-9b` with a deprecation warning until v0.72.0. `--dry-run`
 defaults to `True`; pass `--no-dry-run` to actually invoke the training
 entry point (the packaged starter's `run_<name>_config` for starter-backed
 presets, or `stateset_agents.training.gspo_entrypoints.train_with_gspo`
@@ -459,6 +512,20 @@ thin forwarder of the same shape for the `muse-glimmer` preset
 `finetune_nemotron_3_5_gspo.py` is a thin forwarder of the same shape for the
 `nemotron-3-5` preset (`nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16`);
 prefer `python examples/finetune_gspo.py --model nemotron-3-5` directly.
+
+For **Nemotron 3.5 Super VL and Bolt**, use the separate image-conditioned SFT
+path: `stateset-agents nemotron-3-5-super-vl` or
+`stateset-agents nemotron-3-5-bolt`. The example
+`python examples/finetune_nemotron_vl.py --config bolt.json --execute` uses the
+same implementation. See [the setup and dataset guide](../docs/NEMOTRON_3_5_VL.md).
+
+For **Muse Spark Open**, `stateset-agents muse-spark-open` configures distributed
+text LoRA SFT. `python examples/finetune_muse_spark.py --config muse-spark.json
+--execute` delegates to the packaged implementation. The unified driver also
+has a separate `muse-spark-open` text GSPO preset. See
+[the Muse Spark guide](../docs/MUSE_SPARK_OPEN.md) for gated access, cluster
+memory, and verification limits.
+
 `finetune_qwen3_8_27b_gspo.py` is a thin forwarder of the same shape for the
 `qwen3.8-27b` preset (`Qwen/Qwen3.8-27B`); prefer
 `python examples/finetune_gspo.py --model qwen3.8-27b` directly.
@@ -889,3 +956,8 @@ See [LICENSE](../LICENSE) for details.
 ---
 
 **Made with ❤️ by the StateSet Team**
+
+`finetune_frontier.py --config FILE` previews the pinned frontier SFT path;
+add `--execute` under `torchrun` only on a configured BF16 cluster. Generate
+configs with `stateset-agents frontier-sft --model glm5.3 --write-config FILE`.
+See [readiness and blockers](../docs/FRONTIER_FINETUNING.md).

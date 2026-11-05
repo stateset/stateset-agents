@@ -8,6 +8,15 @@ is data only and must not import anything heavy.
 _PKG = __name__.rpartition(".")[0]
 
 OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
+    "FrontierSFTConfig": (f"{_PKG}.frontier_sft", "FrontierSFTConfig"),
+    "describe_frontier_sft": (f"{_PKG}.frontier_sft", "describe_frontier_sft"),
+    "train_frontier_sft": (f"{_PKG}.frontier_sft", "train_frontier_sft"),
+    "MuseSparkSFTConfig": (f"{_PKG}.muse_spark", "MuseSparkSFTConfig"),
+    "describe_muse_spark": (f"{_PKG}.muse_spark", "describe_muse_spark"),
+    "train_muse_spark": (f"{_PKG}.muse_spark", "train_muse_spark"),
+    "NemotronVLConfig": (f"{_PKG}.nemotron_vl", "NemotronVLConfig"),
+    "describe_nemotron_vl": (f"{_PKG}.nemotron_vl", "describe_nemotron_vl"),
+    "train_nemotron_vl": (f"{_PKG}.nemotron_vl", "train_nemotron_vl"),
     # Core training surface (lazy so that importing this package stays
     # torch-free; every one of these modules imports torch transitively).
     "TrainingConfig": (f"{_PKG}.config", "TrainingConfig"),
@@ -1283,6 +1292,30 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
     "EMACallback": (f"{_PKG}.ema", "EMACallback"),
     "MultiEMA": (f"{_PKG}.ema", "MultiEMA"),
     "create_ema_model": (f"{_PKG}.ema", "create_ema_model"),
+    # Preference optimization and pairwise reward models (provisional).
+    "PreferencePair": (f"{_PKG}.preference.data", "PreferencePair"),
+    "PreferenceDataset": (f"{_PKG}.preference.data", "PreferenceDataset"),
+    "load_preference_jsonl": (f"{_PKG}.preference.data", "load_preference_jsonl"),
+    "split_preference_dataset": (f"{_PKG}.preference.data", "split_preference_dataset"),
+    "PreferenceConfig": (f"{_PKG}.preference.config", "PreferenceConfig"),
+    "PreferenceTrainer": (f"{_PKG}.preference.trainer", "PreferenceTrainer"),
+    "train_preference": (f"{_PKG}.preference.trainer", "train_preference"),
+    "RewardModelConfig": (f"{_PKG}.preference.config", "RewardModelConfig"),
+    "RewardModelTrainer": (f"{_PKG}.preference.reward_model", "RewardModelTrainer"),
+    "PairwiseRewardFunction": (
+        f"{_PKG}.preference.reward_model",
+        "PairwiseRewardFunction",
+    ),
+    "train_reward_model": (f"{_PKG}.preference.reward_model", "train_reward_model"),
+    "OnlineDPOConfig": (f"{_PKG}.preference.config", "OnlineDPOConfig"),
+    "OnlineDPOTrainer": (f"{_PKG}.preference.online", "OnlineDPOTrainer"),
+    "train_online_dpo": (f"{_PKG}.preference.online", "train_online_dpo"),
+    # Knowledge distillation (provisional).
+    "DistillationConfig": (f"{_PKG}.distillation.config", "DistillationConfig"),
+    "DistillationDataset": (f"{_PKG}.distillation.data", "DistillationDataset"),
+    "DistillationTrainer": (f"{_PKG}.distillation.trainer", "DistillationTrainer"),
+    "TeacherCache": (f"{_PKG}.distillation.cache", "TeacherCache"),
+    "train_distillation": (f"{_PKG}.distillation.trainer", "train_distillation"),
 }
 
 #: The full public surface of :mod:`stateset_agents.training`, in the order it
@@ -1290,6 +1323,15 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
 #: served lazily by :data:`OPTIONAL_EXPORTS`, the rest are module-level
 #: availability flags defined eagerly in ``__init__``.
 PUBLIC_NAMES: tuple[str, ...] = (
+    "FrontierSFTConfig",
+    "describe_frontier_sft",
+    "train_frontier_sft",
+    "MuseSparkSFTConfig",
+    "describe_muse_spark",
+    "train_muse_spark",
+    "NemotronVLConfig",
+    "describe_nemotron_vl",
+    "train_nemotron_vl",
     "GRPOTrainer",
     "MultiTurnGRPOTrainer",
     "SingleTurnGRPOTrainer",
@@ -1657,4 +1699,23 @@ PUBLIC_NAMES: tuple[str, ...] = (
     "summarize_glm5_2_config",
     "validate_glm5_2_config",
     "write_glm5_2_config_file",
+    "PreferencePair",
+    "PreferenceDataset",
+    "load_preference_jsonl",
+    "split_preference_dataset",
+    "PreferenceConfig",
+    "PreferenceTrainer",
+    "train_preference",
+    "RewardModelConfig",
+    "RewardModelTrainer",
+    "PairwiseRewardFunction",
+    "train_reward_model",
+    "OnlineDPOConfig",
+    "OnlineDPOTrainer",
+    "train_online_dpo",
+    "DistillationConfig",
+    "DistillationDataset",
+    "DistillationTrainer",
+    "TeacherCache",
+    "train_distillation",
 )

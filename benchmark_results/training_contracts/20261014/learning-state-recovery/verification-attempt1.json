@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "job_id": "76fab53f8347",
+  "passed": false,
+  "failure": "Mypy optional continual state was not narrowed to a dictionary; corrected with explicit validation.",
+  "stages": [
+    {
+      "name": "offline-policy-and-promotion",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-n0",
+        "-o",
+        "addopts=",
+        "--timeout=90",
+        "tests/unit/test_learning_state_recovery.py",
+        "tests/unit/test_continual_learning.py",
+        "tests/unit/test_online_accumulation_weighting.py",
+        "tests/unit/test_grpo_optimizer_integrity.py",
+        "tests/unit/test_multi_turn_checkpoint_accumulation.py",
+        "tests/unit/test_grpo_inner_updates.py",
+        "tests/unit/test_single_turn_training_lifecycle.py",
+        "tests/unit/test_multi_turn_training_lifecycle.py",
+        "tests/unit/test_token_group_aggregation.py",
+        "tests/unit/test_grpo_token_path.py",
+        "tests/unit/test_token_path_baselines.py",
+        "tests/unit/test_loss_computation_behavioral.py",
+        "tests/unit/test_objective_selection.py",
+        "tests/unit/test_runtime_state.py",
+        "tests/unit/test_offline_policy_training.py",
+        "tests/unit/test_policy_promotion.py",
+        "--disable-warnings",
+        "--tb=short"
+      ],
+      "exit_code": 0,
+      "seconds": 26.43665611499455
+    },
+    {
+      "name": "types",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "scripts/check_types.py",
+        "--all"
+      ],
+      "exit_code": 1,
+      "seconds": 11.214223100003437
+    }
+  ],
+  "output_sha256": "483af81c611f83137d0160e46add616e6cbf83d5d5c6fee91e0b922717462fc3",
+  "output": "queued 76fab53f8347 (local, 3 CPU slots, 6 GiB reserved)\nwaiting 76fab53f8347 (0.0s): disk below 13.0 GiB requirement | disk 12.8/13.0 GiB (free/required)\nwaiting 76fab53f8347 (60.1s): disk below 13.0 GiB requirement | disk 12.8/13.0 GiB (free/required)\nwaiting 76fab53f8347 (87.4s): aged job waiting for capacity [a189ac7e4cb2] | blocker: bash /tmp/nsr-typed-constraints-check.sh | disk 12.8/13.0 GiB (free/required)\nwaiting 76fab53f8347 (87.7s): disk below 13.0 GiB requirement | disk 12.8/13.0 GiB (free/required)\nwaiting 76fab53f8347 (147.9s): disk below 13.0 GiB requirement | disk 12.0/13.0 GiB (free/required)\nwaiting 76fab53f8347 (173.8s): CPU slot budget | disk 13.3/13.0 GiB (free/required)\nrunning 76fab53f8347 after 174.1s waiting | log /home/dom/.local/state/agent-builds/logs/76fab53f8347.log\n\nSTAGE offline-policy-and-promotion: [\"/home/dom/stateset-agents/.venv/bin/python\", \"-m\", \"pytest\", \"-q\", \"-n0\", \"-o\", \"addopts=\", \"--timeout=90\", \"tests/unit/test_learning_state_recovery.py\", \"tests/unit/test_continual_learning.py\", \"tests/unit/test_online_accumulation_weighting.py\", \"tests/unit/test_grpo_optimizer_integrity.py\", \"tests/unit/test_multi_turn_checkpoint_accumulation.py\", \"tests/unit/test_grpo_inner_updates.py\", \"tests/unit/test_single_turn_training_lifecycle.py\", \"tests/unit/test_multi_turn_training_lifecycle.py\", \"tests/unit/test_token_group_aggregation.py\", \"tests/unit/test_grpo_token_path.py\", \"tests/unit/test_token_path_baselines.py\", \"tests/unit/test_loss_computation_behavioral.py\", \"tests/unit/test_objective_selection.py\", \"tests/unit/test_runtime_state.py\", \"tests/unit/test_offline_policy_training.py\", \"tests/unit/test_policy_promotion.py\", \"--disable-warnings\", \"--tb=short\"]\n........................................................................ [ 13%]\n........................................................................ [ 27%]\n........................................................................ [ 41%]\n........................................................................ [ 55%]\n........................................................................ [ 69%]\n........................................................................ [ 83%]\n........................................................................ [ 97%]\n..............                                                           [100%]\n518 passed, 2 warnings in 22.48s\n\nSTAGE types: [\"/home/dom/stateset-agents/.venv/bin/python\", \"scripts/check_types.py\", \"--all\"]\nstateset_agents/config/validation.py:121: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/config/validation.py:122: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/api/cache.py:40: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/api/cache.py:41: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/api/cache.py:42: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/core/type_system.py:485: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/core/type_system.py:486: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/core/performance_optimizer.py:426: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/api/versioning.py:508: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/performance_monitor.py:65: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/performance_monitor.py:66: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/monitoring.py:507: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/monitoring.py:508: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/monitoring.py:509: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/monitoring.py:620: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/alerts.py:438: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/alerts.py:439: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/alerts.py:440: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/alerts.py:441: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/alerts.py:442: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/api/resilience.py:517: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/api/resilience.py:518: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/experimental/neural_architecture_search.py:320: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/experimental/adaptive_learning_controller.py:357: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/experimental/adaptive_learning_controller.py:358: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/training/learning_state.py:134: error: Argument 1 to \"load_state_dict\" of \"ContinualLearningManager\" has incompatible type \"Any | None\"; expected \"dict[str, Any]\"  [arg-type]\nstateset_agents/experimental/multi_agent_coordination.py:129: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/experimental/multi_agent_coordination.py:130: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/experimental/multi_agent_coordination.py:131: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/training/advanced_training_orchestrator.py:1022: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/core/enhanced/advanced_rl_algorithms.py:671: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nFound 1 error in 1 file (checked 385 source files)\nfinished 76fab53f8347: failed (exit 1)\n"
+}

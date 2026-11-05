@@ -1,0 +1,123 @@
+from pathlib import Path
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+import zipfile
+
+root = Path('/home/dom/stateset-agents')
+base = Path('/tmp/stateset-studio-responsive-20261016')
+for index in range(100):
+    out = base if index == 0 else Path(str(base) + f'-retry{index}')
+    if not out.exists():
+        out.mkdir()
+        break
+else:
+    raise RuntimeError('No unused verification directory')
+print('Evidence:', out, flush=True)
+def inventory():
+    return {p.relative_to(root/'stateset_agents').as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'stateset_agents').rglob('*.py'))}
+source = inventory()
+asset_paths = ['stateset_agents/config/presets/experiments/support_recovery_preflight6.json', 'stateset_agents/evaluation/rubrics/support_rubric_v4.md', 'tests/fixtures/support_conversation_reward/preflight5_regressions.json']
+assets = {name: hashlib.sha256((root/name).read_bytes()).hexdigest() for name in asset_paths}
+def assets_unchanged():
+    return all(hashlib.sha256((root/name).read_bytes()).hexdigest()==digest for name,digest in assets.items())
+def test_inventory():
+    return {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'tests').rglob('*.py'))}
+test_source = test_inventory()
+env = dict(os.environ, PATH=str(root/'.venv/bin')+os.pathsep+os.environ['PATH'], OMP_NUM_THREADS='1', MKL_NUM_THREADS='1', TOKENIZERS_PARALLELISM='false', HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1')
+stages = []
+def run(name, argv, *, environment=env, cwd=root):
+    print('Stage:', name, flush=True)
+    start = time.monotonic()
+    with (out/(name+'.log')).open('w') as log:
+        process = subprocess.Popen(argv, cwd=cwd, env=environment, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        for line in process.stdout:
+            log.write(line)
+            if name not in {'wheel-build', 'types'}:
+                print(line, end='', flush=True)
+        code = process.wait()
+    stages.append(dict(name=name, argv=argv, exit_code=code, elapsed_seconds=time.monotonic()-start))
+    if code:
+        raise RuntimeError(name+' failed')
+    if inventory() != source or test_inventory() != test_source or not assets_unchanged():
+        raise RuntimeError('Package source changed during verification')
+pytest = [sys.executable, '-m', 'pytest', '-q', '-n0', '-o', 'addopts=', '--timeout=150', '--tb=short']
+regressions = ['tests/unit/test_finetune_studio.py', 'tests/unit/test_cli.py', 'tests/unit/test_training_sft.py', 'tests/unit/test_remote_job.py', 'tests/unit/test_remote_local_executor.py', 'tests/unit/test_support_recovery_evidence.py', 'tests/unit/test_support_reward_recovery.py', 'tests/unit/test_support_judge.py', 'tests/unit/test_release_script.py', 'tests/unit/test_pyproject_extras.py', 'tests/unit/test_mypy_allowlist_ratchet.py', 'tests/unit/test_root_package_lazy_import.py', 'tests/unit/test_torch_import_policy.py']
+wheel_tests = ['tests/unit/test_finetune_studio.py', 'tests/unit/test_training_sft.py', 'tests/unit/test_remote_job.py', 'tests/unit/test_remote_local_executor.py', 'tests/unit/test_support_recovery_evidence.py', 'tests/unit/test_support_reward_recovery.py', 'tests/unit/test_support_judge.py', 'tests/unit/test_release_script.py', 'tests/unit/test_root_package_lazy_import.py', 'tests/unit/test_torch_import_policy.py']
+distributed_test = 'tests/integration/test_distributed_grpo_weighting.py'
+advantage_test = 'tests/integration/test_distributed_advantages.py'
+preflight_test = 'tests/integration/test_learner_preflight.py'
+replica_test = 'tests/integration/test_replica_consensus.py'
+native_test = 'tests/integration/test_native_ddp_checkpoint.py'
+evaluation_test = 'tests/integration/test_ddp_evaluation.py'
+continual_test = 'tests/integration/test_ddp_continual.py'
+empty_test = 'tests/integration/test_ddp_empty_population.py'
+loop_test = 'tests/integration/test_ddp_training_loop.py'
+rollout_test = 'tests/integration/test_ddp_rollout_metrics.py'
+diagnostic_test = 'tests/integration/test_ddp_diagnostics.py'
+reporting_test = 'tests/integration/test_ddp_optimizer_reporting.py'
+support_tests = ['tests/unit/'+name for name in ['test_support_conversation_reward.py', 'test_support_conversation_reward_v3.py', 'test_support_judge.py', 'test_support_reward_recovery.py']]
+# Source-tree AST/allowlist governance runs in the source suite above.
+wheel_tests = [name for name in wheel_tests if not name.endswith('test_torch_import_policy.py')]
+failed = None
+try:
+    run('gates', [sys.executable, '/tmp/stateset-platform-gates.py'])
+    run('types', [sys.executable, 'scripts/check_types.py', '--all'])
+    run('regressions', pytest+regressions+['--junitxml='+str(out/'regressions.xml')])
+    run('wheel-build', [sys.executable, '-m', 'build', '--wheel', '--no-isolation', '--outdir', str(out/'dist')])
+    wheel = next((out/'dist').glob('*.whl'))
+    with zipfile.ZipFile(wheel) as archive:
+        packed = {name.removeprefix('stateset_agents/'): hashlib.sha256(archive.read(name)).hexdigest() for name in archive.namelist() if name.startswith('stateset_agents/') and name.endswith('.py')}
+    assert packed == source, 'Wheel does not match source'
+    with zipfile.ZipFile(wheel) as archive:
+        rubric_name = 'stateset_agents/evaluation/rubrics/support_rubric_v4.md'
+        assert archive.read(rubric_name) == (root/rubric_name).read_bytes(), 'Wheel rubric differs'
+        profile_name = 'stateset_agents/config/presets/experiments/support_recovery_preflight6.json'
+        assert archive.read(profile_name) == (root/profile_name).read_bytes(), 'Wheel recovery profile differs'
+    run('wheel-install', [sys.executable, '-m', 'pip', 'install', '--no-deps', '--target', str(out/'site-packages'), str(wheel)])
+    checks = out/'checks'
+    # Unit contracts import shared independent references and checkpoint fixtures.
+    shutil.copytree(root/'tests/unit', checks/'tests/unit')
+    shutil.copytree(root/'tests/fixtures/support_conversation_reward', checks/'tests/fixtures/support_conversation_reward')
+    (checks/'tests/integration').mkdir(parents=True)
+    shutil.copy2(root/distributed_test, checks/distributed_test)
+    shutil.copy2(root/advantage_test, checks/advantage_test)
+    shutil.copy2(root/preflight_test, checks/preflight_test)
+    shutil.copy2(root/replica_test, checks/replica_test)
+    shutil.copy2(root/native_test, checks/native_test)
+    shutil.copy2(root/evaluation_test, checks/evaluation_test)
+    shutil.copy2(root/continual_test, checks/continual_test)
+    shutil.copy2(root/empty_test, checks/empty_test)
+    shutil.copy2(root/loop_test, checks/loop_test)
+    shutil.copy2(root/rollout_test, checks/rollout_test)
+    shutil.copy2(root/diagnostic_test, checks/diagnostic_test)
+    shutil.copy2(root/reporting_test, checks/reporting_test)
+    for name in ['tests/__init__.py', 'tests/unit/__init__.py', 'tests/integration/__init__.py']:
+        (checks/name).write_text('')
+    # Match the source suite's async-test semantics in the isolated harness.
+    shutil.copy2(root/'pytest.ini', checks/'pytest.ini')
+    (checks/'scripts').mkdir()
+    for filename in ['release.py','sft_from_curated.py']:
+        shutil.copy2(root/'scripts'/filename, checks/'scripts'/filename)
+    (out/'wheel-test-configuration.json').write_text(json.dumps(dict(source='pytest.ini', sha256=hashlib.sha256((checks/'pytest.ini').read_bytes()).hexdigest(), destination='checks/pytest.ini', reason='Match source pytest async-test configuration'), indent=2)+'\n')
+    wheel_env = dict(env, PYTHONPATH=str(out/'site-packages'), STATESET_DISTRIBUTED_CONTRACT_REPORT_DIR=str(out/'wheel-distributed'))
+    run('wheel-origin', [sys.executable, '-c', "import stateset_agents.training.grpo_accumulation as m; from pathlib import Path; import sys; assert Path(m.__file__).resolve().is_relative_to(Path(sys.argv[1]).resolve()), m.__file__; print(m.__file__)", str(out/'site-packages')], environment=wheel_env, cwd=checks)
+    run('wheel-regressions', pytest+['-o', 'markers=integration: real local process contracts']+wheel_tests+['--junitxml='+str(out/'wheel.xml')], environment=wheel_env, cwd=checks)
+    run('reward-audit', [sys.executable, '-m', 'stateset_agents.evaluation.reward_audit', str(root/'tests/fixtures/support_conversation_reward/preflight5_regressions.json'), '--expected-pairs', '3', '--output', str(out/'reward-audit.json')], environment=wheel_env, cwd=checks)
+    run('free-recovery-plan', [sys.executable, '-m', 'stateset_agents.training.support_recovery', '--output', str(out/'preflight6-plan.json')], environment=wheel_env, cwd=checks)
+    run('studio-snapshot', [sys.executable, '-m', 'stateset_agents.cli', 'tui', '--workspace', str(out/'unused-studio-workspace'), '--snapshot'], environment=wheel_env, cwd=checks)
+    run('studio-narrow-snapshot', [sys.executable, '-c', "from pathlib import Path; from stateset_agents.tui import Studio; print('\\n'.join(Studio(Path('unused-narrow-workspace')).lines(74,44)))"], environment=wheel_env, cwd=checks)
+    assert not (out/'unused-studio-workspace').exists()
+    run('workflow-lint', ['/tmp/stateset-actionlint-1.7.12/actionlint', str(root/'.github/workflows/training-contracts.yml')])
+except Exception as exc:
+    failed = str(exc)
+finally:
+    wheels = list((out/'dist').glob('*.whl')) if (out/'dist').exists() else []
+    report = dict(passed=failed is None and inventory()==source and test_inventory()==test_source and assets_unchanged(), assets_sha256=assets, failure=failed, stages=stages, source_sha256=source, test_source_sha256=test_source, tests_unchanged=test_inventory()==test_source, source_unchanged=inventory()==source, wheel_sha256=hashlib.sha256(wheels[0].read_bytes()).hexdigest() if wheels else None, gpu_verified=False, fsdp_verified=False, deepspeed_verified=False, multi_rank_accelerate_verified=False)
+    (out/'verification.json').write_text(json.dumps(report, indent=2)+'\n')
+    print('Evidence:', out, 'passed:', report['passed'], flush=True)
+raise SystemExit(0 if report['passed'] else 1)

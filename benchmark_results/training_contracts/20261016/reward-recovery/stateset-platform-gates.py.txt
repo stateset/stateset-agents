@@ -1,0 +1,26 @@
+from pathlib import Path
+import subprocess
+import sys
+
+import black
+import isort
+
+commands = [
+    [sys.executable, '-m', 'ruff', 'check', '.'],
+    [sys.executable, 'scripts/check_repo_hygiene.py'],
+    [sys.executable, 'scripts/check_release_governance.py'],
+    [sys.executable, 'scripts/check_api_compatibility.py'],
+]
+failed = False
+for command in commands:
+    print('Checking:', ' '.join(command), flush=True)
+    failed |= subprocess.run(command, check=False).returncode != 0
+paths = subprocess.check_output(['git', 'ls-files', '--modified', '--others', '--exclude-standard'], text=True).splitlines()
+for name in paths:
+    if name.endswith('.py'):
+        changed = black.format_file_in_place(Path(name), fast=False, mode=black.Mode(line_length=88, target_versions={black.TargetVersion.PY310}), write_back=black.WriteBack.CHECK)
+        sorted_imports = isort.check_file(name)
+        if changed or not sorted_imports:
+            print('Formatting failed:', name, flush=True)
+            failed = True
+raise SystemExit(1 if failed else 0)

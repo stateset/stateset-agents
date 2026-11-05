@@ -449,6 +449,40 @@ class TestConversationEndpoint:
 
         assert response.status_code == 422
 
+    @pytest.mark.parametrize(
+        ("body", "detail"),
+        [
+            ({}, "Provide either 'message' or 'messages'"),
+            (
+                {"message": "hi", "messages": [{"role": "user", "content": "x"}]},
+                "Provide either 'message' or 'messages', not both",
+            ),
+            ({"message": "   "}, "Message cannot be empty"),
+            (
+                {"messages": [{"role": "system", "content": "be brief"}]},
+                "No user message provided",
+            ),
+        ],
+    )
+    def test_conversation_validation_error_details_are_stable(
+        self, client, body, detail
+    ):
+        """The exact 422 details are part of the route's behaviour."""
+        response = client.post("/api/v1/conversations", json=body)
+
+        assert response.status_code == 422
+        assert detail in response.text
+
+    def test_conversation_rejects_too_many_messages_with_stable_detail(self, client):
+        config = get_config()
+        limit = int(config.validation.max_conversation_messages)
+        messages = [{"role": "user", "content": "hi"}] * (limit + 1)
+
+        response = client.post("/api/v1/conversations", json={"messages": messages})
+
+        assert response.status_code == 422
+        assert f"Too many messages in request (max {limit})" in response.text
+
     def test_continue_conversation(self, client):
         """Should continue existing conversation."""
         # Create conversation

@@ -1,0 +1,30 @@
+{
+  "dataset_provenance": {
+    "train": {
+      "industry_domains": [
+        "saas"
+      ],
+      "status": "declared_not_independently_verified",
+      "synthetic_examples": 512,
+      "unannotated_examples": 0
+    },
+    "validation": {
+      "industry_domains": [
+        "saas"
+      ],
+      "status": "declared_not_independently_verified",
+      "synthetic_examples": 64,
+      "unannotated_examples": 0
+    }
+  },
+  "dataset_sha256": {
+    "train": "fba5fa8e6bceed34eb76126c61bdaddf16b1da34780629eb4010dc86fbfec2fd",
+    "validation": "b1ef183df6149035887a5c1f7d9fa9c78d2bb6772d1c2313aeac83ff98d2cbea"
+  },
+  "train_examples": 512,
+  "training_content_sha256": {
+    "train": "d8b86ca44f60951ecf27375109084c03964b176608aa25040ea0c728c418f59a",
+    "validation": "20e2e6c6b6ffad7f4b392f0fcd38c68517a4a96f9d1e8d096558dee1bd3beef0"
+  },
+  "validation_examples": 64
+}

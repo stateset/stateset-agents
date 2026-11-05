@@ -7,6 +7,9 @@ scores the policy model on whether its verdict agrees with the verified
 decision. Transport is injectable so tests never hit the network.
 """
 
+import pytest
+
+from stateset_agents.core.reward_base import RewardUnavailableError
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.rewards.nsr_verifier import (
     NSRVerifierConfig,
@@ -75,6 +78,41 @@ class TestExtractVerdict:
 
     def test_no_verdict_is_none(self):
         assert extract_verdict("The weather is nice today.") is None
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Unfortunately I cannot approve this refund.",
+            "This is not approved.",
+            "I'm unable to approve this refund, so it is denied.",
+        ],
+    )
+    def test_negated_approval_is_a_denial(self, text):
+        assert extract_verdict(text) == "denied"
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "This needs manager approval.",
+            "I'll escalate this to a supervisor for approval.",
+        ],
+    )
+    def test_approval_still_to_be_given_is_an_escalation(self, text):
+        assert extract_verdict(text) == "refused"
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Your refund is approved if you return the item.",
+            "It could be approved after review.",
+        ],
+    )
+    def test_conditional_approval_is_no_verdict(self, text):
+        assert extract_verdict(text) is None
+
+    def test_negated_denial_does_not_compete_with_an_approval(self):
+        text = "I won't deny the item arrived late, but I approve the refund."
+        assert extract_verdict(text) == "approved"
 
 
 # ===========================
@@ -149,15 +187,27 @@ class TestNSRVerifierReward:
         assert result.score == 1.0
         assert client.calls[0]["query"] == "Refund order #A1?"
 
-    async def test_transport_error_returns_neutral_error_score(self):
+    async def test_transport_error_fails_closed_by_default(self):
         client = FakeNSRClient()
         client.raise_error = RuntimeError("connection refused")
-        reward = NSRVerifierReward(client=client)
+        reward = NSRVerifierReward(config=NSRVerifierConfig(), client=client)
+        with pytest.raises(RewardUnavailableError, match="connection refused"):
+            await reward.compute_reward(
+                turns("Refund order #A1?", "Approved."), CONTEXT
+            )
+
+    async def test_opted_in_error_score_is_flagged_as_a_fallback(self):
+        client = FakeNSRClient()
+        client.raise_error = RuntimeError("connection refused")
+        reward = NSRVerifierReward(
+            config=NSRVerifierConfig(error_score=0.5), client=client
+        )
         result = await reward.compute_reward(
             turns("Refund order #A1?", "Approved."), CONTEXT
         )
         assert result.score == 0.5
         assert result.metadata["mode"] == "nsr_error"
+        assert result.metadata["reward_fallback"] == "nsr_error"
 
     async def test_error_score_is_configurable_fail_closed(self):
         client = FakeNSRClient()
@@ -254,4 +304,4 @@ class TestNSRVerifierConfig:
         cfg = NSRVerifierConfig.from_env()
         assert cfg.api_url == "https://api.nsr.stateset.com"
         assert cfg.api_key is None
-        assert cfg.error_score == 0.5
+        assert cfg.error_score is None  # fails closed unless opted in

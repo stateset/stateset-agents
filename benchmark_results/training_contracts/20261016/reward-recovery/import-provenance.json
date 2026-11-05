@@ -1,0 +1,29 @@
+{
+  "source": "https://github.com/stateset/stateset-agents/pull/109",
+  "revision": "5162d211934e369f1988270b979fee0936080936",
+  "retrieved_files_sha256": {
+    "benchmarks/FLAGSHIP.md": "b1dd8e7075efc5168cd1156c96f89b058cd7764a72f209f0ddaba969b9228b3a",
+    "benchmarks/flagship_v2_preflight_manifest.json": "f6db02bec10b455388bbea305b342541f737b40a6433fe7bf5c8d360051c6b42",
+    "benchmarks/flagship_workload.py": "adff2212cda5206720b920f6d1f149d444f10205fe6fd00c0f369b594babcbaf",
+    "stateset_agents/evaluation/rubrics/support_rubric_v4.md": "b640d1c90038b6b8d75bb3c87cc52add0f7f9ee4d8a8cd931464dc1eacde2023",
+    "stateset_agents/evaluation/support_judge.py": "058ac4e1e2f6c632bd523967fd51264c8d33fef3ef970b5c952e9a6233d7cc06",
+    "stateset_agents/rewards/support_conversation_reward.py": "df6895ca003d912c750ce7c8f20f9361dcca600db9fdd6b2db1fce0c6ed838fa",
+    "tests/fixtures/support_conversation_reward/billing_eval_0001.json": "7a429ce3971ac806d554ce9fe53ac0dc76fa7195c8d5d6351ceba30e77bff8b8",
+    "tests/fixtures/support_conversation_reward/preflight5_regressions.json": "d3c494ccd38993ba0cf3a1c8205b73666d18c7afe02969765f2d9d6b602b14af",
+    "tests/unit/test_support_conversation_reward.py": "4e52c671026698058da5975303e6cd703a3f2c48ae5cc177f9f52d30b20858af",
+    "tests/unit/test_support_conversation_reward_v3.py": "cb4abab66d78f49e30584b972e9d264942a515e53c763ac0f1f12771f934405e",
+    "tests/unit/test_support_judge.py": "28118319bdd44010755220342ebe2fa72f4741beaf31039e77c869d02472eb08",
+    "stateset_agents/evaluation/rubrics/support_rubric_v3.md": "88dc05258cd4d771db2e5d1895b89304a6c93c72f67a6ed16052aff10067be69",
+    "stateset_agents/evaluation/rubrics/support_rubric_v1.md": "20e559fd3ee0a8d90e2b978e6da620d9ef4d67beeb88847dc0140c2d7ee66da4",
+    "stateset_agents/evaluation/rubrics/support_rubric_v2.md": "c2a679ca2a77360c4ada4fc0c7b82a6f8c1cf5ba1ed08852354df97c2324e731"
+  },
+  "full_run_artifacts_recovered": false,
+  "recovered_paired_examples": 3,
+  "paid_run_launched": false,
+  "adaptations": [
+    "Serial formatting and sorted imports.",
+    "Absent flagship-manifest test replaced by a pinned installed-rubric identity test.",
+    "Three historical rubric resources included for the original history-preservation tests."
+  ],
+  "support_composite_matching_git_blob": "9e009b408ffbf036b5ea371b1fd4ea4518aa6050"
+}

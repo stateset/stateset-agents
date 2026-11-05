@@ -60,9 +60,11 @@ def test_gspo_validate_flags_fields_the_trainer_ignores():
     ).validate()
     ignored = [w for w in warnings if "ignored by the GSPO trainer" in w]
     assert len(ignored) == 1
-    for name in ("num_iterations", "reward_clip", "lr_scheduler_type"):
+    for name in ("num_iterations", "reward_clip"):
         assert name in ignored[0]
     assert "mini_batch_size" not in ignored[0]
+    # The spine LR schedule honours lr_scheduler_type (test_lr_schedule_budget).
+    assert "lr_scheduler_type" not in ignored[0]
 
 
 def test_gspo_validate_quiet_for_defaults():

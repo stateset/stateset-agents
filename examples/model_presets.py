@@ -10,10 +10,19 @@ kept so existing scripts and docs that do ``from examples.model_presets import
 from __future__ import annotations
 
 from stateset_agents.core.model_presets import (
+    DEPRECATED_PRESET_ALIASES,
     PRESETS,
     ModelPreset,
     get_preset,
     list_preset_names,
+    resolve_preset_name,
 )
 
-__all__ = ["ModelPreset", "PRESETS", "get_preset", "list_preset_names"]
+__all__ = [
+    "DEPRECATED_PRESET_ALIASES",
+    "ModelPreset",
+    "PRESETS",
+    "get_preset",
+    "list_preset_names",
+    "resolve_preset_name",
+]

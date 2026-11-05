@@ -1,0 +1,104 @@
+IMPORT COMPLETE 422686.739183972
+test_native_campaign_trains_selects_replays_and_seals_test_publication (test_river_native_sdk.NativeRiverIntegration.test_native_campaign_trains_selects_replays_and_seals_test_publication) ... Executing <Task pending name='Task-2' coro=<traced() running at /tmp/stateset_river_cleanup_wakeup_probe.py:61> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> cb=[_run_until_complete_cb() at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:181] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py:100> took 0.213 seconds
+WAKE 422686.986873036
+SAVE START 422686.988352496 /tmp/stateset-native-river-mgm6jhq9/accepted/training/trainer.json
+SAVE END 0.0008289400138892233
+WAKE 422686.989943063
+WAKE 422687.011513572
+WAKE 422687.069768975
+WAKE 422687.195643611
+WAKE 422687.321407774
+WAKE 422687.392495727
+ENGINE EXIT START 139768056243712 model CheckpointSampler groups 0 dispatcher <Task pending name='Task-52' coro=<dispatch() running at /tmp/stateset_river_cleanup_wakeup_probe.py:20> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420>
+DISPATCH EXIT 139768056243712 CancelledError
+ENGINE EXIT FINISH 139768056243712
+WAKE 422687.491337903
+WAKE 422689.121347942
+Executing <Task pending name='Task-5' coro=<closing_async_generator.<locals>.drive() running at /home/dom/stateset-agents/stateset_agents/utils/async_calls.py:67> wait_for=<Future pending cb=[_chain_future.<locals>._call_check_cancel() at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/futures.py:389, Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> cb=[_wait.<locals>._on_completion() at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:534] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420> took 0.111 seconds
+WAKE 422689.195898118
+WAKE 422689.197103063
+SAVE START 422689.199094141 /tmp/stateset-native-river-mgm6jhq9/accepted/training/trainer.json
+SAVE END 0.0008650029776617885
+WAKE 422689.200290305
+WAKE 422689.203185358
+WAKE 422689.211389576
+WAKE 422689.333622914
+WAKE 422689.35357197
+WAKE 422689.405637583
+ENGINE EXIT START 139768056240880 model CheckpointSampler groups 0 dispatcher <Task pending name='Task-351' coro=<dispatch() running at /tmp/stateset_river_cleanup_wakeup_probe.py:20> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420>
+DISPATCH EXIT 139768056240880 CancelledError
+ENGINE EXIT FINISH 139768056240880
+WAKE 422689.449173683
+SAVE START 422689.459371671 /tmp/stateset-native-river-mgm6jhq9/accepted/training/trainer.json
+SAVE END 0.0009343819692730904
+WAKE 422689.460680001
+ENGINE EXIT START 139768071573616 model ScriptedModel groups 0 dispatcher <Task pending name='Task-6' coro=<dispatch() running at /tmp/stateset_river_cleanup_wakeup_probe.py:20> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420>
+DISPATCH EXIT 139768071573616 CancelledError
+ENGINE EXIT FINISH 139768071573616
+WAKE 422689.49610365
+WAKE 422689.537645656
+WAKE 422689.553138447
+WAKE 422689.615668558
+ENGINE EXIT START 139768036945856 model CheckpointSampler groups 0 dispatcher <Task pending name='Task-371' coro=<dispatch() running at /tmp/stateset_river_cleanup_wakeup_probe.py:20> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420>
+DISPATCH EXIT 139768036945856 CancelledError
+ENGINE EXIT FINISH 139768036945856
+Executing <Task pending name='Task-2' coro=<traced() running at /tmp/stateset_river_cleanup_wakeup_probe.py:61> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> cb=[_run_until_complete_cb() at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:181] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py:100> took 1.243 seconds
+WAKE 422690.90467778
+SAVE START 422690.905903909 /tmp/stateset-native-river-mgm6jhq9/rejected/training/trainer.json
+SAVE END 0.0003932190011255443
+WAKE 422690.906469612
+WAKE 422690.90710542
+WAKE 422690.910604025
+WAKE 422690.954939427
+WAKE 422691.000739443
+WAKE 422691.026265756
+ENGINE EXIT START 139768036945712 model CheckpointSampler groups 0 dispatcher <Task pending name='Task-433' coro=<dispatch() running at /tmp/stateset_river_cleanup_wakeup_probe.py:20> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420>
+DISPATCH EXIT 139768036945712 CancelledError
+ENGINE EXIT FINISH 139768036945712
+WAKE 422691.091654313
+WAKE 422692.045907397
+Executing <Task pending name='Task-386' coro=<closing_async_generator.<locals>.drive() running at /home/dom/stateset-agents/stateset_agents/utils/async_calls.py:67> wait_for=<Future pending cb=[_chain_future.<locals>._call_check_cancel() at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/futures.py:389, Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> cb=[_wait.<locals>._on_completion() at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:534] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420> took 0.107 seconds
+WAKE 422692.10168672
+WAKE 422692.112416124
+SAVE START 422692.121648537 /tmp/stateset-native-river-mgm6jhq9/rejected/training/trainer.json
+SAVE END 0.0008251129765994847
+WAKE 422692.122892134
+WAKE 422692.129564627
+WAKE 422692.158824351
+WAKE 422692.233166293
+WAKE 422692.256638167
+WAKE 422692.277266901
+ENGINE EXIT START 139768036942496 model CheckpointSampler groups 0 dispatcher <Task pending name='Task-732' coro=<dispatch() running at /tmp/stateset_river_cleanup_wakeup_probe.py:20> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420>
+DISPATCH EXIT 139768036942496 CancelledError
+ENGINE EXIT FINISH 139768036942496
+WAKE 422692.341328732
+SAVE START 422692.356354943 /tmp/stateset-native-river-mgm6jhq9/rejected/training/trainer.json
+SAVE END 0.0009923629695549607
+WAKE 422692.357870666
+ENGINE EXIT START 139768215774192 model ScriptedModel groups 0 dispatcher <Task pending name='Task-387' coro=<dispatch() running at /tmp/stateset_river_cleanup_wakeup_probe.py:20> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420>
+DISPATCH EXIT 139768215774192 CancelledError
+ENGINE EXIT FINISH 139768215774192
+WAKE 422692.406131819
+WAKE 422692.46777017
+WAKE 422692.483064742
+WAKE 422692.498982745
+ENGINE EXIT START 139768035190944 model CheckpointSampler groups 0 dispatcher <Task pending name='Task-752' coro=<dispatch() running at /tmp/stateset_river_cleanup_wakeup_probe.py:20> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420>
+DISPATCH EXIT 139768035190944 CancelledError
+ENGINE EXIT FINISH 139768035190944
+Executing <Task finished name='Task-2' coro=<traced() done, defined at /tmp/stateset_river_cleanup_wakeup_probe.py:50> result=None created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py:100> took 1.018 seconds
+ok
+WAKE 422693.566667515
+Timeout (0:01:00)!
+Thread 0x00007f1f4fd68740 (most recent call first):
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/selectors.py", line 468 in select
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py", line 1961 in _run_once
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py", line 645 in run_forever
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py", line 678 in run_until_complete
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py", line 72 in close
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/async_case.py", line 127 in _tearDownAsyncioRunner
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/async_case.py", line 134 in run
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/case.py", line 690 in __call__
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/suite.py", line 122 in run
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/suite.py", line 84 in __call__
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/runner.py", line 240 in run
+  File "/tmp/stateset_river_cleanup_wakeup_probe.py", line 70 in <module>

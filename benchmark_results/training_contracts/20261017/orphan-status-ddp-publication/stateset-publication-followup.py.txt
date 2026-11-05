@@ -1,0 +1,31 @@
+"""Apply reviewed platform branch fixes after the frozen attempt has ended."""
+from pathlib import Path
+import fcntl
+import hashlib
+import json
+import time
+
+root = Path('/home/dom/stateset-agents')
+lock = Path('/tmp/stateset-studio-mobile-source.lock').open('a')
+fcntl.flock(lock.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+stage = Path('/tmp/stateset-publication-types-fix')
+manifest = json.loads((stage/'manifest.json').read_text())
+pending = {}
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+for name,record in manifest['files'].items():
+    path=root/name
+    assert sha(path.read_bytes())==record['base_sha256'], name
+    data=(stage/name).read_bytes()
+    assert sha(data)==record['staged_sha256'], name
+    pending[name]=data
+verifier=Path('/tmp/stateset-publication-verify.py')
+before=verifier.read_text()
+old="    if name == 'format' and code:\n        break"
+assert before.count(old)==1
+after=before.replace(old,"    if name in {'format', 'types'} and code:\n        break")
+for name,data in pending.items():
+    (root/name).write_bytes(data)
+verifier.write_text(after)
+Path('/tmp/stateset-publication-followup.json').write_text(json.dumps({'applied_at':time.time(),'files':{name:sha(data) for name,data in pending.items()},'verifier_before':sha(before.encode()),'verifier_after':sha(after.encode()),'reason':'Platform typing branches; fail fast on future mandatory typing failures.'},indent=2)+'\n')
+print('Applied platform typing branches and mandatory typing fail-fast')

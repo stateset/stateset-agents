@@ -37,7 +37,7 @@ from enum import Enum
 from re import Pattern
 from typing import Any
 
-from .error_handling import ErrorCode, ValidationException
+from .error_handling import ValidationException
 
 logger = logging.getLogger(__name__)
 
@@ -721,7 +721,6 @@ def create_secure_agent_wrapper(
             if not result.is_valid:
                 raise ValidationException(
                     f"Input validation failed: {result.get_threat_summary()}",
-                    error_code=ErrorCode.VALIDATION_FAILED,
                     details={"threats": result.get_threat_summary()},
                 )
 

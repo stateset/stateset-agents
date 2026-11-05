@@ -7,17 +7,18 @@ nonzero-advantage spans; excluded groups do not enter the denominator.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import hashlib
-import json
 import math
-import os
-import sys
-import tempfile
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
+
+# Moved to stateset_agents.utils.atomic_io (framework layers write durable JSON
+# without importing the remote app layer); re-exported for existing imports.
+from stateset_agents.utils.atomic_io import atomic_json as atomic_json
+from stateset_agents.utils.atomic_io import exclusive_run as exclusive_run
+from stateset_agents.utils.provenance import json_sha256
 
 
 @dataclass(frozen=True)
@@ -298,70 +299,6 @@ def normalize_datums(
     return result, total
 
 
-def atomic_json(path: Path, value: Any) -> None:
-    """Replace a durable JSON artifact without exposing a partial write."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w") as stream:
-            json.dump(value, stream, indent=2, sort_keys=True, allow_nan=False)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, path)
-        if os.name != "nt":
-            directory_fd = os.open(path.parent, os.O_RDONLY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
-
-
-@contextlib.contextmanager
-def exclusive_run(output: Path) -> Iterator[None]:
-    """Hold an OS-released lock so concurrent drivers cannot overwrite a run."""
-    output.mkdir(parents=True, exist_ok=True)
-    with (output / ".rl.lock").open("a+b") as stream:
-        unlock: Callable[[], None]
-        if sys.platform == "win32":
-            import msvcrt
-
-            stream.write(b"0")
-            stream.flush()
-            stream.seek(0)
-            try:
-                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
-            except OSError as exc:
-                raise ValueError(
-                    "Another driver owns this RL output directory"
-                ) from exc
-
-            def unlock() -> None:
-                stream.seek(0)
-                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
-
-        else:
-            import fcntl
-
-            try:
-                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError as exc:
-                raise ValueError(
-                    "Another driver owns this RL output directory"
-                ) from exc
-
-            def unlock() -> None:
-                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
-
-        try:
-            yield
-        finally:
-            unlock()
-
-
 def run_fingerprint(
     spec: Any,
     config: RiverRLConfig,
@@ -381,4 +318,4 @@ def run_fingerprint(
         "config": asdict(config),
         "scorer": scorer_id,
     }
-    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+    return json_sha256(payload, compact=False, allow_nan=True)

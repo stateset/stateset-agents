@@ -7,7 +7,7 @@ on:
   push:
     branches: [ main, master, develop ]
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, "integration/**" ]
   workflow_dispatch:
 
 jobs:
@@ -19,9 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-    - uses: actions/setup-python@v7
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: "3.12"
 
@@ -39,15 +39,18 @@ jobs:
         HF_HUB_OFFLINE: "1"
         TRANSFORMERS_OFFLINE: "1"
       run: |
+        python scripts/check_asyncio_wakeup.py
         python -m unittest discover -s tests/integration -p test_river_native_sdk.py -v
+        pip install pytest pytest-asyncio pytest-xdist pytest-timeout
+        pytest --confcutdir=tests/unit -n 0 -o addopts='' tests/unit/test_river_nemotron.py
 
   npm-client:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Set up Node.js
-      uses: actions/setup-node@v6
+      uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
       with:
         node-version: "20"
         cache: npm
@@ -63,10 +66,10 @@ jobs:
   publish-readiness:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Set up Python
-      uses: actions/setup-python@v7
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: "3.11"
 
@@ -87,6 +90,10 @@ jobs:
     - name: Verify release governance
       run: |
         make release-governance
+
+    - name: Verify layer contracts (acyclic, every executable import)
+      run: |
+        make layering
 
     - name: Verify standard-agent benchmark contract
       run: |
@@ -137,7 +144,7 @@ jobs:
 
     - name: Upload publish readiness artifacts
       if: always()
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: publish-readiness-reports
         path: |
@@ -150,19 +157,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v7
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: ${{ matrix.python-version }}
 
     - name: Cache pip dependencies
-      uses: actions/cache@v6
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/pyproject.toml') }}
@@ -196,8 +204,11 @@ jobs:
     - name: Run tests
       # Coverage threshold (`fail_under`) is set in pyproject.toml's
       # [tool.coverage.report] section — pytest-cov reads it automatically.
+      env:
+        PYTHONFAULTHANDLER: '1'
+        STATESET_DISTRIBUTED_CONTRACT_REPORT_DIR: ${{ runner.temp }}/native-ddp-contract
       run: |
-        pytest --cov=stateset_agents --cov-report=xml --cov-report=term
+        pytest --cov=stateset_agents --cov-report=xml --cov-report=term --junitxml=pytest-linux-${{ matrix.python-version }}.xml
 
     - name: Coverage ratchet
       # fail_under tracks the measured floor, never an aspiration. When
@@ -243,12 +254,22 @@ jobs:
         PYTHON=python examples/getting_started/smoke.sh
 
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v7
+      uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
       with:
         file: ./coverage.xml
         flags: unittests
         name: codecov-umbrella
         fail_ci_if_error: false
+
+    - name: Retain Linux test and distributed worker results
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: linux-tests-${{ matrix.python-version }}
+        path: |
+          pytest-linux-${{ matrix.python-version }}.xml
+          ${{ runner.temp }}/native-ddp-contract
+        if-no-files-found: warn
 
   test-windows:
     runs-on: windows-latest
@@ -257,14 +278,15 @@ jobs:
     # headroom for normal runner variance and post-test cleanup.
     timeout-minutes: 60
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.13"]
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v7
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: ${{ matrix.python-version }}
 
@@ -275,16 +297,24 @@ jobs:
 
     - name: Run tests
       run: |
-        pytest --tb=short
+        pytest -v --tb=short --junitxml=pytest-windows-${{ matrix.python-version }}.xml
+
+    - name: Retain Windows test results
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: windows-tests-${{ matrix.python-version }}
+        path: pytest-windows-${{ matrix.python-version }}.xml
+        if-no-files-found: warn
 
   security:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Set up Python
-      uses: actions/setup-python@v7
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: "3.12"
 
@@ -298,7 +328,7 @@ jobs:
         make security-scan-strict
 
     - name: Upload security reports
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: security-reports
         path: |
@@ -309,10 +339,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Set up Python
-      uses: actions/setup-python@v7
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: "3.12"
 
@@ -327,7 +357,7 @@ jobs:
         sphinx-build docs docs/_build/html
 
     - name: Upload documentation
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: documentation
         path: docs/_build/html/
@@ -336,10 +366,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Set up Helm
-      uses: azure/setup-helm@v5
+      uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
       with:
         version: v3.19.5
 
@@ -385,7 +415,7 @@ jobs:
 
     - name: Upload rendered manifests
       if: always()
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: helm-rendered-manifests
         path: /tmp/stateset-agents-rendered/

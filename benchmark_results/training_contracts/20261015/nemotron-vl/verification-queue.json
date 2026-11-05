@@ -1,0 +1,19 @@
+{
+  "id": "8dfa30a096cf",
+  "runner_version": "0.15.0",
+  "state": "succeeded",
+  "exit_code": 0,
+  "wait_seconds": 1113.2962551116943,
+  "elapsed_seconds": 79.25381398200989,
+  "usage": {
+    "cpu_seconds": 58.5718,
+    "sampled_peak_rss_gb": 0.8567733764648438,
+    "samples": 131,
+    "observed_seconds": 78.82714407899766,
+    "observed_at": 1792088276.505847,
+    "source": "local_process_tree",
+    "complete": true,
+    "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+  },
+  "command_display": "env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 .venv/bin/python /tmp/stateset-nemotron-vl-verify.py"
+}

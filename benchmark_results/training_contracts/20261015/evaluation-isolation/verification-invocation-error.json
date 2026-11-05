@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "job_id": "e26340a3602e",
+  "exit_code": 4,
+  "description": "Command failed before collection because the test filename was wrong; not a queue failure",
+  "log_sha256": "aa6004551d4340eadcc1e0513bbf8fd945f49a8182b7af9346317684ef438f95",
+  "output": "$ env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 .venv/bin/python -m pytest -q -n0 -o addopts= --timeout=90 tests/unit/test_native_evaluation_isolation.py tests/unit/test_native_refund_study.py tests/unit/test_generation_mode.py tests/unit/test_agent_runs.py tests/unit/test_agent_study.py --tb=short\nERROR: file or directory not found: tests/unit/test_agent_runs.py\n\n\nno tests ran in 0.15s\n"
+}

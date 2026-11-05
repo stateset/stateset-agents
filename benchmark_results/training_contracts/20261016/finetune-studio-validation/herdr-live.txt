@@ -1,0 +1,44 @@
+STATESET / FINE-TUNING STUDIO
+[CONFIGURE] Runs | Tab switches views
+==========================================================================
+SETTINGS CHECK / configuration only
+1 issues | Enter jumps to a setting
+No dataset contents, hardware or provider access checked.
+
+ > Dataset / dataset_required
+
+Selected: Dataset
+Set the dataset path first
+Enter opens this field, including settings hidden by the backend.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+--------------------------------------------------------------------------
+Settings only; p validates dataset contents. No job starts here.
+Up/Down select | Enter fix field | v recheck | Esc back

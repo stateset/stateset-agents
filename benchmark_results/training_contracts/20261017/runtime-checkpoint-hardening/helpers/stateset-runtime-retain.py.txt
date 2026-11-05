@@ -1,0 +1,278 @@
+"""Retain completed focused runtime evidence without adopting full acceptance.
+
+Run only after the focused job passes and the parent refreshes its own live TUI.
+This script inspects local receipts/files and writes an immutable evidence bundle;
+it runs no verification, training, provider, network or Herdr commands.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import json
+import re
+import shutil
+import subprocess
+import tempfile
+import time
+import xml.etree.ElementTree as ET
+from collections import Counter
+from pathlib import Path
+from typing import Any
+
+ROOT = Path("/home/dom/stateset-agents")
+QUEUE = "/home/dom/agent-builds/buildr"
+LOGS = Path("/home/dom/.local/state/agent-builds/logs")
+FOCUSED = "9f2ecdceb8b0"
+FULL = "1e204ba66630"
+FAILURES = ("e53e8c2ec61e", "4e29516f5cf6")
+OUT = ROOT / "benchmark_results/training_contracts/20261017/runtime-checkpoint-hardening"
+VERIFY = Path("/tmp/stateset-runtime-verify.py")
+INPUTS = Path("/tmp/stateset-runtime-verification-inputs.json")
+RESULT = Path("/tmp/stateset-runtime-verify-result.json")
+LIVE = Path("/tmp/stateset-hardening-live.json")
+FIRST_ARCHIVE = Path("/tmp/stateset-runtime-first-verification")
+
+
+def require(condition: Any, message: str) -> None:
+    if not condition:
+        raise ValueError(message)
+
+
+def read_json(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text())
+    require(isinstance(value, dict), f"Expected object: {path}")
+    return value
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def job(handle: str) -> dict[str, Any]:
+    value = json.loads(
+        subprocess.check_output([QUEUE, "show", "--json", handle], text=True)
+    )
+    fields = (
+        "id", "state", "exit_code", "argv", "created", "started", "finished",
+        "wait_seconds", "elapsed_seconds", "reason", "usage", "wait_breakdown",
+    )
+    result = {name: value.get(name) for name in fields}
+    require(result["id"] == handle, "Queue returned a different job")
+    return result
+
+
+def manifests() -> tuple[dict[str, str], dict[str, str]]:
+    package = ROOT / "stateset_agents"
+    source = {
+        path.relative_to(package).as_posix(): sha256(path)
+        for path in sorted(package.rglob("*.py"))
+    }
+    tests = {
+        path.relative_to(ROOT).as_posix(): sha256(path)
+        for path in sorted((ROOT / "tests").rglob("*.py"))
+    }
+    return source, tests
+
+
+def junit(path: Path, started: float, finished: float) -> dict[str, Any]:
+    require(started <= path.stat().st_mtime <= finished, f"Stale JUnit file: {path}")
+    tree = ET.parse(path).getroot()
+    cases = list(tree.iter("testcase"))
+    require(cases, f"Empty JUnit file: {path}")
+    require(
+        not any(list(tree.iter(tag)) for tag in ("failure", "error", "skipped")),
+        f"JUnit contains failures/errors/skips: {path}",
+    )
+    return {
+        "tests": len(cases),
+        "by_class": dict(sorted(Counter(case.get("classname", "") for case in cases).items())),
+        "sha256": sha256(path),
+    }
+
+
+def copy_file(source: Path, destination: Path) -> None:
+    require(source.is_file() and not source.is_symlink(), f"Missing regular artifact: {source}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+
+
+def main() -> None:
+    focused, full = job(FOCUSED), job(FULL)
+    failures = [job(handle) for handle in FAILURES]
+    require(focused["state"] == "succeeded" and focused["exit_code"] == 0, "Focused verification has not passed")
+    require(str(VERIFY) in focused["argv"], "Focused job ran a different verifier")
+    require(
+        all(row["state"] == "failed" and row["exit_code"] != 0 for row in failures),
+        "An archived failure has an unexpected queue outcome",
+    )
+    started, finished = focused["started"], focused["finished"]
+    require(type(started) in (int, float) and type(finished) in (int, float), "Missing focused job timestamps")
+
+    receipt = read_json(RESULT)
+    stages = receipt.get("stages")
+    require(receipt.get("checked") is True and receipt.get("passed") is True, "Focused result is not a completed pass")
+    require(type(stages) is list and len(stages) == 6, "Partial verifier receipt: six completed stages required")
+    require(all(row.get("exit_code") == 0 for row in stages), "A verification stage failed")
+    argv = [row["argv"] for row in stages]
+    require(argv[0][1:] == ["/tmp/stateset-studio-mobile-format.py", "--format-only"], "Unexpected formatting stage")
+    require(argv[1][1:] == ["scripts/check_types.py", "--all"], "Unexpected typing stage")
+    require(argv[2][1:3] == ["-m", "pytest"] and "--junitxml=/tmp/stateset-runtime-verify.xml" in argv[2], "Unexpected focused tests")
+    require(argv[3][1:] == ["/tmp/stateset-studio-mobile-gates.py"], "Unexpected repository gates")
+    require(argv[4][1:3] == ["-m", "pytest"] and "tests/unit/test_release_governance.py" in argv[4] and "--junitxml=/tmp/stateset-runtime-governance.xml" in argv[4], "Unexpected governance tests")
+    require(argv[5] == ["/tmp/stateset-actionlint-1.7.12/actionlint", ".github/workflows/training-contracts.yml"], "Unexpected workflow lint")
+    require(started <= RESULT.stat().st_mtime <= finished, "Result receipt does not belong to the completed job")
+
+    tree = ast.parse(VERIFY.read_text())
+    assignment = next(
+        node for node in tree.body if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "tests" for target in node.targets)
+    )
+    modules = ast.literal_eval(assignment.value)
+    require(receipt.get("test_modules") == modules, "Verifier module list changed")
+    require(all(name in argv[2] for name in modules), "Focused stage omitted a module")
+
+    frozen, live = read_json(INPUTS), read_json(LIVE)
+    require(frozen.get("job") == FOCUSED, "Frozen inputs reference a different job")
+    require(str(frozen.get("capture_phase", "")).startswith("after formatter"), "Input snapshot is not explicitly after formatting")
+    require(started <= frozen.get("captured_at", 0) <= finished, "Frozen inputs were captured outside the verification")
+    source, tests = manifests()
+    require(source == frozen.get("source_sha256") and tests == frozen.get("test_source_sha256"), "Source/tests differ from postformatter verification inputs")
+    require(source == live.get("source_sha256") and tests == live.get("test_source_sha256"), "Refreshed live code does not match verified files")
+    require(live.get("focused_job") == FOCUSED and live.get("full_job") == FULL, "Live receipt references different verification")
+    require(live.get("created_at", 0) >= finished, "Live pane was not refreshed after the final pass")
+    require(live.get("draft_preserved") is True and live.get("training_launched") is False, "Live refresh lacks draft/no-launch evidence")
+    require(live.get("before") == live.get("after"), "Live refresh changed retained draft/run history")
+    changed = [
+        path.relative_to(ROOT).as_posix()
+        for directory in ("stateset_agents", "tests")
+        for path in (ROOT / directory).rglob("*.py")
+        if path.stat().st_mtime > finished
+    ]
+    require(not changed, "Source/tests modified after verification: " + repr(changed))
+
+    focused_xml = Path("/tmp/stateset-runtime-verify.xml")
+    governance_xml = Path("/tmp/stateset-runtime-governance.xml")
+    cases, governance = junit(focused_xml, started, finished), junit(governance_xml, started, finished)
+    for name in modules:
+        module = name.removesuffix(".py").replace("/", ".")
+        require(any(key == module or key.startswith(module + ".") for key in cases["by_class"]), "JUnit omitted module: " + name)
+    log = (LOGS / (FOCUSED + ".log")).read_text()
+    typed_counts = re.findall(r"Success: no issues found in (\d+) source files", log)
+    require(typed_counts and int(typed_counts[-1]) == len(source), "Package typing evidence is missing or count differs")
+    require(FIRST_ARCHIVE.is_dir(), "Historical test-failure archive is missing")
+    require(read_json(FIRST_ARCHIVE / "stateset-runtime-verify-result.json").get("passed") is False, "Historical archive no longer records failure")
+
+    summary = {
+        "schema_version": 1,
+        "retained_at": time.time(),
+        "scope": "Focused source runtime checkpoint and explicit-resume hardening",
+        "focused_job": FOCUSED,
+        "focused_passed": True,
+        "focused_tests": cases["tests"],
+        "governance_tests": governance["tests"],
+        "typed_modules": int(typed_counts[-1]),
+        "runtime_safety_cases": cases["by_class"].get("tests.unit.test_runtime_checkpoint_safety", 0),
+        "dedicated_resume_cases": cases["by_class"].get("tests.unit.test_dedicated_entrypoint_resume", 0),
+        "verification_input_capture_phase": frozen["capture_phase"],
+        "verification_inputs_match_current_and_live_source": True,
+        "source_or_tests_modified_after_verification": False,
+        "failed_attempts_preserved": [row["id"] for row in failures],
+        "full_acceptance_job": FULL,
+        "full_state_at_capture": full["state"],
+        "full_acceptance_claimed_by_this_receipt": False,
+        "installed_wheel_verified_by_this_receipt": False,
+        "live_pane": live["pane"],
+        "draft_preserved": True,
+        "training_launched_during_live_refresh": False,
+        "paid_training_verified": False,
+        "gpu_verified": False,
+        "model_quality_gain_verified": False,
+        "limitations": [
+            "Focused CPU source checks; broader installed-wheel/CLI acceptance is separately queued",
+            "Input manifests were captured after formatting, not before the formatting stage",
+            "Restore preflight rejects supported malformed state; late commit failures quarantine rather than roll back",
+            "Supported builtin optimizer/scheduler paths do not establish arbitrary custom component compatibility",
+            "No provider, GPU/distributed soak, paid training or independent quality certification is inferred",
+        ],
+    }
+
+    require(not OUT.exists(), "Evidence destination already exists")
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".runtime-checkpoint-hardening-", dir=OUT.parent))
+    try:
+        def write(name: str, value: Any) -> None:
+            (staging / name).write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
+
+        write("summary.json", summary)
+        write("queue-receipts.json", sorted([focused, full, *failures], key=lambda row: row["created"]))
+        write("source-manifest.json", {"source_sha256": source, "test_source_sha256": tests})
+        write("junit-summary.json", {"focused": cases, "governance": governance})
+        for original, name in (
+            (INPUTS, "verification-inputs.json"), (RESULT, "verification-result.json"),
+            (LIVE, "live-proof.json"), (focused_xml, "focused.xml"),
+            (governance_xml, "governance.xml"),
+        ):
+            copy_file(original, staging / name)
+        for row in [focused, *failures]:
+            copy_file(LOGS / (row["id"] + ".log"), staging / "logs" / (row["id"] + ".log"))
+        for path in FIRST_ARCHIVE.iterdir():
+            copy_file(path, staging / "historical-test-failure" / path.name)
+        for name in (
+            "stateset-runtime-verify.py", "stateset-runtime-handoff.py",
+            "stateset-runtime-review-update.py", "stateset-runtime-counter-fixes.py",
+            "stateset-runtime-task-fixes.py", "stateset-runtime-lint-update.py",
+            "stateset-studio-mobile-format.py", "stateset-studio-mobile-gates.py",
+        ):
+            copy_file(Path("/tmp") / name, staging / "helpers" / (name + ".txt"))
+        copy_file(Path(__file__), staging / "helpers" / "stateset-runtime-retain.py.txt")
+        handoff = read_json(Path("/tmp/stateset-runtime-handoff.json"))
+        copy_file(Path("/tmp/stateset-runtime-handoff.json"), staging / "historical-handoff.json")
+        for name in sorted(set(handoff["files"]) | set(modules)):
+            copy_file(ROOT / name, staging / "verified-files" / (name + ".txt"))
+
+        (staging / "README.md").write_text(
+            "# Runtime checkpoint and explicit-resume hardening\n\n"
+            f"Buildr job `{FOCUSED}` passed all six focused stages: "
+            f"{cases['tests']} source tests, {governance['tests']} release-governance "
+            f"tests, typing for {len(source)} package modules, changed-file formatting, "
+            "repository gates and workflow lint. Actual module counts and zero-skip "
+            "JUnit results are retained; this is not a complete repository test run.\n\n"
+            "The changes validate supported runtime state before restoring, contain "
+            "late restore failures through quarantine, preserve counter/optimizer "
+            "ownership and adaptive state, and reject unsupported dedicated resume "
+            "requests before fresh work. The retained regressions cover malformed "
+            "state and successful continuation. Preflight does not make arbitrary "
+            "model-shard or component failures transactional.\n\n"
+            "Source/test hashes match a snapshot captured after the formatting stage "
+            "while the verification held the source lock. They also match the later "
+            "refreshed live TUI. Draft bytes, permissions and retained run history "
+            "were preserved; the live refresh launched no training.\n\n"
+            f"Failed attempts `{FAILURES[0]}` and `{FAILURES[1]}` are preserved in "
+            "queue receipts and logs. The historical test-failure archive additionally "
+            "retains its JUnit files and stage receipt; its folder name is not a "
+            "claim about job chronology. Queue timestamps establish ordering.\n\n"
+            f"Broader source/installed-wheel/CLI acceptance remains separate under "
+            f"`{FULL}` (state at retention: **{full['state']}**). This bundle does "
+            "not adopt or certify that job's outcome. GPU/provider training, physical "
+            "phone hardware, distributed soak and independent model-quality gains "
+            "are not certified by these focused source checks.\n"
+        )
+        require(manifests() == (source, tests), "Source/tests changed during retention")
+        write("artifact-sha256.json", {
+            path.relative_to(staging).as_posix(): sha256(path)
+            for path in sorted(staging.rglob("*")) if path.is_file()
+        })
+        staging.rename(OUT)
+    except BaseException:
+        shutil.rmtree(staging)
+        raise
+    print(json.dumps({"path": str(OUT), "summary": summary}, indent=2))
+
+
+if __name__ == "__main__":
+    main()

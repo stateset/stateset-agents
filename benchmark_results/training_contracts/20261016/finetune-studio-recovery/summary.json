@@ -1,0 +1,36 @@
+{
+  "passed": true,
+  "prepare_queue_job": "b7168f0af46e",
+  "wheel_queue_jobs": [
+    "a526cb68df9a",
+    "f704178e7d68",
+    "1778cf92d6eb"
+  ],
+  "final_queue_job": "2c6e30457995",
+  "source_regressions": {
+    "passed": 1183,
+    "skipped": 0
+  },
+  "wheel_regressions": {
+    "passed": 1072,
+    "skipped": 0
+  },
+  "typed_modules": 426,
+  "source_unchanged": true,
+  "test_sources_unchanged": true,
+  "wheel_source_matches": true,
+  "wheel_case_identities_match": true,
+  "shared_test_fixtures_match": true,
+  "wheel_sha256": "ff951f20b33867299dcb9671244e37d909b1f1f2c6ec444f8fe1f46b78effb38",
+  "real_cpu_sft_resume_matches_uninterrupted": true,
+  "real_cpu_native_checkpoint_resume_verified": true,
+  "real_terminal_recovery_reviews_verified": true,
+  "operator_checkpoint_inspection_verified": true,
+  "live_herdr_refreshed": true,
+  "draft_preserved": true,
+  "gpu_verified": false,
+  "quality_gain_verified": false,
+  "remote_recovery_verified": false,
+  "paid_run_launched": false,
+  "count_note": "Targeted source/wheel counts overlap. Real CPU SFT/native checks use tiny synthetic models; provider boundaries use mocks."
+}

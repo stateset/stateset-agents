@@ -1,0 +1,70 @@
+[
+  {
+    "case": "empty_loop_initial_and_completed_resume",
+    "passed": true
+  },
+  {
+    "case": "interrupted_task_cursor",
+    "resume_next_update_and_teacher_exact": true
+  },
+  {
+    "case": "prepare",
+    "coherent_failure_and_reload": true
+  },
+  {
+    "case": "scheduler",
+    "coherent_failure_and_reload": true
+  },
+  {
+    "case": "training_start",
+    "coherent_failure_and_reload": true
+  },
+  {
+    "case": "generation",
+    "coherent_failure_and_reload": true
+  },
+  {
+    "case": "cancel_generation",
+    "coherent_failure_and_reload": true
+  },
+  {
+    "case": "forward",
+    "coherent_failure_and_reload": true
+  },
+  {
+    "case": "backward",
+    "coherent_failure_and_reload": true
+  },
+  {
+    "case": "optimizer",
+    "coherent_failure_and_reload": true
+  },
+  {
+    "case": "episode_end",
+    "coherent_failure_and_reload": true
+  },
+  {
+    "case": "training_log",
+    "coherent_failure_and_reload": true
+  },
+  {
+    "case": "evaluation_log",
+    "coherent_failure_and_reload": true
+  },
+  {
+    "case": "evaluation_end",
+    "coherent_failure_and_reload": true
+  },
+  {
+    "case": "stop",
+    "coherent_failure_and_reload": true
+  },
+  {
+    "case": "training_end",
+    "coherent_failure_and_reload": true
+  },
+  {
+    "case": "tracking",
+    "coherent_failure_and_reload": true
+  }
+]

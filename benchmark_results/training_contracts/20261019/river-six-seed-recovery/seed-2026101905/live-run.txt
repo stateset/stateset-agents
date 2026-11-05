@@ -1,0 +1,8 @@
+[river] River account advertises model access: Qwen/Qwen3.5-9B
+[river] built 128 River SFT data from 128 rows
+[river] created River model on Qwen/Qwen3.5-9B (LoRA rank 16, attn+mlp)
+[river] step 10 loss 0.0491
+[river] epoch 1/1 complete (16 steps, loss 0.0058)
+[river] saved River checkpoint: river://49db47be-49dd-4afc-b8aa-3cb5cc0e2739/sampler_weights/sft
+{"arm": "base", "split": "test", "passed": 53, "total": 64}
+{"arm": "sft", "split": "test", "passed": 55, "total": 64}

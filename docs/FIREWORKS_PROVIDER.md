@@ -78,6 +78,15 @@ again only at `--deploy` time, which takes its accelerator explicitly.
 - `stateset_manifest.json` — the usual provenance record, so
   `stateset-agents adapters` works exactly as it does for local runs.
 
+SFT submission validates one captured version of the source file and uploads
+those exact bytes through a private temporary file. The temporary file is removed
+after upload, including on failure. The original source path, byte SHA-256 and
+nonblank source-line count are retained in durable job metadata. Fetch uses that
+captured identity even after a restart, source edit or source deletion; it never
+hashes a later file as training evidence. Older retained jobs without a captured
+identity remain fetchable with unknown dataset hash/count and an explicit legacy
+provenance marker. These are local upload identities, not provider attestation.
+
 It *also* attempts to download the addon's files through
 `models.get_download_endpoint`. When that succeeds you get real adapter
 weights and `stateset-agents serve --checkpoint <dir>` works; when it does not

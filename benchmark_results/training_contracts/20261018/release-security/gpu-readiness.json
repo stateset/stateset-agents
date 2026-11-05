@@ -1,0 +1,6 @@
+{
+  "cuda_available": false,
+  "cuda_devices": 0,
+  "ready": false,
+  "error": "Native GPU acceptance requires two CUDA GPUs; no CPU fallback"
+}

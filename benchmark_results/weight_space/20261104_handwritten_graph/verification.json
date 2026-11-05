@@ -1,0 +1,12 @@
+{
+  "networkx_version": "3.6.1",
+  "independent_networkx_labels_checked": 9216,
+  "saved_handwritten_weights_match_constructor": true,
+  "all_seven_saved_models_reproduce_reported_metrics": true,
+  "saved_evaluation_inputs_match_split_hashes": true,
+  "current_sources_match_run_snapshots_and_hashes": true,
+  "exhaustive_four_node_cases_reproduced": 16384,
+  "focused_regression_tests_passed": 283,
+  "new_model_mypy": "passed",
+  "new_code_ruff_black_isort": "passed"
+}

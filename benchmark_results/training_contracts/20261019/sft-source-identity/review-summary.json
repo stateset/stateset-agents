@@ -1,0 +1,94 @@
+{
+  "dataset_manifest_sha256": "00784efcc4fa3e25368dbb22375535aee5c5ce9f330c0e5fe99282d006c7cfd3",
+  "datasets": [
+    {
+      "domain": "ecommerce",
+      "fireworks_reader_rows": 512,
+      "generic_reader_rows": 512,
+      "held_out_rejections": [
+        {
+          "reader": "river_sft_reader",
+          "split": "validation"
+        },
+        {
+          "reader": "fireworks_upload_reader",
+          "split": "validation"
+        },
+        {
+          "reader": "river_sft_reader",
+          "split": "test"
+        },
+        {
+          "reader": "fireworks_upload_reader",
+          "split": "test"
+        }
+      ],
+      "source_identity": {
+        "path": "outputs/industry-datasets-20261019/ecommerce/train.jsonl",
+        "rows": 512,
+        "sha256": "3183f1bb2de62479d14c5ad6fdc2d4261574f0d119fecd20216b94f164f15aef"
+      }
+    },
+    {
+      "domain": "logistics",
+      "fireworks_reader_rows": 512,
+      "generic_reader_rows": 512,
+      "held_out_rejections": [
+        {
+          "reader": "river_sft_reader",
+          "split": "validation"
+        },
+        {
+          "reader": "fireworks_upload_reader",
+          "split": "validation"
+        },
+        {
+          "reader": "river_sft_reader",
+          "split": "test"
+        },
+        {
+          "reader": "fireworks_upload_reader",
+          "split": "test"
+        }
+      ],
+      "source_identity": {
+        "path": "outputs/industry-datasets-20261019/logistics/train.jsonl",
+        "rows": 512,
+        "sha256": "15569aabb497976aedc70956e76af87fea21960904f7b077ec08ada0e361bd3b"
+      }
+    },
+    {
+      "domain": "saas",
+      "fireworks_reader_rows": 512,
+      "generic_reader_rows": 512,
+      "held_out_rejections": [
+        {
+          "reader": "river_sft_reader",
+          "split": "validation"
+        },
+        {
+          "reader": "fireworks_upload_reader",
+          "split": "validation"
+        },
+        {
+          "reader": "river_sft_reader",
+          "split": "test"
+        },
+        {
+          "reader": "fireworks_upload_reader",
+          "split": "test"
+        }
+      ],
+      "source_identity": {
+        "path": "outputs/industry-datasets-20261019/saas/train.jsonl",
+        "rows": 512,
+        "sha256": "fba5fa8e6bceed34eb76126c61bdaddf16b1da34780629eb4010dc86fbfec2fd"
+      }
+    }
+  ],
+  "model_updates": 0,
+  "provider_calls": 0,
+  "quality_certification": false,
+  "scope": "Captured-byte parsing and source identities; no provider, tokenizer or training calls",
+  "training_source_rows": 1536
+}

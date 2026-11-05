@@ -1,0 +1,61 @@
+{
+  "applied_at": 1792251304.476178,
+  "files": {
+    "stateset_agents/core/frontier_models.py": {
+      "before": "9516b9a0f6caee9e387688e628c23058a7e71edb1c909a583dfa187165fd51ad",
+      "applied_sha256": "101c0987b8b6cc96cfcd7965cc426d149e9aa5bcc027292f19d3760ab360d9fe"
+    },
+    "stateset_agents/core/transformers_compat.py": {
+      "before": "1f02ef245d141f1f6e0efb60ab4ca484b578b5403debd1a4cc5a40a3bb4e7785",
+      "applied_sha256": "cc744be567c3fd1d0b223f4ef21c7127b6d802ea38b02ce24d7966b02d05235b"
+    },
+    "stateset_agents/remote/executor.py": {
+      "before": "33921930d68f38b3f881a9a5a43960c39cd9007d8f091a4ac83a69e7c9fc7b06",
+      "applied_sha256": "4f6586c4773c1eb84e0883baf63cbe35dd88d3d84ce0c8c57496545f4beaf7e9"
+    },
+    "stateset_agents/remote/local.py": {
+      "before": "55eb68fad415909fd6013a8d80987b33c7433ae3615bed8d04b7675946e889fa",
+      "applied_sha256": "91b8de7f2f00e57505b562fdb27019fbcea98912a616c41ec90d8c4d5521a534"
+    },
+    "stateset_agents/remote/modal.py": {
+      "before": "421f1de160d82491de238569d2993a56a65442a8117c21220bdb4f276f60cf17",
+      "applied_sha256": "d6615c26d62a93a2e876f00f5f73c584c291e952255182ed2f31f8a13aea80dd"
+    },
+    "stateset_agents/remote/runpod.py": {
+      "before": "441452a9b5e8539babfc643bffece06397fda74afabddaee2c9688dffd0e41c3",
+      "applied_sha256": "5f60bf4c1f32b2ef494f90439203305d5acf4f520b39b963b3ae301a5b066b88"
+    },
+    "stateset_agents/remote/coreweave.py": {
+      "before": "b83c771139ec834fbf36af0a6ba88aea87aba91be8477f00139d9dd8ea41d50a",
+      "applied_sha256": "85aac5237145b83d44767a9d4971100c63f42a8e4e1f70072ff42ca535c4539f"
+    },
+    "stateset_agents/remote/nebius.py": {
+      "before": "62665fb6f4cbf29c16fc1e7d1b783a56a8cc230d3313628423859e57a538fdca",
+      "applied_sha256": "3a65bf75d030d7dff8978c3f050ed0898f19a96f8bff53fc286869e75653ccf3"
+    },
+    "stateset_agents/remote/huggingface.py": {
+      "before": "806c78e62b68f2ebf6213c813d347e139d15c7cc9b24c77dddff58893708abe6",
+      "applied_sha256": "b4a9f48b500a5bd7ce2cfc32eb435bac816508000f7a377b82930da38cb3a485"
+    },
+    "tests/unit/test_remote_job.py": {
+      "before": "9b597037fa5b65926b45524f3830c564b72844dbb3682906045fc5269047c21b",
+      "applied_sha256": "af88227fbd9763ec55fe72ed23c71d268b96ba9f2dc5d381a175cb78e198e82e"
+    },
+    "docs/FRONTIER_FINETUNING.md": {
+      "before": "2f7d1023f3f85de54e7f1ad9718623842dc397bb32d91c99ea5f2cc337956528",
+      "applied_sha256": "9cba1bbfe1655d2d36c7140af30e9e6dfe89fc8faa8947cd9ba21ec77577b3ea"
+    },
+    "stateset_agents/finetune_workspace.py": {
+      "before": "c141a09bde9d8fb8a1669e12b72c8a97781db79dde1a48f113f476b2d297dea2",
+      "applied_sha256": "d609cc4d5d1e25537e1c1699e058ca35c1b1c196ce5c6b09165ead15763638fa"
+    },
+    "tests/unit/test_finetune_frontier_readiness.py": {
+      "before": "648ad36a4fda0fd4cc297302d6219f27b980ce7f477392ce756b340dcdca89ff",
+      "applied_sha256": "0965f44f2daa8801c9adef0490ecbb09eac8e6e0a11aae2d20e7683dc5b5047c"
+    },
+    "tests/unit/test_remote_frontier_readiness.py": {
+      "before": null,
+      "applied_sha256": "e1fa6d0d573d5c82580a10855cbf3064fe60944da606b1fa7864809b276b1186"
+    }
+  }
+}

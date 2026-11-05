@@ -1,0 +1,30 @@
+{
+  "id": "365ca7a39b1f",
+  "state": "succeeded",
+  "exit_code": 0,
+  "argv": [
+    "env",
+    "OMP_NUM_THREADS=1",
+    "MKL_NUM_THREADS=1",
+    "OPENBLAS_NUM_THREADS=1",
+    "RAYON_NUM_THREADS=2",
+    "TOKENIZERS_PARALLELISM=false",
+    ".venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "-n0",
+    "-o",
+    "addopts=",
+    "--timeout=150",
+    "--tb=short",
+    "tests/unit/test_finetune_handoff.py",
+    "-k",
+    "real_terminal"
+  ],
+  "created": 1792179741.2978435,
+  "started": 1792179741.3411343,
+  "finished": 1792179755.371014,
+  "wait_seconds": 0.04329085350036621,
+  "elapsed_seconds": 14.029879808425903
+}

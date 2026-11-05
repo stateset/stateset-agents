@@ -1,0 +1,44 @@
+STATESET / FINE-TUNING STUDIO
+[CONFIGURE] Runs | Tab switches views
+=========================================================================
+DATASET INSPECTOR / statistics from one captured file
+
+Cannot inspect dataset. Choose a regular file within 64 MiB matching the
+documented SFT/RL format.
+u retries after you fix the path or format.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-------------------------------------------------------------------------
+Reading one dataset snapshot; no run is prepared or started.
+u rescan | e show/hide private sample | Left/Right sample
+PgUp/Dn scroll | Esc back

@@ -36,7 +36,7 @@ class SimpleCache:
     Thread-safe for single-writer, multiple-reader scenarios.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._cache: dict[str, CacheEntry] = {}
         self._hits: int = 0
         self._misses: int = 0

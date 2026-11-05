@@ -19,6 +19,7 @@ from enum import Enum
 from typing import Any, Generic, TypeVar, cast
 
 from stateset_agents.utils.async_calls import drain_owned_operation
+from stateset_agents.utils.clock import as_utc, utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +84,8 @@ class BaseEntity:
     """Base class for all persistent entities."""
 
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utc_now)
+    updated_at: datetime = field(default_factory=utc_now)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -102,9 +103,9 @@ class BaseEntity:
     def from_dict(cls: type[_BaseEntityT], data: dict[str, Any]) -> _BaseEntityT:
         """Create from dictionary."""
         if "created_at" in data and isinstance(data["created_at"], str):
-            data["created_at"] = datetime.fromisoformat(data["created_at"])
+            data["created_at"] = as_utc(datetime.fromisoformat(data["created_at"]))
         if "updated_at" in data and isinstance(data["updated_at"], str):
-            data["updated_at"] = datetime.fromisoformat(data["updated_at"])
+            data["updated_at"] = as_utc(datetime.fromisoformat(data["updated_at"]))
         return cls(**data)
 
 
@@ -228,8 +229,8 @@ class InMemoryRepository(Repository[T]):
     async def create(self, entity: T) -> T:
         """Create a new entity."""
         async with self._lock:
-            entity.created_at = datetime.utcnow()
-            entity.updated_at = datetime.utcnow()
+            entity.created_at = utc_now()
+            entity.updated_at = utc_now()
             self._data[entity.id] = entity
             return entity
 
@@ -242,7 +243,7 @@ class InMemoryRepository(Repository[T]):
         async with self._lock:
             if entity.id not in self._data:
                 raise ValueError(f"Entity {entity.id} not found")
-            entity.updated_at = datetime.utcnow()
+            entity.updated_at = utc_now()
             self._data[entity.id] = entity
             return entity
 
@@ -369,8 +370,8 @@ class SQLiteRepository(Repository[T]):
     async def create(self, entity: T) -> T:
         """Create a new entity."""
         await self.connect()
-        entity.created_at = datetime.utcnow()
-        entity.updated_at = datetime.utcnow()
+        entity.created_at = utc_now()
+        entity.updated_at = utc_now()
         self._create_sync(
             entity.id,
             json.dumps(entity.to_dict()),
@@ -418,7 +419,7 @@ class SQLiteRepository(Repository[T]):
     async def update(self, entity: T) -> T:
         """Update an existing entity."""
         await self.connect()
-        entity.updated_at = datetime.utcnow()
+        entity.updated_at = utc_now()
         self._update_sync(
             entity.id,
             json.dumps(entity.to_dict()),

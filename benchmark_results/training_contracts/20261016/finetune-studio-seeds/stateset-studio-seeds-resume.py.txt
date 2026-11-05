@@ -1,0 +1,61 @@
+"""Resume only affected/unrun wheel stages after a missing fixture repair."""
+from pathlib import Path
+import fcntl
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import time
+
+root=Path('/home/dom/stateset-agents')
+temporary=Path('/tmp')
+prefix='stateset-studio-seeds'
+prepared=Path(sys.argv[1])
+os.chdir(root)
+lock=(temporary/(prefix+'-source.lock')).open('a')
+fcntl.flock(lock.fileno(),fcntl.LOCK_EX)
+os.environ.update(OMP_NUM_THREADS='1',MKL_NUM_THREADS='1',OPENBLAS_NUM_THREADS='1',NUMEXPR_NUM_THREADS='1',RAYON_NUM_THREADS='2',TOKENIZERS_PARALLELISM='false',HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1')
+os.environ['PATH']=str(root/'.venv/bin')+os.pathsep+os.environ['PATH']
+verified=json.loads((prepared/'verification.json').read_text())
+assert verified['passed'] and verified['phase']=='prepare'
+
+def unchanged():
+    for base,key in [(root/'stateset_agents','source_sha256'),(root,'test_source_sha256')]:
+        assert all(hashlib.sha256((base/name).read_bytes()).hexdigest()==digest for name,digest in verified[key].items())
+    assert len(list((root/'stateset_agents').rglob('*.py')))==len(verified['source_sha256'])
+    assert len(list((root/'tests').rglob('*.py')))==len(verified['test_source_sha256'])
+    assert all(hashlib.sha256((root/name).read_bytes()).hexdigest()==digest for name,digest in verified['assets_sha256'].items())
+
+unchanged()
+repair=json.loads((prepared/'harness-repair.json').read_text())
+assert hashlib.sha256((root/repair['source']).read_bytes()).hexdigest()==repair['sha256']
+assert (prepared/repair['destination']).read_bytes()==(root/repair['source']).read_bytes()
+original=json.loads((temporary/(prefix+'-initial-pipeline-receipt.json')).read_text())
+assert [s['name'] for s in original['stages']]==['format','prepare','wheel-1','wheel-2']
+assert [s['exit_code'] for s in original['stages']]==[0,0,0,1]
+stages=[{**s,'reused_from_queue_job':'0901d605abfd'} for s in original['stages'][:3]]
+receipt=temporary/(prefix+'-pipeline-receipt.json')
+before=set(temporary.glob(prefix+'-20261016*'))
+
+def run(name,script,*args):
+    unchanged()
+    argv=[sys.executable,str(temporary/script),*map(str,args)]
+    started=time.time()
+    print('Resumed stage:',name,flush=True)
+    code=subprocess.call(argv)
+    stages.append(dict(name=name,argv=argv,started=started,finished=time.time(),exit_code=code))
+    receipt.write_text(json.dumps(dict(stages=stages,passed=all(s['exit_code']==0 for s in stages),prepared=str(prepared),reused_source_job='0901d605abfd',harness_repair=repair),indent=2)+'\n')
+    if code:
+        raise SystemExit(code)
+    unchanged()
+
+run('wheel-2',prefix+'-wheel.py',prepared,2)
+run('wheel-3',prefix+'-wheel.py',prepared,3)
+run('finish',prefix+'-finish.py',prepared)
+created=set(temporary.glob(prefix+'-20261016*'))-before
+finished=[p for p in created if p.is_dir() and (p/'verification.json').exists() and json.loads((p/'verification.json').read_text()).get('phase')=='complete']
+assert len(finished)==1 and json.loads((finished[0]/'verification.json').read_text())['passed']
+value=json.loads(receipt.read_text()); value['finished']=str(finished[0]); value['passed']=True
+receipt.write_text(json.dumps(value,indent=2)+'\n')
+print('Completed resumed acceptance:',finished[0],flush=True)

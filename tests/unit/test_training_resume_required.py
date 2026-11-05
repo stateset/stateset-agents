@@ -93,6 +93,8 @@ async def test_confirmed_completed_resume_skips_already_finished_episodes(
 
     def restore(path):
         trainer.current_epoch = 1
+        if hasattr(trainer, "_next_episode"):
+            trainer._next_episode = 2
         trainer.global_step = 7
         return True
 

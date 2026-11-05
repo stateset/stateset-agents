@@ -6,28 +6,29 @@ import shutil
 
 import pytest
 
-from stateset_agents.evaluation import implementation
+from stateset_agents.evaluation import implementation as evaluation_implementation
+from stateset_agents.utils import provenance as implementation
 
 
 def test_fingerprint_is_portable_and_detects_edits_additions_and_removals(
     tmp_path, monkeypatch
 ):
     root = tmp_path / "checkout" / "stateset_agents"
-    (root / "evaluation").mkdir(parents=True)
+    (root / "utils").mkdir(parents=True)
     (root / "__init__.py").write_text("# package\n")
-    source = root / "evaluation" / "implementation.py"
+    source = root / "utils" / "provenance.py"
     source.write_text("# protocol\n")
     monkeypatch.setattr(implementation, "__file__", str(source))
     original = implementation.package_implementation()
     assert (
-        original["files"]["evaluation/implementation.py"]
+        original["files"]["utils/provenance.py"]
         == hashlib.sha256(source.read_bytes()).hexdigest()
     )
 
     installed = tmp_path / "wheel" / "stateset_agents"
     shutil.copytree(root, installed)
     monkeypatch.setattr(
-        implementation, "__file__", str(installed / "evaluation/implementation.py")
+        implementation, "__file__", str(installed / "utils/provenance.py")
     )
     assert implementation.package_implementation() == original
     # Caches and non-source artifacts do not change the protocol identity.
@@ -68,11 +69,23 @@ def test_actual_package_contains_scoring_training_and_audit_sources():
     for name in (
         "core/environments/refund_policy_environment.py",
         "remote/river_environment.py",
-        "training/river_refund.py",
-        "evaluation/agent_study.py",
+        "verticals/river_refund.py",
+        "verticals/agent_study.py",
     ):
         assert name in identity["files"]
     malformed = copy.deepcopy(identity)
     malformed["schema_version"] = True
     with pytest.raises(ValueError, match="Invalid implementation"):
         implementation.validate_implementation(malformed)
+
+
+def test_evaluation_path_re_exports_the_canonical_helpers():
+    """``evaluation.implementation`` kept its names when they moved to utils."""
+    assert (
+        evaluation_implementation.package_implementation
+        is implementation.package_implementation
+    )
+    assert (
+        evaluation_implementation.validate_implementation
+        is implementation.validate_implementation
+    )

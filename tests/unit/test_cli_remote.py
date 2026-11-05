@@ -675,13 +675,14 @@ class TestRunPodOrphansCommand:
         executor = RunPodExecutor(api=object(), ssh=object(), public_key="key")
         monkeypatch.setattr(
             executor,
-            "orphaned_leases",
+            "leases",
             lambda: [
                 {
                     "pod_id": "pod-1",
                     "job_id": "job-1",
                     "base_model": "Qwen/test",
                     "gpu": "H100",
+                    "owner_state": "gone",
                 }
             ],
         )

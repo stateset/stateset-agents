@@ -258,7 +258,7 @@ class _StubRewardModel:
     async def compute_reward(
         self, turns: list[Any], context: dict[str, Any]
     ) -> RewardResult:
-        score = 1.0 if turns[0].content == "ok" else 0.0
+        score = 1.0 if turns[-1].content == "ok" else 0.0
         return RewardResult(score=score, breakdown={}, components={})
 
 

@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .config import config_value
+
 
 def get_environment_scenarios(
     environment: Any, config: Any | None
@@ -23,7 +25,7 @@ def get_environment_scenarios(
         else:
             cleaned.append({"id": f"scenario_{idx}", "context": str(scenario)})
 
-    max_examples = getattr(config, "max_examples", None)
+    max_examples = config_value(config, "max_examples")
     if isinstance(max_examples, int) and max_examples > 0:
         cleaned = cleaned[:max_examples]
     return cleaned
@@ -36,12 +38,12 @@ def split_scenarios(
     if not scenarios:
         return [], []
 
-    eval_split = float(getattr(config, "eval_split_size", 0.1) or 0.0)
+    eval_split = float(config_value(config, "eval_split_size") or 0.0)
     if eval_split <= 0.0 or len(scenarios) < 2:
         return scenarios, scenarios
 
-    stratify = bool(getattr(config, "stratify_by_task", True))
-    task_key = getattr(config, "task_id_key", "task_id")
+    stratify = bool(config_value(config, "stratify_by_task"))
+    task_key = config_value(config, "task_id_key")
     if stratify:
         by_task: dict[str | None, list[dict[str, Any]]] = {}
         for scenario in scenarios:
@@ -76,9 +78,9 @@ def apply_task_schedule(
     if config is None:
         return
 
-    task_schedule = getattr(config, "task_schedule", None)
-    task_switch_steps = int(getattr(config, "task_switch_steps", 0) or 0)
-    task_key = getattr(config, "task_id_key", "task_id")
+    task_schedule = config_value(config, "task_schedule")
+    task_switch_steps = int(config_value(config, "task_switch_steps") or 0)
+    task_key = config_value(config, "task_id_key")
     if not task_schedule or task_switch_steps <= 0:
         return
     if task_key in scenario:
@@ -112,7 +114,7 @@ def build_training_scenarios(
     environment: Any,
     config: Any | None,
 ) -> list[dict[str, Any]]:
-    num_episodes = getattr(config, "num_episodes", 100)
+    num_episodes = config_value(config, "num_episodes")
     env_scenarios = get_environment_scenarios(environment, config)
     if env_scenarios:
         train_base, _ = split_scenarios(env_scenarios, config)

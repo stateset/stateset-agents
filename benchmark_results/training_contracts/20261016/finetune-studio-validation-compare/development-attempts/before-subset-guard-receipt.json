@@ -1,0 +1,75 @@
+{
+  "stages": [
+    {
+      "name": "format",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-validation-compare-format.py",
+        "--format-only"
+      ],
+      "started": 1792204476.8421135,
+      "finished": 1792204479.1438587,
+      "exit_code": 0
+    },
+    {
+      "name": "prepare",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-validation-compare-prepare.py"
+      ],
+      "started": 1792204479.1441562,
+      "finished": 1792204687.709331,
+      "exit_code": 0
+    },
+    {
+      "name": "wheel-1",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-validation-compare-wheel.py",
+        "/tmp/stateset-studio-validation-compare-20261016-retry1",
+        "1"
+      ],
+      "started": 1792204687.7185912,
+      "finished": 1792204768.2261727,
+      "exit_code": 0
+    },
+    {
+      "name": "wheel-2",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-validation-compare-wheel.py",
+        "/tmp/stateset-studio-validation-compare-20261016-retry1",
+        "2"
+      ],
+      "started": 1792204768.226456,
+      "finished": 1792204849.079193,
+      "exit_code": 0
+    },
+    {
+      "name": "wheel-3",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-validation-compare-wheel.py",
+        "/tmp/stateset-studio-validation-compare-20261016-retry1",
+        "3"
+      ],
+      "started": 1792204849.0796332,
+      "finished": 1792204856.9181502,
+      "exit_code": 0
+    },
+    {
+      "name": "finish",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-validation-compare-finish.py",
+        "/tmp/stateset-studio-validation-compare-20261016-retry1"
+      ],
+      "started": 1792204856.9184363,
+      "finished": 1792204886.0584455,
+      "exit_code": 0
+    }
+  ],
+  "passed": true,
+  "prepared": "/tmp/stateset-studio-validation-compare-20261016-retry1",
+  "finished": "/tmp/stateset-studio-validation-compare-20261016-final"
+}

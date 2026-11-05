@@ -1,0 +1,29 @@
+{
+  "passed": true,
+  "queue_job": "04b9e08842a6",
+  "typed_modules": 421,
+  "source_unchanged": true,
+  "test_sources_unchanged": true,
+  "wheel_source_matches": true,
+  "wheel_profile_matches": true,
+  "wheel_rubric_matches": true,
+  "wheel_sha256": "ad879dc03835d8de0dd4dd0bed964280fc24a8323fd9c4a7ee2f3a7a59f0db6c",
+  "source_regressions": {
+    "passed": 467,
+    "skipped": 0
+  },
+  "wheel_regressions": {
+    "passed": 356,
+    "skipped": 0
+  },
+  "real_terminal_navigation_verified": true,
+  "real_terminal_editing_verified": true,
+  "live_herdr_pane": "w1:p1A",
+  "studio_worker_tests": "CPU fixtures and mocked CUDA/provider boundaries; no real GPU training",
+  "recorded_judge_tests": "Synthetic replies and offline replay; not remote model attestation",
+  "distributed_contracts_repeated": false,
+  "gpu_verified": false,
+  "quality_gain_verified": false,
+  "paid_run_launched": false,
+  "count_note": "Targeted source and wheel regression counts overlap."
+}

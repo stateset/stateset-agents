@@ -1,15 +1,17 @@
+.. note::
+
+   The released checkpoint is now pinned and its KDA/MLA attention targets are
+   audited. Native MXFP4 loading and backward kernels still need training
+   verification. Use ``stateset-agents frontier-models --model kimi-k3`` and
+   :doc:`frontier_finetuning` for current readiness. Profiles do not imply
+   successful full-size training.
+
 Kimi-K3 Starter Path
 ====================
 
-Use this starter when you want the fastest path to a first GSPO post-training run for ``moonshotai/Kimi-K3``.
-The recommended checkpoint for post-training is ``moonshotai/Kimi-K3``.
-
-.. note::
-
-   Kimi K3 launched on Moonshot's product surface on 2026-07-16, but HuggingFace
-   weights, model card, and license are not yet published. The
-   ``moonshotai/Kimi-K3`` model ID and the profile presets in this starter are
-   provisional mirrors of the Kimi-K2.6 starter pending the official release.
+This starter provides configuration previews for the released, pinned
+``moonshotai/Kimi-K3`` checkpoint. Exact packed-weight training is blocked
+pending the loader and backward-kernel checks described above.
 
 CLI quick start
 ---------------
@@ -22,13 +24,15 @@ CLI quick start
    stateset-agents kimi-k3 --write-config ./kimi_k3.json
    stateset-agents init --preset kimi-k3 --path ./kimi_k3.json --format json
 
-Run the starter
----------------
+Inspect training readiness
+--------------------------
 
 .. code-block:: bash
 
-   stateset-agents kimi-k3 --no-dry-run --task customer_service
-   stateset-agents kimi-k3 --config ./kimi_k3.json --no-dry-run
+   stateset-agents frontier-models --model kimi-k3
+
+Attempting a real run with this checkpoint fails before loading model weights
+with the exact unsupported-layout reason.
 
 Low-memory profile
 ------------------
@@ -43,7 +47,7 @@ Starter profiles
 
 The built-in profiles are:
 
-- ``balanced``: default Kimi-K3 first run with QLoRA-friendly defaults.
+- ``balanced``: default Kimi-K3 first run with configuration preview; exact MXFP4 training loader still blocked.
 - ``memory``: smaller rollout groups and shorter context for tighter GPUs.
 - ``quality``: larger context and rollout sizes when you have more headroom.
 

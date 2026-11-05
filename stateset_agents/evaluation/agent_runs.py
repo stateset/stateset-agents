@@ -3,20 +3,13 @@
 from __future__ import annotations
 
 import copy
-import hashlib
-import json
 import math
 import statistics
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from stateset_agents.evaluation.implementation import validate_implementation
-
-
-def content_hash(value: Any) -> str:
-    """Hash canonical JSON, rejecting nonfinite numbers."""
-    data = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
-    return hashlib.sha256(data.encode()).hexdigest()
+from stateset_agents.utils.provenance import content_hash as content_hash
+from stateset_agents.utils.provenance import validate_implementation
 
 
 def _number(value: Any, name: str) -> float:
@@ -121,14 +114,15 @@ def evaluation_report(
     outcomes: Sequence[Mapping[str, Any]],
     case_families: Mapping[str, str] | None = None,
     implementation: Mapping[str, Any] | None = None,
+    split: str = "test",
 ) -> dict[str, Any]:
-    """Build a detached test snapshot bound to exact cases and evaluation settings."""
+    """Build a detached validation/test snapshot bound to exact cases and settings."""
     report: dict[str, Any] = {
         "schema_version": 1,
         "environment": environment,
         "base_model": base_model,
         "seed": seed,
-        "split": "test",
+        "split": split,
         "case_hashes": {key: content_hash(row) for key, row in sorted(cases.items())},
         "settings": dict(settings),
         "selected_checkpoint": dict(checkpoint),
@@ -139,19 +133,23 @@ def evaluation_report(
     if implementation is not None:
         report["implementation"] = dict(implementation)
     report = copy.deepcopy(report)
-    report.update(validate_report(report))
+    report.update(validate_report(report, expected_split=split))
     report["outcomes"].sort(key=lambda row: row["case_id"])
     return report
 
 
-def validate_report(report: Mapping[str, Any]) -> dict[str, Any]:
-    """Reject malformed, incomplete, or duplicated evaluation evidence."""
+def validate_report(
+    report: Mapping[str, Any], *, expected_split: str = "test"
+) -> dict[str, Any]:
+    """Reject incomplete evidence; comparisons require held-out test by default."""
+    if expected_split not in {"validation", "test"}:
+        raise ValueError("Expected a validation or test evaluation split")
     if (
         type(report.get("schema_version")) is not int
         or report["schema_version"] != 1
-        or report.get("split") != "test"
+        or report.get("split") != expected_split
     ):
-        raise ValueError("Expected schema_version 1 held-out test report")
+        raise ValueError(f"Expected schema_version 1 {expected_split} report")
     for key in ("environment", "base_model"):
         if not isinstance(report.get(key), str) or not report[key]:
             raise ValueError(f"{key} must be nonempty")
@@ -260,6 +258,7 @@ def compare_runs(
     require_significance: bool = False,
     alpha: float = 0.05,
     comparisons: int = 1,
+    expected_split: str = "test",
 ) -> dict[str, Any]:
     """Compare matched runs with explicit empirical improvement gates.
 
@@ -269,9 +268,18 @@ def compare_runs(
     individual trajectories, and applies a Bonferroni correction for the number
     of planned comparisons. Its inference assumes independent training runs
     and a protocol fixed before observing test results.
+
+    ``expected_split="validation"`` explicitly permits validation diagnostics
+    used during checkpoint selection. The default accepts only test reports;
+    validation diagnostics do not establish fresh-test quality certification.
     """
     if type(min_seeds) is not int or min_seeds < 1:
         raise ValueError("min_seeds must be positive")
+    if not isinstance(expected_split, str) or expected_split not in {
+        "test",
+        "validation",
+    }:
+        raise ValueError("Expected a validation or test evaluation split")
     if not 0 <= _number(min_gain, "min_gain") <= 1:
         raise ValueError("min_gain must be in [0, 1]")
     if type(require_significance) is not bool:
@@ -284,7 +292,7 @@ def compare_runs(
     def index(reports: Sequence[Mapping[str, Any]]) -> dict[int, Mapping[str, Any]]:
         indexed: dict[int, Mapping[str, Any]] = {}
         for report in reports:
-            validate_report(report)
+            validate_report(report, expected_split=expected_split)
             if report["seed"] in indexed:
                 raise ValueError("Duplicate seeds cannot count as independent evidence")
             indexed[report["seed"]] = report
@@ -318,7 +326,9 @@ def compare_runs(
             reference.get("case_families", {}).values()
         ):
             raise ValueError("Scenario family coverage must match across seeds")
-        before, after = validate_report(baseline), validate_report(candidate)
+        before, after = validate_report(
+            baseline, expected_split=expected_split
+        ), validate_report(candidate, expected_split=expected_split)
         old = {o["case_id"]: o for o in baseline["outcomes"]}
         new = {o["case_id"]: o for o in candidate["outcomes"]}
         pairs.append(

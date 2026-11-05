@@ -125,9 +125,3 @@ The latest scheduled GPU workflow at the time of this pilot was
 [2026-10-05](https://github.com/stateset/stateset-agents/actions/runs/37317451465).
 Its SFT job passed, but its RL job failed at pod allocation with HTTP 500 after
 five retries. It supplies no new RL convergence result.
-
-`attemptN/pip-freeze-observed.txt` was retained as `requirements-observed.txt`
-and renamed on 2026-10-12 so GitHub's dependency graph does not treat the pod's
-observed environment as a project manifest. Content and SHA-256 are unchanged
-(`checksums.json` records the new paths); the retained `launcher.source.txt`
-still shows the original name it wrote.

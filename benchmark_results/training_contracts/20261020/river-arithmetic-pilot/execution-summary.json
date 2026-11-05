@@ -1,0 +1,12 @@
+{
+  "elapsed_seconds": 908.1398098979844,
+  "exit_code": 0,
+  "pilot_result": {
+    "pilot_accepted": false,
+    "plan_hash": "5bdb9e6569bf9c32a7ec9048bf15042f371100d55c003dcfa81219dd0cda21db",
+    "status": "validation_blocked_test_not_attempted",
+    "test_attempted": false
+  },
+  "plan_hash": "5bdb9e6569bf9c32a7ec9048bf15042f371100d55c003dcfa81219dd0cda21db",
+  "timed_out": false
+}

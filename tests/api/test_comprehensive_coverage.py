@@ -507,7 +507,7 @@ class TestErrorHandling:
             InternalError,
             NotFoundError,
             UnauthorizedError,
-            ValidationError,
+            UnprocessableEntityError,
         )
 
         bad_request = BadRequestError("Bad input")
@@ -520,7 +520,7 @@ class TestErrorHandling:
         unauthorized = UnauthorizedError()
         assert unauthorized.status_code == 401
 
-        validation = ValidationError("Invalid format")
+        validation = UnprocessableEntityError("Invalid format")
         assert validation.status_code == 422
 
         internal = InternalError("Server error")

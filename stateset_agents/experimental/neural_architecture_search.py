@@ -370,6 +370,7 @@ class ArchitectureEvaluator:
 
     def _create_layer(self, layer_config: LayerConfig) -> nn.Module:
         """Create a PyTorch layer from config"""
+        layer: nn.Module
         if layer_config.layer_type == LayerType.LINEAR:
             layer = nn.Linear(
                 layer_config.input_dim,

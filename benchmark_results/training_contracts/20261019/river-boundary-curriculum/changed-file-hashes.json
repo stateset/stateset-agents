@@ -1,0 +1,7 @@
+{
+  "CHANGELOG.md": "6f1c88c0bc7b91954d982d637cbf131bb0c17db00daa9fdf9c6d59f948e3138a",
+  "docs/RIVER_PROVIDER.md": "0d74cc21bb977e301b0ec65b21c7ed893a7a4db2a81aa18529eb7bd607f4efec",
+  "stateset_agents/cli_benchmark.py": "de5b27248fe04e561ec27b1caac8140f6f7af09a58ded11f45fae5edfce6f147",
+  "stateset_agents/data/refund_curriculum.py": "ca09f783a63f23c7ef8f8652c3c9cbba477e0a943862def41db2dd15b539e357",
+  "tests/unit/test_refund_curriculum.py": "b378d8d86550719c2b45215d9f0ac242848b4326e38ccb569d8ebb2c0448e428"
+}

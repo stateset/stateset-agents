@@ -8,7 +8,7 @@ multi-step plans, then inject them into the prompt as system context.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -312,6 +312,40 @@ class PlanningManager:
 
         self._plans[conversation_id] = current_plan
         return current_plan
+
+
+def planning_manager_from_config(
+    planning_config: dict[str, Any] | None = None,
+) -> PlanningManager:
+    """Build an enabled :class:`PlanningManager` from an ``AgentConfig``-style dict.
+
+    The explicit replacement for ``AgentConfig(enable_planning=True)``::
+
+        MultiTurnAgent(
+            config,
+            planning_manager=planning_manager_from_config(config.planning_config),
+        )
+
+    Unknown keys raise :class:`~stateset_agents.core.errors.ConfigurationError`
+    (a ``ValueError``).
+    """
+    from stateset_agents.core.errors import ConfigurationError
+
+    if planning_config is not None and not isinstance(planning_config, Mapping):
+        raise ConfigurationError(
+            f"planning_config must be a dict, got {type(planning_config).__name__}",
+            field="planning_config",
+        )
+    options = dict(planning_config or {})
+    options.pop("enabled", None)
+    try:
+        config = PlanningConfig(enabled=True, **options)
+    except TypeError as exc:
+        raise ConfigurationError(
+            f"invalid planning_config {sorted(options)}: {exc}",
+            field="planning_config",
+        ) from exc
+    return PlanningManager(config)
 
 
 def _default_goal_extractor(

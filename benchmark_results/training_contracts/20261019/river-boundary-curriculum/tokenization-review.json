@@ -1,0 +1,16 @@
+{
+  "assistant_actions_supervised": 4545,
+  "chat_template_sha256": "a4aee8afcf2e0711942cf848899be66016f8d14a889ff9ede07bca099c28f715",
+  "demonstrations": 1515,
+  "dropped_chats": 0,
+  "local_files_only": true,
+  "max_length": 4096,
+  "maximum_chat_tokens": 584,
+  "minimum_chat_tokens": 518,
+  "model": "Qwen/Qwen3.5-9B",
+  "passed": true,
+  "provider_calls": 0,
+  "serialized_tokenizer_sha256": "ffb7a28b27dabcc333662fd3e0b0005d9e79a1c22e31453ab5a3017fbd5f25c0",
+  "tokenizer_class": "Qwen2Tokenizer",
+  "truncated_chats": 0
+}

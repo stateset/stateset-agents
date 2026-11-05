@@ -20,7 +20,14 @@ from tests.learning._toy import (  # noqa: E402
 
 pytestmark = pytest.mark.learning
 
-STEPS = 12
+# 16 steps (was 12): GEPO samples through ``hf_generate_group`` since the
+# spine's S6, so responses end at the tokenizer's EOS like DAPO/VAPO. The toy
+# model never stopped there before, which gave GEPO equal-length groups and a
+# larger margin. With EOS-terminated groups the old and new sampling learn
+# alike (32 seeds at 12 steps: +0.087 +/- 0.032 vs +0.083 +/- 0.033), but one
+# seed of the default three sat at the 12-step gate; 16 steps clear it
+# (24 seeds: 0 failures either sign).
+STEPS = 16
 
 
 def _train(seed: int, *, sign: float) -> tuple[float, float]:

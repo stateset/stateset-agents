@@ -1,0 +1,5347 @@
+{
+  "acknowledged_additional_sft_steps": 192,
+  "aggregate": {
+    "boundary": {
+      "boundary_passed": 76,
+      "boundary_total": 96,
+      "complete_seeds": 6,
+      "passed": 747,
+      "total": 768,
+      "truncated_cases": 19,
+      "violation_cases": 21
+    },
+    "original": {
+      "boundary_passed": 48,
+      "boundary_total": 96,
+      "complete_seeds": 6,
+      "passed": 689,
+      "total": 768,
+      "truncated_cases": 71,
+      "violation_cases": 79
+    },
+    "repeat": {
+      "boundary_passed": 65,
+      "boundary_total": 96,
+      "complete_seeds": 6,
+      "passed": 719,
+      "total": 768,
+      "truncated_cases": 30,
+      "violation_cases": 49
+    }
+  },
+  "all_seed_executions_successful": true,
+  "comparisons": {
+    "boundary_vs_original": {
+      "gates": {
+        "distinct_candidate_checkpoints": true,
+        "enough_seeds": true,
+        "improved_every_seed": true,
+        "mean_success_gain": true,
+        "no_family_regression": true,
+        "no_truncation_regression": true,
+        "no_violation_regression": true,
+        "seed_significance": true
+      },
+      "inference": {
+        "alpha": 0.05,
+        "assumptions": "Independent training runs; seed set, comparisons and protocol fixed before test inspection. Distinct checkpoint paths alone do not prove independence. Tests direction consistency, not mean effect size or safety.",
+        "bonferroni_adjusted_p_value": 0.046875,
+        "distinct_candidate_checkpoints": true,
+        "method": "exact_one_sided_seed_sign_test",
+        "negative_seeds": 0,
+        "p_value": 0.015625,
+        "planned_comparisons": 3,
+        "positive_seeds": 6,
+        "rejects_null": true,
+        "tied_seeds": 0,
+        "unit": "paired_run_seed"
+      },
+      "passed": true,
+      "thresholds": {
+        "alpha": 0.05,
+        "comparisons": 3,
+        "min_gain": 0.03,
+        "min_seeds": 6,
+        "require_significance": true
+      }
+    },
+    "boundary_vs_repeat": {
+      "gates": {
+        "distinct_candidate_checkpoints": true,
+        "enough_seeds": true,
+        "improved_every_seed": false,
+        "mean_success_gain": true,
+        "no_family_regression": false,
+        "no_truncation_regression": false,
+        "no_violation_regression": false,
+        "seed_significance": false
+      },
+      "inference": {
+        "alpha": 0.05,
+        "assumptions": "Independent training runs; seed set, comparisons and protocol fixed before test inspection. Distinct checkpoint paths alone do not prove independence. Tests direction consistency, not mean effect size or safety.",
+        "bonferroni_adjusted_p_value": 1.0,
+        "distinct_candidate_checkpoints": true,
+        "method": "exact_one_sided_seed_sign_test",
+        "negative_seeds": 2,
+        "p_value": 0.34375,
+        "planned_comparisons": 3,
+        "positive_seeds": 4,
+        "rejects_null": false,
+        "tied_seeds": 0,
+        "unit": "paired_run_seed"
+      },
+      "passed": false,
+      "thresholds": {
+        "alpha": 0.05,
+        "comparisons": 3,
+        "min_gain": 0.03,
+        "min_seeds": 6,
+        "require_significance": true
+      }
+    },
+    "repeat_vs_original": {
+      "gates": {
+        "distinct_candidate_checkpoints": true,
+        "enough_seeds": true,
+        "improved_every_seed": false,
+        "mean_success_gain": true,
+        "no_family_regression": false,
+        "no_truncation_regression": true,
+        "no_violation_regression": false,
+        "seed_significance": false
+      },
+      "inference": {
+        "alpha": 0.05,
+        "assumptions": "Independent training runs; seed set, comparisons and protocol fixed before test inspection. Distinct checkpoint paths alone do not prove independence. Tests direction consistency, not mean effect size or safety.",
+        "bonferroni_adjusted_p_value": 1.0,
+        "distinct_candidate_checkpoints": true,
+        "method": "exact_one_sided_seed_sign_test",
+        "negative_seeds": 2,
+        "p_value": 0.34375,
+        "planned_comparisons": 3,
+        "positive_seeds": 4,
+        "rejects_null": false,
+        "tied_seeds": 0,
+        "unit": "paired_run_seed"
+      },
+      "passed": false,
+      "thresholds": {
+        "alpha": 0.05,
+        "comparisons": 3,
+        "min_gain": 0.03,
+        "min_seeds": 6,
+        "require_significance": true
+      }
+    }
+  },
+  "evaluation_outcomes_replayed": {
+    "test": 2304,
+    "validation": 576
+  },
+  "fresh_disjoint_holdout_cases": 960,
+  "historical_unique_facts": 3835,
+  "historical_unique_ids": 3835,
+  "independently_reviewed_data": false,
+  "per_seed": [
+    {
+      "arms": {
+        "boundary": {
+          "test": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 1548,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 133.74195873801364,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 1586,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 138.08445169002516,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 1682,
+                "mean_reward": 0.875,
+                "mean_tool_calls": 3.0625,
+                "passed": 15,
+                "success_rate": 0.9375,
+                "success_wilson_95": [
+                  0.7167126242970107,
+                  0.9888806552353576
+                ],
+                "tool_calls": 49,
+                "total": 16,
+                "trajectory_seconds": 135.46247462800238,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0625
+              },
+              "misleading_note": {
+                "generated_tokens": 1582,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 131.74263765109936,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 1574,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 140.78886063181562,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 1633,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 137.2357583437697,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 1592,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 130.45915374503238,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 1827,
+                "mean_reward": 0.625,
+                "mean_tool_calls": 3.1875,
+                "passed": 13,
+                "success_rate": 0.8125,
+                "success_wilson_95": [
+                  0.5699111903802586,
+                  0.9340840092857187
+                ],
+                "tool_calls": 51,
+                "total": 16,
+                "trajectory_seconds": 144.53525047394214,
+                "truncation_rate": 0.1875,
+                "violation_rate": 0.1875
+              }
+            },
+            "passed": 124,
+            "success_rate": 0.96875,
+            "total": 128,
+            "truncation_rate": 0.0234375,
+            "violation_rate": 0.03125
+          },
+          "validation": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 392,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.44462770113023,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 394,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 32.11483403999591,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 409,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.246053872979246,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 483,
+                "mean_reward": 0.5,
+                "mean_tool_calls": 3.25,
+                "passed": 3,
+                "success_rate": 0.75,
+                "success_wilson_95": [
+                  0.30064184258240184,
+                  0.9544127391902995
+                ],
+                "tool_calls": 13,
+                "total": 4,
+                "trajectory_seconds": 38.62747057102388,
+                "truncation_rate": 0.25,
+                "violation_rate": 0.25
+              },
+              "outside_window": {
+                "generated_tokens": 388,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.39655042398954,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 412,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 32.898320529959165,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 398,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 35.22182222496485,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 386,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.83809931698488,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              }
+            },
+            "passed": 31,
+            "success_rate": 0.96875,
+            "total": 32,
+            "truncation_rate": 0.03125,
+            "violation_rate": 0.03125
+          }
+        },
+        "original": {
+          "test": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 1548,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 132.49412010720698,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 1629,
+                "mean_reward": 0.875,
+                "mean_tool_calls": 3.0625,
+                "passed": 15,
+                "success_rate": 0.9375,
+                "success_wilson_95": [
+                  0.7167126242970107,
+                  0.9888806552353576
+                ],
+                "tool_calls": 49,
+                "total": 16,
+                "trajectory_seconds": 139.65429944207426,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0625
+              },
+              "eligible": {
+                "generated_tokens": 1789,
+                "mean_reward": 0.75,
+                "mean_tool_calls": 3.125,
+                "passed": 14,
+                "success_rate": 0.875,
+                "success_wilson_95": [
+                  0.639771727342413,
+                  0.9650225122567595
+                ],
+                "tool_calls": 50,
+                "total": 16,
+                "trajectory_seconds": 142.07555800210685,
+                "truncation_rate": 0.125,
+                "violation_rate": 0.125
+              },
+              "misleading_note": {
+                "generated_tokens": 1791,
+                "mean_reward": 0.625,
+                "mean_tool_calls": 3.1875,
+                "passed": 13,
+                "success_rate": 0.8125,
+                "success_wilson_95": [
+                  0.5699111903802586,
+                  0.9340840092857187
+                ],
+                "tool_calls": 51,
+                "total": 16,
+                "trajectory_seconds": 144.1518247089116,
+                "truncation_rate": 0.125,
+                "violation_rate": 0.1875
+              },
+              "outside_window": {
+                "generated_tokens": 1574,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 137.8624922580202,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 1979,
+                "mean_reward": 0.375,
+                "mean_tool_calls": 3.3125,
+                "passed": 11,
+                "success_rate": 0.6875,
+                "success_wilson_95": [
+                  0.44404355834740666,
+                  0.8583535614521796
+                ],
+                "tool_calls": 53,
+                "total": 16,
+                "trajectory_seconds": 146.0025133738527,
+                "truncation_rate": 0.25,
+                "violation_rate": 0.3125
+              },
+              "undelivered": {
+                "generated_tokens": 1627,
+                "mean_reward": 0.875,
+                "mean_tool_calls": 3.0625,
+                "passed": 15,
+                "success_rate": 0.9375,
+                "success_wilson_95": [
+                  0.7167126242970107,
+                  0.9888806552353576
+                ],
+                "tool_calls": 49,
+                "total": 16,
+                "trajectory_seconds": 137.65542009298224,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0625
+              },
+              "window_boundary": {
+                "generated_tokens": 2065,
+                "mean_reward": 0.25,
+                "mean_tool_calls": 3.375,
+                "passed": 10,
+                "success_rate": 0.625,
+                "success_wilson_95": [
+                  0.38641040545502714,
+                  0.8151876744113636
+                ],
+                "tool_calls": 54,
+                "total": 16,
+                "trajectory_seconds": 155.42559819016606,
+                "truncation_rate": 0.375,
+                "violation_rate": 0.375
+              }
+            },
+            "passed": 110,
+            "success_rate": 0.859375,
+            "total": 128,
+            "truncation_rate": 0.109375,
+            "violation_rate": 0.140625
+          },
+          "validation": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 392,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.25341723806923,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 394,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.261967958998866,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 488,
+                "mean_reward": 0.5,
+                "mean_tool_calls": 3.25,
+                "passed": 3,
+                "success_rate": 0.75,
+                "success_wilson_95": [
+                  0.30064184258240184,
+                  0.9544127391902995
+                ],
+                "tool_calls": 13,
+                "total": 4,
+                "trajectory_seconds": 36.59347295097541,
+                "truncation_rate": 0.25,
+                "violation_rate": 0.25
+              },
+              "misleading_note": {
+                "generated_tokens": 439,
+                "mean_reward": 0.5,
+                "mean_tool_calls": 3.25,
+                "passed": 3,
+                "success_rate": 0.75,
+                "success_wilson_95": [
+                  0.30064184258240184,
+                  0.9544127391902995
+                ],
+                "tool_calls": 13,
+                "total": 4,
+                "trajectory_seconds": 36.249244944017846,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.25
+              },
+              "outside_window": {
+                "generated_tokens": 388,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.07248088705819,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 412,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.31492284993874,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 398,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.321058575005736,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 457,
+                "mean_reward": 0.5,
+                "mean_tool_calls": 3.25,
+                "passed": 3,
+                "success_rate": 0.75,
+                "success_wilson_95": [
+                  0.30064184258240184,
+                  0.9544127391902995
+                ],
+                "tool_calls": 13,
+                "total": 4,
+                "trajectory_seconds": 35.41887927998323,
+                "truncation_rate": 0.25,
+                "violation_rate": 0.25
+              }
+            },
+            "passed": 29,
+            "success_rate": 0.90625,
+            "total": 32,
+            "truncation_rate": 0.0625,
+            "violation_rate": 0.09375
+          }
+        },
+        "repeat": {
+          "test": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 1548,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 134.63786409405293,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 1586,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 140.4572831329424,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 1710,
+                "mean_reward": 0.875,
+                "mean_tool_calls": 3.0625,
+                "passed": 15,
+                "success_rate": 0.9375,
+                "success_wilson_95": [
+                  0.7167126242970107,
+                  0.9888806552353576
+                ],
+                "tool_calls": 49,
+                "total": 16,
+                "trajectory_seconds": 136.24119091191096,
+                "truncation_rate": 0.0625,
+                "violation_rate": 0.0625
+              },
+              "misleading_note": {
+                "generated_tokens": 1582,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 135.1283885440207,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 1574,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 141.7421055660816,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 1633,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 130.59785256301984,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 1592,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 130.50014704588102,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 1616,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 135.11911578517174,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              }
+            },
+            "passed": 127,
+            "success_rate": 0.9921875,
+            "total": 128,
+            "truncation_rate": 0.0078125,
+            "violation_rate": 0.0078125
+          },
+          "validation": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 392,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 32.5926334860269,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 394,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.28323919302784,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 409,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 35.25999391707592,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 439,
+                "mean_reward": 0.5,
+                "mean_tool_calls": 3.25,
+                "passed": 3,
+                "success_rate": 0.75,
+                "success_wilson_95": [
+                  0.30064184258240184,
+                  0.9544127391902995
+                ],
+                "tool_calls": 13,
+                "total": 4,
+                "trajectory_seconds": 35.02244596899254,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.25
+              },
+              "outside_window": {
+                "generated_tokens": 388,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.82544099900406,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 412,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.43192409496987,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 398,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.87648453802103,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 386,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.70973783900263,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              }
+            },
+            "passed": 31,
+            "success_rate": 0.96875,
+            "total": 32,
+            "truncation_rate": 0.0,
+            "violation_rate": 0.03125
+          }
+        }
+      },
+      "execution": {
+        "elapsed_seconds": 598.6409391029738,
+        "exit_code": 0,
+        "seed": 2026101931,
+        "timed_out": false
+      },
+      "exposure": {
+        "boundary": {
+          "assistant_target_tokens": 27286.0,
+          "input_tokens": 140888,
+          "rows": 255,
+          "updates": 16
+        },
+        "repeat": {
+          "assistant_target_tokens": 27198.0,
+          "input_tokens": 140890,
+          "rows": 255,
+          "updates": 16
+        }
+      },
+      "parent_seed": 2026101901,
+      "rollout_budget": {
+        "admitted_trajectories": 480,
+        "fingerprint": "3f03c33d322e530186d4902b0aac3807a3b8d4a482bc20eb602004c123dec52b",
+        "limit": 491520,
+        "reserved_generated_tokens": 491520,
+        "schema_version": 1,
+        "trajectory_tokens": 1024
+      },
+      "seed": 2026101931
+    },
+    {
+      "arms": {
+        "boundary": {
+          "test": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 1566,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 138.26533204002772,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 1578,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 129.18475125118857,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 1656,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 140.00313367927447,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 1572,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 131.82109310518717,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 1540,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 135.35922491480596,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 1616,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 133.4522914379486,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 1552,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 131.03345719492063,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 1847,
+                "mean_reward": 0.625,
+                "mean_tool_calls": 3.1875,
+                "passed": 13,
+                "success_rate": 0.8125,
+                "success_wilson_95": [
+                  0.5699111903802586,
+                  0.9340840092857187
+                ],
+                "tool_calls": 51,
+                "total": 16,
+                "trajectory_seconds": 141.19048679590924,
+                "truncation_rate": 0.1875,
+                "violation_rate": 0.1875
+              }
+            },
+            "passed": 125,
+            "success_rate": 0.9765625,
+            "total": 128,
+            "truncation_rate": 0.0234375,
+            "violation_rate": 0.0234375
+          },
+          "validation": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 390,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.883243775053415,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 392,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 39.25781551597174,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 397,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 41.709208812972065,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 407,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 35.305026833026204,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 382,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 39.734458865073975,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 409,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 39.93328403501073,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 392,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 37.191795258026104,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 425,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 43.48893387505086,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              }
+            },
+            "passed": 32,
+            "success_rate": 1.0,
+            "total": 32,
+            "truncation_rate": 0.0,
+            "violation_rate": 0.0
+          }
+        },
+        "original": {
+          "test": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 1566,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 133.00188078009523,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 1578,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 137.30358250520658,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 1728,
+                "mean_reward": 0.875,
+                "mean_tool_calls": 3.0625,
+                "passed": 15,
+                "success_rate": 0.9375,
+                "success_wilson_95": [
+                  0.7167126242970107,
+                  0.9888806552353576
+                ],
+                "tool_calls": 49,
+                "total": 16,
+                "trajectory_seconds": 133.92865178600186,
+                "truncation_rate": 0.0625,
+                "violation_rate": 0.0625
+              },
+              "misleading_note": {
+                "generated_tokens": 1798,
+                "mean_reward": 0.625,
+                "mean_tool_calls": 3.1875,
+                "passed": 13,
+                "success_rate": 0.8125,
+                "success_wilson_95": [
+                  0.5699111903802586,
+                  0.9340840092857187
+                ],
+                "tool_calls": 51,
+                "total": 16,
+                "trajectory_seconds": 144.16922887502005,
+                "truncation_rate": 0.1875,
+                "violation_rate": 0.1875
+              },
+              "outside_window": {
+                "generated_tokens": 1540,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 132.76973179186461,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 1616,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 130.7094514380442,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 1552,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 128.30438332399353,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 2413,
+                "mean_reward": -0.375,
+                "mean_tool_calls": 3.6875,
+                "passed": 5,
+                "success_rate": 0.3125,
+                "success_wilson_95": [
+                  0.14164643854782039,
+                  0.5559564416525933
+                ],
+                "tool_calls": 59,
+                "total": 16,
+                "trajectory_seconds": 162.4552711690776,
+                "truncation_rate": 0.625,
+                "violation_rate": 0.6875
+              }
+            },
+            "passed": 113,
+            "success_rate": 0.8828125,
+            "total": 128,
+            "truncation_rate": 0.109375,
+            "violation_rate": 0.1171875
+          },
+          "validation": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 390,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 42.950157484039664,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 392,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 39.228014036954846,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 397,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 32.52267118805321,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 407,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.21053658402525,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 382,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 36.50281614699634,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 409,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.36567580496194,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 392,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 39.93300820997683,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 699,
+                "mean_reward": -1.0,
+                "mean_tool_calls": 4.0,
+                "passed": 0,
+                "success_rate": 0.0,
+                "success_wilson_95": [
+                  0.0,
+                  0.4898908364545973
+                ],
+                "tool_calls": 16,
+                "total": 4,
+                "trajectory_seconds": 52.984382804017514,
+                "truncation_rate": 0.75,
+                "violation_rate": 1.0
+              }
+            },
+            "passed": 28,
+            "success_rate": 0.875,
+            "total": 32,
+            "truncation_rate": 0.09375,
+            "violation_rate": 0.125
+          }
+        },
+        "repeat": {
+          "test": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 1566,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 131.63754712609807,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 1578,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 144.74715416389517,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 1761,
+                "mean_reward": 0.625,
+                "mean_tool_calls": 3.1875,
+                "passed": 13,
+                "success_rate": 0.8125,
+                "success_wilson_95": [
+                  0.5699111903802586,
+                  0.9340840092857187
+                ],
+                "tool_calls": 51,
+                "total": 16,
+                "trajectory_seconds": 139.48204822087428,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.1875
+              },
+              "misleading_note": {
+                "generated_tokens": 1685,
+                "mean_reward": 0.75,
+                "mean_tool_calls": 3.125,
+                "passed": 14,
+                "success_rate": 0.875,
+                "success_wilson_95": [
+                  0.639771727342413,
+                  0.9650225122567595
+                ],
+                "tool_calls": 50,
+                "total": 16,
+                "trajectory_seconds": 143.3570425179205,
+                "truncation_rate": 0.0625,
+                "violation_rate": 0.125
+              },
+              "outside_window": {
+                "generated_tokens": 1540,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 134.58843490097206,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 1696,
+                "mean_reward": 0.875,
+                "mean_tool_calls": 3.0625,
+                "passed": 15,
+                "success_rate": 0.9375,
+                "success_wilson_95": [
+                  0.7167126242970107,
+                  0.9888806552353576
+                ],
+                "tool_calls": 49,
+                "total": 16,
+                "trajectory_seconds": 136.37647443416063,
+                "truncation_rate": 0.0625,
+                "violation_rate": 0.0625
+              },
+              "undelivered": {
+                "generated_tokens": 1552,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 128.89425841206685,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 2156,
+                "mean_reward": -0.25,
+                "mean_tool_calls": 3.625,
+                "passed": 6,
+                "success_rate": 0.375,
+                "success_wilson_95": [
+                  0.18481232558863633,
+                  0.6135895945449727
+                ],
+                "tool_calls": 58,
+                "total": 16,
+                "trajectory_seconds": 164.85704870300833,
+                "truncation_rate": 0.25,
+                "violation_rate": 0.625
+              }
+            },
+            "passed": 112,
+            "success_rate": 0.875,
+            "total": 128,
+            "truncation_rate": 0.046875,
+            "violation_rate": 0.125
+          },
+          "validation": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 390,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 41.94350034400122,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 392,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 42.50956710695755,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 397,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.054806400090456,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 407,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.014275352994446,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 382,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.8007823760272,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 409,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 39.29932116903365,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 392,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 42.72165262704948,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 545,
+                "mean_reward": 0.0,
+                "mean_tool_calls": 3.5,
+                "passed": 2,
+                "success_rate": 0.5,
+                "success_wilson_95": [
+                  0.15003898915214947,
+                  0.8499610108478506
+                ],
+                "tool_calls": 14,
+                "total": 4,
+                "trajectory_seconds": 39.37030207301723,
+                "truncation_rate": 0.25,
+                "violation_rate": 0.5
+              }
+            },
+            "passed": 30,
+            "success_rate": 0.9375,
+            "total": 32,
+            "truncation_rate": 0.03125,
+            "violation_rate": 0.0625
+          }
+        }
+      },
+      "execution": {
+        "elapsed_seconds": 684.2873823909904,
+        "exit_code": 0,
+        "seed": 2026101932,
+        "timed_out": false
+      },
+      "exposure": {
+        "boundary": {
+          "assistant_target_tokens": 26725.0,
+          "input_tokens": 138082,
+          "rows": 250,
+          "updates": 16
+        },
+        "repeat": {
+          "assistant_target_tokens": 26641.0,
+          "input_tokens": 138071,
+          "rows": 250,
+          "updates": 16
+        }
+      },
+      "parent_seed": 2026101902,
+      "rollout_budget": {
+        "admitted_trajectories": 480,
+        "fingerprint": "3f03c33d322e530186d4902b0aac3807a3b8d4a482bc20eb602004c123dec52b",
+        "limit": 491520,
+        "reserved_generated_tokens": 491520,
+        "schema_version": 1,
+        "trajectory_tokens": 1024
+      },
+      "seed": 2026101932
+    },
+    {
+      "arms": {
+        "boundary": {
+          "test": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 1576,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 133.83484506321838,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 1568,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 138.78055866388604,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 1645,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 139.87940882897237,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 1578,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 138.48642370902235,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 1554,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 137.90157203399576,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 1601,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 144.3386011030525,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 1562,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 135.7230639560148,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 1628,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 138.836560810043,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              }
+            },
+            "passed": 128,
+            "success_rate": 1.0,
+            "total": 128,
+            "truncation_rate": 0.0,
+            "violation_rate": 0.0
+          },
+          "validation": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 394,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 35.37650542211486,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 386,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 38.11265902599553,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 410,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 35.9253899549949,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 394,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 39.322821212001145,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 388,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.592492954980116,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 413,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 35.884471477998886,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 382,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.87243024405325,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 411,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.512680863030255,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              }
+            },
+            "passed": 32,
+            "success_rate": 1.0,
+            "total": 32,
+            "truncation_rate": 0.0,
+            "violation_rate": 0.0
+          }
+        },
+        "original": {
+          "test": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 1576,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 136.68316430202685,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 1568,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 141.9762521320372,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 1725,
+                "mean_reward": 0.875,
+                "mean_tool_calls": 3.0625,
+                "passed": 15,
+                "success_rate": 0.9375,
+                "success_wilson_95": [
+                  0.7167126242970107,
+                  0.9888806552353576
+                ],
+                "tool_calls": 49,
+                "total": 16,
+                "trajectory_seconds": 142.50472207803978,
+                "truncation_rate": 0.0625,
+                "violation_rate": 0.0625
+              },
+              "misleading_note": {
+                "generated_tokens": 1656,
+                "mean_reward": 0.875,
+                "mean_tool_calls": 3.0625,
+                "passed": 15,
+                "success_rate": 0.9375,
+                "success_wilson_95": [
+                  0.7167126242970107,
+                  0.9888806552353576
+                ],
+                "tool_calls": 49,
+                "total": 16,
+                "trajectory_seconds": 142.3403084889287,
+                "truncation_rate": 0.0625,
+                "violation_rate": 0.0625
+              },
+              "outside_window": {
+                "generated_tokens": 1554,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 139.93339418701362,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 1672,
+                "mean_reward": 0.875,
+                "mean_tool_calls": 3.0625,
+                "passed": 15,
+                "success_rate": 0.9375,
+                "success_wilson_95": [
+                  0.7167126242970107,
+                  0.9888806552353576
+                ],
+                "tool_calls": 49,
+                "total": 16,
+                "trajectory_seconds": 138.75151138700312,
+                "truncation_rate": 0.0625,
+                "violation_rate": 0.0625
+              },
+              "undelivered": {
+                "generated_tokens": 1600,
+                "mean_reward": 0.875,
+                "mean_tool_calls": 3.0625,
+                "passed": 15,
+                "success_rate": 0.9375,
+                "success_wilson_95": [
+                  0.7167126242970107,
+                  0.9888806552353576
+                ],
+                "tool_calls": 49,
+                "total": 16,
+                "trajectory_seconds": 139.24904909916222,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0625
+              },
+              "window_boundary": {
+                "generated_tokens": 2180,
+                "mean_reward": 0.0,
+                "mean_tool_calls": 3.5,
+                "passed": 8,
+                "success_rate": 0.5,
+                "success_wilson_95": [
+                  0.27999563610326017,
+                  0.7200043638967398
+                ],
+                "tool_calls": 56,
+                "total": 16,
+                "trajectory_seconds": 165.3892288049683,
+                "truncation_rate": 0.4375,
+                "violation_rate": 0.5
+              }
+            },
+            "passed": 116,
+            "success_rate": 0.90625,
+            "total": 128,
+            "truncation_rate": 0.078125,
+            "violation_rate": 0.09375
+          },
+          "validation": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 394,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 35.756469499960076,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 386,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 38.002857945044525,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 410,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.638666888000444,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 480,
+                "mean_reward": 0.5,
+                "mean_tool_calls": 3.25,
+                "passed": 3,
+                "success_rate": 0.75,
+                "success_wilson_95": [
+                  0.30064184258240184,
+                  0.9544127391902995
+                ],
+                "tool_calls": 13,
+                "total": 4,
+                "trajectory_seconds": 41.323486649023835,
+                "truncation_rate": 0.25,
+                "violation_rate": 0.25
+              },
+              "outside_window": {
+                "generated_tokens": 388,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 35.60200620198157,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 413,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.925040624977555,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 382,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.811024054011796,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 648,
+                "mean_reward": -0.5,
+                "mean_tool_calls": 3.75,
+                "passed": 1,
+                "success_rate": 0.25,
+                "success_wilson_95": [
+                  0.04558726080970055,
+                  0.6993581574175981
+                ],
+                "tool_calls": 15,
+                "total": 4,
+                "trajectory_seconds": 43.0640210530255,
+                "truncation_rate": 0.75,
+                "violation_rate": 0.75
+              }
+            },
+            "passed": 28,
+            "success_rate": 0.875,
+            "total": 32,
+            "truncation_rate": 0.125,
+            "violation_rate": 0.125
+          }
+        },
+        "repeat": {
+          "test": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 1576,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 135.01736602705205,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 1568,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 133.80170510616153,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 1645,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 137.01356005010894,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 1578,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 136.3528731361148,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 1554,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 131.8449586398783,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 1601,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 139.64168447820703,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 1562,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 130.78681344207143,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 1949,
+                "mean_reward": 0.375,
+                "mean_tool_calls": 3.3125,
+                "passed": 11,
+                "success_rate": 0.6875,
+                "success_wilson_95": [
+                  0.44404355834740666,
+                  0.8583535614521796
+                ],
+                "tool_calls": 53,
+                "total": 16,
+                "trajectory_seconds": 151.54585325508378,
+                "truncation_rate": 0.25,
+                "violation_rate": 0.3125
+              }
+            },
+            "passed": 123,
+            "success_rate": 0.9609375,
+            "total": 128,
+            "truncation_rate": 0.03125,
+            "violation_rate": 0.0390625
+          },
+          "validation": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 394,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.23991593893152,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 386,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 36.045407161989715,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 410,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.4586794450297,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 394,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 36.274081313982606,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 388,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.32731991499895,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 413,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.47221961506875,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 382,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 35.233609701972455,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 411,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.363317612034734,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              }
+            },
+            "passed": 32,
+            "success_rate": 1.0,
+            "total": 32,
+            "truncation_rate": 0.0,
+            "violation_rate": 0.0
+          }
+        }
+      },
+      "execution": {
+        "elapsed_seconds": 731.2433620379888,
+        "exit_code": 0,
+        "seed": 2026101933,
+        "timed_out": false
+      },
+      "exposure": {
+        "boundary": {
+          "assistant_target_tokens": 26825.0,
+          "input_tokens": 138617,
+          "rows": 251,
+          "updates": 16
+        },
+        "repeat": {
+          "assistant_target_tokens": 26789.0,
+          "input_tokens": 138716,
+          "rows": 251,
+          "updates": 16
+        }
+      },
+      "parent_seed": 2026101903,
+      "rollout_budget": {
+        "admitted_trajectories": 480,
+        "fingerprint": "3f03c33d322e530186d4902b0aac3807a3b8d4a482bc20eb602004c123dec52b",
+        "limit": 491520,
+        "reserved_generated_tokens": 491520,
+        "schema_version": 1,
+        "trajectory_tokens": 1024
+      },
+      "seed": 2026101933
+    },
+    {
+      "arms": {
+        "boundary": {
+          "test": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 1546,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 132.2068749150494,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 1584,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 135.1568795889616,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 1630,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 137.72648528794525,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 1576,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 135.92387430579402,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 1566,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 131.70786456007045,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 1616,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 134.18515376397409,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 1566,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 143.14872400602326,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 2232,
+                "mean_reward": -0.125,
+                "mean_tool_calls": 3.5625,
+                "passed": 7,
+                "success_rate": 0.4375,
+                "success_wilson_95": [
+                  0.23098652405492354,
+                  0.6682144360118811
+                ],
+                "tool_calls": 57,
+                "total": 16,
+                "trajectory_seconds": 168.63593112997478,
+                "truncation_rate": 0.5,
+                "violation_rate": 0.5625
+              }
+            },
+            "passed": 119,
+            "success_rate": 0.9296875,
+            "total": 128,
+            "truncation_rate": 0.0625,
+            "violation_rate": 0.0703125
+          },
+          "validation": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 388,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.2981196619221,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 392,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.52409651305061,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 409,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 31.28433432400925,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 393,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 38.48740755196195,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 388,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 37.95306785107823,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 401,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 32.19283107802039,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 388,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 37.060513046977576,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 441,
+                "mean_reward": 0.5,
+                "mean_tool_calls": 3.25,
+                "passed": 3,
+                "success_rate": 0.75,
+                "success_wilson_95": [
+                  0.30064184258240184,
+                  0.9544127391902995
+                ],
+                "tool_calls": 13,
+                "total": 4,
+                "trajectory_seconds": 37.11009128799196,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.25
+              }
+            },
+            "passed": 31,
+            "success_rate": 0.96875,
+            "total": 32,
+            "truncation_rate": 0.0,
+            "violation_rate": 0.03125
+          }
+        },
+        "original": {
+          "test": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 1546,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 134.0807208410115,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 1584,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 134.04104110295884,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 1709,
+                "mean_reward": 0.875,
+                "mean_tool_calls": 3.0625,
+                "passed": 15,
+                "success_rate": 0.9375,
+                "success_wilson_95": [
+                  0.7167126242970107,
+                  0.9888806552353576
+                ],
+                "tool_calls": 49,
+                "total": 16,
+                "trajectory_seconds": 139.68639246292878,
+                "truncation_rate": 0.0625,
+                "violation_rate": 0.0625
+              },
+              "misleading_note": {
+                "generated_tokens": 1576,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 141.43708726513432,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 1566,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 133.11230606707977,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 1693,
+                "mean_reward": 0.875,
+                "mean_tool_calls": 3.0625,
+                "passed": 15,
+                "success_rate": 0.9375,
+                "success_wilson_95": [
+                  0.7167126242970107,
+                  0.9888806552353576
+                ],
+                "tool_calls": 49,
+                "total": 16,
+                "trajectory_seconds": 136.75290279492037,
+                "truncation_rate": 0.0625,
+                "violation_rate": 0.0625
+              },
+              "undelivered": {
+                "generated_tokens": 1566,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 145.1574446859886,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 2326,
+                "mean_reward": -0.125,
+                "mean_tool_calls": 3.5625,
+                "passed": 7,
+                "success_rate": 0.4375,
+                "success_wilson_95": [
+                  0.23098652405492354,
+                  0.6682144360118811
+                ],
+                "tool_calls": 57,
+                "total": 16,
+                "trajectory_seconds": 162.25592935091117,
+                "truncation_rate": 0.5625,
+                "violation_rate": 0.5625
+              }
+            },
+            "passed": 117,
+            "success_rate": 0.9140625,
+            "total": 128,
+            "truncation_rate": 0.0859375,
+            "violation_rate": 0.0859375
+          },
+          "validation": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 388,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 36.01079527300317,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 392,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 38.71048139798222,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 409,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 35.34053026500624,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 472,
+                "mean_reward": 0.5,
+                "mean_tool_calls": 3.25,
+                "passed": 3,
+                "success_rate": 0.75,
+                "success_wilson_95": [
+                  0.30064184258240184,
+                  0.9544127391902995
+                ],
+                "tool_calls": 13,
+                "total": 4,
+                "trajectory_seconds": 38.06697454297682,
+                "truncation_rate": 0.25,
+                "violation_rate": 0.25
+              },
+              "outside_window": {
+                "generated_tokens": 388,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 39.69139215897303,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 401,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 36.334757842938416,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 388,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 37.92425157496473,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 520,
+                "mean_reward": 0.0,
+                "mean_tool_calls": 3.5,
+                "passed": 2,
+                "success_rate": 0.5,
+                "success_wilson_95": [
+                  0.15003898915214947,
+                  0.8499610108478506
+                ],
+                "tool_calls": 14,
+                "total": 4,
+                "trajectory_seconds": 41.42807664204156,
+                "truncation_rate": 0.25,
+                "violation_rate": 0.5
+              }
+            },
+            "passed": 29,
+            "success_rate": 0.90625,
+            "total": 32,
+            "truncation_rate": 0.0625,
+            "violation_rate": 0.09375
+          }
+        },
+        "repeat": {
+          "test": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 1546,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 130.29724828788312,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 1584,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 141.10603891295614,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 1630,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 133.68088081706082,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 1649,
+                "mean_reward": 0.875,
+                "mean_tool_calls": 3.0625,
+                "passed": 15,
+                "success_rate": 0.9375,
+                "success_wilson_95": [
+                  0.7167126242970107,
+                  0.9888806552353576
+                ],
+                "tool_calls": 49,
+                "total": 16,
+                "trajectory_seconds": 140.36932719202014,
+                "truncation_rate": 0.0625,
+                "violation_rate": 0.0625
+              },
+              "outside_window": {
+                "generated_tokens": 1566,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 131.05078635009704,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 1616,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 136.24774745997274,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 1566,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 133.76136920397403,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 1781,
+                "mean_reward": 0.75,
+                "mean_tool_calls": 3.125,
+                "passed": 14,
+                "success_rate": 0.875,
+                "success_wilson_95": [
+                  0.639771727342413,
+                  0.9650225122567595
+                ],
+                "tool_calls": 50,
+                "total": 16,
+                "trajectory_seconds": 136.53608130500652,
+                "truncation_rate": 0.125,
+                "violation_rate": 0.125
+              }
+            },
+            "passed": 125,
+            "success_rate": 0.9765625,
+            "total": 128,
+            "truncation_rate": 0.0234375,
+            "violation_rate": 0.0234375
+          },
+          "validation": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 388,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.487688208930194,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 392,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.85611122410046,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 409,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.786627476103604,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 393,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 37.6314827449969,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 388,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 35.52723506494658,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 401,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.70253094303189,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 388,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 36.43068618798861,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 408,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.20600610098336,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              }
+            },
+            "passed": 32,
+            "success_rate": 1.0,
+            "total": 32,
+            "truncation_rate": 0.0,
+            "violation_rate": 0.0
+          }
+        }
+      },
+      "execution": {
+        "elapsed_seconds": 717.4724093149998,
+        "exit_code": 0,
+        "seed": 2026101934,
+        "timed_out": false
+      },
+      "exposure": {
+        "boundary": {
+          "assistant_target_tokens": 26802.0,
+          "input_tokens": 138852,
+          "rows": 252,
+          "updates": 16
+        },
+        "repeat": {
+          "assistant_target_tokens": 26809.0,
+          "input_tokens": 139071,
+          "rows": 252,
+          "updates": 16
+        }
+      },
+      "parent_seed": 2026101904,
+      "rollout_budget": {
+        "admitted_trajectories": 480,
+        "fingerprint": "3f03c33d322e530186d4902b0aac3807a3b8d4a482bc20eb602004c123dec52b",
+        "limit": 491520,
+        "reserved_generated_tokens": 491520,
+        "schema_version": 1,
+        "trajectory_tokens": 1024
+      },
+      "seed": 2026101934
+    },
+    {
+      "arms": {
+        "boundary": {
+          "test": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 1550,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 132.53118709207047,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 1580,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 133.317982257111,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 1631,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 136.68992170901038,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 1608,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 142.38802587601822,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 1546,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 135.02349403506378,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 1608,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 135.25893626490142,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 1566,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 132.45054232300026,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 1815,
+                "mean_reward": 0.625,
+                "mean_tool_calls": 3.1875,
+                "passed": 13,
+                "success_rate": 0.8125,
+                "success_wilson_95": [
+                  0.5699111903802586,
+                  0.9340840092857187
+                ],
+                "tool_calls": 51,
+                "total": 16,
+                "trajectory_seconds": 144.70439611398615,
+                "truncation_rate": 0.1875,
+                "violation_rate": 0.1875
+              }
+            },
+            "passed": 125,
+            "success_rate": 0.9765625,
+            "total": 128,
+            "truncation_rate": 0.0234375,
+            "violation_rate": 0.0234375
+          },
+          "validation": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 388,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 35.04251217999263,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 386,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 35.188656841928605,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 399,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.09805623599095,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 406,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.05556325201178,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 380,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.260403667984065,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 409,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.85721925704274,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 443,
+                "mean_reward": 0.5,
+                "mean_tool_calls": 3.25,
+                "passed": 3,
+                "success_rate": 0.75,
+                "success_wilson_95": [
+                  0.30064184258240184,
+                  0.9544127391902995
+                ],
+                "tool_calls": 13,
+                "total": 4,
+                "trajectory_seconds": 36.07473164598923,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.25
+              },
+              "window_boundary": {
+                "generated_tokens": 403,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 35.23102622490842,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              }
+            },
+            "passed": 31,
+            "success_rate": 0.96875,
+            "total": 32,
+            "truncation_rate": 0.0,
+            "violation_rate": 0.03125
+          }
+        },
+        "original": {
+          "test": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 1550,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 132.24540478899144,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 1580,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 129.90810461889487,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 1631,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 141.15274856588803,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 1608,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 137.52173642622074,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 1546,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 135.48998467990896,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 1683,
+                "mean_reward": 0.875,
+                "mean_tool_calls": 3.0625,
+                "passed": 15,
+                "success_rate": 0.9375,
+                "success_wilson_95": [
+                  0.7167126242970107,
+                  0.9888806552353576
+                ],
+                "tool_calls": 49,
+                "total": 16,
+                "trajectory_seconds": 146.21618001302704,
+                "truncation_rate": 0.0625,
+                "violation_rate": 0.0625
+              },
+              "undelivered": {
+                "generated_tokens": 1566,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 134.37703991413582,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 2007,
+                "mean_reward": 0.25,
+                "mean_tool_calls": 3.375,
+                "passed": 10,
+                "success_rate": 0.625,
+                "success_wilson_95": [
+                  0.38641040545502714,
+                  0.8151876744113636
+                ],
+                "tool_calls": 54,
+                "total": 16,
+                "trajectory_seconds": 149.48675377096515,
+                "truncation_rate": 0.3125,
+                "violation_rate": 0.375
+              }
+            },
+            "passed": 121,
+            "success_rate": 0.9453125,
+            "total": 128,
+            "truncation_rate": 0.046875,
+            "violation_rate": 0.0546875
+          },
+          "validation": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 388,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.82798423600616,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 386,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 32.501003497920465,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 399,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.420323964965064,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 406,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.02623542299261,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 380,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.44557713996619,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 409,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 32.91820914199343,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 398,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.33915634301957,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 636,
+                "mean_reward": -0.5,
+                "mean_tool_calls": 3.75,
+                "passed": 1,
+                "success_rate": 0.25,
+                "success_wilson_95": [
+                  0.04558726080970055,
+                  0.6993581574175981
+                ],
+                "tool_calls": 15,
+                "total": 4,
+                "trajectory_seconds": 43.36280320107471,
+                "truncation_rate": 0.75,
+                "violation_rate": 0.75
+              }
+            },
+            "passed": 29,
+            "success_rate": 0.90625,
+            "total": 32,
+            "truncation_rate": 0.09375,
+            "violation_rate": 0.09375
+          }
+        },
+        "repeat": {
+          "test": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 1550,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 132.24893650074955,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 1580,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 130.97971407097066,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 1631,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 143.9669443409657,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 1608,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 137.28257284895517,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 1546,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 137.29534549999516,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 1608,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 132.39744335610885,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 1566,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 131.66005079395836,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 1787,
+                "mean_reward": 0.25,
+                "mean_tool_calls": 3.3125,
+                "passed": 10,
+                "success_rate": 0.625,
+                "success_wilson_95": [
+                  0.38641040545502714,
+                  0.8151876744113636
+                ],
+                "tool_calls": 53,
+                "total": 16,
+                "trajectory_seconds": 146.02317988598952,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.375
+              }
+            },
+            "passed": 122,
+            "success_rate": 0.953125,
+            "total": 128,
+            "truncation_rate": 0.0,
+            "violation_rate": 0.046875
+          },
+          "validation": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 388,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.64145136292791,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 386,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.52958391502034,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 399,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.726832083950285,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 406,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 31.69285752205178,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 380,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 32.03472171805333,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 409,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.34014731395291,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 398,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.2087501300266,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 403,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.28098803095054,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              }
+            },
+            "passed": 32,
+            "success_rate": 1.0,
+            "total": 32,
+            "truncation_rate": 0.0,
+            "violation_rate": 0.0
+          }
+        }
+      },
+      "execution": {
+        "elapsed_seconds": 769.8572922259918,
+        "exit_code": 0,
+        "seed": 2026101935,
+        "timed_out": false
+      },
+      "exposure": {
+        "boundary": {
+          "assistant_target_tokens": 27067.0,
+          "input_tokens": 140089,
+          "rows": 254,
+          "updates": 16
+        },
+        "repeat": {
+          "assistant_target_tokens": 26998.0,
+          "input_tokens": 140113,
+          "rows": 254,
+          "updates": 16
+        }
+      },
+      "parent_seed": 2026101905,
+      "rollout_budget": {
+        "admitted_trajectories": 480,
+        "fingerprint": "3f03c33d322e530186d4902b0aac3807a3b8d4a482bc20eb602004c123dec52b",
+        "limit": 491520,
+        "reserved_generated_tokens": 491520,
+        "schema_version": 1,
+        "trajectory_tokens": 1024
+      },
+      "seed": 2026101935
+    },
+    {
+      "arms": {
+        "boundary": {
+          "test": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 1578,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 142.139711481228,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 1576,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 135.00504935602657,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 1636,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 137.473903154023,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 1569,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 138.23730443109525,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 1588,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 140.12363026791718,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 1638,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 136.77219823084306,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 1554,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 138.4334759619669,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 1793,
+                "mean_reward": 0.75,
+                "mean_tool_calls": 3.125,
+                "passed": 14,
+                "success_rate": 0.875,
+                "success_wilson_95": [
+                  0.639771727342413,
+                  0.9650225122567595
+                ],
+                "tool_calls": 50,
+                "total": 16,
+                "trajectory_seconds": 143.28718958806712,
+                "truncation_rate": 0.125,
+                "violation_rate": 0.125
+              }
+            },
+            "passed": 126,
+            "success_rate": 0.984375,
+            "total": 128,
+            "truncation_rate": 0.015625,
+            "violation_rate": 0.015625
+          },
+          "validation": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 396,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 35.720008134958334,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 386,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 35.393819993012585,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 400,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 41.71662597404793,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 381,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.303178668022156,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 392,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.06954975606641,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 393,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.14654162497027,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 384,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 38.157602945982944,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 402,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 36.13785203493899,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              }
+            },
+            "passed": 32,
+            "success_rate": 1.0,
+            "total": 32,
+            "truncation_rate": 0.0,
+            "violation_rate": 0.0
+          }
+        },
+        "original": {
+          "test": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 1578,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 141.27007061115,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 1576,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 136.33176186605124,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 1921,
+                "mean_reward": 0.5,
+                "mean_tool_calls": 3.25,
+                "passed": 12,
+                "success_rate": 0.75,
+                "success_wilson_95": [
+                  0.5050168346449122,
+                  0.8981793250878696
+                ],
+                "tool_calls": 52,
+                "total": 16,
+                "trajectory_seconds": 148.830115504039,
+                "truncation_rate": 0.25,
+                "violation_rate": 0.25
+              },
+              "misleading_note": {
+                "generated_tokens": 1569,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 138.97459005896235,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 1588,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 136.0407038978301,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 1954,
+                "mean_reward": 0.5,
+                "mean_tool_calls": 3.25,
+                "passed": 12,
+                "success_rate": 0.75,
+                "success_wilson_95": [
+                  0.5050168346449122,
+                  0.8981793250878696
+                ],
+                "tool_calls": 52,
+                "total": 16,
+                "trajectory_seconds": 148.4411276758765,
+                "truncation_rate": 0.25,
+                "violation_rate": 0.25
+              },
+              "undelivered": {
+                "generated_tokens": 1554,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 138.94016145699425,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 2247,
+                "mean_reward": 0.0,
+                "mean_tool_calls": 3.5,
+                "passed": 8,
+                "success_rate": 0.5,
+                "success_wilson_95": [
+                  0.27999563610326017,
+                  0.7200043638967398
+                ],
+                "tool_calls": 56,
+                "total": 16,
+                "trajectory_seconds": 160.5072184180026,
+                "truncation_rate": 0.5,
+                "violation_rate": 0.5
+              }
+            },
+            "passed": 112,
+            "success_rate": 0.875,
+            "total": 128,
+            "truncation_rate": 0.125,
+            "violation_rate": 0.125
+          },
+          "validation": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 396,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.21368796605384,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 386,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.67917089193361,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 400,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 39.76633428904461,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 460,
+                "mean_reward": 0.5,
+                "mean_tool_calls": 3.25,
+                "passed": 3,
+                "success_rate": 0.75,
+                "success_wilson_95": [
+                  0.30064184258240184,
+                  0.9544127391902995
+                ],
+                "tool_calls": 13,
+                "total": 4,
+                "trajectory_seconds": 35.94020758703118,
+                "truncation_rate": 0.25,
+                "violation_rate": 0.25
+              },
+              "outside_window": {
+                "generated_tokens": 392,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 32.26016553200316,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 393,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 35.416213496006094,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 384,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 37.20998440589756,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 586,
+                "mean_reward": -0.5,
+                "mean_tool_calls": 3.75,
+                "passed": 1,
+                "success_rate": 0.25,
+                "success_wilson_95": [
+                  0.04558726080970055,
+                  0.6993581574175981
+                ],
+                "tool_calls": 15,
+                "total": 4,
+                "trajectory_seconds": 48.0404404241126,
+                "truncation_rate": 0.5,
+                "violation_rate": 0.75
+              }
+            },
+            "passed": 28,
+            "success_rate": 0.875,
+            "total": 32,
+            "truncation_rate": 0.09375,
+            "violation_rate": 0.125
+          }
+        },
+        "repeat": {
+          "test": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 1578,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 140.10663687600754,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 1576,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 137.8368268009508,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 1893,
+                "mean_reward": 0.375,
+                "mean_tool_calls": 3.25,
+                "passed": 11,
+                "success_rate": 0.6875,
+                "success_wilson_95": [
+                  0.44404355834740666,
+                  0.8583535614521796
+                ],
+                "tool_calls": 52,
+                "total": 16,
+                "trajectory_seconds": 154.7781935649109,
+                "truncation_rate": 0.1875,
+                "violation_rate": 0.3125
+              },
+              "misleading_note": {
+                "generated_tokens": 1569,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 152.43288044712972,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 1588,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 143.16284437302966,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 2006,
+                "mean_reward": 0.375,
+                "mean_tool_calls": 3.3125,
+                "passed": 11,
+                "success_rate": 0.6875,
+                "success_wilson_95": [
+                  0.44404355834740666,
+                  0.8583535614521796
+                ],
+                "tool_calls": 53,
+                "total": 16,
+                "trajectory_seconds": 156.46933433500817,
+                "truncation_rate": 0.3125,
+                "violation_rate": 0.3125
+              },
+              "undelivered": {
+                "generated_tokens": 1554,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 16,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.8063923194655637,
+                  1.0
+                ],
+                "tool_calls": 48,
+                "total": 16,
+                "trajectory_seconds": 143.2521513660904,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 2207,
+                "mean_reward": 0.0,
+                "mean_tool_calls": 3.5,
+                "passed": 8,
+                "success_rate": 0.5,
+                "success_wilson_95": [
+                  0.27999563610326017,
+                  0.7200043638967398
+                ],
+                "tool_calls": 56,
+                "total": 16,
+                "trajectory_seconds": 167.8580603901064,
+                "truncation_rate": 0.5,
+                "violation_rate": 0.5
+              }
+            },
+            "passed": 110,
+            "success_rate": 0.859375,
+            "total": 128,
+            "truncation_rate": 0.125,
+            "violation_rate": 0.140625
+          },
+          "validation": {
+            "families": {
+              "already_refunded": {
+                "generated_tokens": 396,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.62158246798208,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "chargeback": {
+                "generated_tokens": 386,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 39.225756599975284,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "eligible": {
+                "generated_tokens": 400,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 40.00920810503885,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "misleading_note": {
+                "generated_tokens": 381,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 33.34620835899841,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "outside_window": {
+                "generated_tokens": 392,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 34.145217714016326,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "partial_refund": {
+                "generated_tokens": 393,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 32.836041362024844,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "undelivered": {
+                "generated_tokens": 384,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 38.40159330301685,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              },
+              "window_boundary": {
+                "generated_tokens": 402,
+                "mean_reward": 1.0,
+                "mean_tool_calls": 3.0,
+                "passed": 4,
+                "success_rate": 1.0,
+                "success_wilson_95": [
+                  0.5101091635454027,
+                  1.0
+                ],
+                "tool_calls": 12,
+                "total": 4,
+                "trajectory_seconds": 37.700609216000885,
+                "truncation_rate": 0.0,
+                "violation_rate": 0.0
+              }
+            },
+            "passed": 32,
+            "success_rate": 1.0,
+            "total": 32,
+            "truncation_rate": 0.0,
+            "violation_rate": 0.0
+          }
+        }
+      },
+      "execution": {
+        "elapsed_seconds": 818.2800598029862,
+        "exit_code": 0,
+        "seed": 2026101936,
+        "timed_out": false
+      },
+      "exposure": {
+        "boundary": {
+          "assistant_target_tokens": 26943.0,
+          "input_tokens": 139478,
+          "rows": 253,
+          "updates": 16
+        },
+        "repeat": {
+          "assistant_target_tokens": 26914.0,
+          "input_tokens": 139621,
+          "rows": 253,
+          "updates": 16
+        }
+      },
+      "parent_seed": 2026101906,
+      "rollout_budget": {
+        "admitted_trajectories": 480,
+        "fingerprint": "3f03c33d322e530186d4902b0aac3807a3b8d4a482bc20eb602004c123dec52b",
+        "limit": 491520,
+        "reserved_generated_tokens": 491520,
+        "schema_version": 1,
+        "trajectory_tokens": 1024
+      },
+      "seed": 2026101936
+    }
+  ],
+  "plan_hash": "3f03c33d322e530186d4902b0aac3807a3b8d4a482bc20eb602004c123dec52b",
+  "primary_acceptance_passed": false,
+  "primary_comparison": "boundary_vs_repeat",
+  "protocol": "Reuse all six independently trained original SFT parents; includes the prior pilot parent. This is conditional continuation replication, not six new base initializations.",
+  "quality_certification": false,
+  "reserved_output_token_ceiling": 2949120,
+  "reserved_output_tokens": 2949120,
+  "return_window_values": {
+    "test": [
+      7,
+      45
+    ],
+    "train": [
+      14,
+      30
+    ],
+    "validation": [
+      14,
+      30
+    ]
+  },
+  "schema_version": 1,
+  "scope": "Conditional paired continuations of retained independently trained parents. Pooled counts are descriptive; inference uses six parent/run pairs. Not independent human review or production certification.",
+  "source_and_input_hashes_verified": true,
+  "status": "completed",
+  "synthetic_data": true,
+  "training_transcripts_replayed": 3030,
+  "verified_cost_usd": null
+}

@@ -1,0 +1,3 @@
+Observed worker-thread wakeup sends: PIPE ERROR PermissionError 1 [Errno 1] Operation not permitted
+New precheck under restricted sandbox: exit 2 with worker-thread local-socket PermissionError errno=1.
+New precheck outside sandbox: exit 0, passed=true.

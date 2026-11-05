@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import abc
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 __all__ = [
     "DeploymentHandle",
@@ -29,8 +31,33 @@ class DeploymentSpec:
     runtime_config: dict[str, str] = field(default_factory=dict)
     gateway_id: str | None = None
     zone: str | None = None
+    production: bool = False
+    promotion_receipt: str | None = None
+    artifact_directory: str | None = None
 
     def __post_init__(self) -> None:
+        if type(self.production) is not bool:
+            raise ValueError("production must be a boolean")
+        if self.production:
+            from stateset_agents.training.promotion import verify_promotion
+
+            if not self.promotion_receipt or not self.artifact_directory:
+                raise ValueError(
+                    "Production deployment requires a promotion receipt and local artifact directory"
+                )
+            receipt = verify_promotion(
+                Path(self.artifact_directory), Path(self.promotion_receipt)
+            )
+            if self.model_name != receipt["base_model"]:
+                raise ValueError(
+                    "Deployment model differs from approved policy lineage"
+                )
+            if receipt["artifact_sha256"] not in unquote(
+                urlsplit(self.weights_uri).path
+            ).split("/"):
+                raise ValueError(
+                    "Production weights URI path must contain the approved artifact digest"
+                )
         for field_name in ("name", "model_name", "weights_uri", "gpu", "runtime"):
             if not str(getattr(self, field_name)).strip():
                 raise ValueError(f"{field_name} must be non-empty")

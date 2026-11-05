@@ -1,0 +1,22 @@
+{
+  "model": "Qwen/Qwen3.8-2.4T-A95B",
+  "revision": "207bd685a7e3696cfaff12ded7c6a7ea0f88c996",
+  "architecture": "Qwen3_5MoeForCausalLM",
+  "loss": 3.426865339279175,
+  "global_step": 1,
+  "attention_modules": [
+    "model.layers.0.linear_attn.out_proj",
+    "model.layers.0.linear_attn.in_proj_qkv",
+    "model.layers.0.linear_attn.in_proj_z",
+    "model.layers.0.linear_attn.in_proj_b",
+    "model.layers.0.linear_attn.in_proj_a",
+    "model.layers.1.self_attn.q_proj",
+    "model.layers.1.self_attn.k_proj",
+    "model.layers.1.self_attn.v_proj",
+    "model.layers.1.self_attn.o_proj"
+  ],
+  "frozen_parameters_unchanged": true,
+  "adapter_reload_equal": true,
+  "scope": "random tiny native CPU; synthetic tokenizer; no quantized checkpoint or distributed execution",
+  "full_size_training_verified": false
+}

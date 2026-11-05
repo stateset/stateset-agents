@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 
@@ -27,6 +28,8 @@ def test_check_types_default_uses_stable_mypy_flags(monkeypatch) -> None:
     assert module.main() == 0
     assert run_calls == [
         [
+            sys.executable,
+            "-m",
             "mypy",
             "--config-file",
             "mypy.ini",
@@ -46,6 +49,8 @@ def test_check_types_all_uses_stable_mypy_flags(monkeypatch) -> None:
     assert module.main() == 0
     assert run_calls == [
         [
+            sys.executable,
+            "-m",
             "mypy",
             "--config-file",
             "mypy.ini",

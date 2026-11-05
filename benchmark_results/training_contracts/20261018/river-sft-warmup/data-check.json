@@ -1,0 +1,10 @@
+{
+  "assistant_target_tokens": 6743.0,
+  "max_length": 4096,
+  "maximum_sequence_tokens": 584,
+  "provider_requests": 0,
+  "replayed_demonstrations": 64,
+  "total_input_tokens": 35164,
+  "trainable_rows": 64,
+  "truncated_demonstrations": 0
+}

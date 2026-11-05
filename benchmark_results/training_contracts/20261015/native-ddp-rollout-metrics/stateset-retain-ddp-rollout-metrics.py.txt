@@ -1,0 +1,115 @@
+from pathlib import Path
+import hashlib, importlib.metadata, json, shutil, sys, xml.etree.ElementTree as ET, zipfile
+root=Path('/home/dom/stateset-agents')
+source,job,lint_job=Path(sys.argv[1]),sys.argv[2],sys.argv[3]
+v=json.loads((source/'verification.json').read_text())
+assert v['passed'] and v['source_unchanged'] and v['tests_unchanged']
+package={p.relative_to(root/'stateset_agents').as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'stateset_agents').rglob('*.py'))}
+tests={p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'tests').rglob('*.py'))}
+assert package==v['source_sha256'] and tests==v['test_source_sha256']
+with zipfile.ZipFile(next((source/'dist').glob('*.whl'))) as wheel:
+ packed={n.removeprefix('stateset_agents/'):hashlib.sha256(wheel.read(n)).hexdigest() for n in wheel.namelist() if n.startswith('stateset_agents/') and n.endswith('.py')}
+assert packed==package
+
+def counts(name):
+ suites=list(ET.parse(source/name).getroot().iter('testsuite'))
+ skipped=sum(int(s.get('skipped',0)) for s in suites)
+ assert sum(int(s.get('failures',0))+int(s.get('errors',0)) for s in suites)==0
+ return dict(passed=sum(int(s.get('tests',0)) for s in suites)-skipped,skipped=skipped)
+
+existing={'rank-0.json':294,'advantages-0.json':48,'learner-preflight-0.json':40,'replica-consensus-0.json':32,'native-ddp-checkpoint-0.json':98,'ddp-evaluation-0.json':28,'ddp-continual-0.json':46,'empty-population-0.json':131,'ddp-training-loop-0.json':17}
+baseline=None
+for stage in ['source-distributed','wheel-distributed']:
+ for name,expected in existing.items(): assert len(json.loads((source/stage/name).read_text()))==expected
+ rows=[json.loads((source/stage/f'ddp-rollout-metrics-{r}.json').read_text()) for r in [0,1]]
+ assert rows[0]==rows[1] and len(rows[0])==21
+ assert all(all(value is True for key,value in row.items() if key!='case') for row in rows[0])
+ if baseline is None: baseline=rows[0]
+ else: assert baseline==rows[0]
+workflow=root/'.github/workflows/training-contracts.yml'
+summary=dict(passed=True,queue_job=job,typed_modules=411,source_unchanged=True,test_sources_unchanged=True,wheel_source_matches=True,wheel_sha256=v['wheel_sha256'],
+ regressions=counts('regressions.xml'),source_distributed=counts('source-distributed.xml'),wheel_regressions=counts('wheel.xml'),wheel_distributed=counts('wheel-distributed.xml'),
+ runtime={n:importlib.metadata.version(n) for n in ['torch','transformers','accelerate','numpy','tokenizers']},
+ rollout_scenarios_per_peer=21,population_cases=12,rejection_recovery_cases=5,full_loop_logger_cases=4,existing_scenario_reports=existing,
+ semantics=dict(callbacks='sample-weighted global raw rewards from newly generated episodes; replay excluded',
+  training_log='global learner population including replay, supplied as scalar metrics even when the main worker has no generated episodes',
+  groups='average size uses nonempty groups; diversity mean/std weights groups with at least two observed rewards',
+  median='exact float64 order selection by cumulative counts; canonical signed zero; correctly rounded even midpoint using two exact ratios',
+  wire='own DDP process group, controls with protocol agreement, 4 int64 counts and 8 float64 summaries; median uses at most 64 reductions of two int64 counts',
+  resources='O(local population) CPU storage, no gathering reward vectors, trajectories or text',
+  failures='coherent local admission/schema rejection preserves learner state and supports corrected inputs',
+  logger_api='optional keyword trajectory_metrics takes precedence over local groups; inspectable legacy logger gets global scalars without raw groups; bodies are called once',
+  callback_isolation='top-level metrics and nested population summaries copied before callback dispatch',
+  protocol='native loop v2 admission rejects mismatched loop generations before episodes'),
+ cpu_native_ddp_rollout_reporting_verified=True,gpu_verified=False,multi_node_verified=False,fsdp_verified=False,deepspeed_verified=False,multi_rank_accelerate_verified=False,model_quality_improvement_verified=False,
+ workflow_validation=dict(queue_job=lint_job,tool='actionlint 1.7.12',path=workflow.relative_to(root).as_posix(),sha256=hashlib.sha256(workflow.read_bytes()).hexdigest()),
+ boundaries='Generated tiny FP32 CPU/Gloo learners and synthetic rewards. Diagnostic history and task/final flush reporting remain open. All live peers must enter the same operation; external callback/environment state, incompatible callback collectives and process loss are outside the protocol.',
+ count_note='Targeted source/wheel tests overlap. Ten actual two-worker pytest contracts contain multiple scenarios; the 21 new scenarios per peer are not separate pytest cases.')
+out=root/'benchmark_results/training_contracts/20261015/native-ddp-rollout-metrics'
+out.mkdir(exist_ok=False)
+(out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+for name in ['verification.json','regressions.xml','source-distributed.xml','wheel.xml','wheel-distributed.xml','gates.log','types.log','source-distributed.log','wheel-distributed.log','wheel-origin.log']:
+ shutil.copy2(source/name,out/name)
+for stage in ['source-distributed','wheel-distributed']: shutil.copytree(source/stage,out/stage)
+for name in ['stateset-ddp-rollout-metrics-verify.py','stateset-platform-gates.py','stateset-retain-ddp-rollout-metrics.py']: shutil.copy2(Path('/tmp')/name,out/(name+'.txt'))
+shutil.copy2(Path('/home/dom/.local/state/agent-builds/logs')/(lint_job+'.log'),out/'workflow-actionlint.log')
+failures=out/'failures'; failures.mkdir()
+context=[dict(job='98effd6c4b69',kind='typing_and_test_lint_findings',explanation='All 45 behavioral tests passed. Ruff found four unnecessary dict constructors and one loop capture; mypy required explicit int/float conversions for struct.unpack. Fixed these before source/wheel acceptance.')]
+for row in context: shutil.copy2(Path('/home/dom/.local/state/agent-builds/logs')/(row['job']+'.log'),failures/(row['job']+'.log'))
+(failures/'context.json').write_text(json.dumps(context,indent=2)+'\n')
+(out/'README.md').write_text(f"""# Native DDP global rollout reporting acceptance
+
+Buildr job `{job}` passed source and isolated-wheel verification.
+[summary.json](summary.json) records runtime and boundaries;
+[verification.json](verification.json) pins every package/test Python source.
+The wheel's packaged Python matches the accepted checkout.
+
+- {summary['regressions']['passed']:,} targeted source regressions passed ({summary['regressions']['skipped']} skips).
+- All 411 package modules passed typing.
+- {summary['wheel_regressions']['passed']:,} targeted installed-wheel regressions passed.
+- Ten real two-worker CPU/Gloo contracts passed against source and wheel.
+- The new contract contains 21 scenarios per worker, with matching peer/source/wheel reports.
+  Scenarios are not separate pytest cases, and targeted tests overlap.
+
+Callbacks observe global newly generated raw rewards. Training logs summarize
+all samples used by the learner, including replay. A complete training case
+puts new rewards [-2, 5] on worker 1 and replay rewards [-10, 1, 9] on worker 0.
+Both callback observers report mean 1.5 and count 2; the main worker's logger
+reports training mean 0.6, count 5 and exact median 1. Reward clipping for the
+objective does not change these observed raw reward summaries. Real optimizer
+updates still match the unwrapped combined-population learner.
+
+Twelve population cases cover unequal/empty workers, globally empty batches,
+empty groups, singleton/tied/signed-zero rewards, float64 extrema, subnormals
+and skewed local medians. Independent high-precision Decimal references check
+sample-weighted reward moments and group-weighted diversity. Native counters,
+optimizer, pending banks and RNG remain unchanged by direct observation.
+
+Five rejection/recovery cases cover missing/nonfinite rewards, invalid wire
+counts and divergent detail controls. Four complete loop cases exercise the
+W&B logger, an older logger signature, a logger body TypeError called once,
+and callbacks that mutate their input metrics. Failed logging is coherent;
+complete checkpoint reload clears learner poison. Callback mutations do not
+contaminate subsequent logs.
+
+The wire carries four int64 counts and eight float64 summaries after bounded
+status/protocol agreement on the model's own process group. Exact global median
+selection uses at most 64 reductions of two int64 cumulative counts, without
+gathering reward vectors, trajectories or text. Only local reward keys are
+sorted. Even medians use two exact ratios before one float64 rounding, avoiding
+overflow and subnormal loss. Detailed selection runs only for reporting steps.
+
+Mixed v1/v2 native loops reject during startup before entering different later
+phases. Existing report counts remain
+passing, including 131 empty-population and 17 loop-recovery cases per worker.
+CI includes the new regression files; its actionlint log is retained separately.
+Earlier findings are recorded in [failures/context.json](failures/context.json).
+Runner inputs are archived as `.py.txt` data.
+
+These synthetic tiny FP32 CPU/Gloo cases do not establish GPU/NCCL, multi-node,
+FSDP/DeepSpeed, multi-rank Accelerate or model-quality improvement. Every live
+peer must enter the same operation. Incompatible callback collectives, external
+callback/environment state, process loss, diagnostic-history recovery and
+separate task-boundary/final-flush reporting remain further requirements.
+""")
+print(json.dumps(summary,indent=2))

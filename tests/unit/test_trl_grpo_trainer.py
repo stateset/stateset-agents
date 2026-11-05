@@ -488,7 +488,7 @@ class TestTRLGRPOTrainerWrapper:
 class TestTrainingWorkflow:
     """Test end-to-end training workflow"""
 
-    @patch("stateset_agents.training.trl_grpo_trainer.wandb")
+    @patch("stateset_agents.training.dedicated_reporting.require_wandb")
     def test_wandb_initialization(self, mock_wandb):
         """Test W&B initialization in training"""
         config = TRLGRPOConfig(

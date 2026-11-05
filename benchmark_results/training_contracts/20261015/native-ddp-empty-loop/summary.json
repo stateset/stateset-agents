@@ -1,0 +1,78 @@
+{
+  "passed": true,
+  "queue_job": "1ada9fbaddd8",
+  "typed_modules": 410,
+  "source_unchanged": true,
+  "test_sources_unchanged": true,
+  "wheel_source_matches": true,
+  "wheel_sha256": "bf8f31c16ab2e97db0e47db2e17760b69c4f9f91b82e56e229df8d2e892bc9ee",
+  "regressions": {
+    "passed": 1990,
+    "skipped": 7
+  },
+  "source_distributed": {
+    "passed": 9,
+    "skipped": 0
+  },
+  "wheel_regressions": {
+    "passed": 717,
+    "skipped": 0
+  },
+  "wheel_distributed": {
+    "passed": 9,
+    "skipped": 0
+  },
+  "runtime": {
+    "torch": "2.11.0",
+    "transformers": "5.14.1",
+    "accelerate": "1.14.0",
+    "numpy": "2.3.5",
+    "tokenizers": "0.22.2"
+  },
+  "population_scenarios_per_peer": 131,
+  "training_loop_scenarios_per_peer": 17,
+  "existing_scenario_reports": {
+    "rank-0.json": 294,
+    "advantages-0.json": 48,
+    "learner-preflight-0.json": 40,
+    "replica-consensus-0.json": 32,
+    "native-ddp-checkpoint-0.json": 98,
+    "ddp-evaluation-0.json": 28,
+    "ddp-continual-0.json": 46
+  },
+  "cpu_native_ddp_empty_population_verified": true,
+  "cpu_native_ddp_loop_recovery_verified": true,
+  "combined_update_matrix": 128,
+  "cpu_scaler_direct_empty_resume_flush": 1,
+  "cpu_scaler_overflow_cases": 2,
+  "semantics": {
+    "empty_contributor": "manual unwrapped actor forwards, count-weighted gradient banks; empty workers have no actor scoring forwards",
+    "unused_parameters": "globally unused gradients remain absent, preserving SGD and AdamW decay semantics",
+    "global_empty": "no-op preserves pending banks, counters, optimizer, RNG, and model buffers",
+    "failures": "live peers share local loss/backward, optimizer and loop errors; failed native learners require full checkpoint reload",
+    "cursor": "explicit next episode survives initial/completed resume; legacy snapshots retain current_epoch + 1 fallback",
+    "events": "log/evaluate/save once when batch-reported committed optimizer updates cross a reporting boundary; separate task/final flush event coverage remains open",
+    "diagnostics": "global no-ops preserve policy-signal patience, retain timing/cost and do not create a monitor; diagnostic history checkpointing remains open",
+    "callback_rewards": "episode reward callbacks and training-log rollout summaries still use worker-local groups; population aggregation remains open",
+    "backward_compatibility": "native preflight v3, reward admission v2 and metric v2 retain bounded headers and reject older peers before payload collectives"
+  },
+  "combined_objective_tolerance": {
+    "rtol": 2e-05,
+    "atol": 2e-06
+  },
+  "resumed_next_parameters_and_optimizer": "exact",
+  "gpu_verified": false,
+  "multi_node_verified": false,
+  "fsdp_verified": false,
+  "deepspeed_verified": false,
+  "multi_rank_accelerate_verified": false,
+  "model_quality_improvement_verified": false,
+  "boundaries": "Two actual CPU/Gloo peers, generated tiny FP32 models and synthetic token metadata. All live workers must enter the same operation. Empty legacy sequence fallback is rejected before scoring. Process loss, failures inside in-flight backend collectives, custom collectives in callbacks, external environment state and GPU backends remain outside this evidence.",
+  "count_note": "Overlapping targeted tests; nine actual distributed pytest contracts contain multiple scenarios. New matrix/report scenarios are not separate pytest cases.",
+  "workflow_validation": {
+    "queue_job": "7459d3202479",
+    "tool": "actionlint 1.7.12",
+    "path": ".github/workflows/training-contracts.yml",
+    "sha256": "f78ad6669fecdaf38cc12607abe9ee0d67d907cee12653a6c468d68744a9b03e"
+  }
+}

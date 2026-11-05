@@ -168,7 +168,10 @@ class SymbolicPhysicsEnvironment(Environment):
             "Return a single expression using explicit * and **."
         )
         if scenario and "context" in scenario:
-            return f"{base}\n\nTask:\n{scenario['context']}"
+            from stateset_agents.core.environment_base import policy_visible
+
+            # Filter reference-like nested keys before showing the context.
+            return f"{base}\n\nTask:\n{policy_visible(scenario['context'])}"
         # No scenario: show the task reset() sampled, or the agent never sees it.
         task = self._current_task
         if scenario is None and task is not None and task.prompt:

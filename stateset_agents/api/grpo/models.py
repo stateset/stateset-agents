@@ -11,6 +11,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from stateset_agents.utils.clock import utc_now
+
 from .config import get_grpo_config
 
 
@@ -61,33 +63,33 @@ class GRPOTrainingRequest(BaseModel):
         min_length=1,
     )
     strategy: str = Field(
-        "computational",
+        default="computational",
         description="Training strategy: 'computational' or 'distributed'",
     )
     num_iterations: int = Field(
-        1,
+        default=1,
         ge=1,
         description="Number of training iterations",
     )
     parallel_batch_size: int | None = Field(
-        None,
+        default=None,
         ge=1,
         description="Batch size for parallel training",
     )
     use_neural_rewards: bool = Field(
-        True,
+        default=True,
         description="Enable neural reward models",
     )
     use_ruler_rewards: bool = Field(
-        False,
+        default=False,
         description="Enable RULER LLM judges",
     )
     distributed_config: dict[str, Any] | None = Field(
-        None,
+        default=None,
         description="Configuration for distributed training",
     )
     idempotency_key: str | None = Field(
-        None,
+        default=None,
         description="Unique key for request deduplication",
     )
 
@@ -179,18 +181,22 @@ class GRPOTrainingResponse(BaseModel):
 
     job_id: str = Field(..., description="Unique job identifier")
     status: str = Field(..., description="Current job status")
-    iterations_completed: int = Field(0, description="Completed iterations")
-    total_trajectories: int = Field(0, description="Total trajectories generated")
-    average_reward: float = Field(0.0, description="Average reward")
-    computation_used: float = Field(0.0, description="Total computation used")
+    iterations_completed: int = Field(default=0, description="Completed iterations")
+    total_trajectories: int = Field(
+        default=0, description="Total trajectories generated"
+    )
+    average_reward: float = Field(default=0.0, description="Average reward")
+    computation_used: float = Field(default=0.0, description="Total computation used")
     metrics: dict[str, Any] = Field(
         default_factory=dict,
         description="Detailed metrics",
     )
-    error: str | None = Field(None, description="Error message if failed")
-    started_at: datetime | None = Field(None, description="Job start time")
-    completed_at: datetime | None = Field(None, description="Job completion time")
-    request_id: str | None = Field(None, description="Original request ID")
+    error: str | None = Field(default=None, description="Error message if failed")
+    started_at: datetime | None = Field(default=None, description="Job start time")
+    completed_at: datetime | None = Field(
+        default=None, description="Job completion time"
+    )
+    request_id: str | None = Field(default=None, description="Original request ID")
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -213,17 +219,21 @@ class GRPOConversationRequest(BaseModel):
 
     message: str = Field(..., description="User message")
     conversation_id: str | None = Field(
-        None,
+        default=None,
         description="Existing conversation ID to continue",
     )
-    strategy: str = Field("default", description="Response generation strategy")
-    user_id: str | None = Field(None, description="User identifier")
+    strategy: str = Field(default="default", description="Response generation strategy")
+    user_id: str | None = Field(default=None, description="User identifier")
     context: dict[str, Any] | None = Field(
-        None,
+        default=None,
         description="Additional context",
     )
-    max_tokens: int = Field(512, ge=1, le=4096, description="Maximum response tokens")
-    temperature: float = Field(0.8, ge=0.0, le=2.0, description="Sampling temperature")
+    max_tokens: int = Field(
+        default=512, ge=1, le=4096, description="Maximum response tokens"
+    )
+    temperature: float = Field(
+        default=0.8, ge=0.0, le=2.0, description="Sampling temperature"
+    )
 
     @field_validator("message")
     @classmethod
@@ -308,8 +318,8 @@ class GRPOConversationResponse(BaseModel):
         default_factory=dict,
         description="Additional metadata",
     )
-    tokens_used: int = Field(0, description="Tokens used in response")
-    processing_time_ms: float = Field(0.0, description="Processing time")
+    tokens_used: int = Field(default=0, description="Tokens used in response")
+    processing_time_ms: float = Field(default=0.0, description="Processing time")
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -335,11 +345,11 @@ class GRPOScaleRequest(BaseModel):
         description="Scaling factor (0-10)",
     )
     apply_to_all: bool = Field(
-        False,
+        default=False,
         description="Apply scaling to all engines",
     )
     target_engines: list[str] | None = Field(
-        None,
+        default=None,
         description="Specific engine IDs to scale",
     )
 
@@ -369,10 +379,10 @@ class GRPOHealthResponse(BaseModel):
 
     status: str = Field(..., description="Service status")
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=utc_now,
         description="Response timestamp",
     )
-    version: str = Field("2.0.0", description="API version")
+    version: str = Field(default="2.0.0", description="API version")
     services: dict[str, bool] = Field(
         default_factory=dict,
         description="Service availability",
@@ -412,10 +422,10 @@ class BatchTrainingItem(BaseModel):
         description="Training prompts for this item",
         min_length=1,
     )
-    strategy: str = Field("computational", description="Training strategy")
-    num_iterations: int = Field(1, ge=1, le=50, description="Iterations")
+    strategy: str = Field(default="computational", description="Training strategy")
+    num_iterations: int = Field(default=1, ge=1, le=50, description="Iterations")
     idempotency_key: str | None = Field(
-        None,
+        default=None,
         description="Unique key for this item",
     )
 
@@ -442,17 +452,17 @@ class BatchTrainingRequest(BaseModel):
         max_length=100,
     )
     parallel: bool = Field(
-        True,
+        default=True,
         description="Process items in parallel",
     )
     max_concurrent: int = Field(
-        10,
+        default=10,
         ge=1,
         le=50,
         description="Maximum concurrent items",
     )
     fail_fast: bool = Field(
-        False,
+        default=False,
         description="Stop on first failure",
     )
 
@@ -482,9 +492,9 @@ class BatchItemResult(BaseModel):
     """Result of a single batch item."""
 
     index: int = Field(..., description="Item index in request")
-    job_id: str | None = Field(None, description="Created job ID")
+    job_id: str | None = Field(default=None, description="Created job ID")
     status: str = Field(..., description="Item status")
-    error: str | None = Field(None, description="Error message if failed")
+    error: str | None = Field(default=None, description="Error message if failed")
 
 
 class BatchTrainingResponse(BaseModel):
@@ -492,8 +502,8 @@ class BatchTrainingResponse(BaseModel):
 
     batch_id: str = Field(..., description="Unique batch identifier")
     total_items: int = Field(..., description="Total items in batch")
-    accepted: int = Field(0, description="Items accepted for processing")
-    rejected: int = Field(0, description="Items rejected")
+    accepted: int = Field(default=0, description="Items accepted for processing")
+    rejected: int = Field(default=0, description="Items rejected")
     results: list[BatchItemResult] = Field(
         default_factory=list,
         description="Results per item",

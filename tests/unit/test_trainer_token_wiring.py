@@ -129,7 +129,12 @@ async def test_single_turn_trainer_uses_generate_turn_and_keeps_metadata():
     trainer = object.__new__(SingleTurnGRPOTrainer)
     trainer.agent = agent
     trainer.environment = SimpleNamespace()
-    trainer.reward_fn = None
+
+    async def score(turns, context=None):
+        return 0.5
+
+    # A reward is required: there is no neutral stand-in score any more.
+    trainer.reward_fn = SimpleNamespace(compute_reward=score)
     group, best = await trainer._generate_trajectory_group("hello", 3)
     assert agent.turn_calls == 3 and agent.response_calls == 0
     assert best == "ok"

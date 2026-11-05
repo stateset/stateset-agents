@@ -1,0 +1,39 @@
+{
+  "passed": true,
+  "queue_job": "6570326bc3bc",
+  "typed_modules": 416,
+  "source_unchanged": true,
+  "test_sources_unchanged": true,
+  "wheel_source_matches": true,
+  "wheel_rubric_matches": true,
+  "wheel_sha256": "bedf5d2a06d24acf527f4c5c8079f42fd20da28c308babce5866d5c8c8f49d03",
+  "source_regressions": {
+    "passed": 2173,
+    "skipped": 7
+  },
+  "wheel_regressions": {
+    "passed": 906,
+    "skipped": 0
+  },
+  "source_distributed": {
+    "passed": 12,
+    "skipped": 0
+  },
+  "wheel_distributed": {
+    "passed": 12,
+    "skipped": 0
+  },
+  "optimizer_reporting_scenarios_per_peer": 16,
+  "recovered_reward_pairs": 3,
+  "full_200_pair_audit_reproduced": false,
+  "runpod_cost_reproduced": false,
+  "gpu_verified": false,
+  "multi_node_verified": false,
+  "quality_gain_verified": false,
+  "paid_run_launched": false,
+  "source_import": {
+    "pr": 109,
+    "revision": "5162d211934e369f1988270b979fee0936080936"
+  },
+  "count_note": "Targeted source and wheel regressions overlap. Distributed scenarios are not distinct pytest cases."
+}

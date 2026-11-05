@@ -37,20 +37,18 @@ import re
 from dataclasses import dataclass
 from typing import Any, TypeVar, Union, cast, get_args, get_origin
 
+from pydantic import BaseModel, ValidationError
+
+from .errors import ErrorCode, ModelError
+from .errors import ValidationError as InputValidationError
+
 logger = logging.getLogger(__name__)
 
 # Type variable for generic structured output
 T = TypeVar("T")
 
-# Check for Pydantic availability
-try:
-    from pydantic import BaseModel, ValidationError
-
-    PYDANTIC_AVAILABLE = True
-except ImportError:
-    PYDANTIC_AVAILABLE = False
-    BaseModel = cast(Any, object)
-    ValidationError = cast(Any, Exception)
+# Pydantic is a required dependency; the flag is kept for backwards compatibility.
+PYDANTIC_AVAILABLE = True
 
 
 @dataclass
@@ -72,14 +70,26 @@ class StructuredOutputConfig:
     repair_json: bool = True
 
 
-class StructuredOutputError(Exception):
+class SchemaValidationError(InputValidationError, ValueError):
+    """Raised when parsed JSON does not match a plain JSON schema."""
+
+    message_only_str = True
+
+
+class StructuredOutputError(ModelError):
     """Raised when structured output generation fails.
+
+    A :class:`~stateset_agents.core.errors.ModelError` that prints its bare
+    message.
 
     Attributes:
         attempts: Number of generation attempts made
         last_error: The final validation error
         raw_outputs: List of raw model outputs that failed validation
     """
+
+    message_only_str = True
+    default_code = ErrorCode.MDL_INFERENCE_FAILED
 
     def __init__(
         self,
@@ -375,7 +385,7 @@ class StructuredOutputMixin:
                     }
                 )
 
-            except ValidationError as e:
+            except (ValidationError, SchemaValidationError) as e:
                 last_error = e
                 logger.warning(
                     f"Structured output attempt {attempt + 1}/{config.max_retries} "
@@ -392,7 +402,10 @@ class StructuredOutputMixin:
                     }
                 )
 
-            except (ValueError, TypeError, RuntimeError, AttributeError) as e:
+            # Retry what a model can fix (bad values, a generation failure). A
+            # TypeError/AttributeError is a bug in the agent or caller and
+            # retrying cannot fix it, so it propagates.
+            except (ValueError, RuntimeError) as e:
                 last_error = e
                 logger.warning(
                     f"Structured output attempt {attempt + 1}/{config.max_retries} "
@@ -437,13 +450,15 @@ class StructuredOutputMixin:
 
         if schema_type == "object":
             if not isinstance(data, dict):
-                raise ValidationError(f"Expected object, got {type(data).__name__}")
+                raise SchemaValidationError(
+                    f"Expected object, got {type(data).__name__}"
+                )
 
             # Check required fields
             required = schema.get("required", [])
             for field in required:
                 if field not in data:
-                    raise ValidationError(f"Missing required field: {field}")
+                    raise SchemaValidationError(f"Missing required field: {field}")
 
             # Validate properties
             properties = schema.get("properties", {})
@@ -453,7 +468,9 @@ class StructuredOutputMixin:
 
         elif schema_type == "array":
             if not isinstance(data, list):
-                raise ValidationError(f"Expected array, got {type(data).__name__}")
+                raise SchemaValidationError(
+                    f"Expected array, got {type(data).__name__}"
+                )
 
             items_schema = schema.get("items", {})
             for item in data:
@@ -461,19 +478,27 @@ class StructuredOutputMixin:
 
         elif schema_type == "string":
             if not isinstance(data, str):
-                raise ValidationError(f"Expected string, got {type(data).__name__}")
+                raise SchemaValidationError(
+                    f"Expected string, got {type(data).__name__}"
+                )
 
         elif schema_type == "integer":
             if not isinstance(data, int) or isinstance(data, bool):
-                raise ValidationError(f"Expected integer, got {type(data).__name__}")
+                raise SchemaValidationError(
+                    f"Expected integer, got {type(data).__name__}"
+                )
 
         elif schema_type == "number":
             if not isinstance(data, (int, float)) or isinstance(data, bool):
-                raise ValidationError(f"Expected number, got {type(data).__name__}")
+                raise SchemaValidationError(
+                    f"Expected number, got {type(data).__name__}"
+                )
 
         elif schema_type == "boolean":
             if not isinstance(data, bool):
-                raise ValidationError(f"Expected boolean, got {type(data).__name__}")
+                raise SchemaValidationError(
+                    f"Expected boolean, got {type(data).__name__}"
+                )
 
 
 # Convenience class combining MultiTurnAgent with StructuredOutputMixin
@@ -521,6 +546,7 @@ def create_structured_agent_class():
 # Export for convenience
 __all__ = [
     "StructuredOutputConfig",
+    "SchemaValidationError",
     "StructuredOutputError",
     "StructuredOutputMixin",
     "json_schema_from_type",

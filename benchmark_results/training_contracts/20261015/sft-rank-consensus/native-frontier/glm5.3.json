@@ -1,0 +1,23 @@
+{
+  "model": "zai-org/GLM-5.3",
+  "revision": "ba32f8c19c8738e2c57c71798c601d477a7bf844",
+  "architecture": "GlmMoeDsaForCausalLM",
+  "loss": 3.58349871635437,
+  "global_step": 1,
+  "attention_modules": [
+    "model.layers.0.self_attn.q_a_proj",
+    "model.layers.0.self_attn.q_b_proj",
+    "model.layers.0.self_attn.kv_a_proj_with_mqa",
+    "model.layers.0.self_attn.kv_b_proj",
+    "model.layers.0.self_attn.o_proj",
+    "model.layers.1.self_attn.q_a_proj",
+    "model.layers.1.self_attn.q_b_proj",
+    "model.layers.1.self_attn.kv_a_proj_with_mqa",
+    "model.layers.1.self_attn.kv_b_proj",
+    "model.layers.1.self_attn.o_proj"
+  ],
+  "frozen_parameters_unchanged": true,
+  "adapter_reload_equal": true,
+  "scope": "random tiny native CPU; synthetic tokenizer; no quantized checkpoint or distributed execution",
+  "full_size_training_verified": false
+}

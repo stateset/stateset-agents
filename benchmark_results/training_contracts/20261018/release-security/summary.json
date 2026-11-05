@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "retained_at": "2026-10-18T19:45:20.909543+00:00",
+  "scope": "Local checkpoint trust, parameterized queue SQL, model code pins and runtime dependency validation",
+  "local_contracts_passed": true,
+  "a_plus_certified": false,
+  "strict_security_acceptance": {
+    "passed": false,
+    "reason": "pip-audit report contains known vulnerabilities",
+    "acceptance_thresholds_changed": false
+  },
+  "head_commit": "faa4845c2b352baaf4757d1c425f52e29d642f49",
+  "clean_release_commit": false,
+  "full_cpu_unit_selection": {
+    "tests": 10098,
+    "passed": 10078,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 20
+  },
+  "full_cpu_unit_command": "pytest tests/unit -q -o addopts='' -n 4 --dist loadfile -m 'not performance and not slow and not gpu' --timeout=120",
+  "unit_runtime": {
+    "accelerate": "1.15.0",
+    "postgresql": "12",
+    "OMP_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1"
+  },
+  "focused_source_and_api": {
+    "tests": 298,
+    "passed": 297,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 1
+  },
+  "full_suite_preceded_test_only_checkpoint_audit_path_fix": true,
+  "checkpoint_audit_source_delta": {
+    "tests": 35,
+    "passed": 35,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "wheel_initial_run": {
+    "tests": 178,
+    "passed": 175,
+    "failed": 2,
+    "errors": 0,
+    "skipped": 1
+  },
+  "wheel_failed_checks_resolved": [
+    "test_checkpoint_io_pins_weights_only",
+    "test_checkpoint_io_shim_only_re_exports"
+  ],
+  "wheel_checkpoint_audit_final": {
+    "tests": 36,
+    "passed": 36,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "wheel_two_worker_contracts_passed": true,
+  "admission_cases_per_peer": 47,
+  "checkpoint_cases_per_peer": 99,
+  "exact_continuation_cases_per_peer": 84,
+  "lock_tooling_delta": {
+    "tests": 13,
+    "passed": 13,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "docs_and_security_gate_delta": {
+    "tests": 105,
+    "passed": 105,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "typed_package_modules": 439,
+  "all_package_sources_equal_tested_wheel": true,
+  "final_distribution_sources_equal_tested_installation": true,
+  "final_distributions_rebuilt_after_documentation_and_lock_manifest_updates": true,
+  "training_runtime_audited_packages": 98,
+  "training_runtime_known_vulnerabilities": 0,
+  "development_lock_remaining_advisories": [
+    {
+      "package": "mcp",
+      "version": "1.29.0",
+      "advisory": "CVE-2026-59951"
+    }
+  ],
+  "bandit_medium_high_critical_findings": 0,
+  "bandit_low_findings": 229,
+  "gpu_verified": false,
+  "independent_quality_verified": false,
+  "paid_jobs_launched": 0,
+  "disposable_postgres_stopped": true,
+  "ci_execution_verified": false,
+  "distribution_sha256": {
+    "stateset_agents-0.66.1-py3-none-any.whl": "c3115f03a44d2867ca34d5eac7323241b3f24bab341208db827e6ef922bb5d89",
+    "stateset_agents-0.66.1.tar.gz": "a5f578f6b61393a79c7270efde97c94daec3679e9aab30c8994bd8c12d931ed9"
+  },
+  "limitations": [
+    "The training/API lock audit has zero advisory findings; the development lock remains blocked by Semgrep pinning vulnerable MCP 1.29.0.",
+    "The test environment uses existing local dependencies plus isolated Accelerate 1.15.0, not a fresh installation of the complete runtime lock. CI configuration adds that future check.",
+    "Full unit coverage excludes slow, performance and GPU markers; focused source/API and wheel checks do not replace a complete release acceptance run.",
+    "Two initial wheel audit tests assumed checkout paths; their failures are retained and all 35 checkpoint trust checks plus the import-origin check passed after the test-only fix.",
+    "Subsequent lock-comparison tooling changes passed 13 targeted checks rather than repeating the entire package unit suite.",
+    "No local CUDA devices are present. Reviewed train/validation/fresh-test cases, live provider conformance, multi-node/soak and clean-release evidence remain missing.",
+    "Audit findings are a point-in-time result, not proof of absence of vulnerabilities."
+  ],
+  "artifacts_sha256": {
+    "README.md": "4b97f3a3e67b188b7731d1e5ec95e46618dde7f44d72b13b4a8f101d1559d3d6",
+    "api-compatibility.txt": "b3b6e66d41b66cff53b0aed391741319d4340079d9a1b346a9197dc252dc29c0",
+    "bandit-report.json": "fde34bfac5d7a36d1ceae69271aab61f94debd8edb8e8f0e3c148955c96c19e1",
+    "bandit.txt": "1989093d34741a236bafc98e415e6dde0fb43ee796860e940d54c5b6221911dd",
+    "build.txt": "7fac78563aee700044ac2ecb18aeaaca3d8b1761f6212cce982b57202b56d957",
+    "checkpoint-source-final.txt": "aa6d8e312e0d3efbe6c0125d3e0ae1b23b00040bcb38419482d115302effa92f",
+    "checkpoint-source-final.xml": "ba83f209ec2a47c7c9b5622fa9629c3cf4e26d598d7e4fa37a22ae9bdc772983",
+    "development-history/initial-development-lock-audit.json": "9044ab5d8ac82f460bc67e8a004e005a45c501e59bc09601614b2fc9bf7baf38",
+    "development-history/initial-unconfigured-bandit.json": "410fe73a9befcf74786fd4e2c25c10c7b3e372287591f8effd603b2d53ba8530",
+    "development-history/original-local-environment-audit.json": "bdfaf899e87a06b383dad5ee02f7f98bca051b331ebae63bd3494dfdfa2c3735",
+    "development-history/wheel-path-audit-failures.txt": "cad158e13dbc8d6461a6d1bb9065fe0bbf0b8d7111f83cf75c7a2eea9cb67de6",
+    "development-history/wheel-path-audit-failures.xml": "898600f5ce6897a2854f8a08ef80c999f1c81cf97b6ec20e96b905413f06a52e",
+    "distribution-validation.json": "f8eeb9f4bbbd15d671f9907ababd3d286907edceef55544ece209f65349d64d4",
+    "docs-security-delta.txt": "798f37162dad987f8c00f6c823b5b74a575404693e687b74302eeb00851dc08f",
+    "docs-security-delta.xml": "037b98b374b0bf02f598d4f14cecd7ef56976a7e08f63f3674a0c1afa872413c",
+    "final-lock-audit-report.json": "a1e7e821913b5bdc5befb845b811b3971b4cc4a84b3ac6eae23b3742e55968b7",
+    "final-lock-audit.txt": "ee67b66c3ace0de4bd58b5a34234200dfaac5263b567946194b24b09a99d127d",
+    "focused.txt": "d58077ad34338ce3afa21f5c9d60c249bfa1f76ef319e8bda627ba9cf0461d09",
+    "focused.xml": "15745ad1d18967035f292cd8a215670d03c089562feae6056b302227aaf30443",
+    "full-unit.txt": "66e391abcf957d18862a08ecf6c238be8af59d503d64c07990b7b7c0d579f42a",
+    "full-unit.xml": "1a758235945a2864a06eea759848f8a1c0bb1554120b62d86afc01b5ac0fcdf8",
+    "governance.txt": "c28d176eae53a189c72bc21d1bee86372df8056461981004bd5375be6e96cb5c",
+    "gpu-readiness.json": "d59467a12c0c46ab4c04af0a4b66c67ad80f783f8e02e167f38bcb9355611409",
+    "hygiene.txt": "245f0ff48213989358ae646dcf80c7fbcc5c4155963a1b47ac19c10f27056f83",
+    "implementation.json": "aad9d2a74e146381e8c230cb41f071f537fc092aa8df3b674bcd13a0338b31be",
+    "lint.txt": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "lock-check.txt": "9b5d858d53e091499e89f09e8430d274d785de868631c6cfe236fa963177b590",
+    "lock-contracts.txt": "f160c17f51820fd0264c284321dec8206071a3ab8b058ad796b49ce9ce746e96",
+    "lock-contracts.xml": "4caf2327fb83a62135465500c741dc38348990d303543a84d6123c0e17140271",
+    "requirements-dev-lock.txt": "aa13fe39bab3e765d18dadc70790e684ce77585e84e76f4ed3f3e29fcada887f",
+    "requirements-training-lock.txt": "9771f96fdc24029f796c0e196ec5090bd4dc1971c56c441a6e44a39830a49999",
+    "security-acceptance.json": "45fb2a0906fcab4699a0d88bf2d0391bcc59ecca29e1436490edbd6eacccd781",
+    "support-recovery-plan.json": "653145bf23f63ee812ee06dad44956d8e3fdc40bdc11123927362d2f632ff834",
+    "training-lock-audit-report.json": "da95882e318e603b512e8bdc2f4a0c354b2902e71611f408273a8ae41187faca",
+    "training-lock-audit.txt": "79d30422388543b2563e1dde76bb7e7857d7ef0c6fdf05c8c71598633ca07e1e",
+    "twine.txt": "0a28f422639870cfb6ddf0a791cf2c41bbc9e2f038a23071e7daefa30371873e",
+    "types.txt": "5b66f5d4bf2f5dfdb8ac15052008f1e32af4a89c9b3e0707aaf62138841c7835",
+    "wheel-checkpoint-final.txt": "c84be2d9b68dc194c83525c84bf8f126e26f943690963c6398155923e46563b9",
+    "wheel-checkpoint-final.xml": "c9526eefd1c31c5cec2541935daab8905fe82734264422b333431f43cdf3d7b9",
+    "wheel-smoke.txt": "9f4f6e8215d30f27c8973bfc2bcf1c1c24000fb0d3731826acba9ce291b21651",
+    "wheel-workers/learner-accepted-0.json": "32a3c0ad6cc0ab84c95937ca93e3c5af2bb5824db10c72735b73150401bd94a5",
+    "wheel-workers/learner-accepted-1.json": "7e04d62cba46db0dfddb2a3371e5b6966f7bf78e640aff0c5c51f39ccbf36007",
+    "wheel-workers/learner-preflight-0.json": "ccbeb91576b179b5259daa6ba17a2b3f4355e760496aa774255f2770a46203ef",
+    "wheel-workers/learner-preflight-1.json": "e0dce72202960cdd981dc929b84ad6fd4a247650c7750da36d02e60dad031ded",
+    "wheel-workers/native-ddp-checkpoint-0.json": "130e80464811d64ce221e67413f66f9f50c6b0f5e36405c27fe5330d33ebf957",
+    "wheel-workers/native-ddp-checkpoint-1.json": "130e80464811d64ce221e67413f66f9f50c6b0f5e36405c27fe5330d33ebf957"
+  }
+}

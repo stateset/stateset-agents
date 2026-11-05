@@ -15,6 +15,7 @@ from fastapi import Request
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, Field
 
+from stateset_agents.utils.clock import utc_now
 from stateset_agents.utils.credentials import credential_fingerprint
 
 from .config import get_config
@@ -46,11 +47,13 @@ class AuthenticatedUser(BaseModel):
 
     user_id: str = Field(..., description="User identifier")
     roles: list[str] = Field(default_factory=list, description="User roles")
-    api_key: str | None = Field(None, description="API key used (masked)")
-    auth_method: str = Field("none", description="Authentication method used")
-    email: str | None = Field(None, description="User email address")
-    name: str | None = Field(None, description="User display name")
-    metadata: dict[str, Any] | None = Field(None, description="Extra user metadata")
+    api_key: str | None = Field(default=None, description="API key used (masked)")
+    auth_method: str = Field(default="none", description="Authentication method used")
+    email: str | None = Field(default=None, description="User email address")
+    name: str | None = Field(default=None, description="User display name")
+    metadata: dict[str, Any] | None = Field(
+        default=None, description="Extra user metadata"
+    )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AuthenticatedUser":
@@ -87,11 +90,22 @@ class JWTHandler:
         return str(jwt.encode(payload, self.secret, algorithm=self.algorithm))
 
     def decode(self, token: str) -> dict[str, Any] | None:
-        """Decode and verify a JWT token."""
+        """Decode and verify a JWT token.
+
+        Tokens must carry an ``exp`` claim: a signed token without one would
+        otherwise stay valid forever, bypassing ``API_JWT_EXPIRY_HOURS``.
+        """
         import jwt
 
         try:
-            return dict(jwt.decode(token, self.secret, algorithms=[self.algorithm]))
+            return dict(
+                jwt.decode(
+                    token,
+                    self.secret,
+                    algorithms=[self.algorithm],
+                    options={"require": ["exp"]},
+                )
+            )
         except jwt.ExpiredSignatureError:
             logger.warning("JWT token expired")
             return None
@@ -173,15 +187,24 @@ def _extract_bearer_token(request: Request) -> str | None:
     return None
 
 
-def _extract_api_key(request: Request) -> str | None:
-    """Extract API key from headers."""
-    # Check X-API-Key header first
+def extract_request_credential(request: Request) -> str | None:
+    """Return the credential presented on ``request``.
+
+    This is the single source of truth for credential precedence: the
+    ``X-API-Key`` header wins, then ``Authorization: Bearer``. Authentication
+    and rate limiting must both use it so that the credential that is
+    authenticated is also the one whose bucket is charged.
+    """
     api_key = request.headers.get("X-API-Key")
-    if api_key:
+    if api_key and api_key.strip():
         return str(api_key.strip())
 
-    # Fall back to Authorization header
     return _extract_bearer_token(request)
+
+
+def _extract_api_key(request: Request) -> str | None:
+    """Extract API key from headers (alias of :func:`extract_request_credential`)."""
+    return extract_request_credential(request)
 
 
 def authenticate_request(
@@ -354,7 +377,7 @@ class RequestContext(BaseModel):
     request_id: str
     user: AuthenticatedUser
     client_ip: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
 
 
 async def get_request_context(request: Request) -> RequestContext:

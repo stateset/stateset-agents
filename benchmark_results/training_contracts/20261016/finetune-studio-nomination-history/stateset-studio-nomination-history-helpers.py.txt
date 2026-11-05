@@ -1,0 +1,43 @@
+"""Freeze source/wheel verification and an installed, read-only CLI handoff."""
+from pathlib import Path
+old='stateset-studio-nomination'
+new='stateset-studio-nomination-history'
+changed=['stateset_agents/finetune_nomination.py','stateset_agents/finetune_evaluation_tui.py','stateset_agents/tui.py','stateset_agents/cli_finetune.py','stateset_agents/finetune_workspace.py','tests/unit/test_finetune_nomination_history.py']
+for suffix in ['pipeline','prepare','wheel','finish','gates']:
+    value=Path('/tmp',old+'-'+suffix+'.py').read_text().replace(old,new)
+    if suffix in {'prepare','finish'}:
+        value=value.replace("['tests/unit/test_finetune_nomination.py'", "['tests/unit/test_finetune_nomination_history.py','tests/unit/test_finetune_nomination.py'")
+        value=value.replace("['tests/unit/test_mypy_allowlist_ratchet.py','tests/unit/test_finetune_nomination.py'", "['tests/unit/test_mypy_allowlist_ratchet.py','tests/unit/test_finetune_nomination_history.py','tests/unit/test_finetune_nomination.py'")
+    if suffix=='gates':
+        begin=value.index('for name in ['); end=value.index(':\n',begin)
+        value=value[:begin]+'for name in '+repr(changed)+value[end:]
+    if suffix=='finish':
+        position=value.index('\nexcept Exception as exc:')
+        extra='''
+    history_fixture=out/'synthetic-nomination-history-fixture'
+    code="from pathlib import Path; import json,sys,pytest; from tests.unit.test_finetune_nomination import candidate; import stateset_agents.finetune_nomination as m; root=Path(sys.argv[1]); root.mkdir(); patch=pytest.MonkeyPatch(); run,_,_,_,receipt=candidate(root,patch); patch.undo(); (root/'metadata.json').write_text(json.dumps({'workspace':str(run.parent),'run_id':run.name,'receipt':receipt,'module_path':m.__file__}))"
+    run('nomination-history-fixture',[sys.executable,'-c',code,str(history_fixture)],environment=wheel_env,cwd=checks)
+    history=json.loads((history_fixture/'metadata.json').read_text())
+    assert Path(history['module_path']).is_relative_to(out/'site-packages')
+    history_run=Path(history['workspace'])/history['run_id']
+    def history_inventory():
+        return {p.relative_to(history_run).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in history_run.rglob('*') if p.is_file()}
+    history_before=history_inventory()
+    nominal=history['receipt']
+    for command,args in [('nominations',[]),('nomination-status',[nominal['nomination_id']]),('nomination-config',[nominal['nomination_id'],'--expected-plan-sha256',nominal['plan_sha256']])]:
+        run('agent-history-'+command,eval_cli+[command,history_run.name,*args,'--workspace',history['workspace']],environment=wheel_env,cwd=checks)
+        output=json.loads((out/('agent-history-'+command+'.log')).read_text())
+        assert output['ok'] and 'PRIVATE' not in json.dumps(output)
+        if command=='nominations':
+            assert output['result']['nominations'][0]['nomination_id']==nominal['nomination_id']
+        elif command=='nomination-status':
+            assert not output['result']['bytes_verified'] and output['result']['state']=='available'
+        else:
+            assert output['result']['config']['cases']=='' and output['result']['config']['nomination_id']==nominal['nomination_id']
+            assert not output['result']['prepared'] and not output['result']['inference_started']
+    assert history_inventory()==history_before
+    (out/'nomination-history-cli-verification.json').write_text(json.dumps({'passed':True,'existing_run_unchanged':True,'installed_origin_verified':True,'module_path':history['module_path'],'nomination_id':nominal['nomination_id'],'new_records_created':False,'inference_started':False,'scope':'Synthetic recorded policy/judge fixture; real installed CLI processes restore metadata only.'},indent=2)+'\\n')
+'''
+        value=value[:position]+extra+value[position:]
+    Path('/tmp',new+'-'+suffix+'.py').write_text(value)
+print('Prepared nomination-history acceptance helpers.')

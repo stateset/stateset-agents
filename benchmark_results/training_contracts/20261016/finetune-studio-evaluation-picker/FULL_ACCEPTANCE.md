@@ -1,0 +1,1 @@
+Full acceptance completed in job `16e925fa033f`: 1,265 source tests, 1,154 installed-wheel tests, and 429 typed modules. See [the retained full record](../finetune-studio-evaluation/README.md). The scoped logs in this directory remain the earlier 142-case evidence; counts overlap.

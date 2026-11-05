@@ -10,9 +10,9 @@ from pathlib import Path
 import pytest
 
 from stateset_agents.data import refund_demonstrations as module
-from stateset_agents.evaluation.agent_study import StudyConfig, prepare_study
-from stateset_agents.evaluation.study_preflight import prepare_study_data
 from stateset_agents.remote.river_rl import exclusive_run
+from stateset_agents.verticals.agent_study import StudyConfig, prepare_study
+from stateset_agents.verticals.study_preflight import prepare_study_data
 
 
 async def prepare(destination):

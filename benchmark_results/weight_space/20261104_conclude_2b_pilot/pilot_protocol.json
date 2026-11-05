@@ -1,0 +1,43 @@
+{
+  "model": "Qwen/Qwen3.5-2B",
+  "revision": "15852e8c16360a2fea060d615a32b45270f8a8fc",
+  "design": {
+    "gsm8k_train": 256,
+    "trace_tokens": 3072,
+    "nothink_train": 256,
+    "prose_negatives": 200,
+    "write_norm": 3.0,
+    "gain": 4.0,
+    "lambda": 100.0
+  },
+  "practice": {
+    "gsm8k_train": 200,
+    "math_train": 200,
+    "tokens": 8192,
+    "conditions": [
+      "base",
+      "wait",
+      "candidate",
+      "control"
+    ],
+    "thinking_modes": [
+      true,
+      false
+    ]
+  },
+  "final_test_generation": false,
+  "gate": "strictly beat base in both modes, wait-only and random-write controls; thinking-off accuracy drop <= 1pp and stray-close rise <= 2pp",
+  "source_sha256": {
+    "answer_positions.py": "8302e4556e8139715864ca7639e7736daf9abb0c5d34f404a631502e93821de7",
+    "build_answer_contrast.py": "a3f1e2d15a0148d0f72d3c46a88d567c8999eb98bab5821fc3af4e52209445b1",
+    "side_effect_job.py": "4f33cd43ddce677c0b886bd90c37baaad95783a017b3b6afbf6f1a2b51edc947",
+    "misfires.py": "9f32aecc9b477d857043bda3a07c391d84f426119070de11c0e100b0108398a0",
+    "onpolicy_job.py": "f043b891889a4eb864b61b742fd973319d91caadde58bc40ba3befd05275f807",
+    "thinking_budget_job.py": "3ddd384f2ebe37402c7ceaf9a5f9df4cdf13352d59a9716bbaddbabb20429c06",
+    "practice_job.py": "daa73340e0aeb4f8702626aeddd853688d6a29a5528d971788292f0bcc45e232",
+    "neuron_job.py": "9018a7303be13083f803dcf251e35182897b7506285b90573b91116498339ead",
+    "conclude_pilot_job.py": "9ba983a18d15b253426487c7354c7b2d3ca65e7279470f738d7ea227edece393",
+    "wait_direction.py": "03f1e1f506ca881127648d555e1688022ee8ab307e6d102ee14cabff7ca9f659",
+    "pod_job.py": "2b5bdcb902326118e3a5d478183c2a20c9185477b18b5e03cda457fb7f7d45bc"
+  }
+}

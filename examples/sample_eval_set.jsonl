@@ -1,10 +1,10 @@
-{"user_query": "I want a refund for order #4521", "intent": "refund", "must_acknowledge": ["refund", "order"], "must_avoid": ["impossible"]}
-{"user_query": "The app crashes every time I open it", "intent": "technical", "must_acknowledge": ["app", "crash"], "must_avoid": ["your fault"]}
-{"user_query": "I can't log in — keeps saying invalid password", "intent": "technical", "must_acknowledge": ["password", "login"], "must_avoid": ["your fault"]}
-{"user_query": "Why is my bill higher this month?", "intent": "billing", "must_acknowledge": ["bill", "month"], "must_avoid": ["impossible"]}
-{"user_query": "I need a copy of last month's invoice", "intent": "billing", "must_acknowledge": ["invoice"], "must_avoid": ["impossible"]}
-{"user_query": "What are your business hours?", "intent": "general", "must_acknowledge": ["hours"], "must_avoid": []}
-{"user_query": "How do I contact a human agent?", "intent": "general", "must_acknowledge": ["agent", "human"], "must_avoid": []}
-{"user_query": "I was charged twice — please refund the duplicate", "intent": "refund", "must_acknowledge": ["refund", "duplicate"], "must_avoid": ["impossible"]}
-{"user_query": "Update my credit card on file", "intent": "billing", "must_acknowledge": ["credit card"], "must_avoid": ["impossible"]}
-{"user_query": "My order arrived damaged — I want a refund", "intent": "refund", "must_acknowledge": ["refund", "damaged"], "must_avoid": ["impossible"]}
+{"user_query": "I returned the blender two weeks ago and still haven't seen my money", "intent": "refund", "must_acknowledge": ["refund", "return"], "must_avoid": ["impossible"]}
+{"user_query": "The jacket came in the wrong size and I'd like my money back", "intent": "refund", "must_acknowledge": ["refund", "size"], "must_avoid": ["impossible"]}
+{"user_query": "I cancelled order #7310 yesterday but was still charged", "intent": "refund", "must_acknowledge": ["refund", "cancel"], "must_avoid": ["impossible"]}
+{"user_query": "The checkout button does nothing when I tap it on my phone", "intent": "technical", "must_acknowledge": ["checkout", "phone"], "must_avoid": ["your fault"]}
+{"user_query": "My two-factor codes never arrive by text message", "intent": "technical", "must_acknowledge": ["code", "text"], "must_avoid": ["your fault"]}
+{"user_query": "Why was I billed for the premium plan after I downgraded?", "intent": "billing", "must_acknowledge": ["plan", "billed"], "must_avoid": ["impossible"]}
+{"user_query": "Please send me a receipt for my March payment", "intent": "billing", "must_acknowledge": ["receipt", "payment"], "must_avoid": ["impossible"]}
+{"user_query": "Can I pay for one order with a gift card and a credit card?", "intent": "billing", "must_acknowledge": ["gift card"], "must_avoid": ["impossible"]}
+{"user_query": "Do you have a store in Chicago?", "intent": "general", "must_acknowledge": ["store"], "must_avoid": []}
+{"user_query": "Can I change the delivery address after placing an order?", "intent": "general", "must_acknowledge": ["address"], "must_avoid": []}

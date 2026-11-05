@@ -1,0 +1,75 @@
+from pathlib import Path
+import hashlib,json,shutil,sys,xml.etree.ElementTree as ET,zipfile
+root=Path('/home/dom/stateset-agents')
+source=Path(sys.argv[1]);job=sys.argv[2]
+v=json.loads((source/'verification.json').read_text())
+assert v['passed'] and v['source_unchanged'] and v['tests_unchanged']
+package={p.relative_to(root/'stateset_agents').as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'stateset_agents').rglob('*.py'))}
+tests={p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'tests').rglob('*.py'))}
+assert package==v['source_sha256'] and tests==v['test_source_sha256']
+assert 'Success: no issues found in 416 source files' in (source/'types.log').read_text()
+with zipfile.ZipFile(next((source/'dist').glob('*.whl'))) as wheel:
+    packed={n.removeprefix('stateset_agents/'):hashlib.sha256(wheel.read(n)).hexdigest() for n in wheel.namelist() if n.startswith('stateset_agents/') and n.endswith('.py')}
+    assert packed==package
+    rubric='stateset_agents/evaluation/rubrics/support_rubric_v4.md'
+    assert wheel.read(rubric)==(root/rubric).read_bytes()
+def counts(name):
+    suites=list(ET.parse(source/name).getroot().iter('testsuite'))
+    assert not sum(int(s.get('errors',0))+int(s.get('failures',0)) for s in suites)
+    skipped=sum(int(s.get('skipped',0)) for s in suites)
+    return dict(passed=sum(int(s.get('tests',0)) for s in suites)-skipped,skipped=skipped)
+peers=[]
+for stage in ['source-distributed','wheel-distributed']:
+    rows=[json.loads((source/stage/f'ddp-optimizer-reporting-{r}.json').read_text()) for r in [0,1]]
+    assert rows[0]==rows[1] and len(rows[0])==16
+    assert all(all(value is True for key,value in row.items() if key!='case') for row in rows[0])
+    peers.append(rows[0])
+assert peers[0]==peers[1]
+audit=json.loads((source/'reward-audit.json').read_text())
+assert audit['pairs']==3 and audit['rewards']['v3']['direction_agreements']==3
+assert audit['diagnostic_only'] and not audit['quality_gain_established']
+fixture='tests/fixtures/support_conversation_reward/preflight5_regressions.json'
+provenance=json.loads(Path('/tmp/stateset-pr109-audit/import-provenance.json').read_text())
+fixture_hash=hashlib.sha256((root/fixture).read_bytes()).hexdigest()
+assert audit['input_sha256']==fixture_hash==provenance['retrieved_files_sha256'][fixture]
+summary=dict(passed=True,queue_job=job,typed_modules=416,source_unchanged=True,test_sources_unchanged=True,wheel_source_matches=True,wheel_rubric_matches=True,wheel_sha256=v['wheel_sha256'],source_regressions=counts('regressions.xml'),wheel_regressions=counts('wheel.xml'),source_distributed=counts('source-distributed.xml'),wheel_distributed=counts('wheel-distributed.xml'),optimizer_reporting_scenarios_per_peer=16,recovered_reward_pairs=3,full_200_pair_audit_reproduced=False,runpod_cost_reproduced=False,gpu_verified=False,multi_node_verified=False,quality_gain_verified=False,paid_run_launched=False,source_import=dict(pr=109,revision='5162d211934e369f1988270b979fee0936080936'),count_note='Targeted source and wheel regressions overlap. Distributed scenarios are not distinct pytest cases.')
+out=root/'benchmark_results/training_contracts/20261016/reward-recovery';out.mkdir(parents=True,exist_ok=False)
+(out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+for name in ['verification.json','regressions.xml','source-distributed.xml','wheel.xml','wheel-distributed.xml','gates.log','types.log','source-distributed.log','wheel-distributed.log','wheel-origin.log','workflow-lint.log','wheel-test-configuration.json','reward-audit.json']:
+    shutil.copy2(source/name,out/name)
+for name in ['source-distributed','wheel-distributed']:
+    shutil.copytree(source/name,out/name)
+shutil.copy2('/tmp/stateset-pr109-audit/import-provenance.json',out/'import-provenance.json')
+shutil.copytree('/tmp/stateset-reward-recovery-attempts',out/'verification-attempts')
+for name in ['stateset-reward-recovery-verify.py','stateset-reward-recovery-retain.py','stateset-platform-gates.py']:
+    shutil.copy2(Path('/tmp')/name,out/(name+'.txt'))
+(out/'README.md').write_text(f'''# Support reward recovery and optimizer reporting acceptance
+
+Buildr job `{job}` verified frozen source and an isolated installed wheel.
+The wheel includes the exact rubric and package Python files from the checkout.
+
+- {summary['source_regressions']['passed']:,} targeted source regressions passed ({summary['source_regressions']['skipped']} skips).
+- {summary['wheel_regressions']['passed']:,} targeted installed-wheel regressions passed.
+- All 416 package modules passed typing.
+- Twelve real two-worker CPU/Gloo contracts passed against source and wheel.
+- Sixteen optimizer-reporting scenarios agree across peers and source/wheel.
+
+The new support tests cover the pinned v2/v3 reward examples, whole-conversation
+judge output, explicit attempted-episode budgets, hard vetoes, judge parse and
+stability failures, independent validation selection, keeping the baseline on
+regression or ties, retaining an earlier better checkpoint, byte tampering,
+split overlap, RNG/mode isolation, current-policy generation and save failure.
+The selector rejects distributed/resumed studies; it does not certify them.
+
+The offline audit reproduces v3's judge-aligned preference on three recovered
+paired examples. This is reward-development evidence, not a complete 200-pair
+study or proof of a training quality gain. Full preflight-5 judge/cost totals
+remain unverified. No paid run was launched. GPU, multi-node and representative
+quality gains are not certified. See docs/RUNPOD_REWARD_RECOVERY.md.
+
+Optimizer events cover batch, task-boundary and final updates, normal cadence,
+partial-window AMP skips, early stopping and coherent callback/logger failure
+recovery. These use tiny CPU/Gloo learners and synthetic rewards. Twelve tests
+contain multiple scenarios; source/wheel regression counts overlap.
+''')
+print(json.dumps(dict(path=str(out),summary=summary),indent=2))

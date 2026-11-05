@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Literal
 
+from stateset_agents.core.frontier_models import FRONTIER_MODELS
+
 VerificationLevel = Literal[
     "unverified",
     "unit-tested",
@@ -148,6 +150,22 @@ MODEL_PROVIDER_EVIDENCE: tuple[ModelProviderEvidence, ...] = (
         checked_at="2026-08-26",
         evidence="Required multi-GPU capacity was unavailable; no pod was rented.",
     ),
+)
+
+
+MODEL_PROVIDER_EVIDENCE += tuple(
+    ModelProviderEvidence(
+        model=spec.model_id,
+        provider="training",
+        level="unverified",
+        outcome="blocked" if spec.blockers else "not-run",
+        checked_at=spec.audit_date,
+        evidence=(
+            "Pinned public metadata/index audit; no released-weight GPU training. "
+            + " ".join(spec.blockers)
+        ),
+    )
+    for spec in FRONTIER_MODELS
 )
 
 

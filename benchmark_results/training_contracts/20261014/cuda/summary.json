@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "task": "synthetic-tool-workflow-v1",
+  "claim_scope": "sampled_training_regression_only",
+  "seeds": [
+    42,
+    43,
+    44
+  ],
+  "mean_improvement": 0.4869791666666667,
+  "seed_bootstrap_95": [
+    0.453125,
+    0.5078125
+  ],
+  "passed": true,
+  "implementation_sha256": "a333aed41489e726b702ad15074194f2c1e9137394150ce2e30fd06ac75ac293",
+  "results": [
+    "seed-42/result.json",
+    "seed-43/result.json",
+    "seed-44/result.json"
+  ]
+}

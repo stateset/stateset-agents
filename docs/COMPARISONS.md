@@ -76,7 +76,7 @@ StateSet Agents is a higher‑level framework focused on **multi‑turn agent le
 
 | Capability | StateSet Agents | TRL |
 |---|---|---|
-| Multi‑turn agent runtime | Yes (`core/multiturn_agent.py`) | Yes in GRPO tool/environment workflows |
+| Multi‑turn agent runtime | Yes (`core/agent.py`) | Yes in GRPO tool/environment workflows |
 | Conversation/task environments | Yes (`core/environment.py`) | Stateful per-rollout environment factory |
 | Group‑based RL algorithms | Yes — 11 presets in `training/objectives.py` (GRPO, Dr. GRPO, BNPO, DAPO, GSPO, GSPO-token, GEPO, RLOO, REINFORCE++-baseline, CISPO, PPO), losses pinned to TRL 1.12 on CPU fixtures | grpo/bnpo/dr_grpo/dapo/cispo/sapo/vespo/luspo loss types |
 | Reward composition | Yes (`rewards/`, `core/reward.py`) | Minimal (reward fn/model hook) |

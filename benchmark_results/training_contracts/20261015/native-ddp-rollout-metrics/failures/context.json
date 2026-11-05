@@ -1,0 +1,7 @@
+[
+  {
+    "job": "98effd6c4b69",
+    "kind": "typing_and_test_lint_findings",
+    "explanation": "All 45 behavioral tests passed. Ruff found four unnecessary dict constructors and one loop capture; mypy required explicit int/float conversions for struct.unpack. Fixed these before source/wheel acceptance."
+  }
+]

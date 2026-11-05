@@ -1,0 +1,8 @@
+{
+  "draft_sha256": "8ebef13479b5ba8f64363ae73371034480d44f8fa6262ebeed42fc7f9230a661",
+  "draft_preserved": true,
+  "private_permissions": true,
+  "pane": "w1:p1A",
+  "backend_picker_verified": true,
+  "training_launched": false
+}

@@ -1,0 +1,12 @@
+{
+  "global_step": 35,
+  "metrics": {
+    "average_reward": 0.9375,
+    "clip_fraction": 0.0,
+    "entropy": 0.052751749753952026,
+    "policy_loss": 7.450580596923828e-09,
+    "value_loss": 0.0303339883685112
+  },
+  "protocol": "stateset-ppo-online-v1",
+  "rollout_sha256": "7d1885c7476d27a22e4d222b90a2e2ca4d985594d8bfb3f96f4a404390f656f8"
+}

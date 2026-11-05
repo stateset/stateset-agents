@@ -1,0 +1,44 @@
+"""Append the final current-source verification to the retained picker record."""
+from pathlib import Path
+import hashlib
+import json
+import shutil
+import subprocess
+
+root=Path('/home/dom/stateset-agents'); candidate=Path('/tmp/stateset-evaluation-case-picker-20261016')
+out=root/'benchmark_results/training_contracts/20261016/finetune-studio-evaluation-picker'
+value=json.loads((candidate/'current-verification.json').read_text())
+assert value['passed'] and value['passed_tests']==142 and value['case_identities_match']
+assert all(hashlib.sha256((root/name).read_bytes()).hexdigest()==digest for name,digest in {**value['source_sha256'],**value['test_source_sha256']}.items())
+job=json.loads(subprocess.check_output(['/home/dom/agent-builds/buildr','show','--json','0f94032359ed'],text=True))
+assert job['state']=='succeeded' and job['exit_code']==0
+receipts=json.loads((out/'queue-receipts.json').read_text())
+assert not any(row['id']==job['id'] for row in receipts)
+receipts.append({key:job.get(key) for key in ['id','state','exit_code','argv','created','started','finished','wait_seconds','elapsed_seconds','usage']})
+(out/'queue-receipts.json').write_text(json.dumps(receipts,indent=2)+'\n')
+for name in ['current-verification.json','current-source.xml','current-wheel.xml','current-source.log','current-wheel.log','current-ruff.log','current-workflow.log']:
+    shutil.copy2(candidate/name,out/name)
+shutil.copy2(root/'tests/unit/test_evaluation_case_picker.py',out/'source/tests/unit/test_evaluation_case_picker.py.txt')
+shutil.copy2('/home/dom/.local/state/agent-builds/logs/0f94032359ed.log',out/'0f94032359ed.log')
+for name in ['stateset-evaluation-picker-current-check.py','stateset-evaluation-picker-retain-current.py']:
+    shutil.copy2(Path('/tmp')/name,out/(name+'.txt'))
+summary=json.loads((out/'summary.json').read_text())
+summary.update(current_reverification_job='0f94032359ed',current_source_tests=142,current_wheel_tests=142,posix_special_file_test_is_platform_guarded=True)
+(out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+with (out/'README.md').open('a') as stream:
+    stream.write('''
+## Current-source refresh
+
+Job `0f94032359ed` repeated the 142 source and 142 installed-wheel cases after
+marking the new symlink/FIFO-only check for POSIX. Pure picker tests remain
+available on other platforms; this is not Windows execution certification.
+It also passed targeted Ruff, serial format checks and workflow lint after
+adding the module to curated CI. No package Python changed, so the already
+passed 429-module type gate and two installed terminal checks are reused with
+exact package hashes. `current-verification.json` and current JUnit/logs are
+authoritative for the final test-source hashes; initial receipts remain history.
+The full source/wheel pipeline is still a separate required acceptance pass.
+''')
+old=root/'benchmark_results/training_contracts/20261016/finetune-studio-evaluation-pending'
+(old/'SUPERSEDED.md').write_text('This earlier 70-test focused snapshot is superseded by [current picker/evaluation verification](../finetune-studio-evaluation-picker/README.md). Its original source hashes and logs remain historical evidence; they no longer identify the latest source. Full acceptance remains pending separately.\n')
+print(out)

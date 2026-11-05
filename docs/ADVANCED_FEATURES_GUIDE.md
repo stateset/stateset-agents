@@ -137,7 +137,7 @@ Enable multiple agents to collaborate on complex tasks.
 ### Quick Start
 
 ```python
-from stateset_agents.core.multi_agent_coordination import (
+from stateset_agents.experimental.multi_agent_coordination import (
     MultiAgentCoordinator,
     AgentRole,
     CoordinationStrategy,
@@ -214,7 +214,7 @@ trajectory, result = await coordinator.execute_collaborative_task(
 ### Cooperative Reward Shaping
 
 ```python
-from stateset_agents.core.multi_agent_coordination import CooperativeRewardShaping
+from stateset_agents.experimental.multi_agent_coordination import CooperativeRewardShaping
 
 reward_shaper = CooperativeRewardShaping(
     team_reward_weight=0.5,
@@ -443,7 +443,7 @@ Rapidly adapt agents to new domains with minimal examples.
 ### Quick Start
 
 ```python
-from stateset_agents.core.few_shot_adaptation import (
+from stateset_agents.experimental.few_shot_adaptation import (
     FewShotAdaptationManager,
     FewShotExample,
     DomainProfile,
@@ -512,7 +512,7 @@ for domain_id, domain in domains.items():
 ### Automatic Domain Detection
 
 ```python
-from stateset_agents.core.few_shot_adaptation import DomainDetector
+from stateset_agents.experimental.few_shot_adaptation import DomainDetector
 
 detector = DomainDetector(manager.domain_profiles)
 
@@ -541,7 +541,7 @@ transferred_agent = await manager.cross_domain_transfer(
 ### LoRA Adaptation
 
 ```python
-from stateset_agents.core.few_shot_adaptation import LoRAAdaptation
+from stateset_agents.experimental.few_shot_adaptation import LoRAAdaptation
 
 # Efficient fine-tuning with LoRA
 lora_adapter = LoRAAdaptation(
@@ -581,9 +581,9 @@ print(f"Test accuracy: {metrics['accuracy']:.2%}")
 
 ```python
 from stateset_agents.core.curriculum_learning import CurriculumLearning
-from stateset_agents.core.multi_agent_coordination import MultiAgentCoordinator
+from stateset_agents.experimental.multi_agent_coordination import MultiAgentCoordinator
 from stateset_agents.experimental.bayesian_reward_model import BayesianRewardFunction
-from stateset_agents.core.few_shot_adaptation import FewShotAdaptationManager
+from stateset_agents.experimental.few_shot_adaptation import FewShotAdaptationManager
 
 # 1. Curriculum learning for progressive difficulty
 curriculum = CurriculumLearning(

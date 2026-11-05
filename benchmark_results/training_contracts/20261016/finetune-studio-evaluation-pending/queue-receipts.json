@@ -1,0 +1,85 @@
+[
+  {
+    "id": "718917e810ad",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-evaluation-quick-types.py"
+    ],
+    "reason": "",
+    "created": 1792197435.707514,
+    "started": 1792197435.7340717,
+    "finished": 1792197453.5619285,
+    "wait_seconds": 0.02655768394470215,
+    "elapsed_seconds": 17.82785677909851,
+    "usage": {
+      "cpu_seconds": 17.0103,
+      "sampled_peak_rss_gb": 0.3607444763183594,
+      "samples": 30,
+      "observed_seconds": 17.81563822599128,
+      "observed_at": 1792197453.5617628,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    }
+  },
+  {
+    "id": "32140640143e",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-evaluation-quick-focused.py"
+    ],
+    "reason": "",
+    "created": 1792197516.3759005,
+    "started": 1792197516.4112802,
+    "finished": 1792197550.8316422,
+    "wait_seconds": 0.035379648208618164,
+    "elapsed_seconds": 34.42036199569702,
+    "usage": {
+      "cpu_seconds": 23.666,
+      "sampled_peak_rss_gb": 0.8501853942871094,
+      "samples": 58,
+      "observed_seconds": 34.39596709999023,
+      "observed_at": 1792197550.8314948,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    }
+  },
+  {
+    "id": "16e925fa033f",
+    "state": "queued",
+    "exit_code": null,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-studio-evaluation-pipeline.py"
+    ],
+    "reason": "heavy job budget",
+    "created": 1792196153.8178945,
+    "started": null,
+    "finished": null,
+    "wait_seconds": 1478.3738300800323,
+    "elapsed_seconds": 0,
+    "usage": {}
+  },
+  {
+    "id": "b10d3c8b4284",
+    "state": "queued",
+    "exit_code": null,
+    "argv": [
+      ".venv/bin/python",
+      "scripts/check_types.py",
+      "--all"
+    ],
+    "reason": "earlier job in this repository [16e925fa033f]",
+    "created": 1792197348.429602,
+    "started": null,
+    "finished": null,
+    "wait_seconds": 283.9122042655945,
+    "elapsed_seconds": 0,
+    "usage": {}
+  }
+]

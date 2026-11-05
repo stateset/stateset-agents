@@ -9,6 +9,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.exceptions import MODEL_IO_EXCEPTIONS
+
 logger = logging.getLogger(__name__)
 
 
@@ -77,13 +79,20 @@ def export_merged_model_for_serving(
         logger.warning("Missing dependencies for merge export: %s", exc)
         return ""
 
+    # Optional on older transformers builds; resolved to ``None`` when absent.
+    AutoModelForImageTextToText: Any | None
     try:
-        from transformers import AutoModelForImageTextToText
+        from transformers import AutoModelForImageTextToText as _AutoImageTextToText
+
+        AutoModelForImageTextToText = _AutoImageTextToText
     except ImportError:  # pragma: no cover - older transformers builds
         AutoModelForImageTextToText = None
 
+    AutoProcessor: Any | None
     try:
-        from transformers import AutoProcessor
+        from transformers import AutoProcessor as _AutoProcessor
+
+        AutoProcessor = _AutoProcessor
     except ImportError:  # pragma: no cover - older transformers builds
         AutoProcessor = None
 
@@ -127,8 +136,8 @@ def export_merged_model_for_serving(
 
     if Path(adapter_dir).is_dir():
         validate_local_shard_indexes(adapter_dir)
-    model = PeftModel.from_pretrained(model, adapter_dir)
-    merged = model.merge_and_unload()
+    peft_model = PeftModel.from_pretrained(model, adapter_dir)
+    merged = peft_model.merge_and_unload()
 
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -143,7 +152,7 @@ def export_merged_model_for_serving(
             )
             processor.save_pretrained(output_path)
             processor_saved = True
-        except Exception as exc:  # pragma: no cover
+        except MODEL_IO_EXCEPTIONS as exc:  # text-only models have no processor
             logger.info("Processor export skipped for %s: %s", base_model_name, exc)
 
     try:
@@ -152,7 +161,7 @@ def export_merged_model_for_serving(
             trust_remote_code=trust_remote_code,
         )
         tokenizer.save_pretrained(output_path)
-    except Exception as exc:  # pragma: no cover
+    except MODEL_IO_EXCEPTIONS as exc:  # pragma: no cover
         if not processor_saved:
             logger.warning(
                 "Tokenizer export skipped for %s and no processor was saved: %s",

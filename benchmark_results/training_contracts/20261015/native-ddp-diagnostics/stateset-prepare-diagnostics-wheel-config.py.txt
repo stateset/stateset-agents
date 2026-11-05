@@ -1,0 +1,12 @@
+from pathlib import Path
+import hashlib
+import json
+import sys
+
+root = Path('/home/dom/stateset-agents')
+out = Path(sys.argv[1])
+checks = out/'checks'
+checks.mkdir(exist_ok=True)
+config = (root/'pytest.ini').read_bytes()
+(checks/'pytest.ini').write_bytes(config)
+(out/'wheel-test-configuration.json').write_text(json.dumps(dict(source='pytest.ini', sha256=hashlib.sha256(config).hexdigest(), destination='checks/pytest.ini', reason='Preserve repository asyncio_mode=auto for existing unmarked async diagnostic contracts in the isolated wheel harness. Test Python and package source remain frozen; all pytest runs remain inside the Buildr job.'), indent=2)+'\n')

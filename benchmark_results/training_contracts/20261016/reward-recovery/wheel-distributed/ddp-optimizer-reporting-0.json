@@ -1,0 +1,66 @@
+[
+  {
+    "case": "final",
+    "correct_receipts_and_cadence": true
+  },
+  {
+    "case": "boundary",
+    "correct_receipts_and_cadence": true
+  },
+  {
+    "case": "batch_final",
+    "correct_receipts_and_cadence": true
+  },
+  {
+    "case": "empty",
+    "correct_receipts_and_cadence": true
+  },
+  {
+    "case": "amp_skip",
+    "correct_receipts_and_cadence": true
+  },
+  {
+    "case": "stop",
+    "correct_receipts_and_cadence": true
+  },
+  {
+    "case": "inner",
+    "correct_receipts_and_cadence": true
+  },
+  {
+    "case": "amp_boundary_skip",
+    "correct_receipts_and_cadence": true
+  },
+  {
+    "case": "final-optimizer-step",
+    "coherent_failure_and_full_recovery": true
+  },
+  {
+    "case": "final-training-log",
+    "coherent_failure_and_full_recovery": true
+  },
+  {
+    "case": "final-evaluation-log",
+    "coherent_failure_and_full_recovery": true
+  },
+  {
+    "case": "final-evaluation-end",
+    "coherent_failure_and_full_recovery": true
+  },
+  {
+    "case": "boundary-optimizer-step",
+    "coherent_failure_and_full_recovery": true
+  },
+  {
+    "case": "boundary-training-log",
+    "coherent_failure_and_full_recovery": true
+  },
+  {
+    "case": "boundary-evaluation-log",
+    "coherent_failure_and_full_recovery": true
+  },
+  {
+    "case": "boundary-evaluation-end",
+    "coherent_failure_and_full_recovery": true
+  }
+]

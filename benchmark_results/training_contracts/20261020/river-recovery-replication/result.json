@@ -1,0 +1,19 @@
+{
+  "accepted": false,
+  "acknowledged_rl_updates": 6,
+  "individual_test_gates_passed": false,
+  "plan_hash": "136559aa6815bb4ce5180f8f9814b6ea2ca42a6c315e5976ac86bbca1e81a649",
+  "quality_certification": false,
+  "sft_updates": 0,
+  "statistical_gate_passed": false,
+  "status": "completed",
+  "test_attempted": true,
+  "update_activity_by_seed": {
+    "1070261101": 1,
+    "1420261101": 1,
+    "1770261101": 1,
+    "20261101": 1,
+    "370261101": 1,
+    "720261101": 1
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "scope": "verification",
+  "max_lifetime_seconds": 1800,
+  "max_cost_usd": 5.0,
+  "pod_id": "5h90401t12kf8q",
+  "price_per_hour": 0.59,
+  "host": "194.68.245.237",
+  "port": 22116,
+  "termination_confirmed": true,
+  "duration_seconds": 1284.5831668376923,
+  "estimated_compute_usd": 0.21052890789839956
+}

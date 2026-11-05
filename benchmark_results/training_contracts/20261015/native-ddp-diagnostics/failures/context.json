@@ -1,0 +1,22 @@
+[
+  {
+    "job": "e32abad35787",
+    "kind": "typing",
+    "explanation": "All repository gates passed; full typing found one missing dict[str, Any] annotation in the extracted runtime telemetry hook. Added the annotation before final acceptance."
+  },
+  {
+    "job": "f4815b096399",
+    "kind": "harness_path",
+    "explanation": "Workflow lint referenced a stale temporary executable path. Located the installed /tmp/stateset-actionlint-1.7.12/actionlint and reran through Buildr; this was not a queue failure."
+  },
+  {
+    "job": "e93f7ed00d41",
+    "kind": "test_lint",
+    "explanation": "Ruff B023 identified an unbound test-loop closure. No tests ran. Bound the learner before focused verification."
+  },
+  {
+    "job": "86ae6c09bde3",
+    "kind": "test_expectation",
+    "explanation": "166 tests passed; the new Gloo contract reached error cleanup but incorrectly expected a success training_end callback. Existing lifecycle intentionally omits that event on failure. Corrected the assertion while retaining tracking-error cleanup checks."
+  }
+]

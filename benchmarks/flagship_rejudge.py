@@ -94,8 +94,10 @@ SUMMARY_KIND = "stateset-flagship-rejudge-summary"
 SUMMARY_NAME = "rejudge_summary.json"
 PROVIDER_RECORD = "rejudge-provider.json"
 GROUPS: tuple[str, ...] = ("baseline", "final")
-#: The A+ gate's ceiling on judge self-disagreement (reported, not enforced).
+#: The A+ gate's ceilings on judge self-disagreement and parse failures
+#: (reported, not enforced; run_flagship_matrix enforces the same values).
 SELF_DISAGREEMENT_GATE = 0.05
+PARSE_FAILURE_GATE = 0.02
 DEFAULT_MANIFEST = _BENCHMARKS / "flagship_manifest.json"
 ENV_CEILING = "STATESET_REJUDGE_CONFIRM_MAX_COST_USD"
 #: Hard upper bound on any ceiling: a rejudge is ~1 GPU-hour, never a seed.
@@ -252,6 +254,7 @@ def group_report(group: Mapping[str, Any]) -> dict[str, Any]:
         "summary": dict(group["summary"]),
         "mean_score": float(group["summary"]["mean_score"]),
         "self_disagreement": float(group["summary"]["self_disagreement"]),
+        "parse_failure_rate": float(group["summary"]["parse_failure_rate"]),
         "findings_summary": {
             kind: sum(1 for r in results if (r.get("findings") or {}).get(kind))
             for kind in _FINDING_KINDS
@@ -266,6 +269,7 @@ def build_summary(
 ) -> dict[str, Any]:
     groups = {name: group_report(phase_out["groups"][name]) for name in GROUPS}
     worst = max(groups[name]["self_disagreement"] for name in GROUPS)
+    worst_parse = max(groups[name]["parse_failure_rate"] for name in GROUPS)
     return {
         "schema_version": 1,
         "kind": SUMMARY_KIND,
@@ -280,6 +284,9 @@ def build_summary(
         "judge_self_disagreement": worst,
         "self_disagreement_gate": SELF_DISAGREEMENT_GATE,
         "self_disagreement_within_gate": worst <= SELF_DISAGREEMENT_GATE,
+        "judge_parse_failure_rate": worst_parse,
+        "parse_failure_gate": PARSE_FAILURE_GATE,
+        "parse_failure_within_gate": worst_parse <= PARSE_FAILURE_GATE,
     }
 
 
@@ -812,6 +819,8 @@ def _print_summary(summary: Mapping[str, Any]) -> None:
                     "final_score",
                     "judge_self_disagreement",
                     "self_disagreement_within_gate",
+                    "judge_parse_failure_rate",
+                    "parse_failure_within_gate",
                 )
             },
             sort_keys=True,

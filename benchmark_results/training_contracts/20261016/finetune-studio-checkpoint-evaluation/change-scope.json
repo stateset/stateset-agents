@@ -1,0 +1,21 @@
+{
+  "baseline": "../finetune-studio-evaluation/verification.json",
+  "changed": {
+    "source_sha256": [
+      "cli_finetune.py",
+      "evaluation/agent_runs.py",
+      "finetune_evaluation.py",
+      "finetune_evaluation_tui.py",
+      "finetune_evaluation_worker.py",
+      "finetune_quality.py",
+      "finetune_recovery.py",
+      "finetune_worker.py",
+      "finetune_workspace.py",
+      "tui.py"
+    ],
+    "test_source_sha256": [
+      "tests/unit/test_finetune_checkpoint_evaluation.py",
+      "tests/unit/test_finetune_recovery.py"
+    ]
+  }
+}

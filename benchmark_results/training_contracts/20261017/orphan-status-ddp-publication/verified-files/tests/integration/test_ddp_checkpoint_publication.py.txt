@@ -1,0 +1,283 @@
+"""Two native DDP workers preserve learner RNG and contain publication failures."""
+
+from __future__ import annotations
+
+import asyncio
+import copy
+import json
+import os
+import random
+import shutil
+import sys
+import time
+from datetime import timedelta
+from pathlib import Path
+
+import pytest
+
+pytestmark = pytest.mark.integration
+_MODES = ("true", "none", "absent", "disabled", "false", "exception", "rng")
+
+
+def _draw():
+    import numpy as np
+    import torch
+
+    return random.random(), float(np.random.random()), torch.rand(3)
+
+
+def _publisher(rank, calls, mode="true"):
+    def publish():
+        import numpy as np
+        import torch
+
+        calls.append(mode)
+        if mode == "disabled":
+            raise AssertionError("Disabled rollout publication was called")
+        # Unequal consumption makes accidental cross-rank RNG agreement an
+        # invalid substitute for restoring each saved rank-local stream.
+        for _ in range(rank + 1):
+            random.random()
+            np.random.random()
+            torch.rand(5)
+        if rank == 1 and mode == "false":
+            return False
+        if rank == 1 and mode == "exception":
+            raise RuntimeError("injected rank-local publication failure")
+        return None if mode == "none" else True
+
+    return publish
+
+
+def _random_groups(rank):
+    import numpy as np
+    import torch
+
+    from tests.unit.test_token_group_aggregation import _groups
+
+    group = copy.deepcopy(_groups()[rank])
+    for index, trajectory in enumerate(group.trajectories):
+        trajectory.total_reward = (
+            index
+            - 1
+            + (random.random() + float(np.random.random()) + float(torch.rand(()))) / 3
+        )
+    return [group]
+
+
+def _learner_snapshot(trainer):
+    import torch
+
+    from stateset_agents.training.runtime_state import capture_rng
+
+    return copy.deepcopy(
+        {
+            "policy": trainer.agent.model.module.state_dict(),
+            "reference": trainer.reference_model.state_dict(),
+            "optimizer": trainer.optimizer.state_dict(),
+            "scheduler": trainer.lr_scheduler.state_dict(),
+            "gradients": [
+                parameter.grad for parameter in trainer.agent.model.parameters()
+            ],
+            "normalization": trainer._grpo_accumulation,
+            "counters": [
+                trainer.global_step,
+                trainer.current_epoch,
+                trainer._next_episode,
+                trainer._grad_accum_step,
+                trainer.best_eval_metric,
+                trainer.steps_without_improvement,
+            ],
+            "baseline": [
+                trainer._global_reward_mean,
+                trainer._global_reward_count,
+                trainer._global_reward_sum,
+            ],
+            "rng": capture_rng(torch),
+        }
+    )
+
+
+def _assert_distinct_rank_streams(draw, dist, torch):
+    encoded = torch.tensor([draw[0], draw[1], float(draw[2][0])], dtype=torch.float64)
+    gathered = [torch.empty_like(encoded) for _ in range(2)]
+    dist.all_gather(gathered, encoded)
+    assert all(gathered[0][index] != gathered[1][index] for index in range(3))
+
+
+def _blocked_until_reload(trainer, path, api, rank):
+    from tests.integration.test_native_ddp_checkpoint import _save
+    from tests.unit.test_token_group_aggregation import _groups
+
+    assert trainer._ddp_restore_failed is True
+    assert trainer._ddp_replica_consensus_pending is True
+    with pytest.raises(ValueError, match="preflight"):
+        asyncio.run(trainer.training_step([_groups()[rank]]))
+    with pytest.raises(ValueError, match="capture"):
+        _save(trainer, path, api)
+    assert not path.exists()
+    assert trainer._ddp_restore_failed is True
+
+
+def _worker(rank, directory, api):
+    import numpy as np
+    import torch
+    import torch.distributed as dist
+
+    from stateset_agents.training import ddp_checkpoint
+    from stateset_agents.training.runtime_state import capture_rng
+    from tests.integration.test_learner_preflight import _same
+    from tests.integration.test_native_ddp_checkpoint import _load, _make, _save
+    from tests.unit.test_token_group_aggregation import _groups
+
+    torch.set_num_threads(1)
+    if sys.platform.startswith("linux"):
+        os.environ["GLOO_SOCKET_IFNAME"] = "lo"
+    root = Path(directory)
+    dist.init_process_group(
+        "gloo",
+        rank=rank,
+        world_size=2,
+        init_method=(root / "rendezvous").as_uri(),
+        timeout=timedelta(seconds=30),
+    )
+    results = []
+    try:
+        for mode in _MODES:
+            case_root = root / mode
+            original = _make(case_root, rank, steps=1)
+            original.config.rollout_sync = mode != "disabled"
+            asyncio.run(original.training_step([_groups()[rank]]))
+            source_calls = []
+            successful_mode = mode if mode in {"none", "absent", "disabled"} else "true"
+            if mode != "absent":
+                original.agent.sync_rollout_backend = _publisher(
+                    rank, source_calls, successful_mode
+                )
+            # Global generators intentionally differ by rank while shared
+            # model/optimizer state is admitted by the collective save.
+            random.seed(1500 + rank)
+            np.random.seed(2500 + rank)
+            torch.manual_seed(3500 + rank)
+            path = case_root / "checkpoints" / "saved"
+            _save(original, path, api)
+            saved_rng = copy.deepcopy(capture_rng(torch))
+            expected_draw = _draw()
+            _assert_distinct_rank_streams(expected_draw, dist, torch)
+            expected_groups = _random_groups(rank)
+            before_policy = copy.deepcopy(original.agent.model.module.state_dict())
+            asyncio.run(original.training_step(expected_groups))
+            expected = _learner_snapshot(original)
+            assert original.global_step == 2
+            assert any(
+                not torch.equal(value, before_policy[name])
+                for name, value in original.agent.model.module.state_dict().items()
+                if name == "lookup.weight"
+            )
+
+            target = _make(case_root / "target", rank, steps=1)
+            target.config.rollout_sync = mode != "disabled"
+            target_calls = []
+            if mode != "absent":
+                target.agent.sync_rollout_backend = _publisher(rank, target_calls, mode)
+            if mode in {"false", "exception", "rng"}:
+                restore = ddp_checkpoint.restore_rng
+
+                def fail_final_rng(state, torch_module, restore_saved=restore):
+                    if rank == 1:
+                        raise RuntimeError("injected final rank-local RNG failure")
+                    return restore_saved(state, torch_module)
+
+                if mode == "rng":
+                    # apply_payload imports runtime_state.restore_rng itself;
+                    # only the new final collective restore is faulted here.
+                    ddp_checkpoint.restore_rng = fail_final_rng
+                try:
+                    with pytest.raises(
+                        ValueError,
+                        match="rng-restore" if mode == "rng" else "rollout-sync",
+                    ):
+                        _load(target, path, api)
+                finally:
+                    ddp_checkpoint.restore_rng = restore
+                _blocked_until_reload(
+                    target, case_root / "checkpoints" / "blocked", api, rank
+                )
+                target.agent.sync_rollout_backend = _publisher(
+                    rank, target_calls, "true"
+                )
+
+            assert _load(target, path, api)
+            assert target._ddp_restore_failed is False
+            assert target._ddp_replica_consensus_pending is False
+            assert target.last_rollout_sync is (
+                None if mode in {"none", "absent", "disabled"} else True
+            )
+            _same(capture_rng(torch), saved_rng, torch)
+            _same(_draw(), expected_draw, torch)
+            actual_groups = _random_groups(rank)
+            _same(
+                [item.total_reward for item in actual_groups[0].trajectories],
+                [item.total_reward for item in expected_groups[0].trajectories],
+                torch,
+            )
+            asyncio.run(target.training_step(actual_groups))
+            _same(_learner_snapshot(target), expected, torch)
+            if mode in {"absent", "disabled"}:
+                assert source_calls == target_calls == []
+            elif mode in {"false", "exception", "rng"}:
+                assert source_calls == ["true"]
+                assert target_calls == [mode, "true", "true"]
+            else:
+                assert source_calls == [mode]
+                assert target_calls == [mode, mode]
+            results.append(
+                {
+                    "api": api,
+                    "mode": mode,
+                    "rank_local_rng_equal": True,
+                    "next_update_equal": True,
+                    "coordinated_rejection": mode in {"false", "exception", "rng"},
+                    "reloaded": True,
+                }
+            )
+    finally:
+        (root / f"ddp-checkpoint-publication-{rank}.json").write_text(
+            json.dumps(results, indent=2) + "\n"
+        )
+        dist.destroy_process_group()
+
+
+@pytest.mark.parametrize("api", ["runtime", "async"])
+def test_collective_checkpoint_publication_rng_and_failure_recovery(tmp_path, api):
+    torch = pytest.importorskip("torch")
+    if (
+        not torch.distributed.is_available()
+        or not torch.distributed.is_gloo_available()
+    ):
+        pytest.skip("Gloo required")
+    context = torch.multiprocessing.spawn(
+        _worker, args=(str(tmp_path.resolve()), api), nprocs=2, join=False
+    )
+    try:
+        deadline = time.monotonic() + 90
+        while not context.join(timeout=1):
+            if time.monotonic() > deadline:
+                pytest.fail("native DDP publication contract exceeded 90 seconds")
+    finally:
+        for process in context.processes:
+            if process.is_alive():
+                process.terminate()
+            process.join(timeout=5)
+        report_dir = os.environ.get("STATESET_DISTRIBUTED_CONTRACT_REPORT_DIR")
+        if report_dir:
+            destination = Path(report_dir) / f"ddp-checkpoint-publication-{api}"
+            destination.mkdir(parents=True, exist_ok=True)
+            for report in tmp_path.glob("ddp-checkpoint-publication-*.json"):
+                shutil.copy2(report, destination / report.name)
+    for rank in [0, 1]:
+        report = json.loads(
+            (tmp_path / f"ddp-checkpoint-publication-{rank}.json").read_text()
+        )
+        assert [item["mode"] for item in report] == list(_MODES)
+        assert all(item["api"] == api and item["next_update_equal"] for item in report)

@@ -11,16 +11,16 @@ import pytest
 from typer.testing import CliRunner
 
 from stateset_agents.data.finetuning import group_finetuning_data, load_finetuning_data
-from stateset_agents.evaluation.industry import (
-    IndustryEvaluationPolicy,
-    collect_industry_predictions,
-    evaluate_industry_project,
-    export_industry_evaluation,
-)
 from stateset_agents.training.industry import (
     industry_examples,
     init_industry_project,
     prepare_industry_training,
+)
+from stateset_agents.verticals.industry_evaluation import (
+    IndustryEvaluationPolicy,
+    collect_industry_predictions,
+    evaluate_industry_project,
+    export_industry_evaluation,
 )
 
 
@@ -447,7 +447,7 @@ def test_predictions_must_match_prepared_model_revision(project):
 def test_evaluation_imports_no_ml_dependencies(project):
     code = """
 import sys
-from stateset_agents.evaluation.industry import export_industry_evaluation
+from stateset_agents.verticals.industry_evaluation import export_industry_evaluation
 assert export_industry_evaluation(sys.argv[1])['cases']
 assert not {'torch', 'transformers', 'peft', 'datasets'} & set(sys.modules)
 """

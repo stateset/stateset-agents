@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "files": [
+    "stateset_agents/tui.py",
+    "stateset_agents/finetune_evaluation_tui.py",
+    "tests/unit/test_evaluation_case_picker.py"
+  ],
+  "parent_acceptance_job": "16e925fa033f",
+  "source_matches_verified_candidate": true,
+  "installed_wheel_sha256": "dfd5be79e80bce6c557f2b124a62e5aa902e88df41c56e5a35b665d341bdd843",
+  "guard": "exclusive nonblocking lock shared with complete queued acceptance"
+}

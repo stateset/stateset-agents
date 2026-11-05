@@ -99,7 +99,13 @@ async def demo_online_grpo():
         num_episodes=4,
         profile="balanced",
         training_mode="single_turn",
-        config_overrides={"num_generations": 2, "bf16": False, "seed": 42},
+        # Stub demonstrations deliberately exercise lifecycle without learning.
+        config_overrides={
+            "num_generations": 2,
+            "bf16": False,
+            "seed": 42,
+            "zero_signal_patience": 0,
+        },
     )
 
     print(f"  Trained agent type: {type(trained).__name__}")
@@ -135,7 +141,12 @@ async def demo_rlaif():
         reward_fn=reward,
         num_episodes=4,
         training_mode="single_turn",
-        config_overrides={"num_generations": 2, "bf16": False, "seed": 42},
+        config_overrides={
+            "num_generations": 2,
+            "bf16": False,
+            "seed": 42,
+            "zero_signal_patience": 0,
+        },
     )
 
     print("  RLAIF training complete!")
@@ -164,7 +175,12 @@ async def demo_uncertainty():
         num_episodes=4,
         training_mode="single_turn",
         uncertainty_weighted=True,  # Wraps reward with Bayesian uncertainty
-        config_overrides={"num_generations": 2, "bf16": False, "seed": 42},
+        config_overrides={
+            "num_generations": 2,
+            "bf16": False,
+            "seed": 42,
+            "zero_signal_patience": 0,
+        },
     )
 
     print("  Uncertainty-weighted training complete!")
@@ -246,7 +262,12 @@ async def demo_hybrid():
             num_episodes=4,
             training_mode="hybrid",
             # dataset=None means skip offline phase, go straight to online
-            config_overrides={"num_generations": 2, "bf16": False, "seed": 42},
+            config_overrides={
+                "num_generations": 2,
+                "bf16": False,
+                "seed": 42,
+                "zero_signal_patience": 0,
+            },
         )
         print("  Hybrid training complete!")
     except Exception as exc:

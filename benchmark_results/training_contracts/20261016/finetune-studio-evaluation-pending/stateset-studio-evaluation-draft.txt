@@ -1,0 +1,7 @@
+{
+  "draft_preserved": true,
+  "mode": "0600",
+  "pane": "w1:p1A",
+  "training_started": false,
+  "retained_runs": 0
+}

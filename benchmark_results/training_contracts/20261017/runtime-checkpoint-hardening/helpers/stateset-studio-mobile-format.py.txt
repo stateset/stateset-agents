@@ -1,0 +1,12 @@
+from pathlib import Path
+import os,subprocess,sys
+import black,isort
+root=Path('/home/dom/stateset-agents'); os.chdir(root)
+os.environ.update(OMP_NUM_THREADS='1',MKL_NUM_THREADS='1',OPENBLAS_NUM_THREADS='1',NUMEXPR_NUM_THREADS='1',RAYON_NUM_THREADS='1',TOKENIZERS_PARALLELISM='false',HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1')
+files = ['stateset_agents/training/runtime_state.py', 'tests/unit/test_runtime_checkpoint_safety.py', 'stateset_agents/training/gspo_entrypoints.py', 'stateset_agents/training/gspo_token_trainer.py', 'stateset_agents/training/gepo_trainer.py', 'stateset_agents/training/dapo_entrypoints.py', 'tests/unit/test_dedicated_entrypoint_resume.py', 'scripts/check_release_governance.py', 'stateset_agents/tui.py', 'stateset_agents/cli.py', 'tests/unit/test_finetune_mobile.py', 'stateset_agents/api/routers/finetune.py', 'tests/api/test_finetune_operator.py', 'stateset_agents/finetune_inspection.py', 'tests/unit/test_finetune_inspection.py', 'stateset_agents/finetune_worker.py', 'stateset_agents/remote/runpod.py', 'tests/unit/test_finetune_backends.py', 'tests/unit/test_remote_runpod_executor.py', 'stateset_agents/training/ppo_trainer.py', 'tests/unit/test_ppo_safety.py']
+for name in files:
+    isort.file(root/name)
+    black.format_file_in_place(root/name,fast=False,mode=black.Mode(),write_back=black.WriteBack.YES)
+subprocess.run([sys.executable,'-m','ruff','check',*files],check=True)
+if '--format-only' not in sys.argv:
+    subprocess.run([sys.executable,'-m','pytest','-q','-n0','-o','addopts=','--timeout=150','--tb=short','tests/unit/test_finetune_mobile.py','--junitxml=/tmp/stateset-mobile-dev.xml'],check=True)

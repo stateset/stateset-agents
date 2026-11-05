@@ -1,0 +1,12 @@
+{
+  "cost_usd": null,
+  "duration_s": 144.1515414180467,
+  "logs": [
+    "River account advertises model access: Qwen/Qwen3.5-9B",
+    "built 128 River SFT data from 128 rows",
+    "created River model on Qwen/Qwen3.5-9B (LoRA rank 16, attn+mlp)",
+    "epoch 1/1 complete (16 steps, loss 0.0029)",
+    "saved River checkpoint: river://75dbd3f9-e963-429e-8cba-e07fa232569f/sampler_weights/sft"
+  ],
+  "status": "succeeded"
+}

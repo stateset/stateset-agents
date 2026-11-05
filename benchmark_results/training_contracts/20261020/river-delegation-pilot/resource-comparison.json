@@ -1,0 +1,32 @@
+{
+  "test": {
+    "backend_tool_calls": {
+      "delegated": 510.0,
+      "raw": 510.0
+    },
+    "delegated_generated_tokens": 5270,
+    "delegated_median_case_seconds": 5.854592745512491,
+    "delegated_model_tool_calls": 340,
+    "delegated_trajectory_seconds": 1022.5012192750582,
+    "generated_token_reduction": 0.6885710908876019,
+    "raw_generated_tokens": 16922,
+    "raw_median_case_seconds": 8.937875366478693,
+    "raw_model_tool_calls": 510,
+    "raw_trajectory_seconds": 1560.586873170454
+  },
+  "validation": {
+    "backend_tool_calls": {
+      "delegated": 222.0,
+      "raw": 222.0
+    },
+    "delegated_generated_tokens": 2294,
+    "delegated_median_case_seconds": 6.290957921999507,
+    "delegated_model_tool_calls": 148,
+    "delegated_trajectory_seconds": 490.35033933003433,
+    "generated_token_reduction": 0.6913347685683531,
+    "raw_generated_tokens": 7432,
+    "raw_median_case_seconds": 9.415894386504078,
+    "raw_model_tool_calls": 222,
+    "raw_trajectory_seconds": 722.791217710881
+  }
+}

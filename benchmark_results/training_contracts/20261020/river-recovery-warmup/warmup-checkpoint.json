@@ -1,0 +1,22 @@
+{
+  "base_model": "Qwen/Qwen3.5-9B",
+  "checkpoint": "river://2490a8d9-f17c-4dbc-922d-fcd6ae3dcd00/sampler_weights/warmup",
+  "final_loss": 4.253957582556683e-07,
+  "learning_rate": 2e-05,
+  "lora": {
+    "rank": 16,
+    "train_attn": true,
+    "train_mlp": true,
+    "train_unembed": false
+  },
+  "note": "River hosts the trained weights; this file is a pointer, not an adapter. Sample through the River API with this checkpoint \u2014 `stateset-agents serve --checkpoint` cannot load it.",
+  "num_epochs": 1,
+  "provider": "river",
+  "sft_options": {
+    "checkpoint": "river://0873e6c9-1686-42d4-a448-87bd5fea4056/sampler_weights/arithmetic",
+    "seed": 2026109401,
+    "shuffle": true
+  },
+  "steps": 10,
+  "tokens": 8851
+}

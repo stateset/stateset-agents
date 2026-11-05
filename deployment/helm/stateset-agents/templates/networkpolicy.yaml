@@ -1,0 +1,29 @@
+{{- if and .Values.vllm.enabled .Values.networkPolicy.enabled }}
+{{- $fullname := include "stateset-agents.fullname" . }}
+# vLLM is served without --api-key, so only the gateway (API) pods and any
+# explicitly allowed peers (networkPolicy.vllm.extraIngressFrom) may reach it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-vllm-ingress
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: {{ $fullname }}-vllm
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $fullname }}-vllm
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: {{ $fullname }}-api
+    {{- with .Values.networkPolicy.vllm.extraIngressFrom }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    ports:
+    - protocol: TCP
+      port: 8000
+{{- end }}

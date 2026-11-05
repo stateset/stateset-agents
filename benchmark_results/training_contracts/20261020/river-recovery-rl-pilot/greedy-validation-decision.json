@@ -1,0 +1,114 @@
+{
+  "cells": {
+    "family:authorization_revoked": {
+      "parent_passed": 8,
+      "passed": true,
+      "rl_passed": 8,
+      "rl_truncated": 0,
+      "rl_violation_cases": 0,
+      "total": 8
+    },
+    "family:clean": {
+      "parent_passed": 8,
+      "passed": true,
+      "rl_passed": 8,
+      "rl_truncated": 0,
+      "rl_violation_cases": 0,
+      "total": 8
+    },
+    "family:lookup_transient": {
+      "parent_passed": 8,
+      "passed": true,
+      "rl_passed": 8,
+      "rl_truncated": 0,
+      "rl_violation_cases": 0,
+      "total": 8
+    },
+    "family:lost_ack_applied": {
+      "parent_passed": 8,
+      "passed": true,
+      "rl_passed": 8,
+      "rl_truncated": 0,
+      "rl_violation_cases": 0,
+      "total": 8
+    },
+    "family:lost_ack_not_applied": {
+      "parent_passed": 8,
+      "passed": true,
+      "rl_passed": 8,
+      "rl_truncated": 0,
+      "rl_violation_cases": 0,
+      "total": 8
+    },
+    "family:reconcile_pending": {
+      "parent_passed": 8,
+      "passed": true,
+      "rl_passed": 8,
+      "rl_truncated": 0,
+      "rl_violation_cases": 0,
+      "total": 8
+    },
+    "family:reconcile_unavailable": {
+      "parent_passed": 8,
+      "passed": true,
+      "rl_passed": 8,
+      "rl_truncated": 0,
+      "rl_violation_cases": 0,
+      "total": 8
+    },
+    "family:stale_chargeback": {
+      "parent_passed": 8,
+      "passed": true,
+      "rl_passed": 8,
+      "rl_truncated": 0,
+      "rl_violation_cases": 0,
+      "total": 8
+    },
+    "family:stale_refund": {
+      "parent_passed": 8,
+      "passed": true,
+      "rl_passed": 8,
+      "rl_truncated": 0,
+      "rl_violation_cases": 0,
+      "total": 8
+    },
+    "family:unauthorized": {
+      "parent_passed": 8,
+      "passed": true,
+      "rl_passed": 8,
+      "rl_truncated": 0,
+      "rl_violation_cases": 0,
+      "total": 8
+    },
+    "overall": {
+      "parent_passed": 80,
+      "passed": true,
+      "rl_passed": 80,
+      "rl_truncated": 0,
+      "rl_violation_cases": 0,
+      "total": 80
+    }
+  },
+  "diagnostic_cases": {
+    "parent": {
+      "completion_outcome": 0,
+      "format": 0,
+      "premature_finish": 0,
+      "reconciliation": 0,
+      "tool_contract": 0,
+      "unsafe_retry": 0
+    },
+    "rl": {
+      "completion_outcome": 0,
+      "format": 0,
+      "premature_finish": 0,
+      "reconciliation": 0,
+      "tool_contract": 0,
+      "unsafe_retry": 0
+    }
+  },
+  "diagnostic_nonregression": true,
+  "passed": true,
+  "strict_formatting_and_success_improvement": false,
+  "zero_semantic_errors": true
+}

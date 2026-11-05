@@ -1,0 +1,295 @@
+{
+  "evaluations": [
+    {
+      "boundary_cases": 8,
+      "cases": 64,
+      "failed_cases_by_family": {
+        "chargeback": 1,
+        "eligible": 1,
+        "misleading_note": 1,
+        "partial_refund": 1,
+        "window_boundary": 7
+      },
+      "rejected_actions_by_error": {
+        "Action does not satisfy refund policy": 28,
+        "Wrong order or lookup arguments": 1,
+        "finish takes no arguments": 2
+      },
+      "seed": 2026101901,
+      "validation_step": 0
+    },
+    {
+      "boundary_cases": 8,
+      "cases": 64,
+      "failed_cases_by_family": {
+        "eligible": 1,
+        "misleading_note": 1,
+        "partial_refund": 1,
+        "window_boundary": 7
+      },
+      "rejected_actions_by_error": {
+        "Action does not satisfy refund policy": 25,
+        "finish takes no arguments": 5
+      },
+      "seed": 2026101901,
+      "validation_step": 1
+    },
+    {
+      "boundary_cases": 8,
+      "cases": 64,
+      "failed_cases_by_family": {
+        "chargeback": 1,
+        "misleading_note": 1,
+        "window_boundary": 5
+      },
+      "rejected_actions_by_error": {
+        "Action does not satisfy refund policy": 15,
+        "Wrong order or lookup arguments": 1,
+        "finish takes no arguments": 3
+      },
+      "seed": 2026101901,
+      "validation_step": 2
+    },
+    {
+      "boundary_cases": 8,
+      "cases": 64,
+      "failed_cases_by_family": {
+        "eligible": 1,
+        "misleading_note": 2,
+        "partial_refund": 1,
+        "window_boundary": 8
+      },
+      "rejected_actions_by_error": {
+        "Action does not satisfy refund policy": 30,
+        "finish takes no arguments": 2
+      },
+      "seed": 2026101902,
+      "validation_step": 0
+    },
+    {
+      "boundary_cases": 8,
+      "cases": 64,
+      "failed_cases_by_family": {
+        "eligible": 1,
+        "misleading_note": 1,
+        "outside_window": 1,
+        "partial_refund": 1,
+        "window_boundary": 7
+      },
+      "rejected_actions_by_error": {
+        "Action does not satisfy refund policy": 25,
+        "Wrong order or lookup arguments": 4,
+        "finish takes no arguments": 3
+      },
+      "seed": 2026101902,
+      "validation_step": 1
+    },
+    {
+      "boundary_cases": 8,
+      "cases": 64,
+      "failed_cases_by_family": {
+        "eligible": 2,
+        "misleading_note": 2,
+        "window_boundary": 6
+      },
+      "rejected_actions_by_error": {
+        "Action does not satisfy refund policy": 25,
+        "finish takes no arguments": 4
+      },
+      "seed": 2026101902,
+      "validation_step": 2
+    },
+    {
+      "boundary_cases": 8,
+      "cases": 64,
+      "failed_cases_by_family": {
+        "eligible": 1,
+        "misleading_note": 2,
+        "outside_window": 1,
+        "window_boundary": 6
+      },
+      "rejected_actions_by_error": {
+        "Action does not satisfy refund policy": 25,
+        "Wrong order or lookup arguments": 1,
+        "finish takes no arguments": 2
+      },
+      "seed": 2026101903,
+      "validation_step": 0
+    },
+    {
+      "boundary_cases": 8,
+      "cases": 64,
+      "failed_cases_by_family": {
+        "misleading_note": 1,
+        "outside_window": 1,
+        "window_boundary": 3
+      },
+      "rejected_actions_by_error": {
+        "Action does not satisfy refund policy": 10,
+        "Wrong order or lookup arguments": 1
+      },
+      "seed": 2026101903,
+      "validation_step": 1
+    },
+    {
+      "boundary_cases": 8,
+      "cases": 64,
+      "failed_cases_by_family": {
+        "misleading_note": 1,
+        "outside_window": 1,
+        "window_boundary": 3
+      },
+      "rejected_actions_by_error": {
+        "Action does not satisfy refund policy": 10,
+        "Wrong order or lookup arguments": 1,
+        "finish takes no arguments": 1
+      },
+      "seed": 2026101903,
+      "validation_step": 2
+    },
+    {
+      "boundary_cases": 8,
+      "cases": 64,
+      "failed_cases_by_family": {
+        "eligible": 1,
+        "partial_refund": 3,
+        "window_boundary": 4
+      },
+      "rejected_actions_by_error": {
+        "Action does not satisfy refund policy": 18,
+        "finish takes no arguments": 5
+      },
+      "seed": 2026101904,
+      "validation_step": 0
+    },
+    {
+      "boundary_cases": 8,
+      "cases": 64,
+      "failed_cases_by_family": {
+        "eligible": 1,
+        "partial_refund": 3,
+        "window_boundary": 4
+      },
+      "rejected_actions_by_error": {
+        "Action does not satisfy refund policy": 22,
+        "finish takes no arguments": 2
+      },
+      "seed": 2026101904,
+      "validation_step": 1
+    },
+    {
+      "boundary_cases": 8,
+      "cases": 64,
+      "failed_cases_by_family": {
+        "eligible": 1,
+        "partial_refund": 3,
+        "window_boundary": 4
+      },
+      "rejected_actions_by_error": {
+        "Action does not satisfy refund policy": 20,
+        "finish takes no arguments": 3
+      },
+      "seed": 2026101904,
+      "validation_step": 2
+    },
+    {
+      "boundary_cases": 8,
+      "cases": 64,
+      "failed_cases_by_family": {
+        "window_boundary": 5
+      },
+      "rejected_actions_by_error": {
+        "Action does not satisfy refund policy": 13,
+        "finish takes no arguments": 2
+      },
+      "seed": 2026101905,
+      "validation_step": 0
+    },
+    {
+      "boundary_cases": 8,
+      "cases": 64,
+      "failed_cases_by_family": {
+        "window_boundary": 5
+      },
+      "rejected_actions_by_error": {
+        "Action does not satisfy refund policy": 14,
+        "finish takes no arguments": 1
+      },
+      "seed": 2026101905,
+      "validation_step": 1
+    },
+    {
+      "boundary_cases": 8,
+      "cases": 64,
+      "failed_cases_by_family": {
+        "window_boundary": 5
+      },
+      "rejected_actions_by_error": {
+        "Action does not satisfy refund policy": 14,
+        "finish takes no arguments": 1
+      },
+      "seed": 2026101905,
+      "validation_step": 2
+    },
+    {
+      "boundary_cases": 8,
+      "cases": 64,
+      "failed_cases_by_family": {
+        "window_boundary": 8
+      },
+      "rejected_actions_by_error": {
+        "Action does not satisfy refund policy": 22,
+        "finish takes no arguments": 2
+      },
+      "seed": 2026101906,
+      "validation_step": 0
+    },
+    {
+      "boundary_cases": 8,
+      "cases": 64,
+      "failed_cases_by_family": {
+        "partial_refund": 1,
+        "window_boundary": 8
+      },
+      "rejected_actions_by_error": {
+        "Action does not satisfy refund policy": 25,
+        "finish takes no arguments": 2
+      },
+      "seed": 2026101906,
+      "validation_step": 1
+    },
+    {
+      "boundary_cases": 8,
+      "cases": 64,
+      "failed_cases_by_family": {
+        "misleading_note": 1,
+        "window_boundary": 6
+      },
+      "rejected_actions_by_error": {
+        "Action does not satisfy refund policy": 16,
+        "Wrong order or lookup arguments": 1,
+        "finish takes no arguments": 2
+      },
+      "seed": 2026101906,
+      "validation_step": 2
+    }
+  ],
+  "initial_sft_boundary_cases": 48,
+  "initial_sft_boundary_failures": 38,
+  "replayed_validation_outcomes": 1152,
+  "scope": "validation_only; no test outcomes inspected",
+  "source_artifacts": {
+    "outputs/river-six-seed-recovery-20261019/seed-2026101901/data/validation.json": "9076fd4947d1202ea58f3df26aea9993ee9390648194c8ed40a34e30ec18cd11",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101901/sft_rl/validation_results.json": "448a0ef3de0d16d567b3e71f2d4d1def59fd444fccfc04438ce5603a07a910a6",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101902/data/validation.json": "6dc3cd2760c2a38976d32a03dbec1220e8e4bc155da16a34aefb70728490de38",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101902/sft_rl/validation_results.json": "2e5854eb1f49d0854a5bc8d4bf4a20da28dcebf67816f0c4ca053dc6fcc1487f",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101903/data/validation.json": "a21f0691f6d4bb2fc9936a213a18dcb61cbe819bc396d156efc9a35b53338eb0",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101903/sft_rl/validation_results.json": "251e9002bc046a2947920cedd7d690d38a482297f29f5fc760c1e0973e136182",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101904/data/validation.json": "98e03a5015c0bd022afdf7e6e5db106c6080ff05b52c0659c154b6c7044b5ff0",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101904/sft_rl/validation_results.json": "831e6abb50ef2e40ca033084570da65af1c84d6c0bd171b183fe9a902ccbca9c",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101905/data/validation.json": "1f7a62ca5bf622a6f3ba4e56c586f2ed7471e42d3bfb6015b6011ac6ac2f14f2",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101905/sft_rl/validation_results.json": "5f29f258a60eec8f0d46c6230972c54340ceab5e683f7dfd8cc2cbdead988c6e",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101906/data/validation.json": "56904835389caa64b47361f93b2ac39d2fcea4f3810590bb3677771996744060",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101906/sft_rl/validation_results.json": "4d1883e56e82fe02ea9cee154f03089e6eaad8c434531bafd346e36fa12dc913"
+  }
+}

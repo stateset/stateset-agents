@@ -158,7 +158,7 @@ async def test_native_campaign_selects_validation_checkpoint_before_test(
         checkpoint_type: str = "inference"
 
     tested = []
-    from stateset_agents.training.river_refund import BENCHMARKS
+    from stateset_agents.verticals.river_refund import BENCHMARKS
 
     validation_rows = BENCHMARKS[benchmark_name][1]("validation", 1, 42)
     test_rows = BENCHMARKS[benchmark_name][1]("test", 1, 42)
@@ -246,7 +246,7 @@ async def test_native_campaign_selects_validation_checkpoint_before_test(
         checkpoint=None,
         dry_run=False,
     )
-    from stateset_agents.training.river_refund import prepare_run
+    from stateset_agents.verticals.river_refund import prepare_run
 
     splits = {
         "train": BENCHMARKS[benchmark_name][1]("train", 1, 42),

@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "kind": "synthetic-native-offline-device-contracts",
+  "passed": true,
+  "representative_quality_demonstrated": false,
+  "production_approved": false,
+  "package_version": "0.66.1",
+  "unreleased_checkout": true,
+  "wheel_sha256": "2c77b47e15e6089d3d893737c293ade7d9a56aef657e9976485c18c2478809b9",
+  "contract_script_sha256": "872e52c49b2360cc44126ab2ef00c48b0089fd2f968f40170d201acbf836f169",
+  "full_suite": {
+    "passed": 8251,
+    "optional_skips": 57,
+    "seconds": 253.43,
+    "job_id": "b91a86d2892e"
+  },
+  "type_checked_modules": 383,
+  "cuda_job_id": "c25cca321dad",
+  "cpu_device_contract": "cpu_contract.json",
+  "cuda_device_contract": "cuda_contract.json",
+  "gpu_name": "NVIDIA RTX A5000",
+  "torch_version": "2.7.1+cu128",
+  "cuda_version": "12.8",
+  "optimizer_updates": 2,
+  "resumed_weights_match_uninterrupted": true,
+  "reload_inference_finite": true,
+  "downloaded_policy_revalidated": true,
+  "downloaded_policy_artifact_sha256": "fcc0fb71f92f7680aa86f20aaddeb8ea5299a29baafadbef48ce8de68b352721",
+  "downloaded_policy_files": {
+    ".stateset-checkpoint.json": "6590b6a95c659a479e3eeb5269a2321c146b78db827d23d331cbae54e2df5dbc",
+    "chat_template.jinja": "bbb5be5478b2e408cb14501ff61cbbfe4c71914852cb4ba6a6b3916dff8e333c",
+    "config.json": "919d3a8d47890e22265bde18686de7ff8e676dbb942079803ca92528863406a4",
+    "generation_config.json": "ef312b561089f34a5ed01ed353d44e42529eb4a1935ea95db7a4ce12267142d5",
+    "model.safetensors": "01ce23340367a07e5ce527aaee650d007a8560c7ca94f0a7db3753c825d7ce44",
+    "special_tokens_map.json": "fe9396e7207d819d57824cc5b7eb0ffc48835fed9bb099b249a57275986f02b1",
+    "tokenizer.json": "4e45b6535917f828192b9505df8cc08e71f0daafb0282009b0727b28f4e7ca88",
+    "tokenizer_config.json": "4fbed60ab8010ddaf065644dfd071862f90e35095152074591cabdb10db19d08",
+    "training_state.pt": "2fba76abcc5849706a6085f0cd928508b8bfc4c9498f5860b02c5bcaacdc65a7"
+  },
+  "estimated_total_compute_usd": 0.0831,
+  "all_created_pods_termination_confirmed": true,
+  "excludes_storage_and_network_charges": true,
+  "prior_attempt": "attempt-1/provider_result.json",
+  "successful_attempt": "attempt-2/provider_result.json",
+  "policy_exports_retained_at": "/tmp/stateset-native-gpu-cuda-fix-20261014/artifacts",
+  "remaining_evidence_gates": [
+    "reviewed-case paired quality study",
+    "live native/TRL/external backend comparisons",
+    "distributed fault recovery and twelve-hour soak matrix"
+  ]
+}

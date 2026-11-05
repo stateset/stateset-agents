@@ -10,38 +10,51 @@ from __future__ import annotations
 import gc
 import logging
 import time
+from collections.abc import Callable
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 try:  # pragma: no cover - optional dependency
-    import psutil
+    import psutil as _psutil
+
+    psutil: Any = _psutil
 except ImportError:  # pragma: no cover
     psutil = None
 
 try:  # pragma: no cover - optional dependency
-    import torch
-    import torch.nn as nn
+    import torch as _torch
+    import torch.nn as _nn
+
+    torch: Any = _torch
+    nn: Any = _nn
 except ImportError:  # pragma: no cover
     torch = None
     nn = None
 
+# Mixed-precision helpers; ``None`` when this PyTorch build does not provide them.
+GradScaler: Any = None
+autocast: Any = None
 if torch is not None:  # pragma: no cover - optional dependency
     try:
         # Prefer the modern torch.amp APIs; fall back to torch.cuda.amp for older
         # PyTorch versions. (torch.cuda.amp.* emits deprecation warnings in
         # newer versions.)
-        from torch.amp import GradScaler, autocast
+        from torch.amp import GradScaler as _AmpGradScaler
+        from torch.amp import autocast as _amp_autocast
+
+        GradScaler = _AmpGradScaler
+        autocast = _amp_autocast
     except (ImportError, AttributeError, RuntimeError):  # pragma: no cover
         try:
-            from torch.cuda.amp import GradScaler, autocast
+            from torch.cuda.amp import GradScaler as _CudaGradScaler
+            from torch.cuda.amp import autocast as _cuda_autocast
+
+            GradScaler = _CudaGradScaler
+            autocast = _cuda_autocast
         except (ImportError, AttributeError, RuntimeError):  # pragma: no cover
-            GradScaler = None
-            autocast = None
-else:  # pragma: no cover
-    GradScaler = None
-    autocast = None
+            pass
 
 # Lazy import for transformers to avoid torch/torchvision compatibility issues
 PreTrainedModel = Any
@@ -279,22 +292,32 @@ class ModelOptimizer:
     def optimize_optimizer(self, optimizer: Optimizer) -> Optimizer:
         """Optimize optimizer settings"""
 
-        # Use fused optimizer if available
-        if self.config.fused_optimizer and hasattr(optimizer, "fused"):
-            try:
-                # Create fused version of optimizer
-                optimizer_class = optimizer.__class__
-                fused_optimizer = optimizer_class(
-                    optimizer.param_groups[0]["params"],
-                    **optimizer.defaults,
-                    fused=True,
-                )
-                logger.info(f"Enabled fused {optimizer_class.__name__}")
-                return fused_optimizer
-            except (TypeError, ValueError, RuntimeError, AttributeError) as e:
-                logger.warning(f"Failed to enable fused optimizer: {e}")
+        # PyTorch records fused-kernel support in ``defaults`` (there is no
+        # ``optimizer.fused`` attribute). Only rebuild a fresh optimizer so no
+        # accumulated state (e.g. Adam moments) is dropped.
+        defaults = optimizer.defaults
+        if (
+            not self.config.fused_optimizer
+            or "fused" not in defaults
+            or defaults.get("fused")
+            or optimizer.state
+        ):
+            return optimizer
 
-        return optimizer
+        optimizer_name = type(optimizer).__name__
+        # Rebuild from every param group so per-group hyperparameters survive.
+        optimizer_factory: Callable[..., Optimizer] = type(optimizer)
+        try:
+            fused_optimizer = optimizer_factory(
+                [{**group, "fused": True} for group in optimizer.param_groups],
+                fused=True,
+            )
+        except (TypeError, ValueError, RuntimeError) as e:
+            logger.warning("Failed to enable fused %s: %s", optimizer_name, e)
+            return optimizer
+
+        logger.info("Enabled fused %s", optimizer_name)
+        return fused_optimizer
 
     @contextmanager
     def mixed_precision_context(self):

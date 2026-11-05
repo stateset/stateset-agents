@@ -157,7 +157,9 @@ class PromptBasedAdaptation(AdaptationStrategy):
             selected = sorted_examples[:k]
         else:
             # Random selection
-            selected = np.random.choice(examples, size=k, replace=False).tolist()
+            # Sample indices so examples are never coerced into a NumPy array.
+            indices = np.random.choice(len(examples), size=k, replace=False)
+            selected = [examples[int(i)] for i in indices]
 
         return selected
 

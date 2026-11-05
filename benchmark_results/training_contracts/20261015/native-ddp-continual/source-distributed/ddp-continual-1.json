@@ -1,0 +1,384 @@
+[
+  {
+    "strategy": "lwf",
+    "broadcast_buffers": false,
+    "population": "uneven",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "lwf",
+    "broadcast_buffers": false,
+    "population": "empty_peer",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "lwf",
+    "broadcast_buffers": false,
+    "population": "all_empty",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "lwf",
+    "broadcast_buffers": false,
+    "population": "masked",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "lwf",
+    "broadcast_buffers": false,
+    "population": "cap",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "lwf",
+    "broadcast_buffers": false,
+    "population": "buffer",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "lwf",
+    "broadcast_buffers": true,
+    "population": "uneven",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "lwf",
+    "broadcast_buffers": true,
+    "population": "empty_peer",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "lwf",
+    "broadcast_buffers": true,
+    "population": "all_empty",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "lwf",
+    "broadcast_buffers": true,
+    "population": "masked",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "lwf",
+    "broadcast_buffers": true,
+    "population": "cap",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "lwf",
+    "broadcast_buffers": true,
+    "population": "buffer",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "ewc",
+    "broadcast_buffers": false,
+    "population": "uneven",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "ewc",
+    "broadcast_buffers": false,
+    "population": "empty_peer",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "ewc",
+    "broadcast_buffers": false,
+    "population": "all_empty",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "ewc",
+    "broadcast_buffers": false,
+    "population": "masked",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "ewc",
+    "broadcast_buffers": false,
+    "population": "cap",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "ewc",
+    "broadcast_buffers": false,
+    "population": "buffer",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "ewc",
+    "broadcast_buffers": true,
+    "population": "uneven",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "ewc",
+    "broadcast_buffers": true,
+    "population": "empty_peer",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "ewc",
+    "broadcast_buffers": true,
+    "population": "all_empty",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "ewc",
+    "broadcast_buffers": true,
+    "population": "masked",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "ewc",
+    "broadcast_buffers": true,
+    "population": "cap",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "ewc",
+    "broadcast_buffers": true,
+    "population": "buffer",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "replay_lwf_ewc",
+    "broadcast_buffers": false,
+    "population": "uneven",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "replay_lwf_ewc",
+    "broadcast_buffers": false,
+    "population": "empty_peer",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "replay_lwf_ewc",
+    "broadcast_buffers": false,
+    "population": "all_empty",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "replay_lwf_ewc",
+    "broadcast_buffers": false,
+    "population": "masked",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "replay_lwf_ewc",
+    "broadcast_buffers": false,
+    "population": "cap",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "replay_lwf_ewc",
+    "broadcast_buffers": false,
+    "population": "buffer",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "replay_lwf_ewc",
+    "broadcast_buffers": true,
+    "population": "uneven",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "replay_lwf_ewc",
+    "broadcast_buffers": true,
+    "population": "empty_peer",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "replay_lwf_ewc",
+    "broadcast_buffers": true,
+    "population": "all_empty",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "replay_lwf_ewc",
+    "broadcast_buffers": true,
+    "population": "masked",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "replay_lwf_ewc",
+    "broadcast_buffers": true,
+    "population": "cap",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "strategy": "replay_lwf_ewc",
+    "broadcast_buffers": true,
+    "population": "buffer",
+    "global_fisher_matches_reference": true,
+    "pending_state_preserved": true,
+    "plain_frozen_teacher": true,
+    "resume_next_update_equal": true
+  },
+  {
+    "fault": "snapshot",
+    "coordinated_rejection": true,
+    "recovered": true,
+    "boundary_flush": true
+  },
+  {
+    "fault": "estimate",
+    "coordinated_rejection": true,
+    "recovered": true,
+    "boundary_flush": true
+  },
+  {
+    "fault": "config",
+    "coordinated_rejection": true,
+    "recovered": true,
+    "boundary_flush": true
+  },
+  {
+    "fault": "task",
+    "coordinated_rejection": true,
+    "recovered": true,
+    "boundary_flush": true
+  },
+  {
+    "fault": "commit",
+    "coordinated_rejection": true,
+    "recovered": true,
+    "boundary_flush": true
+  },
+  {
+    "fault": "window",
+    "coordinated_rejection": true,
+    "recovered": true,
+    "boundary_flush": true
+  },
+  {
+    "fault": "flush",
+    "coordinated_rejection": true,
+    "recovered": true,
+    "boundary_flush": true
+  },
+  {
+    "fault": "after_flush",
+    "coordinated_rejection": true,
+    "recovered": true,
+    "boundary_flush": true
+  },
+  {
+    "full_train_inner_updates": 1,
+    "task_window_budget": 5,
+    "complete_resume_idempotent": true
+  },
+  {
+    "full_train_inner_updates": 2,
+    "task_window_budget": 10,
+    "complete_resume_idempotent": true
+  }
+]

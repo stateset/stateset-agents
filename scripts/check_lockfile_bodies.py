@@ -15,9 +15,9 @@ def lock_body(path: Path) -> tuple[str, ...]:
 
 def main(args: list[str]) -> int:
     """Check pairs of committed and regenerated lock files."""
-    if len(args) != 4:
-        raise SystemExit("expected committed/regenerated paths for both locks")
-    for original, regenerated in ((args[0], args[1]), (args[2], args[3])):
+    if not args or len(args) % 2:
+        raise SystemExit("expected pairs of committed/regenerated lock paths")
+    for original, regenerated in zip(args[::2], args[1::2], strict=True):
         try:
             if lock_body(Path(original)) != lock_body(Path(regenerated)):
                 print(f"Resolved lock entries differ: {regenerated}", file=sys.stderr)

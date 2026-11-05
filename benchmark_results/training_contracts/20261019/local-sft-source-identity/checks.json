@@ -1,0 +1,58 @@
+{
+  "black": "passed outside sandbox worker IPC restriction",
+  "git_diff_check": "passed",
+  "isort": "passed",
+  "new_identity_tests": 15,
+  "new_real_tiny_cpu_lora_tests": 5,
+  "previous_evidence_verified": [
+    {
+      "bundle": "ghostty-tui-polish",
+      "verified_artifacts": 7
+    },
+    {
+      "bundle": "industry-dataset-factory",
+      "verified_artifacts": 8
+    },
+    {
+      "bundle": "industry-studio-integration",
+      "verified_artifacts": 28
+    },
+    {
+      "bundle": "river-boundary-curriculum",
+      "verified_artifacts": 15
+    },
+    {
+      "bundle": "river-cleanup-environment",
+      "verified_artifacts": 22
+    },
+    {
+      "bundle": "river-selection-hardening",
+      "verified_artifacts": 19
+    },
+    {
+      "bundle": "river-six-seed",
+      "verified_artifacts": 121
+    },
+    {
+      "bundle": "river-six-seed-recovery",
+      "verified_artifacts": 219
+    },
+    {
+      "bundle": "sft-source-identity",
+      "verified_artifacts": 8
+    },
+    {
+      "bundle": "sft-split-boundaries",
+      "verified_artifacts": 9
+    }
+  ],
+  "provider_calls": 0,
+  "repo_hygiene": "passed",
+  "ruff": "passed",
+  "target_model_updates": 0,
+  "typecheck": {
+    "packaged_source_files": 444,
+    "passed": true
+  },
+  "unique_passing_tests": 640
+}

@@ -1,29 +1,11 @@
-"""
-Core components for the StateSet RL Agent Framework.
-
-Note: the canonical import path is now ``stateset_agents.core``. Importing
-from ``core`` continues to work for backwards compatibility but will be removed
-in a future release.
-"""
+"""Core components for the StateSet RL Agent Framework."""
 
 from __future__ import annotations
 
-import os
-import warnings
 from importlib import import_module
 from importlib.util import find_spec
 from types import ModuleType
 from typing import Any
-
-# Optional deprecation warning for legacy imports.
-# Set STATESET_AGENTS_ENABLE_CORE_DEPRECATION=1 to re-enable.
-if os.getenv("STATESET_AGENTS_ENABLE_CORE_DEPRECATION") == "1":
-    warnings.warn(
-        "Importing from the top-level 'core' package is deprecated; use "
-        "'stateset_agents.core' instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
 
 OPTIONAL_IMPORT_EXCEPTIONS = (
     AttributeError,
@@ -212,7 +194,7 @@ _LAZY_EXPORTS["TrainingConfig"] = (
 )
 _LAZY_EXPORTS["TypedConversationTurn"] = (
     "stateset_agents.core.type_system",
-    "ConversationTurn",
+    "ConversationTurnDict",
     None,
 )
 _LAZY_EXPORTS.update(
@@ -239,18 +221,6 @@ _LAZY_EXPORTS.update(
             "load_and_prepare_data",
         ],
     )
-)
-
-# Planning symbols moved to ``stateset_agents.experimental.long_term_planning``.
-# Re-exported here for one release with a DeprecationWarning.
-_DEPRECATED_PLANNING_EXPORTS = (
-    "PlanningConfig",
-    "PlanningManager",
-    "Planner",
-    "Plan",
-    "PlanStep",
-    "PlanStatus",
-    "HeuristicPlanner",
 )
 
 __all__ = list(_LAZY_EXPORTS)
@@ -287,16 +257,6 @@ def _maybe_import_submodule(name: str) -> ModuleType | None:
 
 
 def __getattr__(name: str) -> Any:
-    if name in _DEPRECATED_PLANNING_EXPORTS:
-        warnings.warn(
-            f"{name} is deprecated here; "
-            "import from stateset_agents.experimental.long_term_planning",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        module = import_module("stateset_agents.experimental.long_term_planning")
-        return getattr(module, name)
-
     export = _LAZY_EXPORTS.get(name)
     if export is None:
         submodule = _maybe_import_submodule(name)

@@ -1,0 +1,5 @@
+{
+  "passed": false,
+  "reason": "pip-audit report contains known vulnerabilities",
+  "acceptance_thresholds_changed": false
+}

@@ -1,0 +1,16 @@
+from pathlib import Path
+import fcntl
+
+lock = Path('/tmp/stateset-studio-mobile-source.lock').open('a')
+fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+path = Path('/tmp/stateset-studio-mobile-prepare.py')
+source = path.read_text()
+assert 'test_release_governance.py' not in source
+path.write_text(source.replace("'tests/unit/test_mypy_allowlist_ratchet.py',", "'tests/unit/test_mypy_allowlist_ratchet.py','tests/unit/test_release_governance.py',", 1))
+for suffix in ['format', 'gates']:
+    path = Path('/tmp/stateset-studio-mobile-'+suffix+'.py')
+    source = path.read_text()
+    assert 'scripts/check_release_governance.py' not in source if suffix == 'format' else True
+    marker = "'stateset_agents/tui.py',"
+    path.write_text(source.replace(marker, "'scripts/check_release_governance.py', "+marker, 1))
+print('Included governance inventory contracts in source acceptance')

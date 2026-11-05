@@ -1,0 +1,62 @@
+{
+  "README.md": {
+    "sha256": "650cc280395992ccbbc27803283485326043ce95dc403e2fdd7400750b52a3df",
+    "bytes": 10345
+  },
+  "accuracy.png": {
+    "sha256": "306a09aefcc6851bd633511402c177a702dc5fc91e12cc6cb3afa6573b89cfb9",
+    "bytes": 69545
+  },
+  "accuracy.svg": {
+    "sha256": "d4033bb43b14379d2a7614f1063e40ad6e09da3a8bc8c7a60d75f6401d328d68",
+    "bytes": 18073
+  },
+  "classifier_seed0.safetensors": {
+    "sha256": "de418c5bd5823193894f981363423b134e47bea6d5209484d2b8c6106e3bcfdd",
+    "bytes": 460404
+  },
+  "classifier_seed1.safetensors": {
+    "sha256": "24161c63e6ccd844ea25eea01718c4464e6d3283b6c035914ec7d5c3252e7008",
+    "bytes": 460404
+  },
+  "classifier_seed2.safetensors": {
+    "sha256": "44488bf9c124114487ad387474771ae9b74a31b53d840be52e3465de6d449bd9",
+    "bytes": 460404
+  },
+  "evaluation.safetensors": {
+    "sha256": "5aa5e82576dab0a7eff1bffaa1fd313afadfd44d107a084b770bf651c744edd1",
+    "bytes": 7521776
+  },
+  "handwritten.safetensors": {
+    "sha256": "6ab8d7e084c366a493340ebb77c581fa6ec26367546c5eb9300032d4d9e993d2",
+    "bytes": 461368
+  },
+  "recurrent_seed0.safetensors": {
+    "sha256": "05a5a0dcaf79349312168a9cfe3a04d640c836dc029912cfcc6880cc795d13ce",
+    "bytes": 461368
+  },
+  "recurrent_seed1.safetensors": {
+    "sha256": "37e0cf6998a44458f2567a215f363b3c8aa9bfb4c72a2227bd219967b87a5bea",
+    "bytes": 461368
+  },
+  "recurrent_seed2.safetensors": {
+    "sha256": "353201d4a421a6aa7c8ef0788002855a8beb39cf4a0c261b49dcf6b6f45ee1eb",
+    "bytes": 461368
+  },
+  "sources/benchmark.py": {
+    "sha256": "f791af25a096535d380920289d440fa7a6c9bc79292af0db44ae4d03c178dd0d",
+    "bytes": 18570
+  },
+  "sources/model.py": {
+    "sha256": "0a23957d4059b5688c8d41ff8a4155cd77a69a74a9711e1251aeffa61b854266",
+    "bytes": 6184
+  },
+  "summary.json": {
+    "sha256": "a9d42fc0f77c3bafa5685b632395cda4cd24b11c37d622d9255313a025a240b0",
+    "bytes": 47413
+  },
+  "verification.json": {
+    "sha256": "439c5c486bbbcc9e893a8b7b443ff374078b84460ca31af62fa5deaaf052c2fa",
+    "bytes": 472
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "job_id": "b453b4257468",
+  "exit_code": 0,
+  "passed": 236,
+  "output_sha256": "e829af1c18f13597cfaf99067d5ce33b4070ca4d3e1ed200218e5bd483694849",
+  "output": "queued b453b4257468 (local, 2 CPU slots, 2 GiB reserved)\nrunning b453b4257468 after 0.0s waiting | log /home/dom/.local/state/agent-builds/logs/b453b4257468.log\n........................................................................ [ 30%]\n........................................................................ [ 61%]\n........................................................................ [ 91%]\n....................                                                     [100%]\n=============================== warnings summary ===============================\ntests/unit/test_runtime_state.py::test_real_lora_adapter_round_trip_restores_policy_outputs\n  /home/dom/stateset-agents/.venv/lib/python3.12/site-packages/peft/tuners/lora/layer.py:2631: UserWarning: fan_in_fan_out is set to False but the target module is `Conv1D`. Setting fan_in_fan_out to True.\n    warnings.warn(\n\ntests/unit/test_runtime_state.py::test_real_lora_adapter_round_trip_restores_policy_outputs\n  /home/dom/stateset-agents/.venv/lib/python3.12/site-packages/peft/utils/save_and_load.py:438: UserWarning: Could not find a config file in  - will assume that the vocabulary was not modified.\n    warnings.warn(\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n236 passed, 2 warnings in 10.39s\nfinished b453b4257468: succeeded (exit 0)\n"
+}

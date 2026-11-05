@@ -1,0 +1,84 @@
+IMPORT COMPLETE 422242.053787128
+test_native_campaign_trains_selects_replays_and_seals_test_publication (test_river_native_sdk.NativeRiverIntegration.test_native_campaign_trains_selects_replays_and_seals_test_publication) ... Executing <Task pending name='Task-2' coro=<traced() running at /tmp/stateset_river_cleanup_probe.py:37> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> cb=[_run_until_complete_cb() at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:181] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py:100> took 0.164 seconds
+TASK <Task pending name='Task-2' coro=<traced() running at /tmp/stateset_river_cleanup_probe.py:37> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> cb=[_run_until_complete_cb() at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:181] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py:100>
+FRAME /tmp/stateset_river_cleanup_probe.py 37 traced
+TASK <Task pending name='Task-5' coro=<dispatch() running at /tmp/stateset_river_cleanup_probe.py:13> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420>
+FRAME /tmp/stateset_river_cleanup_probe.py 13 dispatch
+ENGINE 139650824731152 dispatcher <Task pending name='Task-5' coro=<dispatch() running at /tmp/stateset_river_cleanup_probe.py:13> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420> groups 0
+TASK <Task pending name='Task-3' coro=<dump() running at /tmp/stateset_river_cleanup_probe.py:26> created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420>
+FRAME /tmp/stateset_river_cleanup_probe.py 43 <module>
+FRAME /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/runner.py 240 run
+FRAME /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/suite.py 84 __call__
+FRAME /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/suite.py 122 run
+FRAME /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/case.py 690 __call__
+FRAME /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/async_case.py 132 run
+FRAME /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/case.py 634 run
+FRAME /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/async_case.py 91 _callTestMethod
+FRAME /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/async_case.py 113 _callMaybeAsync
+FRAME /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py 118 run
+FRAME /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py 678 run_until_complete
+FRAME /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py 645 run_forever
+FRAME /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py 1991 _run_once
+FRAME /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/events.py 88 _run
+FRAME /tmp/stateset_river_cleanup_probe.py 28 dump
+TASK <Task pending name='Task-4' coro=<closing_async_generator.<locals>.drive() running at /home/dom/stateset-agents/stateset_agents/utils/async_calls.py:67> wait_for=<Future pending cb=[shield.<locals>._outer_done_callback() at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:922, Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> cb=[_wait.<locals>._on_completion() at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:534] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420>
+FRAME /home/dom/stateset-agents/stateset_agents/utils/async_calls.py 67 drive
+GENERATOR generator /home/dom/stateset-agents/.venv/lib/python3.12/site-packages/river_client/rl/trainer.py 1241
+ENGINE EXIT START 139650824461568 model CheckpointSampler groups 0 dispatcher <Task pending name='Task-51' coro=<dispatch() running at /tmp/stateset_river_cleanup_probe.py:13> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420>
+DISPATCH EXIT 139650824461568 CancelledError
+ENGINE EXIT FINISH 139650824461568
+ENGINE EXIT START 139650822269712 model CheckpointSampler groups 1 dispatcher <Task pending name='Task-351' coro=<dispatch() running at /tmp/stateset_river_cleanup_probe.py:13> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420>
+DISPATCH EXIT 139650822269712 CancelledError
+ENGINE EXIT FINISH 139650822269712
+ENGINE EXIT START 139650824731152 model ScriptedModel groups 0 dispatcher <Task pending name='Task-5' coro=<dispatch() running at /tmp/stateset_river_cleanup_probe.py:13> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420>
+DISPATCH EXIT 139650824731152 CancelledError
+ENGINE EXIT FINISH 139650824731152
+
+  test_native_campaign_trains_selects_replays_and_seals_test_publication (test_river_native_sdk.NativeRiverIntegration.test_native_campaign_trains_selects_replays_and_seals_test_publication) (corrupt=False) ... ERROR
+Executing <Task pending name='Task-2' coro=<traced() running at /tmp/stateset_river_cleanup_probe.py:37> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> cb=[_run_until_complete_cb() at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:181] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py:100> took 0.150 seconds
+ENGINE EXIT START 139650822269472 model CheckpointSampler groups 0 dispatcher <Task pending name='Task-407' coro=<dispatch() running at /tmp/stateset_river_cleanup_probe.py:13> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420>
+DISPATCH EXIT 139650822269472 CancelledError
+ENGINE EXIT FINISH 139650822269472
+Timeout (0:01:00)!
+Thread 0x00007f02fd9a7700 (most recent call first):
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/concurrent/futures/thread.py", line 90 in _worker
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/threading.py", line 1012 in run
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x00007f0408681740 (most recent call first):
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/selectors.py", line 468 in select
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py", line 1961 in _run_once
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py", line 645 in run_forever
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py", line 678 in run_until_complete
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py", line 118 in run
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/async_case.py", line 113 in _callMaybeAsync
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/async_case.py", line 91 in _callTestMethod
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/case.py", line 634 in run
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/async_case.py", line 132 in run
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/case.py", line 690 in __call__
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/suite.py", line 122 in run
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/suite.py", line 84 in __call__
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/runner.py", line 240 in run
+  File "/tmp/stateset_river_cleanup_probe.py", line 43 in <module>
+ENGINE EXIT START 139650824460368 model CheckpointSampler groups 1 dispatcher <Task pending name='Task-706' coro=<dispatch() running at /tmp/stateset_river_cleanup_probe.py:13> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420>
+DISPATCH EXIT 139650824460368 CancelledError
+ENGINE EXIT FINISH 139650824460368
+ENGINE EXIT START 139650823960048 model ScriptedModel groups 0 dispatcher <Task pending name='Task-360' coro=<dispatch() running at /tmp/stateset_river_cleanup_probe.py:13> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420>
+DISPATCH EXIT 139650823960048 CancelledError
+ENGINE EXIT FINISH 139650823960048
+  test_native_campaign_trains_selects_replays_and_seals_test_publication (test_river_native_sdk.NativeRiverIntegration.test_native_campaign_trains_selects_replays_and_seals_test_publication) (corrupt=True) ... ERROR
+Timeout (0:01:00)!
+Thread 0x00007f0408681740 (most recent call first):
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/selectors.py", line 468 in select
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py", line 1961 in _run_once
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py", line 645 in run_forever
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py", line 678 in run_until_complete
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py", line 72 in close
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/async_case.py", line 127 in _tearDownAsyncioRunner
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/async_case.py", line 134 in run
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/case.py", line 690 in __call__
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/suite.py", line 122 in run
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/suite.py", line 84 in __call__
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/unittest/runner.py", line 240 in run
+  File "/tmp/stateset_river_cleanup_probe.py", line 43 in <module>

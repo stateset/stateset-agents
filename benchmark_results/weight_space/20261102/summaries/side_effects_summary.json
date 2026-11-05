@@ -1,0 +1,160 @@
+{
+  "models": {
+    "base": "/workspace/hf/hub/models--Qwen--Qwen3.5-0.8B/snapshots/2fc06364715b967f1860aea9cf38778875588b17",
+    "W5T13": "/workspace/ckpt/side_W5T13",
+    "W5T15": "/workspace/ckpt/side_W5T15",
+    "neuron": "/workspace/ckpt/side_neuron"
+  },
+  "mmlu": {
+    "base": {
+      "accuracy": 0.45,
+      "mean_p_think_end": 1.1862975722195302e-05,
+      "mean_p_letters": 0.9790829472988843
+    },
+    "W5T13": {
+      "accuracy": 0.456,
+      "mean_p_think_end": 0.000886375940380276,
+      "mean_p_letters": 0.9829711542725563
+    },
+    "W5T15": {
+      "accuracy": 0.454,
+      "mean_p_think_end": 0.01473624485000255,
+      "mean_p_letters": 0.9707350244522095
+    },
+    "neuron": {
+      "accuracy": 0.44,
+      "mean_p_think_end": 0.01599121684261702,
+      "mean_p_letters": 0.9586039151698351
+    }
+  },
+  "wikitext": {
+    "base": {
+      "tokens": 65535,
+      "perplexity": 17.3782,
+      "mean_p_think_end": 3.4432946999030155e-06
+    },
+    "W5T13": {
+      "tokens": 65535,
+      "perplexity": 17.3793,
+      "mean_p_think_end": 6.89964454737856e-05
+    },
+    "W5T15": {
+      "tokens": 65535,
+      "perplexity": 17.3861,
+      "mean_p_think_end": 0.00036228110521285416
+    },
+    "neuron": {
+      "tokens": 65535,
+      "perplexity": 18.4003,
+      "mean_p_think_end": 0.008465350843724765
+    }
+  },
+  "gsm8k_no_thinking": {
+    "base": {
+      "n": 500,
+      "accuracy": 0.548,
+      "strict": 0.548,
+      "stray_think_end": 0.0,
+      "hit_limit": 0.11,
+      "mean_tokens": 625.0
+    },
+    "W5T13": {
+      "n": 500,
+      "accuracy": 0.516,
+      "strict": 0.512,
+      "stray_think_end": 0.004,
+      "hit_limit": 0.114,
+      "mean_tokens": 636.0
+    },
+    "W5T15": {
+      "n": 500,
+      "accuracy": 0.53,
+      "strict": 0.5,
+      "stray_think_end": 0.064,
+      "hit_limit": 0.114,
+      "mean_tokens": 607.5
+    },
+    "neuron": {
+      "n": 500,
+      "accuracy": 0.576,
+      "strict": 0.492,
+      "stray_think_end": 0.218,
+      "hit_limit": 0.028,
+      "mean_tokens": 547.8
+    }
+  },
+  "paired_vs_base": {
+    "W5T13": {
+      "mmlu": {
+        "n": 1000,
+        "gained": 17,
+        "lost": 11,
+        "delta": 0.006,
+        "delta_95ci": [
+          -0.004,
+          0.017
+        ],
+        "mcnemar_p": 0.34492845088243484
+      },
+      "gsm8k_no_thinking_strict": {
+        "n": 500,
+        "gained": 32,
+        "lost": 50,
+        "delta": -0.036,
+        "delta_95ci": [
+          -0.07,
+          0.0
+        ],
+        "mcnemar_p": 0.05980833833431617
+      }
+    },
+    "W5T15": {
+      "mmlu": {
+        "n": 1000,
+        "gained": 22,
+        "lost": 18,
+        "delta": 0.004,
+        "delta_95ci": [
+          -0.008,
+          0.016
+        ],
+        "mcnemar_p": 0.6358280026288412
+      },
+      "gsm8k_no_thinking_strict": {
+        "n": 500,
+        "gained": 31,
+        "lost": 55,
+        "delta": -0.048,
+        "delta_95ci": [
+          -0.084,
+          -0.012
+        ],
+        "mcnemar_p": 0.012672513952314864
+      }
+    },
+    "neuron": {
+      "mmlu": {
+        "n": 1000,
+        "gained": 15,
+        "lost": 25,
+        "delta": -0.01,
+        "delta_95ci": [
+          -0.023,
+          0.003
+        ],
+        "mcnemar_p": 0.1538599441628321
+      },
+      "gsm8k_no_thinking_strict": {
+        "n": 500,
+        "gained": 30,
+        "lost": 58,
+        "delta": -0.056,
+        "delta_95ci": [
+          -0.092,
+          -0.02
+        ],
+        "mcnemar_p": 0.0037465093469812296
+      }
+    }
+  }
+}

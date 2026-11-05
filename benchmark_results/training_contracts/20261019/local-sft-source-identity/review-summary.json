@@ -1,0 +1,99 @@
+{
+  "datasets": [
+    {
+      "domain": "ecommerce",
+      "held_out_rejections": [
+        {
+          "split": "validation",
+          "text_only": false
+        },
+        {
+          "split": "validation",
+          "text_only": true
+        },
+        {
+          "split": "test",
+          "text_only": false
+        },
+        {
+          "split": "test",
+          "text_only": true
+        }
+      ],
+      "normalized_content_sha256": "af398cc19f684689ce5489275834504830f29a6d3bf6c91ce78fb34b23a50829",
+      "normalized_training_rows": 512,
+      "parsed_content_sha256": "9deffe91aafdcf4ff9c1f2f509e55fd1fcc1d66d3e17f867cc3485a133263f68",
+      "parsed_training_rows": 512,
+      "source_identity": {
+        "path": "outputs/industry-datasets-20261019/ecommerce/train.jsonl",
+        "rows": 512,
+        "sha256": "3183f1bb2de62479d14c5ad6fdc2d4261574f0d119fecd20216b94f164f15aef"
+      }
+    },
+    {
+      "domain": "logistics",
+      "held_out_rejections": [
+        {
+          "split": "validation",
+          "text_only": false
+        },
+        {
+          "split": "validation",
+          "text_only": true
+        },
+        {
+          "split": "test",
+          "text_only": false
+        },
+        {
+          "split": "test",
+          "text_only": true
+        }
+      ],
+      "normalized_content_sha256": "039a3ddbee27c012b47fc091cb2efd2abd0fb411571a447a3b96e91491bedc12",
+      "normalized_training_rows": 512,
+      "parsed_content_sha256": "f36d9b721edbd7f51c08d921c2536e76d2bb00504c8cf5a19e1730d1332f183a",
+      "parsed_training_rows": 512,
+      "source_identity": {
+        "path": "outputs/industry-datasets-20261019/logistics/train.jsonl",
+        "rows": 512,
+        "sha256": "15569aabb497976aedc70956e76af87fea21960904f7b077ec08ada0e361bd3b"
+      }
+    },
+    {
+      "domain": "saas",
+      "held_out_rejections": [
+        {
+          "split": "validation",
+          "text_only": false
+        },
+        {
+          "split": "validation",
+          "text_only": true
+        },
+        {
+          "split": "test",
+          "text_only": false
+        },
+        {
+          "split": "test",
+          "text_only": true
+        }
+      ],
+      "normalized_content_sha256": "d8b86ca44f60951ecf27375109084c03964b176608aa25040ea0c728c418f59a",
+      "normalized_training_rows": 512,
+      "parsed_content_sha256": "9106b5251488e8519b14aa2239d374ce9c60f1d63bc8de5cd695f3d45966bf4f",
+      "parsed_training_rows": 512,
+      "source_identity": {
+        "path": "outputs/industry-datasets-20261019/saas/train.jsonl",
+        "rows": 512,
+        "sha256": "fba5fa8e6bceed34eb76126c61bdaddf16b1da34780629eb4010dc86fbfec2fd"
+      }
+    }
+  ],
+  "provider_calls": 0,
+  "quality_certification": false,
+  "scope": "Industry corpus source/row identity capture; no model loading or training",
+  "target_model_updates": 0,
+  "training_source_rows": 1536
+}

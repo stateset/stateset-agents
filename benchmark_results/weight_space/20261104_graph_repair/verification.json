@@ -1,0 +1,22 @@
+{
+  "all_artifact_hashes_match": true,
+  "all_sources_match": true,
+  "all_edits_and_random_controls_reproduced": true,
+  "assigned_parameters_by_seed": {
+    "0": 69,
+    "1": 69,
+    "2": 69
+  },
+  "changed_parameters_by_seed": {
+    "0": 69,
+    "1": 69,
+    "2": 69
+  },
+  "fresh_graphs": 4096,
+  "previous_graph_overlap": 0,
+  "networkx_oracle_cases": 6283,
+  "replayed_graph_predictions": 94245,
+  "all_test_metrics_reproduced": true,
+  "all_selected_validation_metrics_reproduced": true,
+  "verifier_sha256": "01a06ee8ffa18455dfee20a39589fceeca001be2615140768d6e2d4ca771426b"
+}

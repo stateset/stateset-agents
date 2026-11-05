@@ -175,6 +175,41 @@ async def test_success_flushes_once_and_checkpoint_has_no_pending_window(
     assert saved == [(1, 0), (1, 0)]
 
 
+@pytest.mark.parametrize(
+    "step,updates,applied,due",
+    [
+        (0, 0, False, False),
+        (5, 0, False, False),
+        (5, 1, True, True),
+        (6, 1, True, False),
+        (6, 2, True, True),
+        (12, 8, True, True),
+    ],
+)
+def test_reporting_follows_committed_boundary_crossings(
+    lifecycle_trainer, step, updates, applied, due
+):
+    trainer, _ = lifecycle_trainer
+    trainer.global_step = step
+    assert (
+        trainer._step_event_due(
+            5, {"optimizer_step": applied, "optimizer_updates": updates}
+        )
+        is due
+    )
+
+
+@pytest.mark.asyncio
+async def test_initial_resume_does_not_skip_episode_zero(lifecycle_trainer):
+    trainer, _ = lifecycle_trainer
+    trainer.config.resume_from_checkpoint = "before-first-episode"
+    trainer.load_checkpoint = lambda _: True
+    assert trainer.current_epoch == trainer._next_episode == 0
+    await trainer.train()
+    assert trainer.generate_trajectories.await_count == 1
+    assert trainer._next_episode == 1
+
+
 @pytest.mark.asyncio
 async def test_tracking_failure_does_not_replace_original_training_error(
     lifecycle_trainer,

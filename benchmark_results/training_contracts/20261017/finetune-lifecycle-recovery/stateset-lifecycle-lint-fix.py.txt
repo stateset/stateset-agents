@@ -1,0 +1,17 @@
+"""Preserve failed receipt and fix the staged optional-Torch import marker."""
+from pathlib import Path
+import fcntl
+import shutil
+
+lock = Path('/tmp/stateset-studio-mobile-source.lock').open('a')
+fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+archive = Path('/tmp/stateset-lifecycle-failed-attempts/ffa225fcf41e')
+archive.mkdir(parents=True,exist_ok=False)
+shutil.copy2('/home/dom/.local/state/agent-builds/logs/ffa225fcf41e.log',archive/'job.log')
+shutil.copy2('/tmp/stateset-lifecycle-result.json',archive/'result.json')
+path = Path('/home/dom/stateset-agents/tests/unit/test_native_checkpoint_safety.py')
+source = path.read_text()
+needle = 'from tests.unit.test_multi_turn_checkpoint_accumulation import (\n'
+assert source.count(needle)==1
+path.write_text(source.replace(needle,'from tests.unit.test_multi_turn_checkpoint_accumulation import (  # noqa: E402\n',1))
+print('Retained failed formatting attempt; corrected optional-Torch import lint marker')

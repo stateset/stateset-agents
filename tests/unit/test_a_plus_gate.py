@@ -470,6 +470,24 @@ def test_evaluate_requires_every_gate_on_one_commit(
 ) -> None:
     commit = "a" * 40
     monkeypatch.setattr(gate, "validate_repository_state", lambda *_: None)
+    native_calls = []
+    monkeypatch.setattr(
+        gate.native_acceptance,
+        "audit_native_quality",
+        lambda path, **kwargs: native_calls.append(("quality", path, kwargs))
+        or {"passed": True},
+    )
+    monkeypatch.setattr(
+        gate.native_acceptance,
+        "audit_native_gpu_recovery",
+        lambda path, **kwargs: native_calls.append(("gpu", path, kwargs))
+        or {"passed": True},
+    )
+    monkeypatch.setattr(
+        gate.native_acceptance,
+        "native_gpu_harness_identity",
+        lambda _: {"harness": "bound"},
+    )
     framework_run = SimpleNamespace(
         data={"harness_commit": commit, "framework_version": PACKAGE_VERSION}
     )
@@ -596,6 +614,8 @@ def test_evaluate_requires_every_gate_on_one_commit(
     readiness.write_text("{}", encoding="utf-8")
     args = SimpleNamespace(
         expected_commit=commit,
+        native_quality_study=tmp_path / "native-study",
+        native_gpu_recovery=tmp_path / "native-gpu",
         framework_evidence=tmp_path,
         scaling_evidence=tmp_path,
         scaling_provider_evidence=tmp_path,
@@ -611,6 +631,14 @@ def test_evaluate_requires_every_gate_on_one_commit(
     )
     report = gate.evaluate(args)
     assert report["passed"] is True
+    assert [row[:2] for row in native_calls] == [
+        ("quality", args.native_quality_study),
+        ("gpu", args.native_gpu_recovery),
+    ]
+    assert (
+        native_calls[0][2]["expected_implementation"] == gate.package_implementation()
+    )
+    assert native_calls[1][2]["expected_harness"] == {"harness": "bound"}
     assert provider_gate_options == {
         "required": gate.provider_evidence.REQUIRED_PROVIDERS,
         "max_age_days": 30,
@@ -619,6 +647,8 @@ def test_evaluate_requires_every_gate_on_one_commit(
         "expected_version": PACKAGE_VERSION,
     }
     assert set(report["gates"]) == {
+        "native_quality",
+        "native_gpu_recovery",
         "competitive_frameworks",
         "scaling",
         "scaling_provider",
@@ -634,3 +664,23 @@ def test_evaluate_requires_every_gate_on_one_commit(
     framework_run.data["harness_commit"] = "b" * 40
     with pytest.raises(gate.APlusGateError, match="do not match"):
         gate.evaluate(args)
+
+
+def test_native_quality_failure_blocks_the_complete_a_plus_decision(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(gate, "validate_repository_state", lambda *_: None)
+
+    def reject(*args, **kwargs):
+        raise ValueError("Representative native quality gate failed")
+
+    monkeypatch.setattr(gate.native_acceptance, "audit_native_quality", reject)
+    monkeypatch.setattr(
+        gate.framework_comparison,
+        "load_evidence",
+        lambda *_: pytest.fail("Native acceptance failure was ignored"),
+    )
+    with pytest.raises(ValueError, match="Representative native quality"):
+        gate.evaluate(
+            SimpleNamespace(expected_commit="a" * 40, native_quality_study=tmp_path)
+        )

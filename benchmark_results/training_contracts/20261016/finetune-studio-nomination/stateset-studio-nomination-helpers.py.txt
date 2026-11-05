@@ -1,0 +1,19 @@
+"""Adapt the established frozen source/wheel acceptance to nomination contracts."""
+from pathlib import Path
+old='stateset-studio-validation-compare'
+new='stateset-studio-nomination'
+changed=['stateset_agents/finetune_nomination.py','stateset_agents/finetune_evaluation.py','stateset_agents/finetune_quality.py','stateset_agents/finetune_evaluation_tui.py','stateset_agents/tui.py','stateset_agents/cli_finetune.py','stateset_agents/finetune_workspace.py','tests/unit/test_finetune_nomination.py','tests/unit/test_mypy_allowlist_ratchet.py']
+for suffix in ['pipeline','prepare','wheel','finish','gates']:
+    value=Path('/tmp',old+'-'+suffix+'.py').read_text().replace(old,new)
+    if suffix in {'prepare','finish'}:
+        value=value.replace("['tests/unit/test_finetune_validation_comparison.py'", "['tests/unit/test_finetune_nomination.py','tests/unit/test_finetune_validation_comparison.py'")
+        value=value.replace("['tests/unit/test_mypy_allowlist_ratchet.py','tests/unit/test_finetune_validation_comparison.py'", "['tests/unit/test_mypy_allowlist_ratchet.py','tests/unit/test_finetune_nomination.py','tests/unit/test_finetune_validation_comparison.py'")
+    if suffix=='gates':
+        begin=value.index('for name in ['); end=value.index(':\n',begin)
+        value=value[:begin]+'for name in '+repr(changed)+value[end:]
+    Path('/tmp',new+'-'+suffix+'.py').write_text(value)
+value=Path('/tmp',new+'-dev.py').read_text()
+begin=value.index('files='); end=value.index('\nfor name in files:',begin)
+value=value[:begin]+'files='+repr(changed)+value[end:]
+Path('/tmp',new+'-format.py').write_text(value)
+print('Prepared nomination acceptance helpers.')

@@ -22,7 +22,7 @@ from stateset_agents.core.basic_rewards import (
     SafetyReward,
 )
 from stateset_agents.core.environment import ConversationEnvironment
-from stateset_agents.core.reward_base import CompositeReward
+from stateset_agents.core.reward_base import CompositeReward, RewardUnavailableError
 from stateset_agents.training.config import TrainingConfig
 from stateset_agents.training.single_turn_trainer import SingleTurnGRPOTrainer
 
@@ -71,6 +71,8 @@ async def test_pipeline_with_composite_reward_completes():
         normalize_weights=True,
     )
     config = TrainingConfig(
+        allow_sequence_fallback=True,
+        zero_signal_patience=0,  # Stub-only lifecycle test; no policy learning.
         num_episodes=2,
         max_steps_per_episode=3,
         num_generations=1,
@@ -96,11 +98,12 @@ async def test_pipeline_with_composite_reward_completes():
 
 @pytest.mark.asyncio
 async def test_composite_reward_survives_component_failure():
-    """If one reward fails, the composite must still score the rest."""
+    """With the opt-in renormalizing policy, the composite scores the rest when
+    one reward is unavailable (by default the outage drops the episode)."""
 
     class BrokenReward(HelpfulnessReward):
         async def compute_reward(self, turns, context=None):
-            raise RuntimeError("intentional failure")
+            raise RewardUnavailableError("intentional outage")
 
     reward_fn = CompositeReward(
         reward_functions=[
@@ -117,11 +120,15 @@ async def test_composite_reward_survives_component_failure():
             content="I'd be glad to help you with that, please share details.",
         )
     ]
+    with pytest.raises(RewardUnavailableError, match="intentional outage"):
+        await reward_fn.compute_reward(turns)
+    reward_fn.outage_policy = "renormalize"
     result = await reward_fn.compute_reward(turns)
 
     assert result.score >= 0.0
     assert "helpfulness" in result.components
     assert "broken" not in result.components
+    assert len(result.metadata["failed_components"]) == 1
 
 
 @pytest.mark.asyncio
@@ -153,6 +160,7 @@ async def test_checkpoint_path_resolution_and_directory_created(tmp_path):
     env = ConversationEnvironment(scenarios=_customer_scenarios(1), max_turns=2)
     reward_fn = HelpfulnessReward()
     config = TrainingConfig(
+        allow_sequence_fallback=True,
         num_episodes=1,
         max_steps_per_episode=2,
         num_generations=1,
@@ -180,6 +188,8 @@ async def test_pipeline_stable_across_multiple_episodes():
     env = ConversationEnvironment(scenarios=_customer_scenarios(3), max_turns=2)
     reward_fn = HelpfulnessReward()
     config = TrainingConfig(
+        allow_sequence_fallback=True,
+        zero_signal_patience=0,  # Stub-only lifecycle test; no policy learning.
         num_episodes=3,
         max_steps_per_episode=2,
         num_generations=1,
@@ -239,6 +249,7 @@ async def test_training_config_bf16_false_runs_on_cpu_backend():
     env = ConversationEnvironment(scenarios=_customer_scenarios(1), max_turns=2)
     reward_fn = HelpfulnessReward()
     config = TrainingConfig(
+        allow_sequence_fallback=True,
         num_episodes=1,
         max_steps_per_episode=2,
         num_generations=1,
@@ -335,7 +346,11 @@ async def test_trainer_initialize_is_idempotent():
     env = ConversationEnvironment(scenarios=_customer_scenarios(1), max_turns=2)
     reward_fn = HelpfulnessReward()
     config = TrainingConfig(
-        num_episodes=1, max_steps_per_episode=2, num_generations=1, bf16=False
+        allow_sequence_fallback=True,
+        num_episodes=1,
+        max_steps_per_episode=2,
+        num_generations=1,
+        bf16=False,
     )
     trainer = SingleTurnGRPOTrainer(
         agent=agent, environment=env, reward_fn=reward_fn, config=config

@@ -1,0 +1,10 @@
+StateSet Fine-tuning
+Studio
+Paused: terminal too
+small.
+Need 32 columns x 16
+rows.
+Resize to resume
+editing.
+q exits; existing jobs
+keep running.

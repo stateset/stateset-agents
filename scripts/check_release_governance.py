@@ -20,8 +20,11 @@ DEFAULT_SECURITY_DOC = REPO_ROOT / "SECURITY.md"
 REQUIRED_COMPONENT_IDS = {
     "api-serving",
     "bayesian-reward-model",
+    "capability-regression-eval",
     "core-agents",
+    "data-decontamination",
     "deployment-assets",
+    "distillation",
     "distributed-rollouts",
     "environments-rewards",
     "external-training-backends",
@@ -30,11 +33,14 @@ REQUIRED_COMPONENT_IDS = {
     "memory",
     "offline-rl",
     "ppo-rlaif-trainers",
+    "preference-optimization",
     "provider-control-plane",
+    "qlora-sft",
     "research-modules",
     "reward-learning-rlaif",
     "rust-acceleration",
     "sim-to-real",
+    "tool-use-rl",
     "vapo",
 }
 MATURITY_LEVELS = {"stable", "beta", "experimental"}

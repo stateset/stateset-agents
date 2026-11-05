@@ -143,6 +143,21 @@ async def train_with_gspo_example():
 asyncio.run(train_with_gspo_example())
 ```
 
+### Resume support
+
+The dedicated `train_with_gspo`, `train_with_gspo_token` and
+`train_customer_service_with_gspo` convenience loops start fresh runs. They
+reject an explicit `resume_from_checkpoint` before model, logging or output
+setup because they do not restore the training-query cursor. This also applies
+to the dedicated DAPO and GEPO convenience loops. A model export does not imply
+full training recovery.
+
+Native `SingleTurnGRPOTrainer` and `MultiTurnGRPOTrainer` retain their explicit
+full-state resume path, including supported GSPO objectives. The fine-tuning
+studio uses that native path for local RL recovery. Low-level dedicated trainers
+can load runtime state, but callers remain responsible for the data/query cursor.
+See [checkpoint semantics](OBJECTIVES.md) for validation and recovery limits.
+
 ### Using the Demo Script
 
 ```bash
@@ -377,17 +392,10 @@ Based on the original GSPO paper (Qwen Team):
 
 ## Integration with Existing Code
 
-### Adding GSPO to RL Orchestrator
-
-```python
-from stateset_agents.core.enhanced.advanced_rl_algorithms import create_advanced_rl_orchestrator
-
-# Create orchestrator with all algorithms including GSPO
-orchestrator = create_advanced_rl_orchestrator(agent)
-
-# GSPO is now available alongside PPO, DPO, A2C
-# Note: Use training.gspo_trainer for full implementation
-```
+GSPO runs through `stateset_agents.training.gspo_trainer` (`GSPOTrainer`,
+`train_with_gspo`). The `core.enhanced` `AdvancedRLOrchestrator` never ran GSPO
+(it held a stub, removed in v0.70.0) and is itself deprecated and removed in
+v0.72.0.
 
 ## References
 

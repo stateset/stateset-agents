@@ -1,0 +1,26 @@
+{
+  "stages": [
+    {
+      "name": "format",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-nomination-format.py",
+        "--format-only"
+      ],
+      "started": 1792206172.603943,
+      "finished": 1792206174.0240784,
+      "exit_code": 0
+    },
+    {
+      "name": "prepare",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-nomination-prepare.py"
+      ],
+      "started": 1792206174.0242856,
+      "finished": 1792206385.3681157,
+      "exit_code": 1
+    }
+  ],
+  "passed": false
+}

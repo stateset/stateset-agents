@@ -1,0 +1,79 @@
+"""Retain current integrated picker evidence without certifying the queued suite."""
+from pathlib import Path
+import hashlib
+import json
+import shutil
+import subprocess
+import xml.etree.ElementTree as ET
+
+root=Path('/home/dom/stateset-agents'); candidate=Path('/tmp/stateset-evaluation-case-picker-20261016')
+source=json.loads((candidate/'candidate-verification.json').read_text())
+wheel=json.loads((candidate/'candidate-wheel-verification.json').read_text())
+terminal=json.loads((candidate/'terminal-verification.json').read_text())
+post=json.loads((candidate/'canonical-picker-verification.json').read_text())
+integration=json.loads((candidate/'canonical-integration.json').read_text())
+assert all(record['passed'] for record in [source,wheel,terminal,post,integration])
+assert [stage['name'] for stage in source['stages']]==['ruff','tests','types']
+assert 'Success: no issues found in 429 source files' in (candidate/'types.log').read_text()
+assert all(hashlib.sha256((root/name).read_bytes()).hexdigest()==digest for name,digest in {**wheel['source_sha256'],**wheel['test_source_sha256']}.items())
+def cases(name):
+    tree=ET.parse(candidate/name).getroot()
+    assert all(not sum(int(s.get(key,0)) for key in ['failures','errors','skipped']) for s in tree.iter('testsuite'))
+    return {(c.get('classname'),c.get('name')) for c in tree.iter('testcase')}
+src=cases('picker-tests.xml'); installed=cases('picker-wheel.xml'); canonical=cases('canonical-picker.xml')
+assert src==installed and len(src)==142 and len(canonical)==12
+assert canonical=={case for case in src if case[0].rsplit('.',1)[-1]=='test_evaluation_case_picker'}
+out=root/'benchmark_results/training_contracts/20261016/finetune-studio-evaluation-picker'
+out.mkdir(parents=True,exist_ok=False)
+receipts=[]
+for handle in ['d72f4e87a399','b1d6d1554573','9df080fce68d','80f844255c06']:
+    job=json.loads(subprocess.check_output(['/home/dom/agent-builds/buildr','show','--json',handle],text=True))
+    assert job['state']=='succeeded' and job['exit_code']==0
+    receipts.append({key:job.get(key) for key in ['id','state','exit_code','argv','created','started','finished','wait_seconds','elapsed_seconds','usage']})
+    shutil.copy2(Path('/home/dom/.local/state/agent-builds/logs')/(handle+'.log'),out/(handle+'.log'))
+(out/'queue-receipts.json').write_text(json.dumps(receipts,indent=2)+'\n')
+summary={'passed':True,'scope':'picker_delta_and_existing_studio_and_evaluation_contracts','source_tests':142,'installed_wheel_tests':142,'post_integration_picker_tests':12,'typed_modules':429,'real_terminal_checks':2,'canonical_integrated':True,'source_matches_verified_candidate':True,'case_identities_match':True,'wheel_sha256':wheel['wheel_sha256'],'full_acceptance_verified':False,'full_acceptance_queue_job':'16e925fa033f','paid_run_launched':False,'gpu_verified':False,'quality_gain_verified':False,'count_note':'Source/wheel counts overlap, and the 12 post-integration cases are a subset.'}
+(out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+for name in ['candidate-base.json','candidate-verification.json','candidate-wheel-verification.json','terminal-verification.json','canonical-integration.json','canonical-picker-verification.json','picker-tests.xml','picker-wheel.xml','canonical-picker.xml','ruff.log','types.log','tests.log','wheel-build.log','wheel-install.log','wheel-origin.log','wheel-tests.log','terminal-74x44.log','terminal-110x32.log']:
+    shutil.copy2(candidate/name,out/name)
+for name in integration['files']:
+    dest=out/'source'/(name+'.txt'); dest.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(root/name,dest)
+for name in ['stateset-evaluation-case-picker-check.py','stateset-evaluation-case-picker-wheel.py','stateset-evaluation-case-picker-terminal.py','stateset-evaluation-case-picker-integrate.py','stateset-evaluation-picker-post-integration.py','stateset-evaluation-picker-retain.py']:
+    shutil.copy2(Path('/tmp')/name,out/(name+'.txt'))
+(out/'README.md').write_text('''# Evaluation case picker: scoped acceptance
+
+The current integrated files match an isolated candidate that passed 142 source
+tests, the same 142 installed-wheel test identities, Ruff for the three changed
+files, and typing for all 429 StateSet package modules. The actual wheel bytes
+match candidate package Python, including the packaged alias, plus the pinned
+rubric and recovery preset. Installed origin is verified. After integration,
+the 12 picker tests passed again against canonical files with unchanged hashes.
+Counts overlap; these 12 are a subset, not an additional independent suite.
+
+Press f from the evaluation form to browse held-out JSON case files. The shared
+browser supports filtering, directory navigation, Home/End and PageUp/Down. It
+returns only a selected path to the captured evaluation editor. Escape preserves
+its values. Case selection clears an old evaluation review, never the training
+configuration or saved draft. Busy, replaced or closed editors reject late
+selection. Browsing reads no file contents and does not prepare or submit work.
+Review and submission remain separate actions. The case picker excludes JSONL,
+hidden files, symlink files and special files; directories stay navigable.
+
+Functional coverage includes permissions, bounded 2,000-entry scans, Unicode
+names, minimum pane geometry, ownership changes, no model-library imports and
+the existing training browser. Actual installed CLI PTYs at 74x44 and 110x32
+choose a file, return to the form and exit without any evaluation/worker or
+draft change. Those fixtures are synthetic and isolated from the live workspace.
+
+The candidate was developed while the full regression pipeline remained queued.
+A shared nonblocking source lock coordinated the short integration with the
+queued pipeline's snapshot freeze. Its source and wheel selections now include
+the new picker test module. Existing jobs were not cancelled or re-reserved.
+
+Full acceptance job 16e925fa033f remains separate: this record does not certify
+the broader source/wheel suite, a live judge model, GPU, remote evaluation,
+multi-seed study or quality gain. Policy model tests use real tiny CPU weights;
+positive judge transport in the existing evaluation contracts uses injected
+synthetic replies through the actual recorder and replay.
+''')
+print(out)

@@ -231,8 +231,18 @@ def test_checkpoints_without_new_fields_still_load(tmp_path):
     save_training_checkpoint(source, tmp_path / "ck", require_torch_fn=require_torch)
     state_path = tmp_path / "ck" / "training_state.pt"
     state = torch.load(state_path, weights_only=False)
-    state.pop("reward_stats", None)
-    state.pop("rng_state", None)
+    # Reconstruct a legacy writer's schema, rather than remove only obsolete
+    # aliases while retaining a current schema's incompatible estimator state.
+    for name in (
+        "reward_stats",
+        "rng_state",
+        "learning_state",
+        "rng",
+        "rollout_state",
+        "native_checkpoint_schema",
+        "native_component_identities",
+    ):
+        state.pop(name, None)
     torch.save(state, state_path)
     # Publication metadata lists the file digest; refresh it for the edit.
     from stateset_agents.training import checkpoint_publication as cp

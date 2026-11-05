@@ -1,0 +1,79 @@
+{
+  "artifacts_hash_verified": 24,
+  "curation_source_sha256": "6aa8f5f1ea5e00d4840e06748f91fefed74a621f50d6326f5bdc9885572dc2d3",
+  "curation_tool": "stateset_agents.data.curation",
+  "domains": {
+    "ecommerce": {
+      "declared_counts": {
+        "test": 128,
+        "train": 512,
+        "validation": 64
+      },
+      "evaluation_criteria": [
+        "correct order lookup",
+        "policy-grounded next step",
+        "no invented refund"
+      ],
+      "independent_review_evidence_in_manifest": false,
+      "manifest_path": "outputs/industry-datasets-20261019/ecommerce/manifest.json",
+      "manifest_sha256": "84cca74961888ec7b66a2438788f85797f73a99228300edcea1f9c8345999d27",
+      "production_quality_established": false,
+      "review_status": "not_independently_reviewed",
+      "source": "industry-policy-simulations-v1",
+      "test_status": "reserved_not_evaluated"
+    },
+    "logistics": {
+      "declared_counts": {
+        "test": 128,
+        "train": 512,
+        "validation": 64
+      },
+      "evaluation_criteria": [
+        "verified shipment facts",
+        "authorized changes",
+        "accurate exception routing"
+      ],
+      "independent_review_evidence_in_manifest": false,
+      "manifest_path": "outputs/industry-datasets-20261019/logistics/manifest.json",
+      "manifest_sha256": "1b1c896fe53974e0acbfc00d7b403ce72c0ab199ab79911593055bbde86e8101",
+      "production_quality_established": false,
+      "review_status": "not_independently_reviewed",
+      "source": "industry-policy-simulations-v1",
+      "test_status": "reserved_not_evaluated"
+    },
+    "saas": {
+      "declared_counts": {
+        "test": 128,
+        "train": 512,
+        "validation": 64
+      },
+      "evaluation_criteria": [
+        "reproducible next steps",
+        "correct ticket status",
+        "permission-aware actions"
+      ],
+      "independent_review_evidence_in_manifest": false,
+      "manifest_path": "outputs/industry-datasets-20261019/saas/manifest.json",
+      "manifest_sha256": "ced5c05e87b7db77981a34fa753bffe1d1e7db1a54d1dbeb18e426c7953b5908",
+      "production_quality_established": false,
+      "review_status": "not_independently_reviewed",
+      "source": "industry-policy-simulations-v1",
+      "test_status": "reserved_not_evaluated"
+    }
+  },
+  "new_training_or_evaluation_calls": 0,
+  "production_promotion_ready": false,
+  "required_next_inputs": [
+    "Independently reviewed customer/source conversations with per-record provenance",
+    "Merchant/source-group and temporal isolation for production holdouts",
+    "Domain-specific review rubrics and retained action/outcome evidence"
+  ],
+  "retained_manifest_sha256": {
+    "industry-readiness-source/dataset_manifest.json": "00784efcc4fa3e25368dbb22375535aee5c5ce9f330c0e5fe99282d006c7cfd3",
+    "industry-readiness-source/ecommerce-manifest.json": "84cca74961888ec7b66a2438788f85797f73a99228300edcea1f9c8345999d27",
+    "industry-readiness-source/logistics-manifest.json": "1b1c896fe53974e0acbfc00d7b403ce72c0ab199ab79911593055bbde86e8101",
+    "industry-readiness-source/saas-manifest.json": "ced5c05e87b7db77981a34fa753bffe1d1e7db1a54d1dbeb18e426c7953b5908"
+  },
+  "schema_version": 1,
+  "scope": "Read-only inventory of the three existing declared industry bundles; not a search or attestation of all external production data"
+}

@@ -200,16 +200,16 @@ def run_model(spec: dict[str, Any], output: Path) -> dict[str, Any]:
     from transformers import AutoConfig, AutoTokenizer, set_seed
 
     from stateset_agents.core.transformers_compat import generation_compat_kwargs
-    from stateset_agents.evaluation.industry import (
-        collect_industry_predictions,
-        evaluate_industry_project,
-        export_industry_evaluation,
-    )
     from stateset_agents.training.industry import (
         prepare_industry_training,
         train_industry_project,
     )
     from stateset_agents.training.sft import _render_sft_row, load_base_model_for_sft
+    from stateset_agents.verticals.industry_evaluation import (
+        collect_industry_predictions,
+        evaluate_industry_project,
+        export_industry_evaluation,
+    )
 
     if not torch.cuda.is_available():
         raise RuntimeError("This benchmark requires a real CUDA device")

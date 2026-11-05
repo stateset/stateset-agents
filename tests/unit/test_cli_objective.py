@@ -55,7 +55,14 @@ def test_model_command_writes_objective_into_config(tmp_path):
     pytest.importorskip("transformers")
     out_path = tmp_path / "cfg.json"
     code, out = _invoke(
-        ["qwen3-5-0-8b", "--objective", "cispo", "--write-config", str(out_path)]
+        [
+            "model",
+            "qwen3-5-0-8b",
+            "--objective",
+            "cispo",
+            "--write-config",
+            str(out_path),
+        ]
     )
     assert code == 0, out
     payload = json.loads(out_path.read_text())
@@ -64,7 +71,7 @@ def test_model_command_writes_objective_into_config(tmp_path):
 
 def test_model_command_rejects_unknown_objective():
     pytest.importorskip("transformers")
-    code, out = _invoke(["qwen3-5-0-8b", "--objective", "bogus"])
+    code, out = _invoke(["model", "qwen3-5-0-8b", "--objective", "bogus"])
     assert code == 2
     assert "bogus" in out
 

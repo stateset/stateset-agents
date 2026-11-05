@@ -1,0 +1,70 @@
+from pathlib import Path
+import hashlib,json,shutil,sys,xml.etree.ElementTree as ET,zipfile
+root=Path('/home/dom/stateset-agents')
+source=Path(sys.argv[1]);job=sys.argv[2]
+v=json.loads((source/'verification.json').read_text())
+assert v['passed'] and v['source_unchanged'] and v['tests_unchanged']
+package={p.relative_to(root/'stateset_agents').as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'stateset_agents').rglob('*.py'))}
+assert package==v['source_sha256']
+assert 'Success: no issues found in 421 source files' in (source/'types.log').read_text()
+with zipfile.ZipFile(next((source/'dist').glob('*.whl'))) as wheel:
+    packed={n.removeprefix('stateset_agents/'):hashlib.sha256(wheel.read(n)).hexdigest() for n in wheel.namelist() if n.startswith('stateset_agents/') and n.endswith('.py')}
+    assert packed==package
+    for name in ['stateset_agents/evaluation/rubrics/support_rubric_v4.md','stateset_agents/config/presets/experiments/support_recovery_preflight6.json']:
+        assert wheel.read(name)==(root/name).read_bytes()
+def counts(name):
+    suites=list(ET.parse(source/name).getroot().iter('testsuite'))
+    assert not sum(int(s.get('errors',0))+int(s.get('failures',0)) for s in suites)
+    skipped=sum(int(s.get('skipped',0)) for s in suites)
+    return dict(passed=sum(int(s.get('tests',0)) for s in suites)-skipped,skipped=skipped)
+plan=json.loads((source/'preflight6-plan.json').read_text())
+assert not plan['ready_for_paid_execution'] and plan['estimated_total_cost_usd'] is None
+assert plan['training_rollout_episodes']==8000 and plan['planned_validation_evaluations']==11
+assert not (source/'unused-studio-workspace').exists()
+summary=dict(passed=True,queue_job=job,typed_modules=421,source_unchanged=True,test_sources_unchanged=True,wheel_source_matches=True,wheel_profile_matches=True,wheel_rubric_matches=True,wheel_sha256=v['wheel_sha256'],source_regressions=counts('regressions.xml'),wheel_regressions=counts('wheel.xml'),real_terminal_navigation_verified=True,real_terminal_editing_verified=True,live_herdr_pane='w1:p1A',studio_worker_tests='CPU fixtures and mocked CUDA/provider boundaries; no real GPU training',recorded_judge_tests='Synthetic replies and offline replay; not remote model attestation',distributed_contracts_repeated=False,gpu_verified=False,quality_gain_verified=False,paid_run_launched=False,count_note='Targeted source and wheel regression counts overlap.')
+out=root/'benchmark_results/training_contracts/20261016/finetune-studio-responsive';out.mkdir(parents=True,exist_ok=False)
+(out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+for name in ['verification.json','regressions.xml','wheel.xml','gates.log','types.log','wheel-origin.log','workflow-lint.log','wheel-test-configuration.json','reward-audit.json','preflight6-plan.json','studio-snapshot.log','free-recovery-plan.log','studio-narrow-snapshot.log']:
+    shutil.copy2(source/name,out/name)
+for name in ['stateset-studio-responsive-verify.py','stateset-studio-responsive-retain.py','stateset-platform-gates.py']:
+    shutil.copy2(Path('/tmp')/name,out/(name+'.txt'))
+if Path('/tmp/stateset-studio-responsive-live.txt').exists():
+    shutil.copy2('/tmp/stateset-studio-responsive-live.txt',out/'herdr-live.txt')
+previous=Path('/tmp/stateset-studio-responsive-20261016')
+if previous!=source and (previous/'verification.json').exists():
+    attempts=out/'verification-attempts';attempts.mkdir()
+    for filename in ['verification.json','wheel.xml','wheel-regressions.log']:
+        shutil.copy2(previous/filename,attempts/filename)
+(out/'README.md').write_text(f"""# Responsive fine-tuning studio acceptance
+
+Buildr job `{job}` verified frozen package/test Python and an isolated installed
+wheel. Source/wheel Python, packaged recovery profile and rubric bytes match.
+
+- {summary['source_regressions']['passed']:,} targeted source regressions passed ({summary['source_regressions']['skipped']} skips).
+- {summary['wheel_regressions']['passed']:,} targeted installed-wheel regressions passed ({summary['wheel_regressions']['skipped']} skips).
+- All 421 package modules passed typing. Lint, serial formatting, hygiene,
+  release governance, stable API compatibility and workflow lint passed.
+- Real terminals at 74x44 and 110x32 exercise cursor editing, Home/End,
+  incomplete draft saving, model search, run-view switching and clean exit.
+
+The studio contract covers compact/wide layouts and complete shortcuts,
+terminal cell widths for Unicode, model pin clearing, cursor insertion/deletion,
+quitting from any screen, complete dialog scrolling, stable selected run identity,
+JSON/JSONL browsing with no file-content reads, directory/permission handling,
+full run details, whitelisted provider fields, recorded costs and artifact paths,
+reusing settings from an intact retained snapshot without starting work, rejecting
+changed snapshots and structurally corrupt records, and reopening incomplete drafts.
+
+Existing worker, SFT, remote job/executor, reward/judge and recovery contracts
+provide regression coverage. Tiny learners, canned trajectories and synthetic
+provider/judge replies are fixtures; these are not live GPU/provider quality or
+cost measurements. Broader prior training/distributed evidence is historical and
+was not repeated for these UI changes. Source/wheel regression counts overlap.
+The first wheel harness accidentally included a source-tree AST/allowlist test;
+its failure is retained under verification-attempts. That governance test remains
+required and passing against the source tree. All studio tests still run against
+both source and wheel. The live Herdr pane was refreshed and its visible frame
+retained without starting a training job.
+The installed-wheel planner still blocks paid execution; no paid run was launched.
+""")
+print(json.dumps(dict(path=str(out),summary=summary),indent=2))

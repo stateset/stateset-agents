@@ -4,6 +4,67 @@ This page records what was actually exercised for the current release line.
 Registration, authentication, hardware allocation, training, inference, and
 publication are separate claims.
 
+## v0.71.5 candidate — local validation, remote gates pending
+
+This candidate includes complete handwritten weighted routes, a stronger learned
+graph control, the controlled 2B pilot, the 69-coordinate graph repair, and the
+reusable ReLU arithmetic compiler. See the
+[release validation record](../benchmark_results/weight_space/20261104_release_v0715/validation.json)
+for the exact local checks and retained distribution hashes. The experiment
+reports preserve their original protocols, source snapshots, and limitations.
+
+The compiler passes 492,192 replayed predictions across 96 networks and reproduces
+the three graph repairs exactly. Complete routes pass 10,657 oracle cases. These
+results concern supplied arithmetic specifications and constructed graph tasks;
+the 2B language-model pilot failed its promotion gate.
+
+The full suite identified a complexity-limit violation in the new compiler.
+Extracting architecture validation into a helper fixes that check; all 96
+arithmetic checkpoints and three graph repairs remain byte-identical to the
+frozen experiment artifacts. The release validation record binds this comparison
+to both compiler source hashes. The full run also encountered distributed-test
+timeouts, whose individual rerun outcomes are retained separately.
+Four distributed cases passed on the first focused rerun. The remaining
+empty-population case first failed a state-equality assertion, then passed on
+both the unchanged baseline and a final isolated candidate retry. These retries
+do not replace the initial full-suite result.
+
+The online-DPO learning assertion previously recorded for v0.71.3 also reproduces
+in this candidate. It is reported explicitly, without changing its threshold or
+the unrelated trainer. The default Python suite's full outcome is retained in
+the validation record; this release does not claim an all-green suite.
+
+At preparation time, GitHub reported that Actions could not start because the
+account was locked due to billing. Protected `master` requires 14 successful
+checks and enforces them for administrators. A pushed source tag does not establish
+a protected-branch merge, PyPI/npm publication, or a successful release workflow.
+
+## v0.67.0 tagged candidate — publication blocked
+
+Tagged commit: `d41c5637c3e719a301545c792dae54b34dce1dd6`.
+The existing tag is immutable; subsequent branch fixes do not change its source.
+As checked on October 20, 2026, the
+[publish workflow](https://github.com/stateset/stateset-agents/actions/runs/39478419244)
+failed, its PyPI/GitHub release jobs were skipped, the version-specific PyPI
+metadata endpoint returned HTTP 404, and no GitHub release existed for this tag.
+
+| Surface | Result | Evidence |
+|---|---|---|
+| Python and GitHub distribution | Blocked | The tag-triggered publish workflow failed before upload and release creation; no current-tag publication or attestation claim is made |
+| Real River RL | Executed; quality gate failed | [Six-seed recovery replication](../benchmark_results/training_contracts/20261020/river-recovery-replication/README.md): six acknowledged CISPO updates, candidate 960/960 versus parent 954/960 across shared synthetic case clusters; sign-flip p = 0.125, no checkpoint promotion |
+| Synthetic industry datasets | Mechanically verified | Six domains support replay-checked generation with separate train/validation/reserved-test splits; examples are synthetic and not independently reviewed |
+| Post-tag native River bridge | SDK checks passed; no paid learning claim | [CI on `e34aa07c`](https://github.com/stateset/stateset-agents/actions/runs/39500992677) passed both River SDK jobs, including scripted rollouts and batch construction for all five support domains; other jobs must be assessed separately |
+| Post-tag River and RunPod canaries | Passed, read-only | [Canary run on `2753c612`](https://github.com/stateset/stateset-agents/actions/runs/39498194926) authenticated both providers without creating billable resources |
+| Post-tag Fireworks canary | Blocked | The same canary run lacked `FIREWORKS_API_KEY` and `FIREWORKS_ACCOUNT_ID`; no live lifecycle proof was produced |
+| Dependency security | Blocked in development tooling | The training/API lock and optional product MCP floor were patched after the tag; the Semgrep dependency still requires MCP 1.29.0, and the strict gate reports CVE-2026-59951 without an exception |
+
+The replication's 960 outcomes are not 960 independent cases. Its 40 shared
+synthetic case clusters, four rollouts per case, and six training seeds support
+the retained clustered analysis, which did not meet the prespecified acceptance
+gate. Neither these results nor scripted SDK checks establish independently
+reviewed industry quality, production certification, competitive GPU parity,
+multi-node reliability, or completion of the A+ gates.
+
 ## v0.54.0 release evidence
 
 Tagged release commit: `fc3a1ebec03dac4b626fbb46f6c6d52611ce76ba`.

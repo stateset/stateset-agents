@@ -1,0 +1,15 @@
+{
+  "architecture": "MuseSparkForConditionalGeneration",
+  "random_initialization": true,
+  "released_weights_loaded": false,
+  "device": "cpu",
+  "optimizer_updates": 1,
+  "loss": 4.149969577789307,
+  "synthetic_tokenizer": true,
+  "template_from_public_model_metadata": true,
+  "user_tokens_masked": true,
+  "assistant_targets_verified": true,
+  "preflight_ids_equal_trainer_ids": true,
+  "adapter_export_verified": true,
+  "adapter_weights_changed": true
+}

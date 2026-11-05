@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "job_id": "e7eec7be95a8",
+  "exit_code": 0,
+  "output_sha256": "910fc84a496d0a502cc97aa9ba39c80c3bf13052e977fa366d7f68134373887f",
+  "output": "queued e7eec7be95a8 (local, 2 CPU slots, 2 GiB reserved)\nrunning e7eec7be95a8 after 0.0s waiting | log /home/dom/.local/state/agent-builds/logs/e7eec7be95a8.log\n........................................................................ [ 60%]\n................................................                         [100%]\n120 passed in 4.83s\nfinished e7eec7be95a8: succeeded (exit 0)\n"
+}

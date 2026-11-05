@@ -1,0 +1,34 @@
+{
+  "passed": true,
+  "source_tests": 1839,
+  "installed_wheel_tests": 1728,
+  "typed_modules": 429,
+  "queue_job": "c85dd6afa5ec",
+  "wheel_sha256": "8830990b8ac10a0ea120960a29c02118263c6c211987c3bf2379a6ce350e4373",
+  "source_and_tests_unchanged": true,
+  "wheel_bytes_match_source": true,
+  "wheel_case_identities_match_source": true,
+  "real_cpu_same_seed_adapter_identity_verified": true,
+  "real_cpu_different_seed_adapter_difference_verified": true,
+  "training_vs_evaluation_seed_binding_verified": true,
+  "provider_seed_boundaries_mocked": true,
+  "real_pty_seed_editor_sizes": [
+    [
+      74,
+      44
+    ],
+    [
+      110,
+      32
+    ]
+  ],
+  "live_herdr_refreshed": false,
+  "draft_preservation_verified_in_this_stage": false,
+  "live_judge_verified": false,
+  "gpu_verified": false,
+  "remote_evaluation_verified": false,
+  "quality_gain_verified": false,
+  "paid_run_launched": false,
+  "count_note": "Source and installed-wheel cases overlap; synthetic judge replies and provider/process mocks do not establish model quality.",
+  "source_and_first_wheel_job": "0901d605abfd"
+}

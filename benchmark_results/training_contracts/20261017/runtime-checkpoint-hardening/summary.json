@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "retained_at": 1792242411.479638,
+  "scope": "Focused source runtime checkpoint and explicit-resume hardening",
+  "focused_job": "9f2ecdceb8b0",
+  "focused_passed": true,
+  "focused_tests": 533,
+  "governance_tests": 8,
+  "typed_modules": 431,
+  "runtime_safety_cases": 96,
+  "dedicated_resume_cases": 56,
+  "verification_input_capture_phase": "after formatter; remaining verification running",
+  "verification_inputs_match_current_and_live_source": true,
+  "source_or_tests_modified_after_verification": false,
+  "failed_attempts_preserved": [
+    "e53e8c2ec61e",
+    "4e29516f5cf6"
+  ],
+  "full_acceptance_job": "1e204ba66630",
+  "full_state_at_capture": "queued",
+  "full_acceptance_claimed_by_this_receipt": false,
+  "installed_wheel_verified_by_this_receipt": false,
+  "live_pane": "w1:p1A",
+  "draft_preserved": true,
+  "training_launched_during_live_refresh": false,
+  "paid_training_verified": false,
+  "gpu_verified": false,
+  "model_quality_gain_verified": false,
+  "limitations": [
+    "Focused CPU source checks; broader installed-wheel/CLI acceptance is separately queued",
+    "Input manifests were captured after formatting, not before the formatting stage",
+    "Restore preflight rejects supported malformed state; late commit failures quarantine rather than roll back",
+    "Supported builtin optimizer/scheduler paths do not establish arbitrary custom component compatibility",
+    "No provider, GPU/distributed soak, paid training or independent quality certification is inferred"
+  ]
+}

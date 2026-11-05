@@ -1,0 +1,21 @@
+{
+  "README.md": "af10b1668bb1210f048a94d90aec81d4ac40f61ee0e668becae050ffe3e5c9b1",
+  "archived-safety-diagnostics.json": "b3e9f6f9e51c8b2237cdc8c327f0654d3f300fd90117f34e5277b191a83f7d05",
+  "changed-source-files.json": "a05cbc1c727e0de7434a52a129fdcf2205ed4df74d465578e62e4aa16893a054",
+  "diagnostic-runners/stateset_river_selection_sdk_check.py": "8b7a701a2a511e222df432ca545061d96098b3e9b7a1fc6bd052dd9925d51312",
+  "diagnostic-runners/stateset_river_selection_sdk_debug.py": "f957b1dee855861c6679f0561b70a3dc0488b690633a51655e5fb19392d3dab0",
+  "diagnostic-runners/stateset_river_selection_sdk_flow.py": "173535195f2f44281ceebed4c306862a61af2b9c7e227864e7d4a4c0bc2e7eac",
+  "diagnostic-runners/stateset_river_selection_sdk_logical.py": "78b9dab6fa1245929c5b76b602287918b94f0c9c0cfb70f1cef52e93f29b3a90",
+  "diagnostic-runners/stateset_river_selection_sdk_yielding.py": "e96a149481e5678245a4dec5eded3984a394747ec84e62633e20f00872b1d764",
+  "diagnostic-runners/stateset_river_selection_sdk_zero_window.py": "384fc1c217345a31c4af39145923c67fc2bd92ae1d9ee3c522bd59175dd6e785",
+  "focused-checks.json": "19d0ea1caba8703b55af1b72405fd293080dd75bbcd2674a2d3520c4470d4bfb",
+  "recovered-selection-tests.xml": "0c7f3683ee6e8d97b58e76627e781fe44ddc96ad0325f04b2c6944c83067e0ab",
+  "retrospective-validation-selection.json": "2195fb5d8e300c159e79e9d541aa111887ab803472f2f8445124fee470267995",
+  "sdk-logical-checks.txt": "040c86a030f5d4ecf5dfd83631caa92dcc305d94010d83675c9a150e9febc94b",
+  "sdk-selection-flow-checks.txt": "e5264fe992f19665d247df488da207b72611b9f8ea40013d845d79dab605dc4f",
+  "sdk-yielding-checks.txt": "040c86a030f5d4ecf5dfd83631caa92dcc305d94010d83675c9a150e9febc94b",
+  "sdk-zero-window-checks.txt": "ed98173674a3f3eb8bf34f964b3dd05ea2a03d429c384fa7e663999327171757",
+  "selected-activity-tests.xml": "7ea87655059727ab3cd3bbafa1a74654bf00f3f349ebb64fa099487bacce2016",
+  "source-and-checks.tar.gz": "f8507dcbf918bb64d18dc50958d76401bbd445b8e11df47c815ed0826ebd4faf",
+  "source-implementation.json": "bdc8b8e59bb0c11aff4a00f5750fca3cf1438166447a1392fab78944b573cfbd"
+}

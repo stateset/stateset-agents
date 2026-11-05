@@ -1,0 +1,90 @@
+from pathlib import Path
+import hashlib
+import importlib.metadata
+import json
+import shutil
+import sys
+import xml.etree.ElementTree as ET
+import zipfile
+
+root = Path('/home/dom/stateset-agents')
+source, job = Path(sys.argv[1]), sys.argv[2]
+verification = json.loads((source/'verification.json').read_text())
+assert verification['passed'] and verification['source_unchanged'] and verification['tests_unchanged']
+package = {p.relative_to(root/'stateset_agents').as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'stateset_agents').rglob('*.py'))}
+tests = {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'tests').rglob('*.py'))}
+assert package == verification['source_sha256'] and tests == verification['test_source_sha256']
+with zipfile.ZipFile(next((source/'dist').glob('*.whl'))) as wheel:
+    packed = {n.removeprefix('stateset_agents/'): hashlib.sha256(wheel.read(n)).hexdigest() for n in wheel.namelist() if n.startswith('stateset_agents/') and n.endswith('.py')}
+assert package == packed
+
+def counts(name):
+    suites = list(ET.parse(source/name).getroot().iter('testsuite'))
+    total = sum(int(s.get('tests',0)) for s in suites)
+    skipped = sum(int(s.get('skipped',0)) for s in suites)
+    failed = sum(int(s.get('failures',0))+int(s.get('errors',0)) for s in suites)
+    assert failed == 0
+    return dict(passed=total-skipped, skipped=skipped, failed=failed)
+
+baseline = None
+stages = {}
+for stage in ['source-distributed', 'wheel-distributed']:
+    rows = [json.loads((source/stage/f'ddp-continual-{r}.json').read_text()) for r in [0,1]]
+    assert len(rows[0]) == len(rows[1]) == 46
+    assert rows[0] == rows[1]
+    if baseline is None: baseline = rows[0]
+    else: assert baseline == rows[0]
+    population = [row for row in rows[0] if 'strategy' in row]
+    faults = [row for row in rows[0] if 'fault' in row]
+    training = [row for row in rows[0] if 'full_train_inner_updates' in row]
+    assert len(population)==36 and len(faults)==8 and len(training)==2
+    for row in population:
+        assert all(row[k] for k in ['global_fisher_matches_reference','pending_state_preserved','plain_frozen_teacher','resume_next_update_equal'])
+    assert all(row['coordinated_rejection'] and row['recovered'] and row['boundary_flush'] for row in faults)
+    assert all(row['complete_resume_idempotent'] and row['task_window_budget']==5*row['full_train_inner_updates'] for row in training)
+    existing={}
+    for file,expected in [('rank-0.json',294),('advantages-0.json',48),('learner-preflight-0.json',40),('replica-consensus-0.json',32),('native-ddp-checkpoint-0.json',98),('ddp-evaluation-0.json',28)]:
+        existing[file]=len(json.loads((source/stage/file).read_text()))
+        assert existing[file]==expected
+    stages[stage]=dict(world_size=2,backend='gloo',task_memory_scenarios_per_peer=46,
+        population_scenarios=36,fisher_applicable_population_scenarios=24,lwf_applicable_population_scenarios=24,
+        rejection_recovery_scenarios=8,complete_training_resume_scenarios=2,existing_contract_counts=existing)
+summary = dict(passed=True,queue_job=job,protocol='stateset-native-ddp-task-memory-v1',
+    typed_modules=409,source_modules=len(package),source_unchanged=True,test_sources_unchanged=True,
+    wheel_source_matches=True,wheel_sha256=verification['wheel_sha256'],
+    regressions=counts('regressions.xml'),source_distributed=counts('source-distributed.xml'),
+    wheel_regressions=counts('wheel.xml'),wheel_distributed=counts('wheel-distributed.xml'),distributed=stages,
+    runtime={n:importlib.metadata.version(n) for n in ['torch','transformers','accelerate','numpy','tokenizers']},
+    strategies=['lwf','ewc','replay_lwf_ewc'],local_populations=['uneven','empty_peer','all_empty','masked','cap','buffer'],
+    semantics=dict(fisher='accepted-example-weighted global empirical Fisher; zero valid samples preserve prior anchors',
+        reduction='FP64 prescaled bounded buckets, stored in FP32/FP64 masters',maximum_fisher_payload_bytes=4*1024**2,
+        teacher='unwrapped frozen supplied policy, with buffer-broadcast preference honored once',
+        staged_state='private replay/RNG and task memory commit only after peer validation',
+        preserved_state='pending policy/entropy banks, optimizer, policy, local buffers, module modes and global RNG during direct consolidation',
+        task_windows='flush prior-task pending update before capturing memory; scheduler horizon accounts for resolved task IDs',
+        receipts='task/policy-step/replay-sequence receipt persists in checkpoints and prevents duplicate completed-run consolidation',
+        failures='partial optimizer or memory application blocks training/saving until complete native reload; a fully committed flush remains committed if later estimation rejects',
+        tokenizer='temporary backend padding/truncation excluded from identity; vocabulary, template, added tokens and tokenizer sides stay pinned',
+        missing_reference='loading a generation with no teacher clears stale reference state'),
+    fisher_comparison=dict(rtol=2e-6,atol=1e-8),resumed_next_parameters_and_optimizer='exact',
+    cpu_native_ddp_task_memory_verified=True,cpu_task_training_resume_verified=True,
+    gpu_verified=False,multi_node_verified=False,fsdp_verified=False,deepspeed_verified=False,multi_rank_accelerate_verified=False,
+    general_training_loop_phase_failures_verified=False,model_quality_improvement_verified=False,
+    boundaries='Every live native DDP peer enters the same task transition. Standard continual manager only. Generated tiny FP32 CPU model, real offline HF tokenizer and causal autograd loss. Serialized with training/global RNG consumers; external callback/environment state and lost processes remain outside the protocol.',
+    count_note='Overlapping targeted source/wheel tests. Seven actual distributed pytest contracts contain multiple scenarios; 46 new scenarios per peer are not separate pytest cases.')
+out = root/'benchmark_results/training_contracts/20261015/native-ddp-continual'
+out.mkdir(exist_ok=False)
+(out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+for name in ['verification.json','regressions.xml','source-distributed.xml','wheel.xml','wheel-distributed.xml','gates.log','types.log','source-distributed.log','wheel-distributed.log','wheel-origin.log']:
+    shutil.copy2(source/name, out/name)
+for stage in stages:
+    shutil.copytree(source/stage,out/stage)
+for name in ['stateset-ddp-continual-verify.py','stateset-platform-gates.py','stateset-retain-ddp-continual.py']:
+    shutil.copy2(Path('/tmp')/name,out/(name+'.txt'))
+failures = out/'failures'
+failures.mkdir()
+contexts = [dict(job='10e920624d4e',kind='implementation_and_fixture_failures',explanation='11 checks passed and 6 failed. Real HF tokenizer preprocessing left transient backend padding/truncation in identity, preventing fresh restore. Clearing a missing teacher also retained a stale prepared reference, which was corrected. The scheduler fixture switched into an unstubbed enhanced loss after creating its teacher; both stub paths now use the same analytic loss. All three fixes have regressions.')]
+for context in contexts:
+    shutil.copy2(Path('/home/dom/.local/state/agent-builds/logs')/(context['job']+'.log'), failures/(context['job']+'.log'))
+(failures/'context.json').write_text(json.dumps(contexts,indent=2)+'\n')
+print(json.dumps(summary,indent=2))

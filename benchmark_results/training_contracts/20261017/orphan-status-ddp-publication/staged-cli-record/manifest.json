@@ -1,0 +1,14 @@
+{
+  "tested": false,
+  "canonical_files_changed": false,
+  "files": {
+    "stateset_agents/cli_finetune.py": {
+      "base_sha256": "51d6f1f0dae3711ff717056617da85bb386496a7416dd963d5e0ccc6f957e9ef",
+      "staged_sha256": "1337796f1c5e26dc8b77761ec1b37fbf4dc90b90a227d4a3e9c476722b7c3278"
+    },
+    "tests/unit/test_cli_finetune_records.py": {
+      "base_sha256": null,
+      "staged_sha256": "3a039a8dcc86b852918de196f23096dde1dbd66cb8787bc7d96937f278cbbb40"
+    }
+  }
+}

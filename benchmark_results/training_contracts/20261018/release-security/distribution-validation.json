@@ -1,0 +1,9 @@
+{
+  "wheel_members": 462,
+  "sdist_members": 503,
+  "project": "stateset-agents",
+  "version": "0.66.1",
+  "package_modules": 439,
+  "matches_tested_package_sources": true,
+  "sdist_training_lock_sha256": "9771f96fdc24029f796c0e196ec5090bd4dc1971c56c441a6e44a39830a49999"
+}

@@ -114,9 +114,14 @@ The API gateway treats every authenticated caller as a separate tenant:
   `API_REQUIRE_AUTH` is on. Set `API_PUBLIC_METRICS=true` only for a scraper
   that cannot send credentials and is reachable solely from a trusted network.
 - **Training-lab WebSocket** credentials go in the `X-API-Key` or
-  `Authorization: Bearer` header. `API_LAB_WS_QUERY_TOKEN=true` re-enables the
-  `?api_key=` / `?token=` query parameters for browser clients that cannot
-  set headers; query strings are written to access logs.
+  `Authorization: Bearer` header. Browser clients, which cannot set headers on
+  a WebSocket, offer the subprotocols `stateset.lab.v1` and
+  `bearer.<credential>`; the server selects `stateset.lab.v1` and never echoes
+  the credential. `API_LAB_WS_QUERY_TOKEN=true` re-enables the deprecated
+  `?api_key=` / `?token=` query parameters (each use logs a deprecation
+  warning); query strings are written to access logs. Subscribing to an
+  experiment that does not exist, or that belongs to someone else, is closed
+  with code 4404.
 
 ## Security controls and updates
 
@@ -127,6 +132,23 @@ Accelerate finding documented in [`docs/RELEASE_GUIDE.md`](docs/RELEASE_GUIDE.md
 which also records why that advisory is unreachable from StateSet code.
 Security fixes and disclosures are published as
 GitHub Security Advisories.
+
+### Current development-tool dependency blocker
+
+As of October 20, 2026, upstream Semgrep pins `mcp==1.29.0`, including
+the latest checked release, 1.181.0. That SDK version is affected by
+[CVE-2026-59951 / GHSA-84m7-p3x7-pcfv](https://github.com/modelcontextprotocol/python-sdk/security/advisories/GHSA-84m7-p3x7-pcfv):
+unbounded sessions in stateful Streamable HTTP servers. The patched 1.x
+version is 1.30.0. Our optional product MCP server uses stdio, and its
+`[mcp]` extra now requires the patched SDK. Semgrep, the only development
+tool that pulled in the affected SDK, still pins `mcp==1.29.0`.
+
+Semgrep is therefore not part of the `[dev]` extra or the development lock:
+CI's security jobs install it in their own step, and developers run it with
+`pipx run semgrep`. The development lock contains no vulnerable MCP SDK, so the
+dependency audit passes without any override or waiver. Do not add Semgrep back
+to `[dev]` while its metadata pins an affected `mcp`; recheck the official
+[Semgrep package metadata](https://pypi.org/pypi/semgrep/json) first.
 
 The machine-readable response commitments live in
 [`contracts/security_response_v1.json`](contracts/security_response_v1.json).

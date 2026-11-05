@@ -1,10 +1,7 @@
-"""Tests for ``RiverExecutor`` — entirely against fakes.
+"""Test ``RiverExecutor`` against recording fakes independent of installed SDKs.
 
-River could not be live-verified (no API key, ``river-client`` unavailable),
-so the fakes here record the exact call sequence we believe River's docs
-describe. If the real service disagrees, these tests are what will need
-changing — which is the point of writing them as a recording rather than as
-assertions about internals.
+These raw-text fakes exercise the executor's fallback sampling contract. Real
+SDK rendering and transport contracts have separate integration coverage.
 """
 
 from __future__ import annotations
@@ -25,6 +22,18 @@ from stateset_agents.remote.river import (
 )
 from stateset_agents.training.lineage import MANIFEST_NAME
 from tests.unit.test_river_batches import FakeTokenizer
+
+
+@pytest.fixture(autouse=True)
+def no_external_renderer(monkeypatch):
+    """Keep raw-text recording fakes independent of SDK/tokenizer availability."""
+
+    def unavailable(*args, **kwargs):
+        raise ValueError("recording fake uses raw-text sampling")
+
+    monkeypatch.setattr(
+        "stateset_agents.remote.river_renderers.get_river_renderer", unavailable
+    )
 
 
 @dataclass
@@ -1117,6 +1126,89 @@ def test_sft_seed_controls_initialization_order_and_provenance(
     spec.harvest = {"seed": 42, "shuffle": False}
     executor.submit(spec)
     assert observed == list(range(12)) * 2
+
+
+@pytest.mark.parametrize("use_pointer", [False, True])
+def test_sft_initial_checkpoint_is_captured_before_provider_and_retained(
+    spec, executor, client, monkeypatch, tmp_path, use_pointer
+):
+    """Provider callbacks and later pointer/spec edits cannot change lineage."""
+    from types import SimpleNamespace
+
+    initial = "river://parent/sampler_weights/initial"
+    pointer_dir = tmp_path / "initial"
+    pointer_dir.mkdir()
+    pointer = pointer_dir / CHECKPOINT_POINTER_NAME
+    pointer.write_text(
+        json.dumps(
+            {
+                "checkpoint": initial,
+                "base_model": spec.base_model,
+                "lora": {"rank": spec.lora_r},
+            }
+        )
+    )
+    spec.harvest = {"checkpoint": str(pointer_dir) if use_pointer else initial}
+    observed = []
+    original = FakeSession.create_model
+
+    def create(self, base_model, lora, checkpoint=None):
+        observed.append(checkpoint)
+        return original(self, base_model, lora)
+
+    monkeypatch.setattr(FakeSession, "create_model", create)
+    monkeypatch.setattr(client, "Checkpoint", SimpleNamespace, raising=False)
+
+    def capabilities():
+        pointer.write_text(json.dumps({"checkpoint": "river://changed"}))
+        spec.harvest = {"checkpoint": "river://changed", "seed": 123}
+        return [spec.base_model]
+
+    monkeypatch.setattr(client, "get_capabilities", capabilities)
+    handle = executor.submit(spec)
+    assert observed[0].path == initial
+    assert observed[0].checkpoint_type == "inference"
+    assert client.model.lora.seed == 0
+    pointer.unlink()
+    executor.fetch(handle)
+    saved = json.loads((spec.output_dir / CHECKPOINT_POINTER_NAME).read_text())
+    manifest = json.loads((spec.output_dir / MANIFEST_NAME).read_text())
+    assert saved["sft_options"] == {"checkpoint": initial, "seed": 0, "shuffle": True}
+    assert manifest["hyperparameters"]["checkpoint"] == initial
+    assert manifest["hyperparameters"]["seed"] == 0
+
+
+@pytest.mark.parametrize(
+    "value", ["", "https://example.test/weights", "river://bad uri", 4]
+)
+def test_sft_invalid_checkpoint_fails_before_provider(spec, monkeypatch, value):
+    spec.harvest = {"checkpoint": value}
+    executor = RiverExecutor()
+    monkeypatch.setattr(executor, "_get_client", lambda: pytest.fail("accessed client"))
+    with pytest.raises(RemoteExecutionError, match="[Cc]heckpoint|pointer"):
+        executor.submit(spec)
+
+
+@pytest.mark.parametrize(
+    "field,value", [("base_model", "other/model"), ("lora", {"rank": 8})]
+)
+def test_sft_incompatible_checkpoint_fails_before_provider(
+    spec, monkeypatch, tmp_path, field, value
+):
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    data = {
+        "checkpoint": "river://parent/weights",
+        "base_model": spec.base_model,
+        "lora": {"rank": spec.lora_r},
+        field: value,
+    }
+    (parent / CHECKPOINT_POINTER_NAME).write_text(json.dumps(data))
+    spec.harvest = {"checkpoint": str(parent)}
+    executor = RiverExecutor()
+    monkeypatch.setattr(executor, "_get_client", lambda: pytest.fail("accessed client"))
+    with pytest.raises(RemoteExecutionError, match="differs"):
+        executor.submit(spec)
 
 
 @pytest.mark.parametrize("loss", [float("nan"), float("inf"), float("-inf")])

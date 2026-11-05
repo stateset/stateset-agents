@@ -1,0 +1,8 @@
+{
+  "reason": "Isolated wheel harness omitted curation script used by unchanged TestFullCurationLoop",
+  "source": "scripts/prepare_sft_dataset.py",
+  "destination": "checks/scripts/prepare_sft_dataset.py",
+  "sha256": "2d6304a463dd9b9663b437e95fec897b111a21c9104eb43818322ae3774e50ca",
+  "package_or_test_python_changed": false,
+  "original_job": "0901d605abfd"
+}

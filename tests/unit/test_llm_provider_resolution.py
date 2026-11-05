@@ -50,7 +50,9 @@ class TestModelBasedRewardComponentProviderResolution:
                     create=AsyncMock(
                         return_value=SimpleNamespace(
                             choices=[
-                                SimpleNamespace(message=SimpleNamespace(content="0.8"))
+                                SimpleNamespace(
+                                    message=SimpleNamespace(content='{"score": 0.8}')
+                                )
                             ]
                         )
                     )
@@ -78,7 +80,9 @@ class TestModelBasedRewardComponentProviderResolution:
         client = SimpleNamespace(
             messages=SimpleNamespace(
                 create=AsyncMock(
-                    return_value=SimpleNamespace(content=[SimpleNamespace(text="0.6")])
+                    return_value=SimpleNamespace(
+                        content=[SimpleNamespace(text='{"score": 0.6}')]
+                    )
                 )
             )
         )

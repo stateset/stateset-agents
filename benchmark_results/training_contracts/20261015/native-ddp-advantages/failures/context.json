@@ -1,0 +1,22 @@
+[
+  {
+    "job": "47e4418d3138",
+    "kind": "typing_failure",
+    "explanation": "The full 400-module type gate required explicit types for the optional frozen-baseline context and SingleTurn baseline keyword dictionary. These annotations were added before the final rerun."
+  },
+  {
+    "job": "0d80305555f9",
+    "kind": "test_style_failure",
+    "explanation": "The expanded test fixtures used dict() keyword construction and an unbound loop callback; repository lint rejected them before types or tests. They were corrected before the full rerun."
+  },
+  {
+    "job": "3a3f0fe32ef7",
+    "kind": "test_fixture_failure",
+    "explanation": "The new standard-deviation fixture used integer tensors; an older callback test asserted per-group observations, which the once-per-batch fix intentionally replaces."
+  },
+  {
+    "job": "366d0fc5f9aa",
+    "kind": "implementation_failure",
+    "explanation": "154 checks passed, including the new two-rank contract. A cold-import regression showed the helper eagerly imported Torch through trainer_utils; the import was moved inside the consuming functions before full verification."
+  }
+]

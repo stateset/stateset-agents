@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import enum
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import InitVar, asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -139,6 +139,9 @@ class RemoteJobSpec:
     #: "temperature": float, "top_p": float, "max_new_tokens": int}``.
     #: ``adapter_dir`` is a LOCAL adapter directory (the current generation)
     #: that the executor ships to the worker.
+    #: River SFT also accepts ``seed``, ``shuffle``, and ``checkpoint`` here.
+    #: ``checkpoint`` is a River URI or pointer directory, resolved before any
+    #: provider calls. It loads starting weights; it does not resume a run.
     harvest: dict[str, Any] | None = None
     #: Token budget per eval completion. 90 suits direct-answer models;
     #: reasoning models (thinking preamble before the answer) need more.
@@ -181,8 +184,14 @@ class RemoteJobSpec:
     #: Adapter this run descends from, recorded in the trained adapter's
     #: manifest so the improvement loop's generations stay linked.
     parent_adapter: str | None = None
+    #: Explicit SFT initialization/training seed. None preserves provider defaults
+    #: (42 for packaged SFT, 0 for River). Harvest/RL own their seed protocols.
+    seed: int | None = None
+    #: Used only while restoring metadata for an already submitted job. This
+    #: initialization flag is absent from serialized specs and worker arguments.
+    _require_dataset: InitVar[bool] = True
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _require_dataset: bool = True) -> None:
         self.dataset = Path(self.dataset)
         self.output_dir = Path(self.output_dir)
 
@@ -192,8 +201,15 @@ class RemoteJobSpec:
                 f"job_kind must be one of {sorted(JOB_KINDS)}, "
                 f"got {self.job_kind!r}"
             )
+        if self.seed is not None:
+            if type(self.seed) is not int or not 0 <= self.seed <= 2**32 - 1:
+                raise ValueError("seed must be an integer in [0, 4294967295]")
+            if self.job_kind != "sft":
+                raise ValueError(
+                    "The top-level seed currently configures SFT jobs only"
+                )
 
-        if not self.dataset.exists():
+        if _require_dataset and not self.dataset.exists():
             raise ValueError(f"dataset does not exist: {self.dataset}")
         if not self.base_model.strip():
             raise ValueError("base_model must be a non-empty model name")
@@ -304,6 +320,8 @@ class RemoteJobSpec:
             args += ["--eval-max-new-tokens", str(self.eval_max_new_tokens)]
         if self.parent_adapter:
             args += ["--parent-adapter", str(self.parent_adapter)]
+        if self.seed is not None:
+            args += ["--seed", str(self.seed)]
         return args
 
     def to_dict(self) -> dict[str, Any]:
@@ -313,8 +331,16 @@ class RemoteJobSpec:
         return data
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> RemoteJobSpec:
-        return cls(**data)
+    def from_dict(
+        cls, data: dict[str, Any], *, require_dataset: bool = True
+    ) -> RemoteJobSpec:
+        """Restore a spec, retaining validation of every configuration field.
+
+        Read-only inspection/fetch of an existing provider job may explicitly
+        omit the local file-existence check. New submissions use the default.
+        The flag cannot be supplied through a serialized spec.
+        """
+        return cls(**data, _require_dataset=require_dataset)
 
 
 @dataclass

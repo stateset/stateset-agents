@@ -20,7 +20,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 try:
-    import torch
+    import torch as _torch
+
+    torch: Any = _torch
 except ImportError:  # pragma: no cover - optional dependency
     torch = None
 

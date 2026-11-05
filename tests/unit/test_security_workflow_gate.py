@@ -3,6 +3,7 @@
 import copy
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -230,10 +231,6 @@ def test_workflow_preserves_all_exit_codes_and_always_evaluates_and_uploads():
     assert "--config=auto" not in path.read_text()
 
 
-@pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="executes the bash step of the Linux-only security-scan job",
-)
 @pytest.mark.parametrize("scanner_exit", [0, 2])
 def test_workflow_shell_gate_propagates_failure_and_saves_evidence(
     reports, scanner_exit
@@ -258,8 +255,19 @@ def test_workflow_shell_gate_propagates_failure_and_saves_evidence(
         "PYTHONPATH": str(repo),
         "GITHUB_STEP_SUMMARY": str(summary),
     }
+    # The workflow is an Ubuntu Bash step. On Windows, use Git Bash rather
+    # than the optional WSL bash.exe, and convert paths at the shell boundary.
+    bash = shutil.which("bash")
+    if sys.platform == "win32":
+        git = shutil.which("git")
+        assert git is not None, "Git Bash is required to exercise the Linux workflow"
+        bash = str(Path(git).parent.parent / "bin" / "bash.exe")
+        gate = (
+            'export GITHUB_STEP_SUMMARY="$(cygpath -u "$GITHUB_STEP_SUMMARY")"\n' + gate
+        )
+    assert bash is not None, "Bash is required to exercise the workflow shell gate"
     result = subprocess.run(
-        ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", gate],
+        [bash, "--noprofile", "--norc", "-eo", "pipefail", "-c", gate],
         cwd=root,
         env=environment,
         text=True,

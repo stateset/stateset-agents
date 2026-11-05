@@ -174,12 +174,25 @@ benchmark_results/*
 !benchmark_results/whitepaper_v1/**
 !benchmark_results/SCHEMA.md
 !benchmark_results/README.md
+!benchmark_results/training_contracts/
+!benchmark_results/training_contracts/**/
+!benchmark_results/training_contracts/**/*.json
 !benchmark_results/industry_pilot/
 !benchmark_results/industry_pilot/**
+!benchmark_results/decontamination/
+!benchmark_results/decontamination/**/
+!benchmark_results/decontamination/**/*.json
 benchmark_results/industry_pilot/**/*.safetensors
 benchmark_results/industry_pilot/**/*.pt
 benchmark_results/industry_pilot/**/*.pth
 benchmark_results/industry_pilot/**/*.bin
+!benchmark_results/weight_space/
+!benchmark_results/weight_space/**
+benchmark_results/weight_space/**/__pycache__/
+benchmark_results/weight_space/**/*.py[cod]
+benchmark_results/weight_space/**/*.safetensors
+benchmark_results/weight_space/**/*.pt
+benchmark_results/weight_space/**/*.gz
 !benchmark_results/benchmark_summary.json
 !benchmark_results/framework_comparison/
 benchmark_results/framework_comparison/*
@@ -299,9 +312,12 @@ id_ed25519.pub
 *.gguf
 *.jsonl
 !benchmark_results/industry_pilot/**/*.jsonl
+!benchmark_results/weight_space/**/per_problem/*.jsonl
 # Allow checked-in sample/eval datasets — these are tiny + documented
 !examples/sample_eval_set.jsonl
 !examples/data/functiongemma_commerce.jsonl
+# Shipped labelled judge-calibration set (package data)
+!stateset_agents/rewards/*.jsonl
 *.npz
 *.npy
 *.pkl

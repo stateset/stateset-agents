@@ -1,3 +1,7 @@
+# Local development stack. Published ports bind to 127.0.0.1 only, so the
+# unauthenticated dev defaults (API_REQUIRE_AUTH=false) are never reachable
+# from other hosts. Secrets are never defaulted here: copy `.env.example` to
+# `.env` in this directory and set REDIS_PASSWORD / POSTGRES_PASSWORD.
 services:
   # FastAPI gateway (Anthropic/OpenAI compatible)
   stateset-agents-api:
@@ -6,7 +10,7 @@ services:
       dockerfile: deployment/docker/Dockerfile
       target: runtime
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       API_ENVIRONMENT: ${API_ENVIRONMENT:-development}
       API_REQUIRE_AUTH: ${API_REQUIRE_AUTH:-false}
@@ -19,9 +23,9 @@ services:
 
       # Optional (not enabled by default in the gateway image).
       CACHE_BACKEND: ${CACHE_BACKEND:-memory}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in deployment/docker/.env (see .env.example)}@redis:6379/0}
       DB_BACKEND: ${DB_BACKEND:-memory}
-      DATABASE_URL: ${DATABASE_URL:-postgresql://stateset:${POSTGRES_PASSWORD:-change_me_dev}@postgres:5432/stateset_agents}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://stateset:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deployment/docker/.env (see .env.example)}@postgres:5432/stateset_agents}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
       interval: 30s
@@ -41,7 +45,7 @@ services:
       dockerfile: deployment/docker/Dockerfile
       target: dev
     ports:
-      - "8002:8000"
+      - "127.0.0.1:8002:8000"
     environment:
       API_ENVIRONMENT: development
       API_REQUIRE_AUTH: "false"
@@ -76,8 +80,8 @@ services:
   redis:
     image: redis:7.2-alpine
     ports:
-      - "6379:6379"
-    command: ["redis-server", "--appendonly", "yes"]
+      - "127.0.0.1:6379:6379"
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in deployment/docker/.env (see .env.example)}"]
     restart: unless-stopped
     networks:
       - stateset-network
@@ -87,9 +91,9 @@ services:
     environment:
       POSTGRES_DB: stateset_agents
       POSTGRES_USER: stateset
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_dev}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deployment/docker/.env (see .env.example)}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     restart: unless-stopped
     networks:
       - stateset-network
@@ -97,7 +101,7 @@ services:
   prometheus:
     image: prom/prometheus:latest
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
     command:

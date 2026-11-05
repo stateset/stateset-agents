@@ -1,0 +1,11 @@
+from pathlib import Path
+import fcntl
+
+lock = Path('/tmp/stateset-studio-mobile-source.lock').open('a')
+fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+path = Path('/home/dom/stateset-agents/stateset_agents/training/runtime_state.py')
+source = path.read_text()
+source = source.replace('    config: Any\n','    config: Any\n    kl_controller: Any\n',1)
+source = source.replace('getattr(self, "kl_controller").kl_coef = adaptive_kl["kl_coef"]','self.kl_controller.kl_coef = adaptive_kl["kl_coef"]',1)
+path.write_text(source)
+print('Declared optional controller attribute for typed direct access')

@@ -1,0 +1,11 @@
+{
+  "package_source_unchanged": true,
+  "test_sources_unchanged": true,
+  "prior_failure": "Isolated API test omitted shared root fixtures and attempted loading its placeholder model; offline mode rejected it.",
+  "action": "Copy unchanged frozen shared test fixtures; rerun all three wheel groups offline.",
+  "prior_evidence": "wheel-attempts/missing-root-fixtures",
+  "fixture_sha256": {
+    "tests/conftest.py": "554299451607795b3151bef78f41c1da0f116d3229d1c5d44c68fddd7eae5277",
+    "tests/_module_stubs.py": "2a8274043648c461b93797558f7285dab30ed437cc5185cbd7b793c27d8b02a2"
+  }
+}

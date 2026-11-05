@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "publication_eligible": false,
+  "claim_scope": "Synthetic sampled training and checkpoint reload regression only",
+  "base_commit": "faa4845c2b352baaf4757d1c425f52e29d642f49",
+  "checkout": "Development checkout with uncommitted reward, observation, revision, and API changes",
+  "command": ".venv/bin/python -m stateset_agents.training.sampled_workflow --output /tmp/stateset-observation-sampled-workflow --seeds 42 43 44",
+  "execution": "Shared Agent Builds queue, quick lane; CPU; one torch thread",
+  "versions": {
+    "torch": "2.11.0",
+    "transformers": "5.14.1",
+    "numpy": "2.3.5",
+    "tokenizers": "0.22.2"
+  },
+  "retained_file_sha256": {
+    "seed-42/result.json": "57b03afd729b7b243573ff343ca793d0ea1f90e5460117f9e59d03cc877fbabd",
+    "seed-43/result.json": "37631e661b5baaa403592ee38854fd8185e5f56177b15d4dd19cad9be48cc9c3",
+    "seed-44/result.json": "b3539ee5152be6643fae18116ce43556a2d992dbaae2321fc9030358bef4f9ad",
+    "summary.json": "cfe81ceded49066009915b75d10550ba6de455c3b98f2b11aec1fe032d7cd814"
+  },
+  "artifacts_omitted": "Checkpoint weights remain in the local /tmp run; retained JSON records successful exact-weight and outcome reload checks.",
+  "limitations": [
+    "Synthetic cases with repeated eligibility patterns are not representative domain quality.",
+    "Local compute cost was not measured.",
+    "This run does not establish performance parity with another framework."
+  ],
+  "post_run_source_sha256": {
+    "stateset_agents/core/environment_base.py": "baf604827c9d1122cfec43baf8048d38d656330b7ad8f86831e1936e3fd8c44c",
+    "stateset_agents/core/conversation_environment.py": "286d27bb2dfb9a79c2a87fd545da10f46f52e34aa53b10a4825b001b685df58a",
+    "stateset_agents/core/reward_base.py": "90c88f403a625e776550eeb42230d85ec4915d3a691d1609212d36406853b55a",
+    "stateset_agents/core/trajectory.py": "a19b5f69a613616eae3bdd735ada6592ec618e4aa4a431727b2b664ffde986e5",
+    "stateset_agents/training/config.py": "aa27c69d2dc92894c071f908d0ba0be713e7b1bbae018ebf640698969e235386",
+    "stateset_agents/training/multi_turn_trainer.py": "790d68a9092ef581625f03ee22e17a6799604e88cc311ea015834206d8f38c42",
+    "stateset_agents/training/multi_turn_checkpointing.py": "7d87d7313d6dbe78db34ce8f7fcaedf00163a5073ba21793ba6fff9dad502c01",
+    "stateset_agents/training/trainer_runtime.py": "1923a84a2381219903290bed54f338e499fcd2ffdd0a5272615a9ef68021a5ce",
+    "stateset_agents/training/runtime_state.py": "f6e6bda40af4c0a0da81e08b7a149e7bb72783cbf9f77e4857be983e1a691df3",
+    "stateset_agents/training/rollout_contract.py": "8c85a101f53fd75a2033d0f419a720ce88334352c56212411a0442704e6705e3",
+    "stateset_agents/training/train.py": "902acb606e298b19d86f584fc44a4af92bd81c47b89e81ff3f72e86683fad9e4",
+    "stateset_agents/training/sampled_workflow.py": "9bef5328ea9a74671e84c3abd797ae1a4284eeb73f85cc9ff562a5fbc8302a2a"
+  },
+  "source_identity": "Mutable development checkout. The summary identifies the unchanged sampled-workflow runner. The source inventory was captured after execution; later get_reward rescoring and wrapper override changes were checked separately by unit contracts, not bound to the sampled process imports."
+}

@@ -43,6 +43,33 @@ class IndustryRecipe:
 
 _RECIPES = (
     IndustryRecipe(
+        "manufacturing",
+        "Manufacturing operations",
+        ("work-order status", "production-change intake", "material exceptions"),
+        "get_work_order",
+        "work order",
+        "Route safety and quality holds to qualified staff; never bypass a hold or invent production.",
+        ("verified work-order facts", "authorized changes", "correct hold escalation"),
+    ),
+    IndustryRecipe(
+        "insurance",
+        "Insurance administration",
+        ("claim intake", "policy service", "document collection"),
+        "get_claim_case",
+        "claim case",
+        "Route coverage and claim decisions to an authorized specialist; intake does not imply approval or payment.",
+        ("verified case facts", "consented intake", "no invented coverage or payout"),
+    ),
+    IndustryRecipe(
+        "logistics",
+        "Logistics and fulfillment",
+        ("shipment tracking", "address changes", "delivery exceptions"),
+        "get_shipment",
+        "shipment",
+        "Verify authorization before changes; distinguish a label from dispatch and escalate exceptions without inventing delivery times.",
+        ("verified shipment facts", "authorized changes", "accurate exception routing"),
+    ),
+    IndustryRecipe(
         "financial-services",
         "Financial services",
         ("account support", "onboarding", "dispute intake"),
@@ -155,7 +182,7 @@ _RECIPES = (
 
 
 def list_industry_recipes() -> tuple[IndustryRecipe, ...]:
-    """Return all nine immutable industry recipes."""
+    """Return all immutable industry recipes."""
     return _RECIPES
 
 
@@ -327,8 +354,17 @@ def prepare_industry_training(
         raise ValueError("model must be a registered preset name")
     _validate_model_revision(model_revision)
     source_hash = _sha256(Path(dataset))
-    rows = load_finetuning_data(dataset)
+    rows = load_finetuning_data(dataset, expected_split="train")
     train, validation = split_finetuning_data(rows, validation_fraction, seed)
+    # This explicitly derives a new validation set from training-eligible rows.
+    # Keep declarations aligned with the new roles without changing the source.
+    for split, records in (("train", train), ("validation", validation)):
+        for row in records:
+            if "split" in row:
+                row["split"] = split
+            metadata = row.get("metadata")
+            if isinstance(metadata, dict) and "split" in metadata:
+                metadata["split"] = split
     if _sha256(Path(dataset)) != source_hash:
         raise ValueError(
             "Source dataset changed during preparation; retry with a stable file"
@@ -393,8 +429,10 @@ def load_industry_project(
     for name in ("train.jsonl", "validation.jsonl"):
         if _sha256(project / name) != manifest.get("files", {}).get(name):
             raise ValueError(f"{name} changed after preparation; prepare a new project")
-    train = load_finetuning_data(project / "train.jsonl")
-    validation = load_finetuning_data(project / "validation.jsonl")
+    train = load_finetuning_data(project / "train.jsonl", expected_split="train")
+    validation = load_finetuning_data(
+        project / "validation.jsonl", expected_split="validation"
+    )
     check_finetuning_overlap(train, validation)
     if (
         type(manifest.get("train_rows")) is not int
@@ -412,12 +450,15 @@ def train_industry_project(
     dry_run: bool = True,
     num_epochs: int = 3,
     max_length: int = 1024,
+    training_seed: int = 42,
 ) -> dict[str, Any]:
     """Verify prepared data and preview or execute BF16 LoRA SFT.
 
     A preview never imports the ML stack. Execution requires CUDA and never
     reports a successful training run when only a CPU preview took place.
     The validation split remains untouched for an independent evaluator.
+    ``training_seed`` controls initialization and trainer/data-order RNGs;
+    it does not regenerate the prepared dataset split.
     """
     if (
         isinstance(num_epochs, bool)
@@ -431,6 +472,8 @@ def train_industry_project(
         or max_length < 2
     ):
         raise ValueError("max_length must be an integer of at least 2")
+    if type(training_seed) is not int or not 0 <= training_seed < 2**32:
+        raise ValueError("training_seed must be an integer in [0, 2**32)")
     project = Path(project)
     manifest, train, validation = load_industry_project(project)
     output = project / "adapter"
@@ -448,17 +491,19 @@ def train_industry_project(
         "max_length": max_length,
         "method": "bf16_lora",
         "split_seed": manifest["seed"],
-        "training_seed": 42,
+        "training_seed": training_seed,
     }
     if dry_run:
         return plan
-    from stateset_agents.training.sft import gpu_available, run_sft
+    from stateset_agents.training.sft import gpu_available, load_sft_dataset, run_sft
 
+    captured_train, dataset_identity = load_sft_dataset(
+        project / "train.jsonl", expected_sha256=manifest["files"]["train.jsonl"]
+    )
+    if captured_train != train:
+        raise ValueError("Training rows changed after industry project validation")
     if not gpu_available():
         raise RuntimeError("CUDA is required for training; use --dry-run to preview")
-    from transformers import set_seed
-
-    set_seed(plan["training_seed"])
     output.mkdir(exist_ok=False)
     _write_json(
         output / "industry_run.json",
@@ -476,12 +521,23 @@ def train_industry_project(
             max_length=max_length,
             per_device_batch_size=1,
             gradient_accumulation_steps=8,
+            seed=training_seed,
             dataset_path=project / "train.jsonl",
+            dataset_identity=dataset_identity,
             **(
                 {"model_revision": manifest["model_revision"]}
                 if manifest.get("model_revision")
                 else {}
             ),
+        )
+        from stateset_agents.training.sft_artifacts import verify_sft_adapter
+
+        plan["export"] = verify_sft_adapter(
+            output,
+            base_model=manifest["base_model"],
+            lora_r=16,
+            dataset_identity=dataset_identity,
+            model_revision=manifest.get("model_revision"),
         )
     except Exception:
         _write_json(

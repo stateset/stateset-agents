@@ -11,6 +11,7 @@ import pytest
 
 from stateset_agents.core.error_handling import (
     CircuitBreaker,
+    CircuitBreakerConfig,
     CircuitBreakerState,
     ErrorCategory,
     ErrorHandler,
@@ -18,6 +19,7 @@ from stateset_agents.core.error_handling import (
     RetryConfig,
     TrainingException,
     ValidationException,
+    circuit_breaker,
     retry_async,
 )
 from stateset_agents.core.errors import ModelError, StateSetError, wrap_exception
@@ -201,6 +203,41 @@ class TestRetryAsync:
             await wrong_error()
 
         assert call_count == 1  # No retries
+
+    def test_rejects_non_positive_max_attempts(self):
+        with pytest.raises(ValueError, match="max_attempts"):
+            RetryConfig(max_attempts=0)
+
+    @pytest.mark.asyncio
+    async def test_zero_attempts_after_construction_never_raises_none(self):
+        """Regression: an empty retry loop used to ``raise None`` (TypeError)."""
+        config = RetryConfig(max_attempts=1, retry_on=[ValueError])
+        config.max_attempts = 0
+        called = False
+
+        @retry_async(config)
+        async def never_called():
+            nonlocal called
+            called = True
+
+        with pytest.raises(ValueError, match="max_attempts must be >= 1"):
+            await never_called()
+        assert called is False
+
+
+class TestCircuitBreakerDecorator:
+    def test_decorated_function_survives_cleared_registry(self):
+        """Regression: a cleared registry made the wrapper call ``None.call``."""
+        handler = ErrorHandler()
+
+        @circuit_breaker("svc", CircuitBreakerConfig(), handler)
+        def ping():
+            return "pong"
+
+        handler.circuit_breakers.clear()
+
+        assert ping() == "pong"
+        assert handler.get_circuit_breaker("svc") is not None
 
 
 class TestErrorHandler:

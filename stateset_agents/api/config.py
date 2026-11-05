@@ -10,13 +10,11 @@ import os
 from dataclasses import dataclass, field
 from enum import Enum
 
+# The one ConfigurationError (a StateSetError and a ValueError); this module
+# defined a second, unrelated ``ConfigurationError(Exception)`` before v0.70.0.
+from ..core.errors import ConfigurationError
+
 logger = logging.getLogger(__name__)
-
-
-class ConfigurationError(Exception):
-    """Raised when configuration is invalid or missing required values."""
-
-    pass
 
 
 class Environment(Enum):
@@ -197,6 +195,9 @@ class RateLimitConfig:
     window_seconds: int = 60
     enabled: bool = True
     trust_proxy_headers: bool = False
+    # Number of trusted reverse proxies that append to X-Forwarded-For. The
+    # client IP is taken this many entries from the right of the header.
+    trusted_proxy_hops: int = 1
     backend: str = "memory"
     redis_url: str | None = None
 
@@ -219,6 +220,9 @@ class RateLimitConfig:
             ),
             enabled=_get_bool("API_RATE_LIMIT_ENABLED", True),
             trust_proxy_headers=_get_bool("API_TRUST_PROXY_HEADERS", False),
+            trusted_proxy_hops=_get_int(
+                "API_TRUSTED_PROXY_HOPS", 1, min_val=1, max_val=16
+            ),
             backend=backend,
             redis_url=os.getenv("API_RATE_LIMIT_REDIS_URL"),
         )
@@ -276,6 +280,13 @@ class ValidationConfig:
     max_conversation_messages: int = 128
     max_iterations: int = 1000
     max_request_size_mb: int = 10
+    # Generation limits for inference endpoints (/v1/messages,
+    # /v1/chat/completions, /v1 conversations). Requests above these
+    # ceilings are rejected with 422 rather than silently clamped.
+    max_generation_tokens: int = 32768
+    max_completions_per_request: int = 4
+    max_logit_bias_entries: int = 300
+    max_stop_sequences: int = 16
 
     @classmethod
     def from_env(cls) -> "ValidationConfig":
@@ -296,6 +307,18 @@ class ValidationConfig:
             ),
             max_request_size_mb=_get_int(
                 "API_MAX_REQUEST_SIZE_MB", 10, min_val=1, max_val=100
+            ),
+            max_generation_tokens=_get_int(
+                "API_MAX_GENERATION_TOKENS", 32768, min_val=1, max_val=1_048_576
+            ),
+            max_completions_per_request=_get_int(
+                "API_MAX_COMPLETIONS_PER_REQUEST", 4, min_val=1, max_val=128
+            ),
+            max_logit_bias_entries=_get_int(
+                "API_MAX_LOGIT_BIAS_ENTRIES", 300, min_val=0, max_val=100_000
+            ),
+            max_stop_sequences=_get_int(
+                "API_MAX_STOP_SEQUENCES", 16, min_val=1, max_val=1024
             ),
         )
 
@@ -339,6 +362,7 @@ class APIConfig:
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     enable_training_lab: bool = False
     training_max_concurrent_jobs: int = 1
+    training_queue_path: str | None = None
     # Server-controlled root for every API training job's outputs; clients
     # can neither choose output directories nor resume from outside it.
     training_output_root: str = "outputs/api-training"
@@ -384,6 +408,15 @@ class APIConfig:
             training_max_concurrent_jobs=_get_int(
                 "API_TRAINING_MAX_CONCURRENT_JOBS", 1, min_val=1
             ),
+            training_queue_path=os.getenv(
+                "API_TRAINING_QUEUE_PATH",
+                (
+                    "./outputs/api-training.sqlite3"
+                    if environment == Environment.PRODUCTION
+                    else ""
+                ),
+            )
+            or None,
             training_output_root=os.getenv(
                 "API_TRAINING_OUTPUT_ROOT", "outputs/api-training"
             ),

@@ -19,6 +19,7 @@ import typer
 
 from stateset_agents import cli as _cli
 from stateset_agents.cli import app
+from stateset_agents.data.jsonl import read_jsonl_lines
 
 _echo = _cli._echo
 _load_config = _cli._load_config
@@ -198,10 +199,8 @@ def chat(
         if not replay_path.exists():
             print(f"Replay path not found: {replay}", file=sys.stderr)
             raise typer.Exit(code=2)
-        for line in replay_path.read_text(encoding="utf-8").splitlines():
+        for _, line in read_jsonl_lines(replay_path):
             line = line.strip()
-            if not line:
-                continue
             try:
                 entry = json.loads(line)
             except json.JSONDecodeError:

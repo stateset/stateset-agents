@@ -1,0 +1,35 @@
+{
+  "passed": true,
+  "prepare_queue_job": "ff3756feb032",
+  "wheel_queue_jobs": [
+    "83bf69208f24",
+    "05764d380c63",
+    "1d473f153940"
+  ],
+  "final_queue_job": "e99e61c8870b",
+  "source_regressions": {
+    "passed": 913,
+    "skipped": 0
+  },
+  "wheel_regressions": {
+    "passed": 802,
+    "skipped": 0
+  },
+  "typed_modules": 423,
+  "source_unchanged": true,
+  "test_sources_unchanged": true,
+  "wheel_source_matches": true,
+  "wheel_profile_matches": true,
+  "wheel_rubric_matches": true,
+  "wheel_case_identities_match": true,
+  "wheel_sha256": "fa4ec833c0e1a35dab1a8775d749a9db5f0e498411d77c9a843a20fdd17f9f8e",
+  "real_terminal_dataset_inspection_verified": true,
+  "dataset_format_diagnostics_verified": true,
+  "live_scan_status_verified": true,
+  "live_herdr_refreshed": true,
+  "draft_preserved": true,
+  "gpu_verified": false,
+  "quality_gain_verified": false,
+  "paid_run_launched": false,
+  "count_note": "Targeted source and wheel counts overlap; provider/worker boundaries use CPU fixtures and mocks."
+}

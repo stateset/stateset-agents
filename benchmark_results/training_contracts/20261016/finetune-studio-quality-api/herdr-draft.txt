@@ -1,0 +1,8 @@
+{
+  "draft_preserved": true,
+  "mode_preserved": true,
+  "mode": "0600",
+  "sha256": "2c51847a89df1ac552178fe0266089fa7fd07c567ddfa02283ed8ff1bf39a3c1",
+  "pane": "w1:p1A",
+  "training_launched": false
+}

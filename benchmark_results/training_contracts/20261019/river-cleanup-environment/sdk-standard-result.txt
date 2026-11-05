@@ -1,0 +1,6 @@
+Command: .venv/bin/python -m unittest discover -s tests/integration -p test_river_native_sdk.py -v
+Execution: approved outside the restricted sandbox
+Test runner summary: Ran 19 tests in 10.424s; OK
+Normal filesystem sync, SDK scheduling, test transport, and asyncio debug settings.
+Provider clients and RPCs guarded by the test suite.
+This file summarizes the observed tool result; it is not a raw stdout transcript.

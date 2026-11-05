@@ -1,0 +1,52 @@
+{
+  "stages": [
+    {
+      "name": "ruff",
+      "argv": [
+        "ruff",
+        "check",
+        "stateset_agents/tui.py",
+        "stateset_agents/finetune_evaluation_tui.py",
+        "tests/unit/test_evaluation_case_picker.py"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "tests",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-n0",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts=",
+        "--timeout=150",
+        "--tb=short",
+        "tests/unit/test_evaluation_case_picker.py",
+        "tests/unit/test_finetune_evaluation.py",
+        "tests/unit/test_finetune_studio.py",
+        "--junitxml=/tmp/stateset-evaluation-case-picker-20261016/picker-tests.xml"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "types",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/home/dom/stateset-agents/scripts/check_types.py",
+        "--all"
+      ],
+      "exit_code": 0
+    }
+  ],
+  "canonical_unchanged": true,
+  "passed": true,
+  "changed_sha256": {
+    "stateset_agents/tui.py": "e7f12080e6c998447aa1795f539630c0b3975c6e6da3d4a7d47cfa2f679ff1ed",
+    "stateset_agents/finetune_evaluation_tui.py": "d826a2c7679b1606e69c6bae5514e986d5ff96ffd305c4c1cea71a0926e11f86",
+    "tests/unit/test_evaluation_case_picker.py": "36a3bbbf417412b01afb2a4c3452c39add0d08fdc51e1229ed85151a533dcd33"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "kind": "native-token-group-weighting-regression",
+  "baseline_source_inventory": "../offline-action-normalization/wheel_proof.json",
+  "baseline_wheel_sha256": "9c171125386978f17269def60c29740a79522ac5ba692343054ad745d08f8957",
+  "baseline_loss_module_sha256": "7319b65fedb6f2c99d6ea8ce553a73aa30444bec40b985ee6e75615636d39d6d",
+  "changed_package_files": [
+    "training/loss_computation.py"
+  ],
+  "baseline_regressions_failed": 20,
+  "baseline_controls_passed": 3,
+  "baseline_job_id": "ad64be39ad43",
+  "initial_fixture_error_corrected_before_baseline": "Reward tensors explicitly use float32; an earlier fixture error is not counted as evidence of a package defect.",
+  "reference": "Independent Torch causal log-softmax, explicit token/turn/trajectory sums and autograd; no trainer loss/advantage/reduction helpers",
+  "objectives": [
+    "grpo",
+    "dr_grpo",
+    "dapo",
+    "bnpo",
+    "cispo",
+    "rloo",
+    "reinforce_pp_baseline"
+  ],
+  "forward_chunk_sizes": [
+    1,
+    16
+  ],
+  "synthetic": true,
+  "representative_quality_demonstrated": false
+}

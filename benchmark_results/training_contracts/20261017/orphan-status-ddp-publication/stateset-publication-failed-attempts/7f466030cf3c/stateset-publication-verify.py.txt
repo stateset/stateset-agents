@@ -1,0 +1,65 @@
+"""Frozen source checks for orphan workers and collective checkpoint publication."""
+from pathlib import Path
+import fcntl
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import time
+
+ROOT = Path('/home/dom/stateset-agents')
+BASE = Path('/tmp/stateset-publication')
+os.chdir(ROOT)
+os.environ.update(OMP_NUM_THREADS='1', MKL_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', NUMEXPR_NUM_THREADS='1', RAYON_NUM_THREADS='1', TOKENIZERS_PARALLELISM='false', HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1', STATESET_DISTRIBUTED_CONTRACT_REPORT_DIR=str(BASE)+'-distributed')
+lock = Path('/tmp/stateset-studio-mobile-source.lock').open('a')
+try:
+    fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    print('Another acceptance run owns source; no focused checks performed.', flush=True)
+    raise SystemExit(2)
+
+NATIVE = ['test_ddp_checkpoint_state', 'test_ddp_continual', 'test_ddp_evaluation', 'test_resume_rollout_sync', 'test_checkpoint_rng_publication', 'test_native_checkpoint_safety', 'test_runtime_checkpoint_safety', 'test_native_checkpoint_metadata', 'test_model_checkpoint']
+OPERATOR = ['test_finetune_worker_terminal', 'test_cli_finetune_records', 'test_finetune_worker_ownership', 'test_finetune_interrupted_stop', 'test_finetune_studio', 'test_finetune_failures', 'test_finetune_backends', 'test_finetune_recovery', 'test_finetune_checkpoint_evaluation', 'test_finetune_evaluation', 'test_finetune_seeds', 'test_finetune_inspection', 'test_finetune_mobile', 'test_cli_finetune', 'test_finetune_quality', 'test_finetune_handoff', 'test_remote_runpod_executor']
+INTEGRATION = ['test_ddp_checkpoint_publication', 'test_native_ddp_checkpoint']
+
+def inventory(directory):
+    return {p.relative_to(ROOT).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((ROOT/directory).rglob('*.py'))}
+
+pytest = [sys.executable, '-m', 'pytest', '-q', '-n0', '-o', 'addopts=', '--timeout=140', '--tb=short']
+commands = [
+    ('format', [sys.executable, '/tmp/stateset-studio-mobile-format.py', '--format-only']),
+    ('types', [sys.executable, 'scripts/check_types.py', '--all']),
+    ('native', pytest + ['tests/unit/'+name+'.py' for name in NATIVE] + ['--junitxml='+str(BASE)+'-native.xml']),
+    ('operator', pytest + ['tests/unit/'+name+'.py' for name in OPERATOR] + ['tests/api/test_finetune_operator.py', '--junitxml='+str(BASE)+'-operator.xml']),
+    ('distributed', pytest + ['tests/integration/'+name+'.py' for name in INTEGRATION] + ['--junitxml='+str(BASE)+'-distributed.xml']),
+    ('wheel', [sys.executable, '/tmp/stateset-publication-wheel.py']),
+    ('gates', [sys.executable, '/tmp/stateset-studio-mobile-gates.py']),
+    ('governance', pytest + ['tests/unit/test_release_governance.py', '--junitxml='+str(BASE)+'-governance.xml']),
+    ('workflow', ['/tmp/stateset-actionlint-1.7.12/actionlint', '.github/workflows/training-contracts.yml']),
+]
+stages = []
+frozen = None
+started = time.time()
+for name, command in commands:
+    print('Stage:', name, ' '.join(command), flush=True)
+    stage_start = time.time()
+    with Path(str(BASE)+'-'+name+'.log').open('w') as log:
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        for line in process.stdout:
+            log.write(line)
+            log.flush()
+            if name != 'types' or 'error' in line.lower() or 'success' in line.lower():
+                print(line, end='', flush=True)
+        code = process.wait()
+    if name == 'format' and code == 0:
+        frozen = {'captured_at':time.time(), 'phase':'after formatter; before verification', 'source_sha256':inventory('stateset_agents'), 'test_source_sha256':inventory('tests')}
+        Path(str(BASE)+'-inputs.json').write_text(json.dumps(frozen,indent=2)+'\n')
+    if frozen is not None and (inventory('stateset_agents') != frozen['source_sha256'] or inventory('tests') != frozen['test_source_sha256']):
+        print('Source or tests changed during verification', flush=True)
+        code = code or 1
+    stages.append({'name':name, 'argv':command, 'started':stage_start, 'finished':time.time(), 'exit_code':code})
+    Path(str(BASE)+'-result.json').write_text(json.dumps({'started':started, 'checked':True, 'passed':len(stages)==len(commands) and all(row['exit_code']==0 for row in stages), 'source_frozen':frozen is not None, 'native_modules':NATIVE, 'operator_modules':OPERATOR, 'integration_modules':INTEGRATION, 'stages':stages},indent=2)+'\n')
+    if name == 'format' and code:
+        break
+raise SystemExit(0 if len(stages)==len(commands) and all(row['exit_code']==0 for row in stages) else 1)

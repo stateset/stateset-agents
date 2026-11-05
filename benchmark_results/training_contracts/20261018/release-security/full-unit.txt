@@ -1,0 +1,272 @@
+bringing up nodes...
+bringing up nodes...
+
+........................................................................ [  0%]
+........................................................................ [  1%]
+........................................................................ [  2%]
+........................................................................ [  2%]
+........................................................................ [  3%]
+........................................................................ [  4%]
+........................................................................ [  4%]
+........................................................................ [  5%]
+........................................................................ [  6%]
+........................................................................ [  7%]
+........................................................................ [  7%]
+........................................................................ [  8%]
+........................................................................ [  9%]
+........................................................................ [  9%]
+........................................................................ [ 10%]
+........................................................................ [ 11%]
+........................................................................ [ 12%]
+........................................................................ [ 12%]
+........................................................................ [ 13%]
+........................................................................ [ 14%]
+........................................................................ [ 14%]
+........................................................................ [ 15%]
+........................................................................ [ 16%]
+........................................................................ [ 17%]
+........................................................................ [ 17%]
+........................................................................ [ 18%]
+........................................................................ [ 19%]
+........................................................................ [ 19%]
+........................................................................ [ 20%]
+.............................................................s.......... [ 21%]
+........................................................................ [ 22%]
+........................................................................ [ 22%]
+........................................................................ [ 23%]
+........................................................................ [ 24%]
+........................................................................ [ 24%]
+........................................................................ [ 25%]
+........................................................................ [ 26%]
+........................................................................ [ 27%]
+........................................................................ [ 27%]
+........................................................................ [ 28%]
+........................................................................ [ 29%]
+........................................................................ [ 29%]
+........................................................................ [ 30%]
+........................................................................ [ 31%]
+........................................................................ [ 32%]
+........................................................................ [ 32%]
+........................................................................ [ 33%]
+........................................................................ [ 34%]
+........................................................................ [ 34%]
+........................................................................ [ 35%]
+........................................................................ [ 36%]
+........................................................................ [ 37%]
+........................................................................ [ 37%]
+........................................................................ [ 38%]
+........................................................................ [ 39%]
+........................................................................ [ 39%]
+.................................s...................................... [ 40%]
+........................................................................ [ 41%]
+........................................................................ [ 42%]
+........................................................................ [ 42%]
+........................................................................ [ 43%]
+........................................................................ [ 44%]
+........................................................................ [ 44%]
+........................................................................ [ 45%]
+........................................................................ [ 46%]
+........................................................................ [ 47%]
+........................................................................ [ 47%]
+........................................................................ [ 48%]
+........................................................................ [ 49%]
+........................................................................ [ 49%]
+........................................................................ [ 50%]
+........................................................................ [ 51%]
+........................................................................ [ 52%]
+........................................................................ [ 52%]
+........................................................................ [ 53%]
+........................................................................ [ 54%]
+........................................................................ [ 54%]
+........................................................................ [ 55%]
+........................................................................ [ 56%]
+........................................................................ [ 57%]
+........................................................................ [ 57%]
+........................................................................ [ 58%]
+........................................................................ [ 59%]
+........................................................................ [ 59%]
+........................................................................ [ 60%]
+........................................................................ [ 61%]
+........................................................................ [ 62%]
+........................................................................ [ 62%]
+........................................................................ [ 63%]
+.............................ssssss.......s............................. [ 64%]
+........................................................................ [ 64%]
+........................................................................ [ 65%]
+........................................................................ [ 66%]
+........................................................................ [ 67%]
+........................................................................ [ 67%]
+........................................................................ [ 68%]
+........................................................................ [ 69%]
+.................................................................ss..ss. [ 69%]
+........................................................................ [ 70%]
+........................................................................ [ 71%]
+........................................................................ [ 72%]
+........................................................................ [ 72%]
+........................................................................ [ 73%]
+........................................................................ [ 74%]
+........................................................................ [ 74%]
+........................................................................ [ 75%]
+........................................................................ [ 76%]
+........................................................................ [ 77%]
+........................................................................ [ 77%]
+........................................................................ [ 78%]
+........................................................................ [ 79%]
+........................................................................ [ 79%]
+........................................................................ [ 80%]
+........................................................................ [ 81%]
+........................................................................ [ 82%]
+........................................................................ [ 82%]
+........................................................................ [ 83%]
+........................................................................ [ 84%]
+........................................................................ [ 84%]
+........................................................................ [ 85%]
+........................................................................ [ 86%]
+........................................................................ [ 86%]
+........................................................................ [ 87%]
+.............ss....s.................................................... [ 88%]
+........................................................................ [ 89%]
+........................................................................ [ 89%]
+........................................................................ [ 90%]
+........................................................................ [ 91%]
+........................................................................ [ 91%]
+........................................................................ [ 92%]
+........................................................................ [ 93%]
+........................................................................ [ 94%]
+........................................................................ [ 94%]
+........................................................................ [ 95%]
+........................................................................ [ 96%]
+........................................................................ [ 96%]
+........................................................................ [ 97%]
+....................................................s.........s.s....... [ 98%]
+........................................................................ [ 99%]
+........................................................................ [ 99%]
+.................                                                        [100%]
+=============================== warnings summary ===============================
+tests/unit/test_intelligent_orchestrator.py:13
+tests/unit/test_intelligent_orchestrator.py:13
+tests/unit/test_intelligent_orchestrator.py:13
+tests/unit/test_intelligent_orchestrator.py:13
+  /home/dom/stateset-agents/tests/unit/test_intelligent_orchestrator.py:13: DeprecationWarning: stateset_agents.core.intelligent_orchestrator has moved to stateset_agents.experimental.intelligent_orchestrator; the old import path is deprecated and will be removed in a future release.
+    from stateset_agents.core.intelligent_orchestrator import (
+
+tests/unit/test_multi_agent_coordination.py:8
+tests/unit/test_multi_agent_coordination.py:8
+tests/unit/test_multi_agent_coordination.py:8
+tests/unit/test_multi_agent_coordination.py:8
+  /home/dom/stateset-agents/tests/unit/test_multi_agent_coordination.py:8: DeprecationWarning: stateset_agents.core.multi_agent_coordination has moved to stateset_agents.experimental.multi_agent_coordination; the old import path is deprecated and will be removed in a future release.
+    from stateset_agents.core.multi_agent_coordination import (
+
+tests/unit/test_multimodal_processing.py:14
+tests/unit/test_multimodal_processing.py:14
+tests/unit/test_multimodal_processing.py:14
+tests/unit/test_multimodal_processing.py:14
+  /home/dom/stateset-agents/tests/unit/test_multimodal_processing.py:14: DeprecationWarning: stateset_agents.core.multimodal_processing has moved to stateset_agents.experimental.multimodal_processing; the old import path is deprecated and will be removed in a future release.
+    from stateset_agents.core.multimodal_processing import (
+
+tests/unit/test_new_features.py:45
+tests/unit/test_new_features.py:45
+tests/unit/test_new_features.py:45
+tests/unit/test_new_features.py:45
+  /home/dom/stateset-agents/tests/unit/test_new_features.py:45: DeprecationWarning: stateset_agents.core.few_shot_adaptation has moved to stateset_agents.experimental.few_shot_adaptation; the old import path is deprecated and will be removed in a future release.
+    from stateset_agents.core.few_shot_adaptation import (
+
+tests/unit/test_training_queue.py: 134 warnings
+  /home/dom/stateset-agents/stateset_agents/api/training_queue.py:232: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    now = datetime.utcnow()
+
+tests/unit/test_training_queue.py: 32 warnings
+  /home/dom/stateset-agents/stateset_agents/api/training_queue.py:413: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    snapshot.update(status="running", started_at=datetime.utcnow())
+
+tests/unit/test_training_queue.py: 16 warnings
+  /home/dom/stateset-agents/stateset_agents/api/training_queue.py:503: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    snapshot["completed_at"] = datetime.utcnow()
+
+tests/unit/test_training_queue.py::test_cancellation_and_expired_worker_writes_are_fenced[sqlite]
+tests/unit/test_training_queue.py::test_cancellation_and_expired_worker_writes_are_fenced[postgres]
+tests/unit/test_training_queue.py::test_heartbeat_cannot_revive_a_lease_that_expired_while_waiting_for_lock
+tests/unit/test_training_queue.py::test_lease_is_expired_at_its_deadline
+  /home/dom/stateset-agents/stateset_agents/api/training_queue.py:394: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    completed_at=datetime.utcnow(),
+
+tests/unit/test_training_queue.py::test_cancellation_and_expired_worker_writes_are_fenced[sqlite]
+tests/unit/test_training_queue.py::test_cancellation_and_expired_worker_writes_are_fenced[postgres]
+  /home/dom/stateset-agents/tests/unit/test_training_queue.py:72: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    snapshot.update(status="completed", completed_at=datetime.utcnow())
+
+tests/unit/test_training_queue.py::test_late_cancellation_cannot_be_overwritten_by_success[sqlite]
+tests/unit/test_training_queue.py::test_late_cancellation_cannot_be_overwritten_by_success[postgres]
+  /home/dom/stateset-agents/tests/unit/test_training_queue.py:81: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    snapshot.update(status="completed", completed_at=datetime.utcnow())
+
+tests/unit/test_training_queue.py::test_lease_is_expired_at_its_deadline
+  /home/dom/stateset-agents/tests/unit/test_training_queue.py:161: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    snapshot.update(status="completed", completed_at=datetime.utcnow())
+
+tests/unit/test_training_queue.py::test_postgres_uses_database_clock_instead_of_worker_host_clock[postgres]
+  /home/dom/stateset-agents/tests/unit/test_training_queue.py:181: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    snapshot.update(status="completed", completed_at=datetime.utcnow())
+
+tests/unit/test_finetune_evaluation.py::test_real_tiny_cpu_policy_generation_uses_pinned_base_and_safe_adapter
+tests/unit/test_finetune_seeds.py::test_real_cpu_sft_seed_controls_initial_adapter_training_and_manifest
+tests/unit/test_finetune_seeds.py::test_real_cpu_sft_seed_controls_initial_adapter_training_and_manifest
+tests/unit/test_finetune_seeds.py::test_real_cpu_sft_seed_controls_initial_adapter_training_and_manifest
+tests/unit/test_finetune_checkpoint_evaluation.py::test_selected_checkpoint_loads_real_cpu_safetensors_instead_of_final_weights
+tests/unit/test_finetune_recovery.py::test_real_cpu_sft_stop_snapshot_and_resume_matches_uninterrupted
+tests/unit/test_finetune_recovery.py::test_real_cpu_sft_stop_snapshot_and_resume_matches_uninterrupted
+tests/unit/test_finetune_recovery.py::test_real_cpu_sft_stop_snapshot_and_resume_matches_uninterrupted
+tests/unit/test_runtime_state.py::test_real_lora_adapter_round_trip_restores_policy_outputs
+  /home/dom/stateset-agents/.venv/lib/python3.12/site-packages/peft/tuners/lora/layer.py:2631: UserWarning: fan_in_fan_out is set to False but the target module is `Conv1D`. Setting fan_in_fan_out to True.
+    warnings.warn(
+
+tests/unit/test_finetune_evaluation.py: 1 warning
+tests/unit/test_finetune_seeds.py: 4 warnings
+tests/unit/test_finetune_recovery.py: 9 warnings
+tests/unit/test_runtime_state.py: 1 warning
+  /home/dom/stateset-agents/.venv/lib/python3.12/site-packages/peft/utils/save_and_load.py:438: UserWarning: Could not find a config file in  - will assume that the vocabulary was not modified.
+    warnings.warn(
+
+tests/unit/test_finetune_checkpoint_evaluation.py::test_selected_checkpoint_loads_real_cpu_safetensors_instead_of_final_weights
+  /home/dom/stateset-agents/.venv/lib/python3.12/site-packages/peft/utils/save_and_load.py:452: UserWarning: Setting `save_embedding_layers` to `True` as the embedding layer has been resized during finetuning.
+    warnings.warn(
+
+tests/unit/test_intelligent_orchestrator.py::TestIntelligentOrchestrator::test_module_reexports_split_models
+  /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: DeprecationWarning: stateset_agents.core.intelligent_orchestrator_models has moved to stateset_agents.experimental.intelligent_orchestrator_models; the old import path is deprecated and will be removed in a future release.
+    return _bootstrap._gcd_import(name[level:], package, level)
+
+tests/unit/test_finetune_interrupted_stop.py::test_http_stop_and_metadata_keep_supervisor_loss_explicit
+  /home/dom/stateset-agents/stateset_agents/api/errors.py:133: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "timestamp": datetime.utcnow().isoformat() + "Z",
+
+tests/unit/test_mcp_server.py::TestCreateServer::test_create_server_builds_fastmcp_instance
+  /home/dom/stateset-agents/.venv/lib/python3.12/site-packages/pydantic_settings/sources/utils.py:47: IncompleteFieldDefinitionWarning: Field 'lifespan' has an incomplete definition: its annotation contains an unresolved forward reference, so settings sources may fail to correctly resolve its value. Call `model_rebuild()` on the model where the field is defined, once all the referenced types are defined.
+    warnings.warn(
+
+tests/unit/test_vapo_trainer_behavioral.py::test_train_step_single_optimizer_step_per_call
+  /home/dom/stateset-agents/stateset_agents/training/vapo_trainer.py:1031: UserWarning: Seems like `optimizer.step()` has been overridden after learning rate scheduler initialization. Please, make sure to call `optimizer.step()` before `lr_scheduler.step()`. See more details at https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate
+    self.actor_scheduler.step()
+
+tests/unit/test_vapo_trainer_behavioral.py::test_train_step_single_optimizer_step_per_call
+  /home/dom/stateset-agents/stateset_agents/training/vapo_trainer.py:1032: UserWarning: Seems like `optimizer.step()` has been overridden after learning rate scheduler initialization. Please, make sure to call `optimizer.step()` before `lr_scheduler.step()`. See more details at https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate
+    self.critic_scheduler.step()
+
+tests/unit/test_dapo_trainer_behavioral.py::test_num_gradient_updates_respected
+tests/unit/test_dapo_trainer_behavioral.py::test_one_optimizer_step_per_inner_update_over_the_whole_batch
+  /home/dom/stateset-agents/stateset_agents/training/dapo_trainer.py:860: UserWarning: Seems like `optimizer.step()` has been overridden after learning rate scheduler initialization. Please, make sure to call `optimizer.step()` before `lr_scheduler.step()`. See more details at https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate
+    self.scheduler.step()
+
+tests/unit/test_agent_service.py::test_agent_service_tracks_conversations
+tests/unit/test_agent_service.py::test_agent_service_merges_full_history
+  /home/dom/stateset-agents/stateset_agents/api/services/agent_service.py:56: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "created_at": datetime.utcnow(),
+
+tests/unit/test_agent_service.py::test_agent_service_tracks_conversations
+tests/unit/test_agent_service.py::test_agent_service_tracks_conversations
+tests/unit/test_agent_service.py::test_agent_service_merges_full_history
+tests/unit/test_agent_service.py::test_agent_service_merges_full_history
+  /home/dom/stateset-agents/stateset_agents/api/services/agent_service.py:334: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    conversation["last_message_at"] = datetime.utcnow()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+10078 passed, 20 skipped, 246 warnings in 994.77s (0:16:34)

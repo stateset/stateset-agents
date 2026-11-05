@@ -1,0 +1,20 @@
+{
+  "applied_at": 1792246678.7501633,
+  "files": {
+    "stateset_agents/cli_finetune.py": "1337796f1c5e26dc8b77761ec1b37fbf4dc90b90a227d4a3e9c476722b7c3278",
+    "tests/unit/test_cli_finetune_records.py": "3a039a8dcc86b852918de196f23096dde1dbd66cb8787bc7d96937f278cbbb40",
+    "stateset_agents/training/ddp_checkpoint.py": "2f6ba9739ad92defc695b45ae7778e971ba600b4d00dbdaec46491133d7a3847",
+    "tests/integration/test_ddp_checkpoint_publication.py": "6bd4c9f6e07effcd1b465499179af145e1bb5b1ff1bf8a34996a13da2f33a680",
+    "stateset_agents/finetune_worker.py": "31aba4688b6af0f93c21435b95e2a16fab8c1eb30d3437898da5d9bbdcbd0621",
+    "stateset_agents/finetune_workspace.py": "fb8dc6578fe1f8128aa96bf6d8600b3118476207600a1b15aab31b7e420d2a1d",
+    "tests/unit/test_finetune_worker_terminal.py": "940062e8543653a6660ca7de5a254f564f9d62f00ee83d4282f61f0b3e61d243",
+    "stateset_agents/finetune_recovery.py": "894309f96f9bd72173f92e6fa7cb08dc1a03dac1e3671906ab29e420e5e4b29f",
+    ".github/workflows/training-contracts.yml": "ea3aad6ab9fc15712a9bb654f08c2a5c893dd995d0ce38471def25683dc16746"
+  },
+  "helper_sha256": {
+    "/tmp/stateset-studio-mobile-format.py": "6a53d4d6a0ab881d80d7bfd99cb583140b7b32071ca4a7d4082fdc52e5598d7e",
+    "/tmp/stateset-studio-mobile-gates.py": "32032c54d19d44efd581cba8b26af96b0dd85873b4c49dcbbe4be7fb94077d15",
+    "/tmp/stateset-studio-mobile-prepare.py": "989680601a47e9c2e4fed3c3282a82c30dff1b997623c0fc02ec06d493e9b5ae",
+    "/tmp/stateset-studio-mobile-finish.py": "90541edc0576f606053e9a6811d2cf176d1a424f752e34d2467d2a08756a86f3"
+  }
+}

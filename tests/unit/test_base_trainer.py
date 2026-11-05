@@ -69,6 +69,9 @@ class TestBaseTrainerConfig:
             "extra_field": "should_be_ignored",  # Unknown field
         }
 
+        with pytest.raises(TypeError, match="extra_field"):
+            BaseTrainerConfig.from_dict(config_dict)
+        config_dict.pop("extra_field")
         config = BaseTrainerConfig.from_dict(config_dict)
 
         assert config.model_name == "from-dict-model"

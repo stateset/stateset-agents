@@ -5,12 +5,13 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from stateset_agents.core.agent_config import AgentConfig
-from stateset_agents.core.trajectory import MultiTurnTrajectory, TrajectoryGroup
+if TYPE_CHECKING:  # annotations only: utils sits below core in the layering
+    from stateset_agents.core.agent_config import AgentConfig
+    from stateset_agents.core.trajectory import MultiTurnTrajectory, TrajectoryGroup
 
 logger = logging.getLogger(__name__)
 
@@ -190,8 +191,10 @@ class WandBLogger:
         learning_rate: float,
         step: int,
         trajectory_groups: list[TrajectoryGroup] | None = None,
+        *,
+        trajectory_metrics: dict[str, float] | None = None,
     ):
-        """Log training step metrics."""
+        """Log a training step, preferring supplied population metrics to local groups."""
         if not self.enabled:
             return
 
@@ -203,7 +206,9 @@ class WandBLogger:
                 **{f"train/{k}": v for k, v in losses.items()},
             }
 
-            if trajectory_groups:
+            if trajectory_metrics is not None:
+                metrics.update({f"train/{k}": v for k, v in trajectory_metrics.items()})
+            elif trajectory_groups:
                 traj_metrics = self._compute_trajectory_metrics(trajectory_groups)
                 metrics.update({f"train/{k}": v for k, v in traj_metrics.items()})
 

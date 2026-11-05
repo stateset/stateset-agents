@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "scope": "held-out executed actions only",
+  "actions_checked": 25,
+  "valid_json_actions": 25,
+  "exact_order_ids": true,
+  "provider_requests": 0
+}

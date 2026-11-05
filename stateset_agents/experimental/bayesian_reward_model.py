@@ -16,12 +16,10 @@ try:
     import torch
     import torch.nn as nn
     import torch.nn.functional as F
-    from torch.optim import Adam
 except ImportError:
     torch = cast(Any, None)
     nn = cast(Any, None)
     F = cast(Any, None)
-    Adam = cast(Any, None)
 
 from stateset_agents.core.reward import RewardFunction, RewardResult
 from stateset_agents.core.trajectory import ConversationTurn
@@ -88,7 +86,7 @@ class MCDropoutRewardModel(nn.Module):
         self.dropout_rate = dropout_rate
 
         # Build network with dropout
-        layers = []
+        layers: list[nn.Module] = []
         in_dim = input_dim
 
         for _i in range(num_layers):
@@ -254,7 +252,7 @@ class VariationalBayesianRewardModel(nn.Module):
         self.input_dim = input_dim
 
         # Build Bayesian layers
-        layers = []
+        layers: list[nn.Module] = []
         in_dim = input_dim
 
         for _ in range(num_layers):
@@ -269,7 +267,8 @@ class VariationalBayesianRewardModel(nn.Module):
         """Forward pass with weight sampling"""
         for layer in self.feature_net:
             x = layer(x)
-        return self.output_layer(x)
+        output: torch.Tensor = self.output_layer(x)
+        return output
 
     def kl_divergence(self) -> torch.Tensor:
         """Total KL divergence for all Bayesian layers"""
@@ -335,7 +334,9 @@ class EnsembleRewardModel:
             ).to(device)
             self.models.append(model)
 
-        self.optimizers = [Adam(model.parameters(), lr=1e-4) for model in self.models]
+        self.optimizers = [
+            torch.optim.Adam(model.parameters(), lr=1e-4) for model in self.models
+        ]
 
     def train_step(
         self,
@@ -422,6 +423,7 @@ class BayesianRewardFunction(RewardFunction):
         self.config = config or BayesianRewardConfig()
         self.device = device
 
+        self.model: EnsembleRewardModel | MCDropoutRewardModel
         if self.config.use_ensemble:
             self.model = EnsembleRewardModel(
                 input_dim,
@@ -457,11 +459,13 @@ class BayesianRewardFunction(RewardFunction):
         features_tensor = torch.FloatTensor(features).unsqueeze(0).to(self.device)
 
         # Get prediction with uncertainty
-        mean, epistemic, aleatoric = self._predict_with_uncertainty(features_tensor)
+        mean_t, epistemic_t, aleatoric_t = self._predict_with_uncertainty(
+            features_tensor
+        )
 
-        mean = float(mean.item())
-        epistemic = float(epistemic.item())
-        aleatoric = float(aleatoric.item())
+        mean = float(mean_t.item())
+        epistemic = float(epistemic_t.item())
+        aleatoric = float(aleatoric_t.item())
 
         # Total uncertainty
         total_uncertainty = epistemic + aleatoric
@@ -500,10 +504,7 @@ class BayesianRewardFunction(RewardFunction):
         x: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Get prediction with uncertainty"""
-        if self.config.use_ensemble:
-            return self.model.predict_with_uncertainty(x, self.config.num_samples)
-        else:
-            return self.model.predict_with_uncertainty(x, self.config.num_samples)
+        return self.model.predict_with_uncertainty(x, self.config.num_samples)
 
     def _extract_features(self, turns: list[ConversationTurn]) -> NDArray[np.float32]:
         """
@@ -512,7 +513,7 @@ class BayesianRewardFunction(RewardFunction):
         In practice, use LLM embeddings. Here we use simple features.
         """
         if not turns:
-            return np.zeros(768)
+            return np.zeros(768, dtype=np.float32)
 
         # Simple feature extraction (placeholder)
         features = []

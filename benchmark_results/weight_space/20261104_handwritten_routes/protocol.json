@@ -1,0 +1,27 @@
+{
+  "nodes": 17,
+  "max_cost": 7,
+  "cases_per_family": 512,
+  "families": [
+    "er_0.05",
+    "er_0.12",
+    "er_0.25",
+    "er_0.5",
+    "max_cost_chain",
+    "broken_chain",
+    "cheap_detours",
+    "two_cycles"
+  ],
+  "seed": 2026110407,
+  "exhaustive_cases": 6561,
+  "dtype_probe_cases": "first 64 cases of each family",
+  "training_updates": 0,
+  "candidate_selection": false,
+  "tie_rule": "lexicographically smallest vertex sequence",
+  "source_sha256": {
+    "handwritten_routes_job.py": "52b4b736f909697f0eb9919501ea3bda3d45b2babefb79ba90f1107a3c3777bf",
+    "handwritten_routes.py": "8cd230945556fe39c278337b550b74c69c809c9c3901f14b7e146537b1f0bb36",
+    "handwritten_weighted_graph.py": "7540fda391dbc06afc75b800a5a53fbfe47f6f38e720874307012573fef87e0a",
+    "handwritten_weighted_graph_job.py": "837e4d6bc57278cae65da027cb6fa1d099a060f38a1b02abbd8544ae9a4237c0"
+  }
+}

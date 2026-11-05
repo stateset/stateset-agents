@@ -4,11 +4,25 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import os
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
+
+from stateset_agents.core.grounding import STYLE_SHARE, task_grounding
+from stateset_agents.core.reward_base import RewardUnavailableError
+from stateset_agents.rewards.llm_judge import (
+    DATA_INSTRUCTION,
+    VERDICT_RETRY_INSTRUCTION,
+    history_section,
+    history_text,
+    judge_conversation,
+    parse_verdict_json,
+    prompt_nonce,
+    untrusted_block,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +35,11 @@ MULTI_REWARD_EXCEPTIONS = (
     OSError,
     asyncio.TimeoutError,
 )
+
+
+#: Judge call failures that mean "no verdict available" (network, timeout,
+#: provider errors, an unparseable reply), as opposed to programming errors.
+_JUDGE_OUTAGES = (RuntimeError, ValueError, OSError, asyncio.TimeoutError)
 
 
 _MODEL_PROVIDER_ALIASES = {
@@ -96,6 +115,12 @@ class RewardComponent:
 class BaseRewardComponent(ABC):
     """Base class for individual reward components."""
 
+    #: True for judges: they score the newest reply themselves and read the
+    #: earlier turns as context, so ``MultiObjectiveRewardFunction`` passes
+    #: them the whole conversation even when scoring one step (other
+    #: components get only the newest reply among assistant turns).
+    sees_whole_conversation: bool = False
+
     def __init__(self, name: str, weight: float = 1.0, **kwargs):
         self.name = name
         self.weight = weight
@@ -106,6 +131,14 @@ class BaseRewardComponent(ABC):
         self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None
     ) -> float:
         """Compute score for this component."""
+
+    @property
+    def fallback_reason(self) -> str | None:
+        """Why this component's scores are a stand-in for what it is meant to
+        measure (a model judge without a client scoring by length), or
+        ``None``. ``MultiObjectiveRewardFunction`` flags such results
+        ``metadata["reward_fallback"]``."""
+        return None
 
     def get_info(self) -> dict[str, Any]:
         """Get component information."""
@@ -159,6 +192,29 @@ class LengthRewardComponent(BaseRewardComponent):
         )
 
 
+def _keyword_pattern(keywords: list[str]) -> re.Pattern[str]:
+    """Whole-word keyword matcher; a keyword may be a stem ("frustrat")."""
+    escaped = [re.escape(keyword) for keyword in keywords]
+    return re.compile(r"\b(?:" + "|".join(escaped) + r")\w*", re.IGNORECASE)
+
+
+def _distinct_keyword_score(pattern: re.Pattern[str], texts: list[str]) -> float:
+    """Mean over replies of ``1 - 0.5 ** distinct_keywords``.
+
+    Whole-word matches only ("hate" never matches inside "whatever"), each
+    distinct keyword counted once per reply, with diminishing returns: one
+    keyword is worth 0.5, two 0.75, three 0.875, so repeating or piling up
+    keywords never saturates the score.
+    """
+    if not texts:
+        return 0.0
+    scores = []
+    for text in texts:
+        distinct = {match.lower() for match in pattern.findall(text)}
+        scores.append(1.0 - 0.5 ** len(distinct))
+    return sum(scores) / len(scores)
+
+
 class EmpathyRewardComponent(BaseRewardComponent):
     """Reward component based on empathy indicators."""
 
@@ -189,34 +245,15 @@ class EmpathyRewardComponent(BaseRewardComponent):
             "definitely",
             "of course",
         ]
-        escaped = [re.escape(keyword) for keyword in self.empathy_keywords]
-        self._keyword_pattern = re.compile(
-            r"(?:" + "|".join(escaped) + r")",
-            re.IGNORECASE,
-        )
+        self._keyword_pattern = _keyword_pattern(self.empathy_keywords)
 
     async def compute_score(
         self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None
     ) -> float:
-        if not turns:
-            return 0.0
-
-        assistant_responses = [t for t in turns if t.get("role") == "assistant"]
-        if not assistant_responses:
-            return 0.0
-
-        total_matches = 0
-        total_words = 0
-        for response in assistant_responses:
-            content = response.get("content", "")
-            total_words += len(content.split())
-            total_matches += len(self._keyword_pattern.findall(content))
-
-        if total_words == 0:
-            return 0.0
-
-        empathy_density = total_matches / max(1, len(assistant_responses))
-        return min(1.0, empathy_density / 2.0)
+        replies = [
+            str(t.get("content") or "") for t in turns if t.get("role") == "assistant"
+        ]
+        return _distinct_keyword_score(self._keyword_pattern, replies)
 
 
 class ActionOrientedRewardComponent(BaseRewardComponent):
@@ -251,30 +288,15 @@ class ActionOrientedRewardComponent(BaseRewardComponent):
             "approach",
             "way",
         ]
-        escaped = [re.escape(keyword) for keyword in self.action_keywords]
-        self._keyword_pattern = re.compile(
-            r"(?:" + "|".join(escaped) + r")",
-            re.IGNORECASE,
-        )
+        self._keyword_pattern = _keyword_pattern(self.action_keywords)
 
     async def compute_score(
         self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None
     ) -> float:
-        if not turns:
-            return 0.0
-
-        assistant_responses = [t for t in turns if t.get("role") == "assistant"]
-        if not assistant_responses:
-            return 0.0
-
-        total_matches = 0
-        for response in assistant_responses:
-            total_matches += len(
-                self._keyword_pattern.findall(response.get("content", ""))
-            )
-
-        action_density = total_matches / max(1, len(assistant_responses))
-        return min(1.0, action_density / 3.0)
+        replies = [
+            str(t.get("content") or "") for t in turns if t.get("role") == "assistant"
+        ]
+        return _distinct_keyword_score(self._keyword_pattern, replies)
 
 
 class SimilarityRewardComponent(BaseRewardComponent):
@@ -350,8 +372,11 @@ class ProfessionalismRewardComponent(BaseRewardComponent):
             "help",
             "resolve",
         ]
+        # Dismissive phrases rather than the bare word "whatever", which is
+        # also how helpful replies offer flexibility ("whatever you need").
         self.unprofessional_indicators = unprofessional_indicators or [
-            "whatever",
+            "not my problem",
+            "deal with it",
             "dunno",
             "idk",
             "lol",
@@ -362,7 +387,6 @@ class ProfessionalismRewardComponent(BaseRewardComponent):
             "sucks",
             "hate",
             "annoying",
-            "frustrated",
             "angry",
         ]
         professional = [re.escape(keyword) for keyword in self.professional_indicators]
@@ -370,11 +394,14 @@ class ProfessionalismRewardComponent(BaseRewardComponent):
             r"(?:" + "|".join(professional) + r")",
             re.IGNORECASE,
         )
+        # Whole words only: "hate" must not match inside "whatever". Naming
+        # the customer's feelings ("I understand you're frustrated") is
+        # empathy, not unprofessional language, so it is not listed.
         unprofessional = [
             re.escape(keyword) for keyword in self.unprofessional_indicators
         ]
         self._unprofessional_pattern = re.compile(
-            r"(?:" + "|".join(unprofessional) + r")",
+            r"\b(?:" + "|".join(unprofessional) + r")\b",
             re.IGNORECASE,
         )
 
@@ -403,7 +430,24 @@ class ProfessionalismRewardComponent(BaseRewardComponent):
 
 
 class ModelBasedRewardComponent(BaseRewardComponent):
-    """Reward component that uses a judge model to evaluate response quality."""
+    """Reward component that uses a judge model to evaluate response quality.
+
+    The judge sees the reply under evaluation, the request (the last user
+    turn before it, else ``context["user_query"]``) and the earlier turns of
+    the conversation. With ``harden_prompts`` (the default) all three are
+    enclosed in tags carrying a per-prompt nonce and the judge is told they
+    are data, never instructions (``llm_judge.DATA_INSTRUCTION``); a custom
+    ``judge_prompt_template`` receives the enclosed blocks in its
+    ``{user_query}`` and ``{assistant_response}`` slots (and the earlier turns
+    in ``{conversation_history}``, else before the prompt).
+
+    The reply must be one JSON object ``{"score": x}`` with ``x`` in [0, 1]
+    (optionally in one markdown code fence); otherwise the judge is asked once
+    more for only the JSON object, then the component raises
+    ``RewardUnavailableError``.
+    """
+
+    sees_whole_conversation = True
 
     def __init__(
         self,
@@ -415,7 +459,15 @@ class ModelBasedRewardComponent(BaseRewardComponent):
     ):
         provider = kwargs.pop("provider", None)
         model_name = kwargs.pop("model_name", None)
+        strict = bool(kwargs.pop("strict", False))
+        harden_prompts = bool(kwargs.pop("harden_prompts", True))
         super().__init__(name, weight, **kwargs)
+        #: Raise instead of scoring by reply length when no client is set.
+        self.strict = strict
+        #: Enclose the request, reply and earlier turns as untrusted data.
+        self.harden_prompts = harden_prompts
+        self._nonce_key = os.urandom(16)
+        self._warned_no_client = False
         self.provider = _normalize_model_provider(
             provider or os.getenv("STATESET_JUDGE_PROVIDER")
         )
@@ -425,58 +477,119 @@ class ModelBasedRewardComponent(BaseRewardComponent):
             "You are an impartial judge evaluating the quality of an AI assistant's response.\n"
             "User Query: {user_query}\n"
             "Assistant Response: {assistant_response}\n\n"
-            "Rate the response on a scale of 0 to 1 (float), focusing on helpfulness, accuracy, and tone.\n"
-            "Output ONLY the score."
+            "Rate the response from 0 to 1, focusing on helpfulness, accuracy, and tone.\n"
+            'Output ONLY a JSON object: {{"score": <number from 0 to 1>}}'
         )
         self.api_client = api_client
+
+    @property
+    def fallback_reason(self) -> str | None:
+        """Set while no client is configured and ``strict`` is off: replies
+        are then scored by length, not by a judge."""
+        if self.api_client is None and not self.strict:
+            return f"{self.name}: no api_client; scored by reply length"
+        return None
+
+    def build_prompt(
+        self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None
+    ) -> str:
+        """The prompt the judge is sent for the last reply in ``turns``."""
+        # The judge always sees the reply; the request comes from the last
+        # user turn before it, else the context's user_query. A reply is
+        # never scored 0.0 in place of a verdict because the request was not
+        # in ``turns``.
+        conversation = judge_conversation(turns, context)
+        earlier = history_text(conversation.history)
+        template = self.judge_prompt_template
+        if not self.harden_prompts:
+            return template.format(
+                user_query=conversation.query,
+                assistant_response=conversation.response,
+                conversation_history=earlier,
+            )
+        nonce = prompt_nonce(
+            self._nonce_key, conversation.query, conversation.response, earlier
+        )
+        section = history_section(earlier, nonce)
+        prompt = template.format(
+            user_query=untrusted_block(conversation.query, "query", nonce),
+            assistant_response=untrusted_block(
+                conversation.response, "response", nonce
+            ),
+            conversation_history=section,
+        )
+        if section and "{conversation_history" not in template:
+            prompt = f"{section.strip()}\n\n{prompt}"
+        instruction = DATA_INSTRUCTION.format(tag="data", nonce=nonce)
+        return f"{instruction}\n\n{prompt}"
 
     async def compute_score(
         self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None
     ) -> float:
-        if not turns:
-            return 0.0
-
         assistant_responses = [t for t in turns if t.get("role") == "assistant"]
-        user_turns = [t for t in turns if t.get("role") == "user"]
-        if not assistant_responses or not user_turns:
-            return 0.0
+        if not assistant_responses:
+            return 0.0  # no reply, nothing to credit
+        assistant_response = str(assistant_responses[-1].get("content", "") or "")
 
-        assistant_response = assistant_responses[-1].get("content", "")
-        user_query = user_turns[-1].get("content", "")
-        prompt = self.judge_prompt_template.format(
-            user_query=user_query,
-            assistant_response=assistant_response,
-        )
-
-        try:
-            client = self.api_client
-            if client is not None:
-                effective_provider = _resolve_model_provider(self.provider, client)
-                self.model_name = _resolve_model_name(
-                    effective_provider, self._configured_model_name
+        client = self.api_client
+        if client is None:
+            if self.strict:
+                raise RuntimeError(
+                    f"{self.name}: no api_client configured; refusing to "
+                    "substitute a length heuristic for the judge (strict=True)"
                 )
-                if effective_provider == "openai":
-                    response = await self._call_openai_api(prompt)
-                    score = self._parse_score_from_response(response)
-                elif effective_provider == "anthropic":
-                    response = await self._call_anthropic_api(prompt)
-                    score = self._parse_score_from_response(response)
-                elif hasattr(client, "generate"):
-                    response = await client.generate(prompt)
-                    score = self._parse_score_from_response(response)
-                else:
-                    logger.warning(
-                        "Unknown API client configuration for provider %s, using heuristic",
-                        effective_provider,
-                    )
-                    score = min(1.0, len(assistant_response) / 200.0)
-            else:
-                score = min(1.0, len(assistant_response) / 200.0)
+            if not self._warned_no_client:
+                self._warned_no_client = True
+                logger.warning(
+                    "%s has no api_client; scoring replies by length "
+                    "(len/200) instead of a judge. Pass api_client=... or "
+                    "strict=True to fail instead.",
+                    self.name,
+                )
+            return max(0.0, min(1.0, len(assistant_response) / 200.0))
 
-            return max(0.0, min(1.0, score))
-        except MULTI_REWARD_EXCEPTIONS as exc:
-            logger.error("Model judge failed: %s", exc)
-            return 0.5
+        effective_provider = _resolve_model_provider(self.provider, client)
+        self.model_name = _resolve_model_name(
+            effective_provider, self._configured_model_name
+        )
+        if effective_provider not in ("openai", "anthropic") and not hasattr(
+            client, "generate"
+        ):
+            # A misconfigured client is a bug, not an outage.
+            raise TypeError(
+                f"{self.name}: api_client for provider {effective_provider!r} "
+                "has no chat/completions/messages/generate interface"
+            )
+        prompt = self.build_prompt(turns, context)
+        retry = VERDICT_RETRY_INSTRUCTION.format(example='{"score": <0 to 1>}')
+        # Fail closed: the composer raises (or, opted in, leaves this
+        # component out); a neutral 0.5 would be trained on as a verdict. An
+        # unreadable verdict is asked for once more, an outage is not.
+        try:
+            response = await self._call_judge(effective_provider, prompt)
+            try:
+                return self._parse_score_from_response(response)
+            except ValueError as error:
+                logger.info("%s: asking the judge again: %s", self.name, error)
+            response = await self._call_judge(
+                effective_provider, f"{prompt}\n\n{retry}"
+            )
+            return self._parse_score_from_response(response)
+        except _JUDGE_OUTAGES as exc:
+            raise RewardUnavailableError(
+                f"{self.name}: model judge failed: {exc}"
+            ) from exc
+
+    async def _call_judge(self, provider: str, prompt: str) -> str:
+        """One call to the configured judge client."""
+        if provider == "openai":
+            return await self._call_openai_api(prompt)
+        if provider == "anthropic":
+            return await self._call_anthropic_api(prompt)
+        client = self.api_client
+        if client is None:
+            raise RuntimeError(f"{self.name}: no api_client configured")
+        return str(await client.generate(prompt))
 
     async def _call_openai_api(self, prompt: str) -> str:
         """Call OpenAI API for scoring."""
@@ -488,7 +601,7 @@ class ModelBasedRewardComponent(BaseRewardComponent):
                 response = await client.chat.completions.create(
                     model=self.model_name,
                     messages=[{"role": "user", "content": prompt}],
-                    max_tokens=10,
+                    max_tokens=20,
                     temperature=0.0,
                 )
                 content: object = response.choices[0].message.content
@@ -497,7 +610,7 @@ class ModelBasedRewardComponent(BaseRewardComponent):
             response = await client.completions.create(
                 model=self.model_name,
                 prompt=prompt,
-                max_tokens=10,
+                max_tokens=20,
                 temperature=0.0,
             )
             text: object = response.choices[0].text
@@ -514,7 +627,7 @@ class ModelBasedRewardComponent(BaseRewardComponent):
         try:
             response = await client.messages.create(
                 model=self.model_name,
-                max_tokens=10,
+                max_tokens=20,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,
             )
@@ -525,22 +638,25 @@ class ModelBasedRewardComponent(BaseRewardComponent):
             raise
 
     def _parse_score_from_response(self, response: str) -> float:
-        """Parse a numerical score from a model response."""
+        """Read the score from the judge's reply: exactly ``{"score": x}``.
+
+        The reply must be one JSON object (optionally in one markdown code
+        fence) whose ``"score"`` is a number in [0, 1]; anything else (prose,
+        a bare number, "7/10", "85/100", a negative or out-of-range score)
+        raises ``ValueError``, which ``compute_score`` reports as
+        ``RewardUnavailableError`` after one retry. No number is salvaged
+        from free text and nothing is rescaled or clamped.
+        """
         try:
-            numbers = re.findall(r"\d+\.?\d*", response)
-            if numbers:
-                score = float(numbers[0])
-                if score > 1.0:
-                    score = score / 10.0
-                return min(1.0, max(0.0, score))
-            return 0.5
-        except (IndexError, ValueError) as exc:
-            logger.warning(
-                "Failed to parse score from response %r: %s",
-                response,
-                exc,
-            )
-            return 0.5
+            parsed: Any = parse_verdict_json(response)
+        except ValueError as error:
+            raise ValueError(f"judge reply is not strict JSON: {response!r}") from error
+        score = parsed.get("score") if isinstance(parsed, dict) else None
+        if isinstance(score, bool) or not isinstance(score, (int, float)):
+            raise ValueError(f"judge reply has no numeric score: {response!r}")
+        if not (math.isfinite(score) and 0.0 <= score <= 1.0):
+            raise ValueError(f"judge score {score} is outside [0, 1]")
+        return float(score)
 
 
 class ReasoningRewardComponent(BaseRewardComponent):
@@ -595,3 +711,45 @@ __all__ = [
     "RewardComponent",
     "SimilarityRewardComponent",
 ]
+
+
+class GroundedComponent(BaseRewardComponent):
+    """A style component that only pays for grounded replies.
+
+    ``score = grounding * (share + (1 - share) * component_score)`` with
+    ``share`` defaulting to ``grounding.STYLE_SHARE`` (see
+    ``stateset_agents.core.grounding``): a canned template or keyword stuffing
+    has no grounding and scores 0. Name and weight are the wrapped
+    component's, so the composite reports it under its own name.
+    """
+
+    def __init__(self, component: BaseRewardComponent, share: float | None = None):
+        super().__init__(component.name, component.weight)
+        self.component = component
+        self.share = float(STYLE_SHARE if share is None else share)
+        self.config = {"grounded": True, **getattr(component, "config", {})}
+
+    @property
+    def sees_whole_conversation(self) -> bool:  # type: ignore[override]
+        """Whether the wrapped component is a judge (see the base class)."""
+        return getattr(self.component, "sees_whole_conversation", False) is True
+
+    @property
+    def fallback_reason(self) -> str | None:
+        """The wrapped component's fallback reason."""
+        reason = getattr(self.component, "fallback_reason", None)
+        return reason if isinstance(reason, str) and reason else None
+
+    async def compute_score(
+        self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None
+    ) -> float:
+        score = await self.component.compute_score(turns, context)
+        grounding = task_grounding(turns, context)
+        return grounding * (self.share + (1.0 - self.share) * score)
+
+
+def ground_components(
+    components: list[BaseRewardComponent], share: float | None = None
+) -> list[BaseRewardComponent]:
+    """Wrap each component in :class:`GroundedComponent`."""
+    return [GroundedComponent(component, share) for component in components]

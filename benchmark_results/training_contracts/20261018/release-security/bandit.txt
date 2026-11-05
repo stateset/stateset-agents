@@ -1,0 +1,28 @@
+[tester]	WARNING	nosec encountered (B104), but no failed test on file stateset_agents/api/config.py:358
+[tester]	WARNING	nosec encountered (B104), but no failed test on file stateset_agents/api/config.py:345
+[tester]	WARNING	nosec encountered (B104), but no failed test on file stateset_agents/api/grpo/service.py:599
+[tester]	WARNING	nosec encountered (B608), but no failed test on file stateset_agents/api/persistence.py:362
+[tester]	WARNING	nosec encountered (B608), but no failed test on file stateset_agents/api/persistence.py:386
+[tester]	WARNING	nosec encountered (B608), but no failed test on file stateset_agents/api/persistence.py:411
+[tester]	WARNING	nosec encountered (B608), but no failed test on file stateset_agents/api/persistence.py:433
+[tester]	WARNING	nosec encountered (B608), but no failed test on file stateset_agents/api/persistence.py:452
+[tester]	WARNING	nosec encountered (B104), but no failed test on file stateset_agents/cli.py:432
+[manager]	WARNING	Test in comment: argv is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: built is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: here is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: no is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: shell is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: endpoint is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: container is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: must is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: bind is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: externally is not a test name or id, ignoring
+[tester]	WARNING	nosec encountered (B104), but no failed test on file stateset_agents/remote/nebius.py:531
+[tester]	WARNING	nosec encountered (B104), but no failed test on file stateset_agents/remote/nebius.py:533
+[tester]	WARNING	nosec encountered (B104), but no failed test on file stateset_agents/remote/nebius.py:535
+[tester]	WARNING	nosec encountered (B104), but no failed test on file stateset_agents/remote/nebius.py:537
+[tester]	WARNING	nosec encountered (B104), but no failed test on file stateset_agents/remote/nebius.py:538
+[tester]	WARNING	nosec encountered (B615), but no failed test on file stateset_agents/training/harvest.py:200
+[tester]	WARNING	nosec encountered (B615), but no failed test on file stateset_agents/training/merge_adapter.py:100
+[tester]	WARNING	nosec encountered (B615), but no failed test on file stateset_agents/training/merge_adapter.py:100
+[tester]	WARNING	nosec encountered (B615), but no failed test on file stateset_agents/training/merge_adapter.py:116

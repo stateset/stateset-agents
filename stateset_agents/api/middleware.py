@@ -11,20 +11,19 @@ import logging
 import time
 import uuid
 from collections import defaultdict, deque
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any
 
 from fastapi import FastAPI
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from stateset_agents.utils.clock import utc_isoformat
 from stateset_agents.utils.credentials import credential_fingerprint
 
-from .auth import get_jwt_handler
+from .auth import extract_request_credential, get_jwt_handler
 from .config import get_config
 from .constants import (
     HEADER_CORRELATION_ID,
@@ -170,7 +169,9 @@ if HAS_PROMETHEUS:
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Add comprehensive security headers to all responses."""
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         response = await call_next(request)
 
         # Add all security headers from constants
@@ -212,7 +213,9 @@ class RequestContext:
 class RequestContextMiddleware(BaseHTTPMiddleware):
     """Attach request context and trace ID to all requests."""
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         # Get or generate request ID
         request_id = (
             request.headers.get(HEADER_REQUEST_ID)
@@ -360,6 +363,26 @@ class RedisSlidingWindowLimiter:
             self._client = None
 
 
+def _client_ip_from_forwarded_for(header: str, trusted_hops: int) -> str | None:
+    """Pick the client address from an ``X-Forwarded-For`` chain.
+
+    Each trusted proxy appends the address of the peer it received the request
+    from, so the leftmost entries are fully client-controlled and must never be
+    used for identity. With ``trusted_hops`` proxies in front of the API, the
+    client address is the ``trusted_hops``-th entry from the right. When the
+    chain is shorter than expected, the leftmost entry is the furthest one any
+    trusted proxy could have written.
+    """
+    hops = [hop.strip() for hop in header.split(",")]
+    hops = [hop for hop in hops if hop]
+    if not hops:
+        return None
+    index = max(1, int(trusted_hops))
+    if index > len(hops):
+        return hops[0]
+    return hops[-index]
+
+
 def _hash_credential(value: str) -> str:
     """Hash a credential (API key / bearer token) for use as a bucket key.
 
@@ -404,7 +427,7 @@ REDIS_RETRY_COOLDOWN_SECONDS = 60.0
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Rate limiting middleware with sliding window algorithm."""
 
-    def __init__(self, app: FastAPI, limiter: UnifiedRateLimiter | None = None):
+    def __init__(self, app: ASGIApp, limiter: UnifiedRateLimiter | None = None):
         super().__init__(app)
         config = get_config()
         self.limiter = limiter or get_rate_limiter(
@@ -485,13 +508,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if config.rate_limit.trust_proxy_headers:
             forwarded_for = request.headers.get("X-Forwarded-For")
             if forwarded_for:
-                first_hop = str(forwarded_for).split(",")[0].strip()
-                if first_hop:
-                    return first_hop
+                client_ip = _client_ip_from_forwarded_for(
+                    str(forwarded_for),
+                    getattr(config.rate_limit, "trusted_proxy_hops", 1),
+                )
+                if client_ip:
+                    return client_ip
 
         return str(request.client.host) if request.client else "unknown"
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         config = get_config()
 
         if not config.rate_limit.enabled:
@@ -559,15 +587,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return response
 
     def _extract_api_key(self, request: Request) -> str | None:
-        """Extract API key from request headers."""
-        # Check Authorization header
-        auth_header = str(request.headers.get("Authorization", ""))
-        if auth_header.lower().startswith("bearer "):
-            return auth_header.split(" ", 1)[1].strip()
-
-        # Check X-API-Key header
-        api_key = request.headers.get("X-API-Key")
-        return api_key.strip() if api_key else None
+        """Extract the request credential using the same precedence as auth."""
+        return extract_request_credential(request)
 
 
 # ============================================================================
@@ -636,7 +657,7 @@ class APIMetrics:
                     round(sorted_latencies[p99_index], 2) if sorted_latencies else 0
                 ),
             },
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_isoformat(),
         }
 
 
@@ -652,7 +673,9 @@ def get_metrics() -> APIMetrics:
 class MetricsMiddleware(BaseHTTPMiddleware):
     """Collect API metrics."""
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         start_time = time.monotonic()
 
         route = request.scope.get("route")
@@ -708,7 +731,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     # Paths to exclude from logging
     EXCLUDED_PATHS = {"/health", "/healthz", "/ready", "/metrics"}
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         # Skip logging for health checks and metrics
         if request.url.path in self.EXCLUDED_PATHS:
             return await call_next(request)

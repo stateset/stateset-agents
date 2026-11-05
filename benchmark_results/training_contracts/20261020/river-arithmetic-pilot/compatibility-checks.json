@@ -1,0 +1,104 @@
+{
+  "historical_heldout_fact_overlap_in_new_training": 0,
+  "legacy_bundles_reconstructed": 12,
+  "passed": true,
+  "provider_requests": 0,
+  "source_audits": [
+    {
+      "contrast_groups": 48,
+      "curriculum_policy": "adjacent_boundary_v1",
+      "data_manifest_hash": "4f96fd45fbf9526369e8e37eea5d2bead3b9a92bb031d4f60a98b892bfd3aeba",
+      "derived_cases": 127,
+      "passed": true,
+      "replayed_demonstrations": 255
+    },
+    {
+      "contrast_groups": 128,
+      "curriculum_policy": "policy_parameter_contrasts_v1",
+      "data_manifest_hash": "2b92be648a179de7d7b932785350e11a63ac42419df6dd5bac160dedf3084fee",
+      "derived_cases": 384,
+      "passed": true,
+      "replayed_demonstrations": 512
+    },
+    {
+      "contrast_groups": 48,
+      "curriculum_policy": "adjacent_boundary_v1",
+      "data_manifest_hash": "aa0b5ce404cc45cc6c6ef8a365c50ef3b1a0fab76f1c4e0f22eadad66814dd8f",
+      "derived_cases": 122,
+      "passed": true,
+      "replayed_demonstrations": 250
+    },
+    {
+      "contrast_groups": 128,
+      "curriculum_policy": "policy_parameter_contrasts_v1",
+      "data_manifest_hash": "ef8b2d0258ec858bff16a3a823e0e679bd9d1a3b9771c6b1ca29648c25de2f7f",
+      "derived_cases": 384,
+      "passed": true,
+      "replayed_demonstrations": 512
+    },
+    {
+      "contrast_groups": 48,
+      "curriculum_policy": "adjacent_boundary_v1",
+      "data_manifest_hash": "924051f2726932cb4403559309ae566f915df0e5207081aa60aebeb340adea29",
+      "derived_cases": 123,
+      "passed": true,
+      "replayed_demonstrations": 251
+    },
+    {
+      "contrast_groups": 128,
+      "curriculum_policy": "policy_parameter_contrasts_v1",
+      "data_manifest_hash": "38a660fcc8cef91b113432a59bbe7c1dc37ec8b5046e424f5ad49767bd8cf27b",
+      "derived_cases": 384,
+      "passed": true,
+      "replayed_demonstrations": 512
+    },
+    {
+      "contrast_groups": 48,
+      "curriculum_policy": "adjacent_boundary_v1",
+      "data_manifest_hash": "86fcfc6bc34e8875162a4e8fd1edaa7d4b9bc200cae4bfde2e2db9f0fe658b2c",
+      "derived_cases": 124,
+      "passed": true,
+      "replayed_demonstrations": 252
+    },
+    {
+      "contrast_groups": 128,
+      "curriculum_policy": "policy_parameter_contrasts_v1",
+      "data_manifest_hash": "b447ff771f8b929f40e174769285d4880f5b20f1709bd7cd23830ec6a2896381",
+      "derived_cases": 384,
+      "passed": true,
+      "replayed_demonstrations": 512
+    },
+    {
+      "contrast_groups": 48,
+      "curriculum_policy": "adjacent_boundary_v1",
+      "data_manifest_hash": "93440653ecbb36141ee1808a00f3190c27e6ef68a15febd9305d01f300675fd9",
+      "derived_cases": 126,
+      "passed": true,
+      "replayed_demonstrations": 254
+    },
+    {
+      "contrast_groups": 128,
+      "curriculum_policy": "policy_parameter_contrasts_v1",
+      "data_manifest_hash": "c3f433c9ebbc47bc46d6970097325a87f84a23decfbabe4d224ed27be751a306",
+      "derived_cases": 384,
+      "passed": true,
+      "replayed_demonstrations": 512
+    },
+    {
+      "contrast_groups": 48,
+      "curriculum_policy": "adjacent_boundary_v1",
+      "data_manifest_hash": "40add303277de2eb3a14434834e99022c005a0b0ab5eba2b7f4758997b8959ef",
+      "derived_cases": 125,
+      "passed": true,
+      "replayed_demonstrations": 253
+    },
+    {
+      "contrast_groups": 128,
+      "curriculum_policy": "policy_parameter_contrasts_v1",
+      "data_manifest_hash": "eb35d6e96d148ab341b74c02e75d9e5d0655919bebf630b1750e8d105470954a",
+      "derived_cases": 384,
+      "passed": true,
+      "replayed_demonstrations": 512
+    }
+  ]
+}

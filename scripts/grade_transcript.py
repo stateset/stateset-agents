@@ -37,25 +37,37 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.data.jsonl import read_jsonl_lines
+
 logger = logging.getLogger("grade_transcript")
 
 
 def load_transcript(path: Path) -> list[dict[str, str]]:
-    """Load a JSONL transcript."""
+    """Load a UTF-8 JSONL transcript, one ``{"role", "content"}`` per line.
+
+    A malformed line (bad JSON, or no string ``role``/``content``) raises
+    ``ValueError`` naming the line: skipping it would shift every later turn,
+    pairing assistant replies with the wrong question and context.
+    """
     if not path.exists():
         raise FileNotFoundError(f"Transcript not found: {path}")
     turns: list[dict[str, str]] = []
-    for line in path.read_text().splitlines():
+    for number, line in read_jsonl_lines(path):
         line = line.strip()
-        if not line:
-            continue
         try:
             entry = json.loads(line)
         except json.JSONDecodeError as e:
-            logger.warning("Skipping malformed JSONL line: %s", e)
-            continue
-        if "role" in entry and "content" in entry:
-            turns.append({"role": entry["role"], "content": entry["content"]})
+            raise ValueError(f"{path}:{number}: malformed JSONL line: {e}") from e
+        if (
+            not isinstance(entry, dict)
+            or not isinstance(entry.get("role"), str)
+            or not entry["role"].strip()
+            or not isinstance(entry.get("content"), str)
+        ):
+            raise ValueError(
+                f"{path}:{number}: each line needs a string role and content"
+            )
+        turns.append({"role": entry["role"], "content": entry["content"]})
     return turns
 
 
@@ -65,18 +77,37 @@ def load_contexts(path: Path | None) -> list[dict[str, Any]]:
     For verifiable-reward tasks, the reward function needs the ground truth
     (``expected_tool``, ``gold_answer``, ``must_acknowledge``, etc.). When
     grading a transcript from a benchmark dataset, pass the same scenarios
-    JSONL the agent was prompted with.
+    JSONL the agent was prompted with. Every non-blank line must be a JSON
+    object; the i-th object belongs to the i-th assistant turn.
     """
     if path is None:
         return []
     if not path.exists():
         raise FileNotFoundError(f"Context file not found: {path}")
     out: list[dict[str, Any]] = []
-    for line in path.read_text().splitlines():
+    for number, line in read_jsonl_lines(path):
         line = line.strip()
-        if line:
-            out.append(json.loads(line))
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"{path}:{number}: malformed context line: {e}") from e
+        if not isinstance(entry, dict):
+            raise ValueError(f"{path}:{number}: each context must be a JSON object")
+        out.append(entry)
     return out
+
+
+def assistant_turn_count(turns: list[dict[str, str]]) -> int:
+    """Number of assistant turns, i.e. graded rows and expected contexts."""
+    return sum(1 for turn in turns if turn["role"] == "assistant")
+
+
+def preceding_user_content(turns: list[dict[str, str]], index: int) -> str:
+    """Content of the last user turn before ``turns[index]`` ("" if none)."""
+    for turn in reversed(turns[:index]):
+        if turn["role"] == "user":
+            return turn["content"]
+    return ""
 
 
 def get_reward(reward_name: str, persona: dict[str, Any] | None = None) -> Any:
@@ -127,32 +158,39 @@ async def grade_transcript(
     contexts: list[dict[str, Any]],
     reward: Any,
 ) -> list[dict[str, Any]]:
-    """Score each assistant turn. Returns one dict per assistant turn."""
+    """Score each assistant turn. Returns one dict per assistant turn.
+
+    ``contexts`` is either empty (no ground truth) or holds exactly one
+    context per assistant turn, in order; any other length raises
+    ``ValueError`` instead of grading replies against another turn's gold.
+    """
     from stateset_agents.core.trajectory import ConversationTurn
 
+    expected = assistant_turn_count(turns)
+    if contexts and len(contexts) != expected:
+        raise ValueError(
+            f"{len(contexts)} context(s) for {expected} assistant turn(s); "
+            "the context file needs exactly one context per assistant turn"
+        )
     rows: list[dict[str, Any]] = []
     assistant_idx = 0
     convo_so_far: list[ConversationTurn] = []
 
-    for turn in turns:
+    for index, turn in enumerate(turns):
         ct = ConversationTurn(role=turn["role"], content=turn["content"])
         convo_so_far.append(ct)
 
         if turn["role"] != "assistant":
             continue
 
-        # Pick the matching context (1:1 with assistant turns).
-        context = contexts[assistant_idx] if assistant_idx < len(contexts) else None
+        # Contexts are 1:1 with assistant turns (length checked above).
+        context = contexts[assistant_idx] if contexts else None
         result = await reward.compute_reward(convo_so_far, context=context)
 
         rows.append(
             {
                 "assistant_turn_idx": assistant_idx,
-                "user_query": (
-                    turns[max(0, assistant_idx * 2 - 1)]["content"][:80]
-                    if assistant_idx * 2 - 1 >= 0 and assistant_idx * 2 - 1 < len(turns)
-                    else ""
-                ),
+                "user_query": preceding_user_content(turns, index)[:80],
                 "response_preview": turn["content"][:80],
                 "score": float(result.score),
                 "breakdown": (
@@ -195,27 +233,37 @@ def render_markdown(rows: list[dict[str, Any]], reward_name: str) -> str:
     return "\n".join(lines)
 
 
-def _existing_curated_keys(output_path: Path) -> set[tuple[str, str]]:
-    """Read an existing curated file and return the set of (prompt, response) hashes.
+def _messages_key(messages: list[dict[str, str]]) -> str:
+    return json.dumps(
+        [[m.get("role"), m.get("content")] for m in messages], ensure_ascii=False
+    )
 
-    Used to make ``write_curated_examples`` idempotent across reruns. Returns
-    an empty set if the file doesn't yet exist.
+
+def _existing_curated_keys(output_path: Path) -> tuple[set[str], set[tuple[str, str]]]:
+    """Identities of the examples already in a curated file.
+
+    Returns ``(message_keys, legacy_pairs)``: the full graded context of
+    every entry carrying ``messages``, and the ``(prompt, response)`` pair of
+    older entries written without it. Used to make ``write_curated_examples``
+    idempotent across reruns; both sets are empty if the file doesn't exist.
     """
+    keys: set[str] = set()
+    legacy: set[tuple[str, str]] = set()
     if not output_path.exists():
-        return set()
-    keys: set[tuple[str, str]] = set()
-    for line in output_path.read_text().splitlines():
+        return keys, legacy
+    for _, line in read_jsonl_lines(output_path):
         line = line.strip()
-        if not line:
-            continue
         try:
             entry = json.loads(line)
         except json.JSONDecodeError:
             continue
-        prompt = entry.get("prompt", "")
-        response = entry.get("response", "")
-        keys.add((prompt, response))
-    return keys
+        if not isinstance(entry, dict):
+            continue
+        if isinstance(entry.get("messages"), list):
+            keys.add(_messages_key(entry["messages"]))
+        else:
+            legacy.add((entry.get("prompt", ""), entry.get("response", "")))
+    return keys, legacy
 
 
 def write_curated_examples(
@@ -225,49 +273,71 @@ def write_curated_examples(
     threshold: float,
     output_path: Path,
 ) -> int:
-    """Append high-scoring (user, assistant) pairs to a curated JSONL file.
+    """Append high-scoring assistant turns, with their context, to a curated JSONL.
 
     Returns the number of examples written. Each line is::
 
-        {"prompt": "<user>", "response": "<assistant>",
+        {"prompt": "<preceding user turn>", "response": "<assistant>",
+         "messages": [<every turn up to and including this reply>],
          "score": 0.83, "source": "session1.jsonl"}
+
+    ``messages`` is the exact context the turn was graded in, so training
+    sees what the grader saw (``prepare_sft_dataset.py --format chat`` emits
+    it); ``prompt``/``response`` stay for single-turn consumers. Earlier
+    assistant replies carry ``"weight": 0``: they are context, possibly below
+    the threshold, and only the graded reply is a training target.
 
     Designed to be append-safe across many transcripts — multiple invocations
     of this script can write into the same curated file without clobbering.
-    **Idempotent:** a (prompt, response) pair that already exists in the file
+    **Idempotent:** an example whose full context already exists in the file
     is skipped, so re-running batch grading doesn't duplicate examples.
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    seen = _existing_curated_keys(output_path)
+    seen, legacy = _existing_curated_keys(output_path)
 
-    # Build (user, assistant) pairs aligned with rows.
-    pairs: list[tuple[str, str]] = []
-    last_user: str | None = None
-    for turn in turns:
-        if turn["role"] == "user":
-            last_user = turn["content"]
-        elif turn["role"] == "assistant":
-            pairs.append((last_user or "", turn["content"]))
-            last_user = None
+    # One example per assistant turn, aligned with rows.
+    examples: list[dict[str, Any]] = []
+    for index, turn in enumerate(turns):
+        if turn["role"] != "assistant":
+            continue
+        # Earlier replies are context only (weight 0, the OpenAI fine-tuning
+        # convention): they may have failed the threshold, and every passing
+        # reply is curated once, in its own example.
+        messages: list[dict[str, Any]] = [
+            {"role": t["role"], "content": t["content"]} for t in turns[:index]
+        ]
+        for message in messages:
+            if message["role"] == "assistant":
+                message["weight"] = 0
+        messages.append({"role": "assistant", "content": turn["content"]})
+        examples.append(
+            {
+                "prompt": preceding_user_content(turns, index),
+                "response": turn["content"],
+                "messages": messages,
+            }
+        )
 
     written = 0
     with output_path.open("a", encoding="utf-8") as f:
-        for pair, row in zip(pairs, rows, strict=True):
-            if row["score"] >= threshold and pair not in seen:
-                f.write(
-                    json.dumps(
-                        {
-                            "prompt": pair[0],
-                            "response": pair[1],
-                            "score": row["score"],
-                            "source": transcript_path.name,
-                        },
-                        ensure_ascii=False,
-                    )
-                    + "\n"
+        for example, row in zip(examples, rows, strict=True):
+            key = _messages_key(example["messages"])
+            pair = (example["prompt"], example["response"])
+            if row["score"] < threshold or key in seen or pair in legacy:
+                continue
+            f.write(
+                json.dumps(
+                    {
+                        **example,
+                        "score": row["score"],
+                        "source": transcript_path.name,
+                    },
+                    ensure_ascii=False,
                 )
-                seen.add(pair)
-                written += 1
+                + "\n"
+            )
+            seen.add(key)
+            written += 1
     return written
 
 
@@ -288,7 +358,7 @@ def main() -> int:
         "--context-file",
         type=Path,
         default=None,
-        help="Optional JSONL of context dicts (one per assistant turn).",
+        help="Optional JSONL of context dicts, exactly one per assistant turn.",
     )
     parser.add_argument(
         "--output",
@@ -321,8 +391,17 @@ def main() -> int:
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
     )
 
-    turns = load_transcript(args.history)
-    contexts = load_contexts(args.context_file)
+    try:
+        turns = load_transcript(args.history)
+        contexts = load_contexts(args.context_file)
+    except ValueError as exc:
+        parser.error(str(exc))
+    if args.context_file is not None and len(contexts) != assistant_turn_count(turns):
+        parser.error(
+            f"--context-file has {len(contexts)} context(s) but the transcript "
+            f"has {assistant_turn_count(turns)} assistant turn(s); they must "
+            "match 1:1"
+        )
     reward = get_reward(args.reward)
     logger.info(
         "Loaded %d turn(s), %d context(s), reward=%s",
@@ -340,7 +419,7 @@ def main() -> int:
         logger.info("Wrote %s", args.output)
         if args.json:
             json_path = args.output.with_suffix(".json")
-            json_path.write_text(json.dumps(rows, indent=2))
+            json_path.write_text(json.dumps(rows, indent=2), encoding="utf-8")
             logger.info("Wrote %s", json_path)
     else:
         print(md)

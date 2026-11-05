@@ -1,0 +1,30 @@
+{
+  "passed": true,
+  "queue_job": "18ec9773998c",
+  "typed_modules": 422,
+  "source_unchanged": true,
+  "test_sources_unchanged": true,
+  "wheel_source_matches": true,
+  "wheel_profile_matches": true,
+  "wheel_rubric_matches": true,
+  "wheel_sha256": "35fcfdd866719ed6a759dfe6ae2d6031730102c77be2ab44718c64ceb4957c91",
+  "source_regressions": {
+    "passed": 537,
+    "skipped": 0
+  },
+  "wheel_regressions": {
+    "passed": 426,
+    "skipped": 0
+  },
+  "real_terminal_navigation_verified": true,
+  "real_terminal_run_search_verified": true,
+  "live_herdr_refreshed": true,
+  "studio_worker_tests": "CPU fixtures and mocked CUDA/provider boundaries; no real GPU training",
+  "failure_tests": "Synthetic exceptions and mocked process/provider boundaries; no actual OOM, disk exhaustion or paid training",
+  "distributed_contracts_repeated": false,
+  "gpu_verified": false,
+  "quality_gain_verified": false,
+  "paid_run_launched": false,
+  "count_note": "Targeted source and wheel counts overlap.",
+  "queue_wait_seconds": 202.97176313400269
+}

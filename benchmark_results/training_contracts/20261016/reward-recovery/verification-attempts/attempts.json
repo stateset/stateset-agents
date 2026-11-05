@@ -1,0 +1,37 @@
+[
+  {
+    "job": "7f4c6052dde5",
+    "observation": "Failed fixture-import lint; no tests ran.",
+    "queue_failure": false
+  },
+  {
+    "job": "90835665e524",
+    "observation": "210 passed; missing historical rubric files and seven-list/six-variable fixture unpack failed.",
+    "queue_failure": false
+  },
+  {
+    "job": "d2491b59a059",
+    "observation": "Three focused lint findings; corrected.",
+    "queue_failure": false
+  },
+  {
+    "job": "16d5e8d85f8c",
+    "observation": "Three typing findings in the new audit/selection modules; corrected.",
+    "queue_failure": false
+  },
+  {
+    "job": "4ae1c96f5c3a",
+    "observation": "211 passed; distributed fixture incorrectly assumed a scheduler existed for constant learning rate.",
+    "queue_failure": false
+  },
+  {
+    "job": "a9ad39c7016b",
+    "observation": "Distributed fixture initial reference omitted an unused policy parameter; strict checkpoint architecture validation correctly rejected restore.",
+    "queue_failure": false
+  },
+  {
+    "job": "402ba9f1c395",
+    "observation": "Distributed reporting/recovery passed after fixture corrections; sixteen scenarios per peer.",
+    "queue_failure": false
+  }
+]

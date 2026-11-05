@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "existing_run_unchanged": true,
+  "installed_origin_verified": true,
+  "module_path": "/tmp/stateset-studio-nomination-history-20261016-final/site-packages/stateset_agents/finetune_nomination.py",
+  "nomination_id": "20261017-033012-bbc3c6d2",
+  "new_records_created": false,
+  "inference_started": false,
+  "scope": "Synthetic recorded policy/judge fixture; real installed CLI processes restore metadata only."
+}

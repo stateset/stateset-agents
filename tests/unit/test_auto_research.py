@@ -28,6 +28,26 @@ from stateset_agents.training.auto_research.proposer import (
 # ---------------------------------------------------------------------------
 
 
+def test_evaluation_metrics_persist_without_reconstructing_private_evidence(tmp_path):
+    from stateset_agents.training.evaluation import _EvaluationMetrics
+
+    metrics = _EvaluationMetrics({"eval_reward": 0.75}, successes=3)
+    record = ExperimentRecord(
+        experiment_id="baseline",
+        params={},
+        metrics=metrics,
+        objective_value=0.75,
+        training_time=1.0,
+        status="keep",
+    )
+    tracker = ExperimentTracker(tmp_path)
+    tracker.record(record)
+    restored = ExperimentTracker.load(tmp_path)
+    assert restored.records[0].to_dict() == record.to_dict()
+    assert restored.records[0].metrics == {"eval_reward": 0.75}
+    assert metrics.successes == 3
+
+
 @pytest.fixture
 def tmp_dir(tmp_path: Path) -> Path:
     return tmp_path

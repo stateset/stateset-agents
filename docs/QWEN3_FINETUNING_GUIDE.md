@@ -55,10 +55,10 @@ The starter is available from the packaged CLI and the equivalent example script
 Start with a dry-run so you can inspect the resolved config without loading a model:
 
 ```bash
-stateset-agents qwen3-5-0-8b --json-output
-stateset-agents qwen3-5-0-8b --starter-profile memory --json-output
-stateset-agents qwen3-5-0-8b --list-profiles --json-output
-stateset-agents qwen3-5-0-8b --write-config ./qwen3_5_0_8b.json
+stateset-agents model qwen3-5-0-8b --json-output
+stateset-agents model qwen3-5-0-8b --starter-profile memory --json-output
+stateset-agents model qwen3-5-0-8b --list-profiles --json-output
+stateset-agents model qwen3-5-0-8b --write-config ./qwen3_5_0_8b.json
 stateset-agents init --preset qwen3-5-0-8b --path ./qwen3_5_0_8b.json --format json
 stateset-agents init --preset qwen3-5-0-8b --starter-profile memory --path ./qwen3_5_0_8b_memory.json --format json
 # equivalent example script:
@@ -70,8 +70,8 @@ python examples/finetune_qwen3_5_0_8b_gspo.py --list-profiles
 Then run the recommended starter job:
 
 ```bash
-stateset-agents qwen3-5-0-8b --no-dry-run --task customer_service
-stateset-agents qwen3-5-0-8b --config ./qwen3_5_0_8b.json --no-dry-run
+stateset-agents model qwen3-5-0-8b --no-dry-run --task customer_service
+stateset-agents model qwen3-5-0-8b --config ./qwen3_5_0_8b.json --no-dry-run
 # equivalent example script:
 python examples/finetune_qwen3_5_0_8b_gspo.py --task customer_service
 ```
@@ -79,7 +79,7 @@ python examples/finetune_qwen3_5_0_8b_gspo.py --task customer_service
 If you are on a smaller CUDA GPU and need extra memory headroom:
 
 ```bash
-stateset-agents qwen3-5-0-8b --no-dry-run --task customer_service --use-4bit
+stateset-agents model qwen3-5-0-8b --no-dry-run --task customer_service --use-4bit
 ```
 
 The generic family-wide script is still available at `examples/finetune_qwen3_gspo.py`, but the dedicated starter path is the cleaner way to validate an initial `0.8B` run.
@@ -99,7 +99,7 @@ The starter profile is resolved into the saved config file, so once you write a 
 If you want to compare the built-in profiles before running or saving one, ask the starter to print the profile catalog:
 
 ```bash
-stateset-agents qwen3-5-0-8b --task sales --list-profiles --json-output
+stateset-agents model qwen3-5-0-8b --task sales --list-profiles --json-output
 python examples/finetune_qwen3_5_0_8b_gspo.py --task sales --list-profiles
 ```
 

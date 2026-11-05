@@ -1,0 +1,26 @@
+{
+  "passed": true,
+  "source_tests": 755,
+  "installed_wheel_tests": 752,
+  "nomination_cases": 26,
+  "typed_modules": 431,
+  "queue_job": "c818dde808c0",
+  "real_worker_queue_job": "0d03edf06f50",
+  "wheel_sha256": "943eff14aa6b4316c766ba158b7a48bb57758762aea11cf2379e14bf76a4cfe2",
+  "source_and_tests_unchanged": true,
+  "wheel_source_matches": true,
+  "wheel_case_identities_match_source": true,
+  "installed_nomination_cli_verified": true,
+  "real_terminal_sizes": [
+    "74x44",
+    "110x32"
+  ],
+  "nomination_real_model_inference": false,
+  "cpu_model_regressions_in_suite": true,
+  "gpu_verified": false,
+  "quality_gain_verified": false,
+  "paid_run_launched": false,
+  "live_herdr_refreshed": true,
+  "draft_preserved": true,
+  "count_note": "Source and installed-wheel counts overlap; nomination policy/judge replies use synthetic transports through actual scoring and record/replay. The broader regression suite also exercises tiny CPU model generation, SFT and resume."
+}

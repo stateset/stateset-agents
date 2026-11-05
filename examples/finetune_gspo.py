@@ -46,7 +46,14 @@ REPO_ROOT = str(Path(__file__).resolve().parents[1])
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from examples.model_presets import PRESETS, ModelPreset, get_preset, list_preset_names
+from examples.model_presets import (
+    DEPRECATED_PRESET_ALIASES,
+    PRESETS,
+    ModelPreset,
+    get_preset,
+    list_preset_names,
+    resolve_preset_name,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -132,6 +139,9 @@ def build_agent_config(preset: ModelPreset, *, dry_run: bool) -> Any:
 
     return AgentConfig(
         model_name=preset.model_id,
+        model_revision=preset.model_revision,
+        trust_remote_code=preset.trust_remote_code,
+        chat_template_kwargs=dict(preset.chat_template_kwargs) or None,
         system_prompt=(
             f"You are a helpful assistant fine-tuned from {preset.model_id}."
         ),
@@ -161,9 +171,17 @@ def build_gspo_config(
         raise ValueError(
             "This model supports SFT only; use stateset_agents.training.sft."
         )
+    if preset.model_id.startswith("meta-models/Muse-Spark-Open-") and (
+        use_4bit or use_8bit
+    ):
+        raise ValueError(
+            "Muse Spark's BF16 text RL preset does not certify 4/8-bit training; "
+            "expert tensors are not ordinary quantized Linear modules."
+        )
 
     kwargs: dict[str, Any] = {
         "model_name": preset.model_id,
+        "model_revision": preset.model_revision,
         "run_name": f"{preset.model_id}-{task}",
         "trust_remote_code": preset.trust_remote_code,
         "learning_rate": (
@@ -432,7 +450,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--model",
         type=str,
         default=None,
-        choices=list_preset_names(),
+        # Deprecated aliases still parse; main() maps them to their replacement.
+        choices=[*list_preset_names(), *DEPRECATED_PRESET_ALIASES],
         help="Model preset name (see --list-models).",
     )
     parser.add_argument(
@@ -578,6 +597,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.model is None:
         parser.error("--model is required unless --list-models is given")
+    args.model = resolve_preset_name(args.model)
 
     if args.output_dir is None:
         args.output_dir = f"./outputs/{args.model.replace('.', '_')}_gspo"

@@ -12,7 +12,9 @@ from __future__ import annotations
 import json
 import math
 import statistics
+from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import typer
 
@@ -21,10 +23,58 @@ from stateset_agents.cli import app
 from stateset_agents.core.errors import StateSetError
 from stateset_agents.remote.registry import available_providers, get_executor
 
+if TYPE_CHECKING:
+    from stateset_agents.flywheel import FlywheelConfig
+    from stateset_agents.remote.executor import RemoteExecutor
+
 _echo = _cli._echo
 
+#: Options that only the RL (River) loop reads.
+_RL_ONLY = (
+    "rounds",
+    "learning_rate",
+    "lora_r",
+    "seed",
+    "top_p",
+    "max_new_tokens",
+    "eval_max_new_tokens",
+    "normalization",
+    "microbatch_size",
+    "truncation",
+    "eps_max",
+    "clip_low",
+    "clip_high",
+    "grad_clip_norm",
+    "max_generated_tokens",
+    "resume",
+    "reward",
+    "reward_threshold",
+)
+#: Options that only the SFT harvest loop reads.
+_SFT_ONLY = (
+    "generations",
+    "teacher_base_model",
+    "teacher_adapter",
+    "target_harvest_rate",
+    "gpu",
+    "container_disk_gb",
+    "num_epochs",
+)
+#: Loss knobs each RL loss reads (RiverRLConfig.loss_kwargs).
+_LOSS_KNOBS: dict[str, set[str]] = {
+    "cispo": {"eps_max"},
+    "ppo": {"clip_low", "clip_high"},
+    "importance_sampling": set(),
+}
 
-def _load_specs(path: Path, label: str) -> list[dict]:
+
+def _given_on_command_line(ctx: typer.Context, name: str) -> bool:
+    """Return whether the user passed parameter ``name`` explicitly."""
+    source = ctx.get_parameter_source(name)
+    return source is not None and source.name == "COMMANDLINE"
+
+
+def _load_specs(path: Path, label: str) -> list[dict[str, Any]]:
     try:
         data = json.loads(path.read_text())
     except OSError as exc:
@@ -33,7 +83,75 @@ def _load_specs(path: Path, label: str) -> list[dict]:
         raise typer.BadParameter(f"{label} file is not valid JSON: {exc}") from exc
     if not isinstance(data, list) or not data:
         raise typer.BadParameter(f"{label} file must be a non-empty JSON list")
+    from stateset_agents.training.sft import has_eval_assertions
+
+    unchecked = [
+        index
+        for index, spec in enumerate(data)
+        if not isinstance(spec, dict)
+        or not (
+            isinstance(spec.get("prompt"), str) or isinstance(spec.get("turns"), list)
+        )
+        or not has_eval_assertions(spec)
+    ]
+    if unchecked:
+        raise typer.BadParameter(
+            f"{label} spec(s) at index {unchecked[:5]} need a prompt (or turns) "
+            "and expect, forbid or turn_expect checks; a spec without checks "
+            "passes trivially"
+        )
     return data
+
+
+@dataclass(frozen=True)
+class FlywheelOptions:
+    """The ``flywheel`` command's parameters, in signature order (a test pins
+    the two together)."""
+
+    base_model: str
+    harvest_prompts: Path
+    eval_prompts: Path
+    output_root: Path
+    initial_adapter: Path | None
+    teacher_base_model: str | None
+    teacher_adapter: Path | None
+    generations: int
+    best_of: int
+    temperature: float | None
+    target_harvest_rate: float | None
+    max_cost: float | None
+    provider: str
+    gpu: str | None
+    container_disk_gb: int | None
+    num_epochs: int
+    algorithm: str
+    rounds: int
+    repeats: int
+    learning_rate: float
+    lora_r: int
+    seed: int
+    top_p: float
+    max_new_tokens: int
+    eval_max_new_tokens: int
+    normalization: str
+    microbatch_size: int
+    truncation: str
+    eps_max: float
+    clip_low: float
+    clip_high: float
+    grad_clip_norm: float
+    max_generated_tokens: int | None
+    resume: bool
+    reward: str | None
+    reward_threshold: float
+    dry_run: bool
+
+    @property
+    def sampling_temperature(self) -> float:
+        """``--temperature``, else 0.9 for SFT harvesting and 1.0 for RL."""
+        if self.temperature is not None:
+            return self.temperature
+        return 0.9 if self.algorithm == "sft" else 1.0
 
 
 @app.command()
@@ -159,270 +277,277 @@ def flywheel(
     ),
 ) -> None:
     """Run the self-improvement loop until it stops earning its cost."""
-    from stateset_agents.flywheel import (
-        FlywheelConfig,
-        run_flywheel,
-        run_flywheel_repeats,
-    )
+    arguments = dict(locals())  # exactly the parameters, at this point
+    del arguments["ctx"]
+    _run_flywheel_command(ctx, FlywheelOptions(**arguments))
 
-    if algorithm not in {"sft", "cispo", "ppo", "importance_sampling"}:
+
+def _flag(name: str) -> str:
+    """The command-line spelling of parameter ``name``."""
+    return "--" + name.replace("_", "-")
+
+
+def _check_mode_flags(ctx: typer.Context, options: FlywheelOptions) -> None:
+    """Reject an unknown algorithm, a non-positive repeat count and RL-only
+    flags given to the SFT loop."""
+    if options.algorithm not in {"sft", "cispo", "ppo", "importance_sampling"}:
         raise typer.BadParameter(
             "algorithm must be sft, cispo, ppo, or importance_sampling"
         )
-    if repeats < 1:
+    if options.repeats < 1:
         raise typer.BadParameter("repeats must be positive")
-    if algorithm == "sft":
-        for name in (
-            "rounds",
-            "learning_rate",
-            "lora_r",
-            "seed",
-            "top_p",
-            "max_new_tokens",
-            "eval_max_new_tokens",
-            "normalization",
-            "microbatch_size",
-            "truncation",
-            "eps_max",
-            "clip_low",
-            "clip_high",
-            "grad_clip_norm",
-            "max_generated_tokens",
-            "resume",
-            "reward",
-            "reward_threshold",
-        ):
-            source = ctx.get_parameter_source(name)
-            if source is not None and source.name == "COMMANDLINE":
-                raise typer.BadParameter(f"--{name.replace('_', '-')} is RL-only")
-    temperature = (
-        temperature if temperature is not None else (0.9 if algorithm == "sft" else 1.0)
-    )
+    if options.algorithm == "sft":
+        for name in _RL_ONLY:
+            if _given_on_command_line(ctx, name):
+                raise typer.BadParameter(f"{_flag(name)} is RL-only")
 
-    config = FlywheelConfig(
-        base_model=base_model,
-        harvest_prompts=_load_specs(harvest_prompts, "--harvest-prompts"),
-        eval_prompts=_load_specs(eval_prompts, "--eval-prompts"),
-        output_root=output_root,
-        initial_adapter=initial_adapter,
-        teacher_base_model=teacher_base_model,
-        teacher_adapter=teacher_adapter,
-        generations=generations,
-        best_of=best_of,
-        temperature=temperature,
-        target_harvest_rate=target_harvest_rate,
-        max_cost_usd=max_cost,
-        gpu=gpu,
-        container_disk_gb=container_disk_gb,
-        num_epochs=num_epochs,
-        dry_run=dry_run,
-    )
+
+def _flywheel_config(options: FlywheelOptions) -> FlywheelConfig:
+    """Load and check both spec files and build the SFT loop's config."""
+    from stateset_agents.flywheel import FlywheelConfig
+
+    harvest_specs = _load_specs(options.harvest_prompts, "--harvest-prompts")
+    eval_specs = _load_specs(options.eval_prompts, "--eval-prompts")
     try:
-        executor = get_executor(provider)
+        return FlywheelConfig(
+            base_model=options.base_model,
+            harvest_prompts=harvest_specs,
+            eval_prompts=eval_specs,
+            output_root=options.output_root,
+            initial_adapter=options.initial_adapter,
+            teacher_base_model=options.teacher_base_model,
+            teacher_adapter=options.teacher_adapter,
+            generations=options.generations,
+            best_of=options.best_of,
+            temperature=options.sampling_temperature,
+            target_harvest_rate=options.target_harvest_rate,
+            max_cost_usd=options.max_cost,
+            gpu=options.gpu,
+            container_disk_gb=options.container_disk_gb,
+            num_epochs=options.num_epochs,
+            dry_run=options.dry_run,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(f"--eval-prompts: {exc}") from exc
+
+
+def _require_executor(options: FlywheelOptions) -> RemoteExecutor:
+    """The provider's executor, which must run this algorithm's job kind."""
+    try:
+        executor = get_executor(options.provider)
     except StateSetError as exc:
         _echo(str(exc))
         raise typer.Exit(code=1) from exc
-
-    provider_name = provider.strip().lower()
-    requested_kind = "rl" if algorithm != "sft" else "harvest"
+    requested_kind = "rl" if options.algorithm != "sft" else "harvest"
     if not executor.supports(requested_kind):
         supported = ", ".join(sorted(executor.supported_job_kinds))
         _echo(
-            f"Provider {provider_name!r} cannot run the {algorithm} flywheel "
-            f"({requested_kind} jobs); supported modes: {supported}."
+            f"Provider {options.provider.strip().lower()!r} cannot run the "
+            f"{options.algorithm} flywheel ({requested_kind} jobs); supported "
+            f"modes: {supported}."
         )
         raise typer.Exit(code=2)
+    return executor
 
-    if algorithm != "sft":
-        # Each loss reads only its own knobs (RiverRLConfig.loss_kwargs); an
-        # explicit knob for a different loss would be silently dropped.
-        loss_knobs = {
-            "cispo": {"eps_max"},
-            "ppo": {"clip_low", "clip_high"},
-            "importance_sampling": set(),
-        }[algorithm]
-        for name in ("eps_max", "clip_low", "clip_high"):
-            source = ctx.get_parameter_source(name)
-            if (
-                name not in loss_knobs
-                and source is not None
-                and source.name == "COMMANDLINE"
-            ):
-                raise typer.BadParameter(
-                    f"--{name.replace('_', '-')} does not apply to "
-                    f"--algorithm {algorithm}"
-                )
-        if provider_name != "river":
-            _echo("--algorithm requires --provider river (zero-infra RL).")
-            raise typer.Exit(code=2)
-        from stateset_agents.remote.job import RemoteJobSpec
-        from stateset_agents.remote.river_rl import (
-            RiverRLConfig,
-            atomic_json,
-            reward_function_scorer,
-        )
 
-        for name in (
-            "generations",
-            "teacher_base_model",
-            "teacher_adapter",
-            "target_harvest_rate",
-            "gpu",
-            "container_disk_gb",
-            "num_epochs",
-        ):
-            source = ctx.get_parameter_source(name)
-            if source is not None and source.name == "COMMANDLINE":
-                raise typer.BadParameter(
-                    f"--{name.replace('_', '-')} is SFT-only; RL uses --rounds"
-                )
-        if max_cost is not None:
-            raise typer.BadParameter(
-                "River has no enforceable dollar quote; use --max-generated-tokens"
-            )
-        if resume and repeats != 1:
-            raise typer.BadParameter(
-                "Resume each repeat separately using its run directory and seed"
-            )
-        if not math.isfinite(learning_rate) or learning_rate <= 0:
-            raise typer.BadParameter("learning-rate must be finite and positive")
-        if max_generated_tokens is not None and max_generated_tokens < repeats:
-            raise typer.BadParameter(
-                "max-generated-tokens must allow at least one token per repeat"
-            )
-        if reward:
-            from stateset_agents.remote.river import RiverExecutor
-            from stateset_agents.training.sft import _create_domain_reward
-
-            executor = RiverExecutor(
-                rl_scorer=reward_function_scorer(
-                    _create_domain_reward(reward), threshold=reward_threshold
-                ),
-                rl_scorer_id=f"domain:{reward}:threshold={reward_threshold}:v1",
-            )
-        elif ctx.get_parameter_source("reward_threshold").name == "COMMANDLINE":
-            raise typer.BadParameter("--reward-threshold requires --reward")
-        runs = []
-        try:
-            for repeat in range(repeats):
-                run_output = (
-                    output_root
-                    if repeats == 1
-                    else output_root / f"run-{repeat + 1:03d}"
-                )
-                rl_config = RiverRLConfig(
-                    rounds=rounds,
-                    best_of=best_of,
-                    seed=seed + repeat,
-                    temperature=temperature,
-                    top_p=top_p,
-                    max_new_tokens=max_new_tokens,
-                    loss_fn=algorithm,
-                    normalization=normalization,
-                    truncation=truncation,
-                    microbatch_size=microbatch_size,
-                    eps_max=eps_max,
-                    clip_low=clip_low,
-                    clip_high=clip_high,
-                    grad_clip_norm=grad_clip_norm,
-                    max_generated_tokens=(
-                        None
-                        if max_generated_tokens is None
-                        else max_generated_tokens // repeats
-                    ),
-                )
-                from dataclasses import asdict
-
-                spec = RemoteJobSpec(
-                    dataset=harvest_prompts,
-                    base_model=base_model,
-                    output_dir=run_output,
-                    job_kind="rl",
-                    lora_r=lora_r,
-                    learning_rate=learning_rate,
-                    harvest={
-                        **asdict(rl_config),
-                        "adapter_dir": (
-                            str(initial_adapter) if initial_adapter else None
-                        ),
-                    },
-                    eval_prompts=list[str | dict](
-                        _load_specs(eval_prompts, "--eval-prompts")
-                    ),
-                    eval_max_new_tokens=eval_max_new_tokens,
-                    dry_run=dry_run,
-                    resume=resume,
-                )
-                _echo(
-                    f"RL run {repeat + 1}/{repeats}: {algorithm}, seed {seed + repeat}, {rounds} rounds"
-                )
-                result = executor.wait(executor.submit(spec))
-                for line in result.logs:
-                    _echo(f"  {line}")
-                if not result.succeeded:
-                    raise RuntimeError("RL run failed")
-                report = json.loads((run_output / "rl_report.json").read_text())
-                best = report.get("best_eval") or {}
-                runs.append(
-                    {
-                        "seed": seed + repeat,
-                        "output_dir": str(run_output),
-                        "passed": best.get("passed"),
-                        "total": best.get("total"),
-                        "best_round": report.get("best_round"),
-                    }
-                )
-                if repeats > 1:
-                    rates = [r["passed"] / r["total"] for r in runs if r["total"]]
-                    atomic_json(
-                        output_root / "rl_repeats_report.json",
-                        {
-                            "runs": runs,
-                            "requested": repeats,
-                            "completed": len(runs),
-                            "dry_run": dry_run,
-                            "pass_rate_mean": statistics.mean(rates) if rates else None,
-                            "pass_rate_std": (
-                                statistics.stdev(rates) if len(rates) > 1 else None
-                            ),
-                            "pass_rate_min": min(rates) if rates else None,
-                            "pass_rate_max": max(rates) if rates else None,
-                        },
-                    )
-        except (StateSetError, ValueError, RuntimeError) as exc:
-            _echo(str(exc))
-            raise typer.Exit(code=1) from exc
-        _echo(
-            f"Report: {output_root / ('rl_report.json' if repeats == 1 else 'rl_repeats_report.json')}"
-        )
+def _run_flywheel_command(ctx: typer.Context, options: FlywheelOptions) -> None:
+    """Validate the flags, then run the SFT harvest loop or River RL."""
+    _check_mode_flags(ctx, options)
+    config = _flywheel_config(options)
+    executor = _require_executor(options)
+    if options.algorithm != "sft":
+        _run_rl(ctx, options, executor)
         return
+    _run_sft(options, config, executor)
+
+
+def _check_rl_flags(ctx: typer.Context, options: FlywheelOptions) -> None:
+    """Reject flags the chosen RL loss or River cannot honour."""
+    # Each loss reads only its own knobs (RiverRLConfig.loss_kwargs); an
+    # explicit knob for a different loss would be silently dropped.
+    loss_knobs = _LOSS_KNOBS[options.algorithm]
+    for name in ("eps_max", "clip_low", "clip_high"):
+        if name not in loss_knobs and _given_on_command_line(ctx, name):
+            raise typer.BadParameter(
+                f"{_flag(name)} does not apply to --algorithm {options.algorithm}"
+            )
+    if options.provider.strip().lower() != "river":
+        _echo("--algorithm requires --provider river (zero-infra RL).")
+        raise typer.Exit(code=2)
+    for name in _SFT_ONLY:
+        if _given_on_command_line(ctx, name):
+            raise typer.BadParameter(f"{_flag(name)} is SFT-only; RL uses --rounds")
+    if options.max_cost is not None:
+        raise typer.BadParameter(
+            "River has no enforceable dollar quote; use --max-generated-tokens"
+        )
+    if options.resume and options.repeats != 1:
+        raise typer.BadParameter(
+            "Resume each repeat separately using its run directory and seed"
+        )
+    if not math.isfinite(options.learning_rate) or options.learning_rate <= 0:
+        raise typer.BadParameter("learning-rate must be finite and positive")
+    if (
+        options.max_generated_tokens is not None
+        and options.max_generated_tokens < options.repeats
+    ):
+        raise typer.BadParameter(
+            "max-generated-tokens must allow at least one token per repeat"
+        )
+
+
+def _rl_executor(
+    ctx: typer.Context, options: FlywheelOptions, executor: RemoteExecutor
+) -> RemoteExecutor:
+    """River with the ``--reward`` domain scorer, else ``executor`` unchanged."""
+    if options.reward:
+        from stateset_agents.remote.river import RiverExecutor
+        from stateset_agents.remote.river_rl import reward_function_scorer
+        from stateset_agents.training.sft import _create_domain_reward
+
+        threshold = options.reward_threshold
+        return RiverExecutor(
+            rl_scorer=reward_function_scorer(
+                _create_domain_reward(options.reward), threshold=threshold
+            ),
+            rl_scorer_id=f"domain:{options.reward}:threshold={threshold}:v1",
+        )
+    if _given_on_command_line(ctx, "reward_threshold"):
+        raise typer.BadParameter("--reward-threshold requires --reward")
+    return executor
+
+
+def _run_rl(
+    ctx: typer.Context, options: FlywheelOptions, executor: RemoteExecutor
+) -> None:
+    """River RL: ``--repeats`` independent runs, each its own seed and budget."""
+    _check_rl_flags(ctx, options)
+    executor = _rl_executor(ctx, options, executor)
+    runs: list[dict[str, Any]] = []
+    try:
+        for repeat in range(options.repeats):
+            runs.append(_rl_run(options, executor, repeat))
+            if options.repeats > 1:
+                _write_rl_repeats_report(options, runs)
+    except (StateSetError, ValueError, RuntimeError) as exc:
+        _echo(str(exc))
+        raise typer.Exit(code=1) from exc
+    report = "rl_report.json" if options.repeats == 1 else "rl_repeats_report.json"
+    _echo(f"Report: {options.output_root / report}")
+
+
+def _rl_run(
+    options: FlywheelOptions, executor: RemoteExecutor, repeat: int
+) -> dict[str, Any]:
+    """Submit RL repeat ``repeat`` and summarise its best validation."""
+    from stateset_agents.remote.job import RemoteJobSpec
+    from stateset_agents.remote.river_rl import RiverRLConfig
+
+    repeats, seed = options.repeats, options.seed + repeat
+    run_output = (
+        options.output_root
+        if repeats == 1
+        else options.output_root / f"run-{repeat + 1:03d}"
+    )
+    rl_config = RiverRLConfig(
+        rounds=options.rounds,
+        best_of=options.best_of,
+        seed=seed,
+        temperature=options.sampling_temperature,
+        top_p=options.top_p,
+        max_new_tokens=options.max_new_tokens,
+        loss_fn=options.algorithm,
+        normalization=options.normalization,
+        truncation=options.truncation,
+        microbatch_size=options.microbatch_size,
+        eps_max=options.eps_max,
+        clip_low=options.clip_low,
+        clip_high=options.clip_high,
+        grad_clip_norm=options.grad_clip_norm,
+        max_generated_tokens=(
+            None
+            if options.max_generated_tokens is None
+            else options.max_generated_tokens // repeats
+        ),
+    )
+    spec = RemoteJobSpec(
+        dataset=options.harvest_prompts,
+        base_model=options.base_model,
+        output_dir=run_output,
+        job_kind="rl",
+        lora_r=options.lora_r,
+        learning_rate=options.learning_rate,
+        harvest={
+            **asdict(rl_config),
+            "adapter_dir": (
+                str(options.initial_adapter) if options.initial_adapter else None
+            ),
+        },
+        eval_prompts=list[str | dict](
+            _load_specs(options.eval_prompts, "--eval-prompts")
+        ),
+        eval_max_new_tokens=options.eval_max_new_tokens,
+        dry_run=options.dry_run,
+        resume=options.resume,
+    )
+    _echo(
+        f"RL run {repeat + 1}/{repeats}: {options.algorithm}, seed {seed}, "
+        f"{options.rounds} rounds"
+    )
+    result = executor.wait(executor.submit(spec))
+    for line in result.logs:
+        _echo(f"  {line}")
+    if not result.succeeded:
+        raise RuntimeError("RL run failed")
+    report = json.loads((run_output / "rl_report.json").read_text())
+    best = report.get("best_eval") or {}
+    return {
+        "seed": seed,
+        "output_dir": str(run_output),
+        "passed": best.get("passed"),
+        "total": best.get("total"),
+        "best_round": report.get("best_round"),
+    }
+
+
+def _write_rl_repeats_report(
+    options: FlywheelOptions, runs: list[dict[str, Any]]
+) -> None:
+    """Rewrite the pass-rate distribution after every completed repeat."""
+    from stateset_agents.remote.river_rl import atomic_json
+
+    rates = [r["passed"] / r["total"] for r in runs if r["total"]]
+    atomic_json(
+        options.output_root / "rl_repeats_report.json",
+        {
+            "runs": runs,
+            "requested": options.repeats,
+            "completed": len(runs),
+            "dry_run": options.dry_run,
+            "pass_rate_mean": statistics.mean(rates) if rates else None,
+            "pass_rate_std": (statistics.stdev(rates) if len(rates) > 1 else None),
+            "pass_rate_min": min(rates) if rates else None,
+            "pass_rate_max": max(rates) if rates else None,
+        },
+    )
+
+
+def _run_sft(
+    options: FlywheelOptions, config: FlywheelConfig, executor: RemoteExecutor
+) -> None:
+    """The rejection-sampling SFT loop, once or ``--repeats`` times."""
+    from stateset_agents.flywheel import run_flywheel, run_flywheel_repeats
 
     _echo(
-        f"Flywheel: {base_model} on {provider}, up to {generations} "
-        f"generation(s)"
-        + (f", ceiling ${max_cost:.2f}" if max_cost is not None else "")
-        + ("  [dry run]" if dry_run else "")
+        f"Flywheel: {options.base_model} on {options.provider}, up to "
+        f"{options.generations} generation(s)"
+        + (f", ceiling ${options.max_cost:.2f}" if options.max_cost is not None else "")
+        + ("  [dry run]" if options.dry_run else "")
     )
     try:
-        if repeats > 1:
-            aggregate = run_flywheel_repeats(config, executor, repeats)
-            _echo("")
-            for run in aggregate["runs"]:
-                if run.get("skipped"):
-                    _echo(f"  run {run['run']}: SKIPPED — {run['skipped']}")
-                else:
-                    _echo(
-                        f"  run {run['run']}: best {run['best_eval_passed']} "
-                        f"({run['stop_reason']}, "
-                        f"${run['cost_usd'] or 0:.2f})"
-                    )
-            _echo(
-                f"Distribution over {aggregate['completed']} run(s): "
-                f"min {aggregate['min']}  mean {aggregate['mean']}  "
-                f"max {aggregate['max']}"
-            )
-            _echo(f"Total: ${aggregate['total_cost_usd']:.2f}")
-            _echo(f"Report: {output_root / 'flywheel_repeats_report.json'}")
+        if options.repeats > 1:
+            aggregate = run_flywheel_repeats(config, executor, options.repeats)
+            _echo_repeats(aggregate, options.output_root)
             return
         report = run_flywheel(config, executor)
     except StateSetError as exc:
@@ -431,7 +556,32 @@ def flywheel(
     except RuntimeError as exc:
         _echo(str(exc))
         raise typer.Exit(code=1) from exc
+    _echo_flywheel_report(report, options)
 
+
+def _echo_repeats(aggregate: dict[str, Any], output_root: Path) -> None:
+    """Print each repeat's outcome and the score distribution."""
+    _echo("")
+    for run in aggregate["runs"]:
+        if run.get("skipped"):
+            _echo(f"  run {run['run']}: SKIPPED — {run['skipped']}")
+        else:
+            _echo(
+                f"  run {run['run']}: best {run['best_eval_passed']} "
+                f"({run['stop_reason']}, "
+                f"${run['cost_usd'] or 0:.2f})"
+            )
+    _echo(
+        f"Distribution over {aggregate['completed']} run(s): "
+        f"min {aggregate['min']}  mean {aggregate['mean']}  "
+        f"max {aggregate['max']}"
+    )
+    _echo(f"Total: ${aggregate['total_cost_usd']:.2f}")
+    _echo(f"Report: {output_root / 'flywheel_repeats_report.json'}")
+
+
+def _echo_flywheel_report(report: dict[str, Any], options: FlywheelOptions) -> None:
+    """Print one run's generations, cost and the final adapter."""
     _echo("")
     _echo(f"Stopped: {report['stop_reason']}")
     for row in report["generations"]:
@@ -458,6 +608,6 @@ def flywheel(
         _echo(f"Final adapter: {report['final_adapter']}")
         _echo(
             "Serve it:  stateset-agents serve-remote "
-            f"--base-model {base_model} --adapter {report['final_adapter']}"
+            f"--base-model {options.base_model} --adapter {report['final_adapter']}"
         )
-    _echo(f"Report: {output_root / 'flywheel_report.json'}")
+    _echo(f"Report: {options.output_root / 'flywheel_report.json'}")

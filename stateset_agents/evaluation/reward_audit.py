@@ -15,6 +15,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from stateset_agents._deprecation import deprecated_alias_getattr, warn_deprecated
+from stateset_agents.core.trajectory import ConversationTurn
+
 
 class AuditableReward(Protocol):
     """The asynchronous reward interface used by native StateSet trainers."""
@@ -209,7 +212,6 @@ async def audit_reward(
     suite = validate_reward_suite(suite)
     if not callable(getattr(reward, "compute_reward", None)):
         raise ValueError("reward must expose async compute_reward(turns, context)")
-    from stateset_agents.core.trajectory import ConversationTurn
 
     rows = []
     for case in suite["cases"]:
@@ -314,3 +316,38 @@ async def audit_reward(
         },
         "cases": rows,
     }
+
+
+#: ``audit_support_rewards`` scores the support-conversation rewards, so it
+#: moved to ``stateset_agents.rewards.support_reward_audit`` in v0.70.0
+#: (``evaluation`` sits below ``rewards``). Served lazily, with a
+#: DeprecationWarning, until it is removed in v0.72.0.
+__getattr__ = deprecated_alias_getattr(
+    __name__,
+    {
+        "audit_support_rewards": (
+            "stateset_agents.rewards.support_reward_audit",
+            "audit_support_rewards",
+            "0.72.0",
+        )
+    },
+)
+
+
+def main() -> None:
+    """Deprecated entry point for ``python -m`` on this module.
+
+    Run ``python -m stateset_agents.rewards.support_reward_audit`` instead.
+    """
+    warn_deprecated(
+        "python -m stateset_agents.evaluation.reward_audit",
+        removal="0.72.0",
+        replacement="python -m stateset_agents.rewards.support_reward_audit",
+    )
+    from stateset_agents.rewards.support_reward_audit import main as _main
+
+    _main()
+
+
+if __name__ == "__main__":
+    main()

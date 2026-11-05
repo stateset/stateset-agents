@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "status": "engineering_verified_representative_study_pending",
+  "final_package_sources_sha256": "12b923a4b4f4346bb02a4e36252afd01337d0906b4947e414a398b8860670dea",
+  "final_wheel_sha256": "bd8317e2516ed8c574d00401516102f7aca0b67732e0b89ea2cf2581045c9709",
+  "wheel_matches_final_package_sources": true,
+  "full_suite": {
+    "passed": 8066,
+    "skipped": 25,
+    "seconds": 534.59,
+    "package_sources_sha256": "bb8046e31c2955fcf41e4d7598e91c86e5606cdb505441cd4a728d108fa355b0",
+    "scope": "Frozen implementation snapshot before final localized API, telemetry, rollout-version, typed-argument and study-provenance hardening",
+    "log": "/tmp/stateset-improvements-tests-final.log"
+  },
+  "focused_checks": [
+    {
+      "passed": 384,
+      "scope": "Training, checkpoint, rollout, reward and study contracts",
+      "log": "/tmp/stateset-improvements-final-edge-tests.log"
+    },
+    {
+      "passed": 75,
+      "scope": "API, environment and config integration",
+      "log": "/tmp/stateset-improvements-integration-final.log"
+    },
+    {
+      "passed": 32,
+      "scope": "SQLite and live PostgreSQL queue contracts",
+      "log": "/tmp/stateset-improvements-final-contracts.log"
+    },
+    {
+      "passed": 34,
+      "scope": "Final training, runtime, study and public API contracts before final trace assertion",
+      "log": "/tmp/stateset-improvements-final-study-tests.log"
+    },
+    {
+      "passed": 118,
+      "failed": 1,
+      "scope": "Final API sweep: cancellation test expired its one-second lease under host disk contention; subsequently corrected to isolate cancellation from wall-clock expiry",
+      "log": "/tmp/stateset-improvements-idempotency-final.log"
+    },
+    {
+      "passed": 7,
+      "scope": "Final corrected worker cancellation, idempotency and native-study trace tests",
+      "log": "/tmp/stateset-improvements-release-tests.log"
+    }
+  ],
+  "static_checks": {
+    "ruff": "passed",
+    "black": "989 Python files passed serial official Black API; final changed tests rechecked",
+    "isort": "passed",
+    "mypy_source_files": 379,
+    "api_compatibility": "passed",
+    "repo_hygiene": "passed",
+    "diff_whitespace": "passed"
+  },
+  "installed_final_wheel": {
+    "minimal_without_torch": "passed",
+    "api": "passed",
+    "minimum_training_real_lora_backward_save": "passed",
+    "minimum_versions": {
+      "torch": "2.6.0+cpu",
+      "transformers": "4.57.1",
+      "peft": "0.18.0",
+      "trl": "0.14.0"
+    }
+  },
+  "gpu_evidence": "cuda/summary.json",
+  "pretrained_diagnostic": "pretrained-refund-diagnostic/comparison.json",
+  "remaining_requirement": "Reviewed disjoint refund train/validation/test cases for the six-seed representative quality study; synthetic diagnostic showed no lift",
+  "runtime_resources": {
+    "owned_runpod_pod_termination_confirmed": true,
+    "estimated_runpod_compute_usd": 0.21052890789839956,
+    "temporary_api_key_file_removed": true,
+    "disposable_postgres_postmaster_pid_removed": true
+  }
+}

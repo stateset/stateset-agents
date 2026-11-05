@@ -1,0 +1,12 @@
+{
+  "applied_at": 1792247473.5920475,
+  "files": {
+    "stateset_agents/finetune_worker.py": "15ec15e0c194938ca47f2fa721a26096e73c66c61bbc510bf57be7b35c40c447",
+    "stateset_agents/finetune_workspace.py": "bb5d815b468eebf60d12110d3f1616ec78805407035cee3c828711ae17713d77",
+    "tests/unit/test_finetune_quality.py": "8d533a1dbf2f2b9cecab0480f4a2be73bfca01aafd19802adb0e0f30a6e1d66e",
+    "tests/api/test_finetune_operator.py": "a5287166e0e8c731a027cb57de4f8481ac771ab1cdb82050b7ed7c8be7955273"
+  },
+  "verifier_before": "5f27c360c6348f9ce3e0c8ab8f9b496e9bb8db014c030d32c5752de022f1f603",
+  "verifier_after": "f013c58a165cb15eeeeef44a9841449b8ccab002e80f446b6415923f582cd606",
+  "reason": "Platform typing branches; fail fast on future mandatory typing failures."
+}

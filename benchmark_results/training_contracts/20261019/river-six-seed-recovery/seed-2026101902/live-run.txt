@@ -1,0 +1,3 @@
+{"arm": "base", "split": "test", "passed": 53, "total": 64}
+{"arm": "sft", "split": "test", "passed": 52, "total": 64}
+{"arm": "sft_rl", "split": "test", "passed": 53, "total": 64}

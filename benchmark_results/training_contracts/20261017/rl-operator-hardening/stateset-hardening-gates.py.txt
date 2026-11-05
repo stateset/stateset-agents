@@ -1,0 +1,14 @@
+from pathlib import Path
+import os
+import subprocess
+import sys
+
+os.chdir('/home/dom/stateset-agents')
+os.environ.update(OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1')
+for command in [
+    [sys.executable, '/tmp/stateset-studio-mobile-gates.py'],
+    [sys.executable, '-m', 'pytest', '-q', '-n0', '-o', 'addopts=', '--timeout=90', '--tb=short', 'tests/unit/test_release_governance.py', '--junitxml=/tmp/stateset-hardening-governance.xml'],
+    ['/tmp/stateset-actionlint-1.7.12/actionlint', '.github/workflows/training-contracts.yml'],
+]:
+    print('Checking:', ' '.join(command), flush=True)
+    subprocess.run(command, check=True)

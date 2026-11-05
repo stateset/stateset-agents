@@ -1,0 +1,8 @@
+{
+  "admitted_trajectories": 716,
+  "fingerprint": "c9a700053dd385fe1f23785c767ba3caa4e434e3ef5374ee98dfdf81a3158b2e",
+  "limit": 733184,
+  "reserved_generated_tokens": 733184,
+  "schema_version": 1,
+  "trajectory_tokens": 1024
+}

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import abc
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +22,7 @@ from stateset_agents.remote.job import (
     RemoteJobSpec,
 )
 
-__all__ = ["RemoteExecutionError", "RemoteExecutor"]
+__all__ = ["RemoteExecutionError", "RemoteExecutor", "SubmissionReceiptError"]
 
 
 class RemoteExecutionError(StateSetError):
@@ -50,6 +50,10 @@ class RemoteExecutionError(StateSetError):
         return wrapped
 
 
+class SubmissionReceiptError(RemoteExecutionError):
+    """A durable allocation observation could not be retained; do not retry."""
+
+
 class RemoteExecutor(abc.ABC):
     """Runs a :class:`RemoteJobSpec` on some compute provider."""
 
@@ -65,6 +69,43 @@ class RemoteExecutor(abc.ABC):
     result_kind: str = "local_artifacts"
     compute_model: str = "provider-specific"
     verification_status: str = "unit-tested"
+    #: Opt in only when explicit SFT seeds reach initialization and training.
+    supports_sft_seed: bool = False
+    #: Set when SFT invokes StateSet's packaged Transformers worker. Managed
+    #: provider runtimes keep their own exact-model capability checks.
+    uses_packaged_training: bool = False
+    #: Allocation observations can be durably retained while submit is pending.
+    #: This does not imply restartable training or process-independent fetch.
+    durable_submission_receipts: bool = False
+    _submission_observer_failed: bool = False
+
+    def set_submission_observer(
+        self, observer: Callable[[dict[str, Any]], None] | None
+    ) -> None:
+        """Observe allocation/cleanup synchronously; persistence errors fail closed.
+
+        Only controlled provider identities and lifecycle fields are supplied.
+        The observer must retain an event before returning. No observer keeps
+        the provider's existing synchronous submission behavior unchanged.
+        """
+        if observer is not None and not callable(observer):
+            raise TypeError("Submission observer must be callable or None")
+        self._submission_observer = observer
+        self._submission_observer_failed = False
+
+    def _observe_submission(self, event: dict[str, Any]) -> None:
+        observer = getattr(self, "_submission_observer", None)
+        if observer is None:
+            return
+        try:
+            observer({**event, "schema_version": 1, "provider": self.name})
+        except Exception as exc:
+            self._submission_observer_failed = True
+            raise SubmissionReceiptError(
+                "Could not retain provider submission evidence; inspect retained resources before retrying",
+                provider=self.name,
+                stage="submission_receipt",
+            ) from exc
 
     def supports(self, job_kind: str) -> bool:
         """Whether this provider preserves the requested job mode's meaning."""
@@ -80,10 +121,35 @@ class RemoteExecutor(abc.ABC):
             "result_kind": self.result_kind,
             "compute_model": self.compute_model,
             "verification_status": self.verification_status,
+            "sft_seed": self.supports_sft_seed,
+            "uses_packaged_training": self.uses_packaged_training,
+            "durable_submission_receipts": self.durable_submission_receipts,
         }
 
     def validate_spec(self, spec: RemoteJobSpec) -> None:
-        """Reject unsupported modes before an upload or compute allocation."""
+        """Check job mode and native loader readiness before allocating compute."""
+        # Specs are mutable. Dispatch uses canonical job kinds, so accepting a
+        # normalized variant here could send a harvest request into SFT.
+        if (
+            not isinstance(spec.job_kind, str)
+            or spec.job_kind != spec.job_kind.strip().lower()
+        ):
+            raise RemoteExecutionError(
+                "job_kind must be a canonical mode; construct a new RemoteJobSpec",
+                code=ErrorCode.CFG_INVALID,
+                provider=self.name,
+            )
+        if not isinstance(spec.base_model, str) or not spec.base_model.strip():
+            raise RemoteExecutionError(
+                "base_model must be a non-empty model name",
+                code=ErrorCode.CFG_INVALID,
+                provider=self.name,
+            )
+        if spec.seed is not None and not self.supports_sft_seed:
+            raise RemoteExecutionError(
+                f"provider {self.name!r} does not support an explicit SFT seed",
+                provider=self.name,
+            )
         if not self.supports(spec.job_kind):
             supported = ", ".join(sorted(self.supported_job_kinds))
             raise RemoteExecutionError(
@@ -92,6 +158,43 @@ class RemoteExecutor(abc.ABC):
                 provider=self.name,
                 job_kind=spec.job_kind,
             )
+
+        # A local training source must be checked before any SDK setup, upload,
+        # or paid resource allocation. Recheck staged bytes in packaged workers.
+        # Missing files retain each provider's existing path diagnostics.
+        if spec.job_kind == "sft" and Path(spec.dataset).is_file():
+            from stateset_agents.data.finetuning import validate_finetuning_source_split
+
+            try:
+                validate_finetuning_source_split(spec.dataset)
+            except (ValueError, OSError) as exc:
+                raise RemoteExecutionError(
+                    f"Invalid SFT training source: {exc}",
+                    code=ErrorCode.CFG_INVALID,
+                    provider=self.name,
+                ) from exc
+
+        if self.uses_packaged_training and spec.job_kind == "sft":
+            from stateset_agents.core.frontier_models import (
+                get_frontier_model,
+                require_frontier_training,
+            )
+
+            try:
+                frontier = get_frontier_model(spec.base_model.strip())
+            except ValueError:
+                return
+            try:
+                require_frontier_training(frontier, generic_loader=True)
+            except RuntimeError as exc:
+                raise RemoteExecutionError(
+                    str(exc),
+                    code=ErrorCode.CFG_INVALID,
+                    provider=self.name,
+                    model=frontier.model_id,
+                    model_revision=frontier.revision,
+                    blockers=list(frontier.blockers) or [str(exc)],
+                ) from exc
 
     @abc.abstractmethod
     def submit(self, spec: RemoteJobSpec) -> JobHandle:

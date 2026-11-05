@@ -1,0 +1,17 @@
+{
+  "README.md": "51bb0eb04810718b18033bf87142b691e84f2e091afd6c69c624e8f482593d57",
+  "changed-file-hashes.json": "82a878b0376f0be972136fbe896fbd64f2f6675ca3ddc37050a4e98381f3ae32",
+  "checks.json": "5581c0a718ae3660a438937e93ce598242410ffe6b0f89033c5cd97acda6c3e2",
+  "curriculum-bundles.tar.gz": "39510c3a29c93531984d13320da275d3a9d8688a1a5cefc94863e091aed41c8e",
+  "exclusion-fingerprints.json": "6179949ac6fddabb05144c3211dc00a5befd22e6088f93e7b0f23133ca0837df",
+  "focused-tests.xml": "bd6b296290cf0733c13fbaa45c2d2db5d18bbeec490bf3404e5f71fa9442c7fc",
+  "regression-tests.xml": "e33efb8fbc717934cfd960ac92d2b1adc77cf6c743e0da85c1941cafd90e9597",
+  "retain_evidence.py": "9f8f7d57a30bdfd96954ff08462834780a8c1c70bbda51b5ef13e8fcdf4fee80",
+  "review-summary.json": "df191233d6b02c1f6e9afc16feb65c2a0416a80e9fd578bb87e4a6cf7f1f9275",
+  "review_runner.py": "4ab44e9601df3674f6df9bb345bc0f8cb7d87c9d5f428de5dc83d6e30e7d55b7",
+  "source-and-checks.tar.gz": "2678ba28c2a9e513451d360cb6e386894996649c0fda089935e3254ca0412f9d",
+  "source-implementation.json": "6090dd681b1dc3a62c8bcf91294c151853e02acb6315f704fc5a936b0edc2a21",
+  "tokenization-review.json": "8776024fb2b7c505077a009476abd9fe12ca370d99756a6edc30d11323623fbf",
+  "tokenization_review.py": "b0c3c50b1adcac508a7dc79cff20620049d44f5915ce52b4a7ddb01b41fb558b",
+  "validation-diagnostics.json": "abd40d3b7b41f95aa6fd459b44732c70c72a8b1a394ca41b58882ee4b83d4a33"
+}

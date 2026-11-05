@@ -7,11 +7,17 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Awaitable, Callable
-from datetime import datetime
 from typing import Any
 
-import numpy as np
-
+from .config import config_value
+from .dedicated_reporting import WandbRun
+from .runtime_state import _reject_unsupported_resume
+from .spine.loop import (
+    dedicated_run_config,
+    run_dedicated_loop,
+    sample_prompts,
+    seed_dedicated_run,
+)
 from .vapo_config import VAPOConfig
 
 logger = logging.getLogger(__name__)
@@ -23,40 +29,64 @@ async def train_with_vapo(
     train_prompts: list[str],
     config: VAPOConfig | None = None,
     verifier_fn: Callable[[str, str], bool] | None = None,
-    output_dir: str = "./outputs/vapo",
+    output_dir: str | None = None,
     use_wandb: bool = False,
     wandb_project: str | None = None,
+    callbacks: list[Any] | None = None,
 ) -> tuple[Any, Any, dict[str, list[float]]]:
     """
     Train a model using VAPO algorithm.
 
     VAPO is the current SOTA for long-CoT reasoning (60.4 on AIME 2024).
+    ``model_name`` and an explicit ``output_dir`` override the config's fields;
+    without ``output_dir``, ``config.output_dir`` is used (``./outputs/vapo``
+    when no config is given). See :func:`spine.dedicated_run_config`.
+    ``callbacks`` get ``on_step_end`` after each iteration (after its
+    checkpoint); one setting ``should_abort`` stops training after the final
+    save.
     """
-    from .vapo_trainer import VAPOModelManager, VAPOTrainer, _require_wandb, wandb
-
     logger.info("=" * 60)
     logger.info("VAPO Training - Value-Augmented Policy Optimization")
     logger.info("=" * 60)
     logger.info("SOTA: 60.4 on AIME 2024")
     logger.info("Key: Value warmup + Decoupled GAE + Length-adaptive lambda")
 
-    if config is None:
-        config = VAPOConfig(
-            model_name=model_name,
-            output_dir=output_dir,
+    config = dedicated_run_config(
+        config,
+        VAPOConfig,
+        model_name=model_name,
+        output_dir=output_dir,
+        default_output_dir="./outputs/vapo",
+        entrypoint="train_with_vapo",
+    )
+    _reject_unsupported_resume(config, "train_with_vapo")
+
+    with WandbRun(
+        "vapo",
+        enabled=use_wandb,
+        project=wandb_project,
+        config=config,
+        tags=["vapo", "rl-training", "value-based", "reasoning"],
+    ) as reporter:
+        return await _run_vapo(
+            config, reward_fn, train_prompts, verifier_fn, callbacks or [], reporter
         )
 
-    if use_wandb and wandb_project:
-        _require_wandb()
-        wandb.init(
-            project=wandb_project,
-            name=f"vapo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-            config=config.to_dict(),
-            tags=["vapo", "rl-training", "value-based", "reasoning"],
-        )
 
-    logger.info("Loading model: %s", model_name)
-    _is_stub = model_name.startswith("stub://") or getattr(
+async def _run_vapo(
+    config: VAPOConfig,
+    reward_fn: Callable[[str, str], float | Awaitable[float]],
+    train_prompts: list[str],
+    verifier_fn: Callable[[str, str], bool] | None,
+    callbacks: list[Any],
+    reporter: WandbRun,
+) -> tuple[Any, Any, dict[str, list[float]]]:
+    """:func:`train_with_vapo` after its config and W&B run are set up."""
+    from .vapo_trainer import VAPOModelManager, VAPOTrainer
+
+    seed_dedicated_run(config.seed)
+    logger.info("Loading model: %s", config.model_name)
+    _is_stub = config.model_name.startswith("stub://") or getattr(
         config, "use_stub_model", False
     )
     if _is_stub:
@@ -80,17 +110,9 @@ async def train_with_vapo(
     logger.info("Value warmup steps: %s", config.value_warmup_steps)
     logger.info("Group size: %s", config.group_size)
 
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(config.output_dir, exist_ok=True)
 
-    for iteration in range(config.num_episodes):
-        batch_size = min(config.per_device_train_batch_size, len(train_prompts))
-        if batch_size <= 0:
-            break
-        batch_indices = np.random.choice(len(train_prompts), batch_size, replace=False)
-        batch_prompts = [train_prompts[i] for i in batch_indices]
-
-        metrics = await trainer.train_step(batch_prompts)
-
+    def report(iteration: int, metrics: dict[str, Any]) -> None:
         if iteration % config.logging_steps == 0:
             if "warmup_value_loss" in metrics:
                 logger.info("Value warmup | Loss: %.4f", metrics["warmup_value_loss"])
@@ -106,21 +128,25 @@ async def train_with_vapo(
                     metrics.get("explained_variance", 0.0),
                 )
 
-            if use_wandb:
-                wandb.log(metrics, step=iteration)
+            reporter.log(metrics, step=iteration)
 
-        if (iteration + 1) % config.save_steps == 0:
-            checkpoint_dir = os.path.join(output_dir, f"checkpoint-{iteration + 1}")
-            trainer.save_checkpoint(checkpoint_dir)
-
-    final_dir = os.path.join(output_dir, "final")
-    trainer.save_checkpoint(final_dir)
+    # The spine's dedicated outer loop (periodic and final saves included).
+    await run_dedicated_loop(
+        iterations=config.num_episodes,
+        batch=sample_prompts(train_prompts, config.per_device_train_batch_size),
+        step=trainer.train_step,
+        save=trainer.save_checkpoint,
+        output_dir=config.output_dir,
+        save_steps=config.save_steps,
+        final_name="final",
+        report=report,
+        callbacks=callbacks,
+        seed=config.seed,
+        strict_callbacks=bool(config_value(config, "strict_callbacks")),
+    )
     trainer.metrics_history["rollout_samples_total"] = [
         float(trainer.rollout_samples_total)
     ]
-
-    if use_wandb:
-        wandb.finish()
 
     logger.info("=" * 60)
     logger.info("VAPO Training Complete!")

@@ -23,18 +23,28 @@ def test_installed_cli_roundtrip_and_training_dispatch(size, tmp_path, monkeypat
     path = tmp_path / "config.json"
     result = runner.invoke(
         app,
-        [command, "--starter-profile", "memory", "--write-config", str(path), "--json"],
+        [
+            "model",
+            command,
+            "--starter-profile",
+            "memory",
+            "--write-config",
+            str(path),
+            "--json",
+        ],
     )
     assert result.exit_code == 0, result.output
     config = json.loads(result.output)["config"]
     assert config["model_name"] == f"google/gemma-4-{size.upper()}-it"
     assert config["output_dir"] == f"./outputs/gemma4_{size}_gspo"
-    result = runner.invoke(app, [command, "--config", str(path), "--json"])
+    result = runner.invoke(app, ["model", command, "--config", str(path), "--json"])
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["config"] == config
     train = AsyncMock(return_value="trained")
     monkeypatch.setattr(starter, "run_gemma4_small_config", train)
-    result = runner.invoke(app, [command, "--config", str(path), "--no-dry-run"])
+    result = runner.invoke(
+        app, ["model", command, "--config", str(path), "--no-dry-run"]
+    )
     assert result.exit_code == 0, result.output
     train.assert_awaited_once()
     assert train.call_args.args[0].model_name == config["model_name"]
@@ -47,7 +57,7 @@ def test_installed_cli_honors_output_override(tmp_path):
     from stateset_agents.cli import app
 
     result = CliRunner().invoke(
-        app, ["gemma-4-e4b", "--output-dir", str(tmp_path), "--json"]
+        app, ["model", "gemma-4-e4b", "--output-dir", str(tmp_path), "--json"]
     )
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["config"]["output_dir"] == str(tmp_path)
@@ -138,8 +148,16 @@ def test_gspo_uses_modern_quantization_config(monkeypatch, bits):
     kwargs = {"torch_dtype": torch.bfloat16}
     manager._prepare_model_kwargs(kwargs)
     quant = kwargs["quantization_config"]
-    assert quant[f"load_in_{bits}bit"] is True
-    assert quant["bnb_4bit_compute_dtype"] == torch.bfloat16
+    # The shared training.quantization config: 8-bit takes no 4-bit settings.
+    if bits == 8:
+        assert quant == {"load_in_8bit": True}
+    else:
+        assert quant == {
+            "load_in_4bit": True,
+            "bnb_4bit_quant_type": "nf4",
+            "bnb_4bit_use_double_quant": True,
+            "bnb_4bit_compute_dtype": torch.bfloat16,
+        }
     assert "load_in_4bit" not in kwargs and "load_in_8bit" not in kwargs
 
 
@@ -218,7 +236,7 @@ async def test_tiny_gemma4_checkpoint_loads_and_updates_lora(tmp_path, monkeypat
 
     class Reward:
         async def compute_reward(self, turns, context):
-            return SimpleNamespace(total_reward=float(turns[0].content == "ok"))
+            return SimpleNamespace(total_reward=float(turns[-1].content == "ok"))
 
     trainer = GSPOTrainer(
         config=training_config,

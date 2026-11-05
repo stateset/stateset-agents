@@ -1,0 +1,672 @@
+[
+  {
+    "case": "runtime-sgd-None-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-sgd-None-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "runtime-sgd-None-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-sgd-grpo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-sgd-grpo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "runtime-sgd-grpo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-sgd-dr_grpo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-sgd-dr_grpo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "runtime-sgd-dr_grpo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-sgd-dapo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-sgd-dapo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "runtime-sgd-dapo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-sgd-cispo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-sgd-cispo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "runtime-sgd-cispo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-sgd-rloo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-sgd-rloo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "runtime-sgd-rloo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-sgd-gspo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-sgd-gspo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "runtime-sgd-gspo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-adamw-None-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-adamw-None-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "runtime-adamw-None-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-adamw-grpo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-adamw-grpo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "runtime-adamw-grpo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-adamw-dr_grpo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-adamw-dr_grpo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "runtime-adamw-dr_grpo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-adamw-dapo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-adamw-dapo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "runtime-adamw-dapo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-adamw-cispo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-adamw-cispo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "runtime-adamw-cispo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-adamw-rloo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-adamw-rloo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "runtime-adamw-rloo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-adamw-gspo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "runtime-adamw-gspo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "runtime-adamw-gspo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-sgd-None-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-sgd-None-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "async-sgd-None-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-sgd-grpo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-sgd-grpo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "async-sgd-grpo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-sgd-dr_grpo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-sgd-dr_grpo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "async-sgd-dr_grpo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-sgd-dapo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-sgd-dapo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "async-sgd-dapo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-sgd-cispo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-sgd-cispo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "async-sgd-cispo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-sgd-rloo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-sgd-rloo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "async-sgd-rloo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-sgd-gspo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-sgd-gspo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "async-sgd-gspo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-adamw-None-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-adamw-None-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "async-adamw-None-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-adamw-grpo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-adamw-grpo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "async-adamw-grpo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-adamw-dr_grpo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-adamw-dr_grpo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "async-adamw-dr_grpo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-adamw-dapo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-adamw-dapo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "async-adamw-dapo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-adamw-cispo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-adamw-cispo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "async-adamw-cispo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-adamw-rloo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-adamw-rloo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "async-adamw-rloo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-adamw-gspo-pending-False-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "async-adamw-gspo-pending-True-inner-1",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": true
+  },
+  {
+    "case": "async-adamw-gspo-pending-False-inner-2",
+    "resumed": true,
+    "next_update_equal": true,
+    "rank_local_rng_equal": true,
+    "pending": false
+  },
+  {
+    "case": "write",
+    "coordinated_rejection": true,
+    "reloaded": true
+  },
+  {
+    "case": "read",
+    "coordinated_rejection": true,
+    "reloaded": true
+  },
+  {
+    "case": "validate",
+    "coordinated_rejection": true,
+    "reloaded": true
+  },
+  {
+    "case": "implementation",
+    "coordinated_rejection": true,
+    "reloaded": true
+  },
+  {
+    "case": "apply",
+    "coordinated_rejection": true,
+    "reloaded": true
+  },
+  {
+    "case": "artifact-rank",
+    "coordinated_rejection": true,
+    "state_preserved": true,
+    "reloaded": true
+  },
+  {
+    "case": "artifact-generation",
+    "coordinated_rejection": true,
+    "state_preserved": true,
+    "reloaded": true
+  },
+  {
+    "case": "artifact-topology",
+    "coordinated_rejection": true,
+    "state_preserved": true,
+    "reloaded": true
+  },
+  {
+    "case": "artifact-shared",
+    "coordinated_rejection": true,
+    "state_preserved": true,
+    "reloaded": true
+  },
+  {
+    "case": "artifact-gradient",
+    "coordinated_rejection": true,
+    "state_preserved": true,
+    "reloaded": true
+  },
+  {
+    "case": "artifact-rng",
+    "coordinated_rejection": true,
+    "state_preserved": true,
+    "reloaded": true
+  },
+  {
+    "case": "artifact-buffer",
+    "coordinated_rejection": true,
+    "state_preserved": true,
+    "reloaded": true
+  },
+  {
+    "case": "path",
+    "coordinated_rejection": true,
+    "reloaded": true
+  },
+  {
+    "case": "operation",
+    "coordinated_rejection": true,
+    "reloaded": true
+  },
+  {
+    "case": "shared-values",
+    "coordinated_rejection": true,
+    "reloaded": true
+  }
+]

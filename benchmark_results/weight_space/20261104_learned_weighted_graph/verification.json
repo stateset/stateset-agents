@@ -1,0 +1,9 @@
+{
+  "all_selected_metrics_reproduced_from_exports": true,
+  "graph_predictions_checked": 12288,
+  "all_split_hashes_equal_original_weighted_benchmark": true,
+  "torch": "2.11.0+cu130",
+  "python": "3.12.12",
+  "threads": 4,
+  "total_training_trial_seconds": 132.00161168199702
+}

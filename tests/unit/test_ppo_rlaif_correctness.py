@@ -71,22 +71,17 @@ def _ppo(reward_fn=lambda p, c: 1.0, **overrides):
 def _capture_actions(trainer):
     """Record (label tokens under the action mask, rewards) per train_step."""
     seen: list[tuple[list[list[int]], list[float]]] = []
-    orig_log_probs = trainer.compute_log_probs
-    orig_adv = trainer.compute_episode_advantages
-    state: dict = {}
+    original = trainer._update_token_batch
 
-    def log_probs(input_ids, attention_mask):
-        state.setdefault("ids", input_ids)
-        return orig_log_probs(input_ids, attention_mask)
+    def update(input_ids, attention_mask, response_mask, rewards_tensor, **kwargs):
+        labels, mask = input_ids[:, 1:], response_mask[:, 1:]
+        rows = [labels[i][mask[i] > 0].tolist() for i in range(labels.shape[0])]
+        seen.append((rows, rewards_tensor.tolist()))
+        return original(
+            input_ids, attention_mask, response_mask, rewards_tensor, **kwargs
+        )
 
-    def advantages(rewards, action_mask, old_values):
-        labels = state.pop("ids")[:, 1:]
-        rows = [labels[i][action_mask[i] > 0].tolist() for i in range(labels.shape[0])]
-        seen.append((rows, rewards.tolist()))
-        return orig_adv(rewards, action_mask, old_values)
-
-    trainer.compute_log_probs = log_probs
-    trainer.compute_episode_advantages = advantages
+    trainer._update_token_batch = update
     return seen
 
 
@@ -94,36 +89,27 @@ def _capture_actions(trainer):
 
 
 @pytest.mark.asyncio
-async def test_ppo_long_prompt_tail_is_not_trained_as_action():
+@pytest.mark.parametrize(
+    "prompts,completions,message",
+    [
+        (["one two three four five six seven eight"], [" ANSWER"], "prompts exceed"),
+        (["Hi"], [" a b c d e f g h"], "completions exceed"),
+        (["Hi", "Hello"], ["", " yes"], "response action"),
+    ],
+)
+async def test_ppo_invalid_rewarded_actions_fail_before_any_update(
+    prompts, completions, message
+):
     trainer = _ppo()
-    tok = trainer.tokenizer
     seen = _capture_actions(trainer)
-    await trainer.train_step(
-        ["one two three four five six seven eight"], [" ANSWER"], [1.0]
+    before = [p.detach().clone() for p in trainer.model.parameters()]
+    with pytest.raises(ValueError, match=message):
+        await trainer.train_step(prompts, completions, [1.0] * len(prompts))
+    assert not seen and trainer.global_step == 0
+    assert all(
+        torch.equal(p, old)
+        for p, old in zip(trainer.model.parameters(), before, strict=True)
     )
-    rows, _rewards = seen[0]
-    assert rows == [tok(" ANSWER", add_special_tokens=False)["input_ids"]]
-
-
-@pytest.mark.asyncio
-async def test_ppo_completion_is_truncated_to_max_completion_length():
-    trainer = _ppo()
-    tok = trainer.tokenizer
-    seen = _capture_actions(trainer)
-    long_completion = " a b c d e f g h"
-    await trainer.train_step(["Hi"], [long_completion], [1.0])
-    expected = tok(long_completion, add_special_tokens=False)["input_ids"][:4]
-    assert seen[0][0] == [expected]
-
-
-@pytest.mark.asyncio
-async def test_ppo_rows_without_completion_tokens_are_dropped():
-    trainer = _ppo()
-    seen = _capture_actions(trainer)
-    await trainer.train_step(["Hi", "Hello"], ["", " yes"], [5.0, 1.0])
-    rows, rewards = seen[0]
-    assert rewards == [1.0]
-    assert len(rows) == 1 and rows[0]
 
 
 @pytest.mark.asyncio
@@ -155,6 +141,8 @@ async def test_ppo_train_samples_completions_from_the_policy():
         reward_fn=reward_fn,
         num_generations=2,
         per_device_train_batch_size=1,
+        mini_batch_size=1,
+        max_prompt_length=16,
         temperature=1.0,
         top_p=1.0,
     )
@@ -166,21 +154,24 @@ async def test_ppo_train_samples_completions_from_the_policy():
 
 
 @pytest.mark.asyncio
-async def test_ppo_trains_on_the_sampled_token_ids():
-    trainer = _ppo(num_generations=2, per_device_train_batch_size=1)
-    captured: dict = {}
-    orig_generate = trainer.generate_completion_ids
+async def test_ppo_trains_on_the_sampled_token_ids(tmp_path):
+    import json
+    from pathlib import Path
 
-    def generate(prompts):
-        ids = orig_generate(prompts)
-        captured["ids"] = ids
-        return ids
-
-    trainer.generate_completion_ids = generate
+    trainer = _ppo(
+        num_generations=2, mini_batch_size=1, max_prompt_length=16, top_p=1.0, top_k=0
+    )
+    trainer.config.output_dir = str(tmp_path)
     seen = _capture_actions(trainer)
-    await trainer.train(["Alpha"], num_episodes=1)
-    expected = [ids[:4] for ids in captured["ids"] if ids]
-    assert seen[0][0] == expected
+    result = await trainer.train(["Alpha"], num_episodes=1)
+    record = json.loads(
+        (Path(result["rollout_directory"]) / "rollout-0.json").read_text()
+    )
+    assert seen[0][0] == [row["action_ids"] for row in record["rows"]]
+    assert all(
+        len(row["action_ids"]) == len(row["behavior_log_probs"])
+        for row in record["rows"]
+    )
 
 
 # --- RLAIF -----------------------------------------------------------------------

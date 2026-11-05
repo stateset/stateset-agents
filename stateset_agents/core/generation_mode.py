@@ -38,6 +38,7 @@ def inference_mode(model: Any) -> Iterator[None]:
         if config is not None and had_use_cache is not None:
             try:
                 config.use_cache = had_use_cache
+            # Restoring state in ``finally`` must not mask the block's own error.
             except Exception:  # noqa: BLE001
                 pass
         if was_training and callable(getattr(model, "train", None)):

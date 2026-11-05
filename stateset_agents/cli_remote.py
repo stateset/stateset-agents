@@ -21,6 +21,7 @@ import typer
 from stateset_agents import cli as _cli
 from stateset_agents.cli import app
 from stateset_agents.core.errors import StateSetError
+from stateset_agents.data.jsonl import read_jsonl_lines
 from stateset_agents.remote.job import RemoteJobSpec
 from stateset_agents.remote.registry import available_providers, get_executor
 
@@ -174,15 +175,18 @@ def _parse_adapters(entries: list[str]) -> dict[str, Path]:
     Duplicate names are refused loudly — vLLM would otherwise register one
     adapter and silently shadow the other.
     """
+    from stateset_agents.remote.serve_session import is_valid_adapter_name
+
     adapters: dict[str, Path] = {}
     for entry in entries:
         name, sep, raw = entry.partition("=")
         if not sep:
             name, raw = "adapter", entry
         name = name.strip()
-        if not name or "/" in name:
+        if not is_valid_adapter_name(name):
             raise typer.BadParameter(
-                f"adapter name {name!r} must be a plain identifier"
+                f"adapter name {name!r} must be a plain identifier "
+                "(letters, digits, '.', '_' or '-')"
             )
         if name in adapters:
             raise typer.BadParameter(f"duplicate adapter name {name!r}")
@@ -636,6 +640,11 @@ def train_remote(
         "omitted on RunPod, the model catalog selects a count.",
     ),
     timeout: int = typer.Option(3600, "--timeout", help="Job timeout in seconds."),
+    seed: int | None = typer.Option(
+        None,
+        "--seed",
+        help="Explicit SFT initialization/training seed (0–4294967295); providers must declare support. Omit to keep provider defaults.",
+    ),
     package_version: str | None = typer.Option(
         None,
         "--package-version",
@@ -744,8 +753,7 @@ def train_remote(
             raise typer.Exit(code=2)
         prompts = [
             _parse_eval_prompt_line(line.strip())
-            for line in eval_prompts.read_text().splitlines()
-            if line.strip()
+            for _, line in read_jsonl_lines(eval_prompts)
         ]
 
     provider_options: dict[str, object] | None = None
@@ -835,6 +843,7 @@ def train_remote(
             cloud_type=cloud_type,
             network_volume_id=network_volume_id,
             max_cost_usd=max_cost_usd,
+            seed=seed,
         )
     except ValueError as exc:
         _echo(f"Invalid job: {exc}", err=True)
@@ -1149,7 +1158,14 @@ def runpod_orphans(
     terminate: bool = typer.Option(
         False,
         "--terminate",
-        help="Terminate every leased pod. Without this flag the command is read-only.",
+        help="Terminate leased pods whose submitting process has exited. "
+        "Without this flag the command is read-only.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="With --terminate, also terminate pods whose submitting process is "
+        "still running or cannot be verified (a live job then loses its pod).",
     ),
 ) -> None:
     """Find training pods left behind when their submitting process crashed."""
@@ -1160,25 +1176,49 @@ def runpod_orphans(
         executor, RunPodExecutor
     ):  # pragma: no cover - registry invariant
         raise typer.Exit(code=1)
-    leases = executor.orphaned_leases()
+    leases = executor.leases()
     if not leases:
         _echo("No locally recorded RunPod orphans.")
         return
+    owners = {
+        "alive": "submitting process still running",
+        "gone": "submitting process exited",
+        "unknown": "owner cannot be verified",
+    }
     for lease in leases:
         _echo(
             f"{lease.get('pod_id')}: job={lease.get('job_id')} "
-            f"model={lease.get('base_model')} gpu={lease.get('gpu')}"
+            f"model={lease.get('base_model')} gpu={lease.get('gpu')} "
+            f"({owners[lease['owner_state']]})"
         )
     if not terminate:
-        _echo("Read-only. Re-run with --terminate after checking active jobs.")
+        _echo("Read-only. Re-run with --terminate to end pods whose process exited.")
+        return
+    selected = [lease for lease in leases if force or lease["owner_state"] == "gone"]
+    for lease in leases:
+        if lease not in selected:
+            _echo(
+                f"Kept {lease.get('pod_id')} ({owners[lease['owner_state']]}); "
+                "use --force to terminate it anyway."
+            )
+    if not selected:
         return
     try:
-        terminated = executor.cleanup_orphans()
+        terminated, failed = executor.reclaim_pods(
+            str(lease.get("pod_id", "")) for lease in selected
+        )
     except StateSetError as exc:
         _echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
     for pod_id in terminated:
         _echo(f"Terminated {pod_id}; cleanup lease removed.")
+    for pod_id, reason in failed.items():
+        _echo(
+            f"Could not confirm termination of {pod_id} ({reason}); lease kept.",
+            err=True,
+        )
+    if failed:
+        raise typer.Exit(code=1)
 
 
 @app.command("undeploy")
@@ -1358,6 +1398,13 @@ def inference_deploy(
         None, "--zone", help="CoreWeave zone used when creating a gateway."
     ),
     runtime_version: str | None = typer.Option(None, "--runtime-version"),
+    production: bool = typer.Option(
+        False,
+        "--production",
+        help="Require artifact-bound quality and lineage evidence.",
+    ),
+    promotion_receipt: Path | None = typer.Option(None, "--promotion-receipt"),
+    artifact_directory: Path | None = typer.Option(None, "--artifact-directory"),
 ) -> None:
     """Deploy complete model weights to managed OpenAI-compatible inference."""
     import json
@@ -1368,22 +1415,25 @@ def inference_deploy(
     if max_replicas < min_replicas:
         _echo("--max-replicas must be >= --min-replicas", err=True)
         raise typer.Exit(code=2)
-    spec = DeploymentSpec(
-        name=name,
-        model_name=model_name,
-        weights_uri=weights_uri,
-        gpu=gpu,
-        gpu_count=gpu_count,
-        min_replicas=min_replicas,
-        max_replicas=max_replicas,
-        runtime=runtime,
-        runtime_version=runtime_version,
-        gateway_id=gateway_id,
-        zone=zone,
-    )
     try:
+        spec = DeploymentSpec(
+            name=name,
+            model_name=model_name,
+            weights_uri=weights_uri,
+            gpu=gpu,
+            gpu_count=gpu_count,
+            min_replicas=min_replicas,
+            max_replicas=max_replicas,
+            runtime=runtime,
+            runtime_version=runtime_version,
+            gateway_id=gateway_id,
+            zone=zone,
+            production=production,
+            promotion_receipt=str(promotion_receipt) if promotion_receipt else None,
+            artifact_directory=str(artifact_directory) if artifact_directory else None,
+        )
         handle = get_deployment_provider(provider).deploy(spec)
-    except (StateSetError, ValueError) as exc:
+    except (StateSetError, ValueError, OSError) as exc:
         _echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
     _echo(json.dumps(handle.__dict__, indent=2, sort_keys=True))

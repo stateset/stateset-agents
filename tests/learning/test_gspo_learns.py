@@ -45,6 +45,9 @@ def _train(seed: int, *, sign: float, token_level: bool) -> tuple[float, float]:
         max_completion_length=8,
         learning_rate=1e-2,
         beta=0.0,
+        # Fixed-budget learning and negative controls may saturate this toy
+        # sampler. Production zero-signal stopping is tested independently.
+        zero_signal_patience=0,
         seed=seed,
     )
     trainer_cls = GSPOTokenTrainer if token_level else GSPOTrainer

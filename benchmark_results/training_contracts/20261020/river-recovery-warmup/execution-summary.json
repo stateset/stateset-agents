@@ -1,0 +1,15 @@
+{
+  "elapsed_seconds": 738.8226446810295,
+  "exit_code": 0,
+  "plan_hash": "5c8eab58a43fca1075b76a97c254e80d1853fed0e3b3922e84d14ba27b02bfad",
+  "result": {
+    "accepted": true,
+    "nonzero_variance_groups": 6,
+    "quality_certification": false,
+    "rl_updates": 0,
+    "sft_updates": 10,
+    "status": "completed",
+    "test_attempted": true
+  },
+  "timed_out": false
+}

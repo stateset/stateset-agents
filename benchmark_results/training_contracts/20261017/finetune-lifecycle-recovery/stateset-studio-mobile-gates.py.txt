@@ -1,0 +1,19 @@
+"""Repository gates plus serial formatting for this update's changed Python."""
+from pathlib import Path
+import subprocess
+import sys
+import black
+import isort
+
+for command in [
+    [sys.executable,'-m','ruff','check','.'],
+    [sys.executable,'scripts/check_repo_hygiene.py'],
+    [sys.executable,'scripts/check_release_governance.py'],
+    [sys.executable,'scripts/check_api_compatibility.py'],
+]:
+    print('Checking:', ' '.join(command), flush=True)
+    subprocess.run(command,check=True)
+for name in ['stateset_agents/training/runtime_state.py', 'tests/unit/test_runtime_checkpoint_safety.py', 'stateset_agents/training/gspo_entrypoints.py', 'stateset_agents/training/gspo_token_trainer.py', 'stateset_agents/training/gepo_trainer.py', 'stateset_agents/training/dapo_entrypoints.py', 'tests/unit/test_dedicated_entrypoint_resume.py', 'scripts/check_release_governance.py', 'stateset_agents/tui.py', 'stateset_agents/cli.py', 'tests/unit/test_finetune_mobile.py', 'stateset_agents/api/routers/finetune.py', 'tests/api/test_finetune_operator.py', 'stateset_agents/finetune_inspection.py', 'tests/unit/test_finetune_inspection.py', 'stateset_agents/finetune_worker.py', 'stateset_agents/remote/runpod.py', 'tests/unit/test_finetune_backends.py', 'tests/unit/test_remote_runpod_executor.py', 'stateset_agents/training/ppo_trainer.py', 'tests/unit/test_ppo_safety.py', 'stateset_agents/finetune_workspace.py', 'stateset_agents/cli_finetune.py', 'tests/unit/test_finetune_interrupted_stop.py', 'tests/unit/test_finetune_worker_ownership.py', 'tests/unit/test_finetune_quality.py', 'stateset_agents/training/checkpoint_state.py', 'stateset_agents/training/single_turn_trainer.py', 'stateset_agents/training/multi_turn_trainer.py', 'tests/unit/test_native_checkpoint_safety.py', 'tests/unit/test_resume_rollout_sync.py', 'tests/unit/test_checkpoint_trust.py', 'tests/unit/test_multi_turn_trainer.py', 'tests/unit/test_training.py', 'tests/unit/test_checkpoint_rng_publication.py', 'tests/unit/test_native_checkpoint_metadata.py', 'tests/unit/test_learning_state_recovery.py', 'tests/unit/test_multi_turn_checkpoint_accumulation.py']:
+    changed=black.format_file_in_place(Path(name),fast=False,mode=black.Mode(line_length=88,target_versions={black.TargetVersion.PY310}),write_back=black.WriteBack.CHECK)
+    assert not changed and isort.check_file(name), name
+print('Serial formatting passed for all changed Python files.',flush=True)

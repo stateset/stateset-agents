@@ -1,0 +1,12 @@
+{
+  "assistant_target_tokens": 8864.0,
+  "backend_observations_masked": true,
+  "dropped_or_truncated_rows": 0,
+  "input_tokens": 54887,
+  "max_length": 4096,
+  "max_sequence_tokens": 423,
+  "provider_requests": 0,
+  "rows": 160,
+  "trailing_prompt_only_observations_omitted": 160,
+  "trainable_rows": 160
+}

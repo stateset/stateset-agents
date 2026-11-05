@@ -1,0 +1,136 @@
+"""Retain only completed, current-source and live-pane matching verification."""
+from pathlib import Path
+import hashlib
+import json
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import xml.etree.ElementTree as ET
+
+ROOT = Path('/home/dom/stateset-agents')
+PREFIX = Path('/tmp/stateset-publication')
+DEST = ROOT/'benchmark_results/training_contracts/20261017/orphan-status-ddp-publication'
+def read(path):
+    return json.loads(Path(path).read_text())
+def sha(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+def inventory(directory):
+    return {p.relative_to(ROOT).as_posix():sha(p) for p in sorted((ROOT/directory).rglob('*.py'))}
+def job(handle):
+    value = json.loads(subprocess.check_output(['/home/dom/agent-builds/buildr','show','--json',handle],text=True))
+    return {k:value.get(k) for k in ('id','state','exit_code','argv','created','started','finished','wait_seconds','elapsed_seconds','usage','wait_breakdown','reason')}
+
+focused, full = job(sys.argv[1]), job('1e204ba66630')
+assert focused['state']=='succeeded' and focused['exit_code']==0
+assert focused['argv']==['.venv/bin/python','/tmp/stateset-publication-verify.py']
+result = read(str(PREFIX)+'-result.json')
+assert result['checked'] and result['passed'] and result['source_frozen']
+assert [s['name'] for s in result['stages']]==['format','types','native','operator','distributed','wheel','gates','governance','workflow']
+assert all(s['exit_code']==0 and focused['started']<=s['started']<=s['finished']<=focused['finished'] for s in result['stages'])
+frozen = read(str(PREFIX)+'-inputs.json')
+source, tests = inventory('stateset_agents'), inventory('tests')
+assert frozen['source_sha256']==source and frozen['test_source_sha256']==tests
+assert result['stages'][0]['started']<=frozen['captured_at']<=result['stages'][0]['finished']
+live = read('/tmp/stateset-hardening-live.json')
+assert live['focused_job']==focused['id'] and live['created_at']>=focused['finished']
+assert {'stateset_agents/'+p:h for p,h in live['source_sha256'].items()}==source
+assert live['test_source_sha256']==tests
+assert live['draft_preserved'] and not live['training_launched'] and live['before']==live['after']
+assert all((ROOT/p).stat().st_mtime<=focused['finished'] for p in {**source,**tests})
+counts = {}
+for name in ('native','operator','distributed','wheel','governance'):
+    path = Path(str(PREFIX)+'-'+name+'.xml')
+    assert focused['started']<=path.stat().st_mtime<=focused['finished']
+    tree = ET.parse(path).getroot()
+    assert not any(list(tree.iter(tag)) for tag in ('failure','error','skipped'))
+    counts[name] = len(list(tree.iter('testcase')))
+    assert counts[name]>0
+log = Path('/home/dom/.local/state/agent-builds/logs')/(focused['id']+'.log')
+assert int(re.findall(r'Success: no issues found in (\d+) source files',log.read_text())[-1])==len(source)
+wheel = read(str(PREFIX)+'-wheel.json')
+assert wheel['passed'] and wheel['wheel_source_matches'] and wheel['module_origins_verified'] and wheel['case_identities_match_source']
+assert wheel['source_sha256']==source and wheel['test_count']==counts['wheel']
+reports = Path(str(PREFIX)+'-distributed')
+for api in ('runtime','async'):
+    for rank in (0,1):
+        rows = read(reports/f'ddp-checkpoint-publication-{api}'/f'ddp-checkpoint-publication-{rank}.json')
+        assert [r['mode'] for r in rows]==['true','none','absent','disabled','false','exception','rng']
+        assert all(r['rank_local_rng_equal'] and r['next_update_equal'] and r['reloaded'] for r in rows)
+prior_full = read(ROOT/'benchmark_results/training_contracts/20261016/finetune-studio-mobile/verification.json')
+full_matches_current = {'stateset_agents/'+name:digest for name,digest in prior_full['source_sha256'].items()}==source and prior_full['test_source_sha256']==tests
+summary = {'retained_at':time.time(),'focused_job':focused['id'],'focused_passed':True,'test_counts':counts,'total_test_executions':sum(counts.values()),'source_tests':sum(counts[name] for name in ('native','operator','distributed','governance')),'typed_modules':len(source),'source_tests_match_frozen_inputs_and_live':True,'live_pane':live['pane'],'draft_preserved':True,'training_launched':False,'two_worker_cpu_gloo_verified':True,'new_publication_scenarios_per_api_per_rank':7,'full_acceptance_job':full['id'],'full_state_at_capture':full['state'],'full_acceptance_matches_current_source_and_tests':full_matches_current,'installed_wheel_focused_verified':True,'wheel_sha256':wheel['wheel_sha256'],'gpu_verified':False,'provider_training_verified':False,'model_quality_gain_verified':False}
+assert not DEST.exists()
+DEST.parent.mkdir(parents=True,exist_ok=True)
+out = Path(tempfile.mkdtemp(prefix='.orphan-status-ddp-publication-',dir=DEST.parent))
+for filename,value in [('summary.json',summary),('queue-receipts.json',[focused,full]),('source-manifest.json',{'source_sha256':source,'test_source_sha256':tests})]:
+    (out/filename).write_text(json.dumps(value,indent=2)+'\n')
+for path in PREFIX.parent.glob(PREFIX.name+'-*'):
+    if path.is_dir() and path.name in ('stateset-publication-distributed','stateset-publication-failed-attempts'):
+        shutil.copytree(path,out/path.name)
+    elif path.suffix in ('.json','.xml','.log'):
+        shutil.copy2(path,out/path.name)
+shutil.copy2(log,out/log.name)
+shutil.copy2('/tmp/stateset-hardening-live.json',out/'live-proof.json')
+shutil.copy2('/tmp/stateset-studio-mobile-live.txt',out/'live-screen.txt')
+shutil.copytree(wheel['distributed_reports'],out/'installed-wheel-distributed')
+for filename in ('stateset-publication-verify.py','stateset-publication-wheel.py','stateset-publication-handoff.py','stateset-publication-lint-fix.py','stateset-publication-followup.py','stateset-publication-retain.py','stateset-hardening-live.py','stateset-studio-mobile-format.py','stateset-studio-mobile-gates.py'):
+    shutil.copy2(Path('/tmp')/filename,out/(filename+'.txt'))
+for stage in ('worker-terminal','cli-record','ddp-publication'):
+    directory = Path('/tmp/stateset-'+stage+'-fixes')
+    target = out/('staged-'+stage)
+    target.mkdir()
+    for name in ('manifest.json','README.md'):
+        shutil.copy2(directory/name,target/name)
+for name in sorted(set(read(str(PREFIX)+'-handoff.json')['files']) | set(read(str(PREFIX)+'-followup.json')['files'])):
+    target=out/'verified-files'/(name+'.txt')
+    target.parent.mkdir(parents=True,exist_ok=True)
+    shutil.copy2(ROOT/name,target)
+target=out/'staged-platform-types'
+target.mkdir()
+for name in ('manifest.json','README.md'):
+    shutil.copy2(Path('/tmp/stateset-publication-types-fix')/name,target/name)
+(out/'README.md').write_text(f'''# Orphan outcomes, bounded status and collective checkpoint publication
+
+Buildr `{focused['id']}` passed {counts['native']} native checkpoint tests,
+{counts['operator']} operator tests, {counts['distributed']} real two-worker
+CPU/Gloo contracts and {counts['governance']} governance tests, plus typing
+for {len(source)} package modules, formatting, Ruff, repository hygiene, stable
+API/release governance and workflow lint. No selected cases failed or skipped.
+Another {counts['wheel']} overlapping cases passed from an installed wheel with
+identical source bytes, checked import origins and matching JUnit case identities.
+This is targeted verification; it is not a full repository test run.
+
+Workers commit success after checked completion publication, including after
+supervisor loss, without inventing an observed exit code. Serialized bounded
+state transitions prevent later progress or completion from replacing an already
+recorded failure/cancellation, including both concurrent ordering cases. Unfinished direct
+ownership loss stays unconfirmed, and completion files alone imply no success.
+Config and status readers reject nonregular files without blocking and retain
+exact-byte checksums. Tests use actual control paths with injected training and
+provider fixtures; no provider was contacted.
+
+Both native collective checkpoint APIs now coordinate strict rollout publication
+and restore each rank's RNG after publication before clearing quarantine. Two
+live CPU/Gloo workers cover acknowledged, legacy None, absent and disabled sync,
+asymmetric False/errors/final RNG faults, refusal while quarantined, healthy
+reload, distinct Python/NumPy/Torch streams and exact stochastic next updates.
+The existing broad native checkpoint two-worker regression also passed.
+This contains failed application; it does not roll back partly applied state or
+recover lost peers. Legacy None has no positive publication acknowledgement.
+
+Source/test hashes were frozen after formatting and unchanged throughout checks.
+The refreshed live pane matches them; saved draft bytes, permissions and run
+history were preserved and no training was launched. Staged manifests describe
+preformatter inputs; verified bytes are retained separately.
+
+Broader source/wheel/CLI acceptance is separate under `{full['id']}` (state at
+retention: {full['state']}); consult its source hashes for scope. This receipt
+adopts no GPU, provider-training or model-quality evidence.
+''')
+assert source==inventory('stateset_agents') and tests==inventory('tests')
+(out/'artifact-sha256.json').write_text(json.dumps({p.relative_to(out).as_posix():sha(p) for p in sorted(out.rglob('*')) if p.is_file()},indent=2)+'\n')
+out.rename(DEST)
+print(json.dumps({'path':str(DEST),'summary':summary},indent=2))

@@ -1,0 +1,69 @@
+"""Verify the dated checkpoint registration on frozen source and installed wheel."""
+from pathlib import Path
+import fcntl
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import time
+
+ROOT = Path('/home/dom/stateset-agents')
+PREFIX = '/tmp/stateset-remote-frontier'
+os.chdir(ROOT)
+os.environ['PIP_DISABLE_PIP_VERSION_CHECK']='1'
+os.environ.update(OMP_NUM_THREADS='1', MKL_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', NUMEXPR_NUM_THREADS='1', RAYON_NUM_THREADS='1', TOKENIZERS_PARALLELISM='false', HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1')
+lock = Path('/tmp/stateset-studio-mobile-source.lock').open('a')
+fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+changed = list(json.loads(Path(PREFIX+'-handoff.json').read_text())['files'])
+extra = Path(PREFIX+'-readiness-handoff.json')
+if extra.exists():
+    changed += list(json.loads(extra.read_text())['files'])
+python_files = [name for name in changed if name.endswith('.py')]
+
+def inventory(directory):
+    return {p.relative_to(ROOT).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((ROOT/directory).rglob('*.py'))}
+
+def format_changed():
+    import black
+    import isort
+    for name in python_files:
+        isort.file(name)
+        black.format_file_in_place(Path(name), fast=False, mode=black.Mode(line_length=88,target_versions={black.TargetVersion.PY310}), write_back=black.WriteBack.YES)
+
+format_changed()
+frozen = {'source_sha256':inventory('stateset_agents'), 'test_source_sha256':inventory('tests'), 'changed_files':{name:hashlib.sha256((ROOT/name).read_bytes()).hexdigest() for name in changed}, 'captured_at':time.time()}
+Path(PREFIX+'-inputs.json').write_text(json.dumps(frozen,indent=2)+'\n')
+modules = ['test_remote_frontier_readiness', 'test_finetune_frontier_readiness', 'test_deepseek_v41_1017', 'test_frontier_models', 'test_transformers_compat', 'test_remote_job', 'test_remote_local_executor', 'test_remote_runpod_executor', 'test_remote_modal_executor', 'test_remote_coreweave_executor', 'test_remote_nebius_executor', 'test_remote_new_providers', 'test_remote_river_executor', 'test_remote_fireworks_executor', 'test_remote_registry', 'test_cli_remote', 'test_cli_finetune', 'test_finetune_studio', 'test_finetune_backends']
+tests = ['tests/unit/'+name+'.py' for name in modules] + ['tests/api/test_finetune_operator.py']
+commands = [
+    ('lint', [sys.executable,'-m','ruff','check','.']),
+    ('types', [sys.executable,'scripts/check_types.py','--all']),
+    ('source', [sys.executable,'-m','pytest','-q','-n0','-o','addopts=','--timeout=140','--tb=short', *tests, '--junitxml='+PREFIX+'-source.xml']),
+    ('hygiene', [sys.executable,'scripts/check_repo_hygiene.py']),
+    ('api', [sys.executable,'scripts/check_api_compatibility.py']),
+    ('release', [sys.executable,'scripts/check_release_governance.py']),
+    ('workflow', ['/tmp/stateset-actionlint-1.7.12/actionlint','.github/workflows/training-contracts.yml']),
+    ('wheel', [sys.executable,PREFIX+'-wheel.py']),
+]
+stages=[]
+started=time.time()
+for name,command in commands:
+    print('Stage:',name,' '.join(command),flush=True)
+    stage_start=time.time()
+    with Path(PREFIX+'-'+name+'.log').open('w') as log:
+        process=subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+        for line in process.stdout:
+            log.write(line)
+            log.flush()
+            if name!='types' or 'error' in line.lower() or 'success' in line.lower():
+                print(line,end='',flush=True)
+        code=process.wait()
+    if inventory('stateset_agents')!=frozen['source_sha256'] or inventory('tests')!=frozen['test_source_sha256']:
+        print('Source/test drift invalidates this result',flush=True)
+        code=code or 1
+    stages.append({'name':name,'argv':command,'started':stage_start,'finished':time.time(),'exit_code':code})
+    Path(PREFIX+'-result.json').write_text(json.dumps({'started':started,'passed':len(stages)==len(commands) and all(stage['exit_code']==0 for stage in stages),'source_frozen':True,'modules':modules,'stages':stages},indent=2)+'\n')
+    if code:
+        break
+raise SystemExit(0 if len(stages)==len(commands) and all(stage['exit_code']==0 for stage in stages) else 1)

@@ -3,32 +3,40 @@ High-level training interface for GRPO Agent Framework
 """
 
 import asyncio
-import difflib
 import logging
-import os
+import math
 from enum import Enum
+from numbers import Real
+from pathlib import Path
 from typing import Any, cast
 
 from stateset_agents.core.agent import Agent, MultiTurnAgent
 from stateset_agents.core.environment import Environment
+from stateset_agents.core.errors import ConfigurationError
 from stateset_agents.core.reward import RewardFunction
+from stateset_agents.core.reward_base import RewardResult, RewardType
+from stateset_agents.core.trajectory import ConversationTurn
 
-from .config import TrainingConfig, TrainingProfile
+from .._deprecation import warn_deprecated
+from .configuration import resolve_training_config as _build_training_config
 from .diagnostics import DiagnosticsMonitor
+from .offline_backend import load_offline_trainer
 from .trainer import MultiTurnGRPOTrainer
 
 logger = logging.getLogger(__name__)
 
+#: Failures a baseline evaluation episode may legitimately hit (a model,
+#: environment or reward outage, bad data, a timeout). A TypeError or
+#: AttributeError there is a bug and propagates instead of skewing the
+#: profile choice.
 TRAIN_EXCEPTIONS = (
     RuntimeError,
     ValueError,
-    TypeError,
-    AttributeError,
     OSError,
     asyncio.TimeoutError,
 )
-UNCERTAINTY_WRAP_EXCEPTIONS = (ImportError,) + TRAIN_EXCEPTIONS
-DATASET_LOAD_EXCEPTIONS = (ImportError, FileNotFoundError) + TRAIN_EXCEPTIONS
+#: Logged, then re-raised.
+DATASET_LOAD_EXCEPTIONS = (ImportError,) + TRAIN_EXCEPTIONS
 
 
 class TrainingMode(Enum):
@@ -89,11 +97,23 @@ async def train(
 
     valid_modes = {mode.value for mode in TrainingMode}
     if training_mode not in valid_modes:
-        raise ValueError(
+        raise ConfigurationError(
             f"training_mode must be one of {sorted(valid_modes)}, "
             f"got {training_mode!r}"
         )
 
+    extra_config = dict(kwargs)
+    agent_config = getattr(agent, "config", None)
+    agent_model = getattr(agent_config, "model_name", None)
+    agent_identity: dict[str, str | None] = {}
+    if isinstance(agent_model, str):
+        agent_identity["model_name"] = agent_model
+        revision = getattr(agent_config, "model_revision", None)
+        if revision is None or isinstance(revision, str):
+            agent_identity["model_revision"] = revision
+        for name, value in agent_identity.items():
+            if name not in (config_overrides or {}) and name not in extra_config:
+                extra_config[name] = value
     config = _build_training_config(
         profile=profile,
         num_episodes=num_episodes,
@@ -101,9 +121,14 @@ async def train(
         resume_from_checkpoint=resume_from_checkpoint,
         objective=objective,
         objective_overrides=objective_overrides,
-        extra_config=kwargs,
+        extra_config=extra_config,
     )
-
+    for name, value in agent_identity.items():
+        if getattr(config, name) != value:
+            raise ConfigurationError(
+                f"Training {name} differs from the supplied agent configuration. "
+                "Set the model identity in AgentConfig before calling train()."
+            )
     # Fields the caller set explicitly (not filled in by the profile).
     explicit_fields = set(config_overrides or {}) | set(kwargs)
     explicit_fields |= {
@@ -128,13 +153,58 @@ async def train(
             )
 
     # Set up reward function
+    if training_mode == "offline" and config.objective is not None:
+        raise ConfigurationError(
+            "Offline training uses IQL-weighted logged-action extraction; "
+            "objective selects an online policy objective and cannot be applied here"
+        )
+    environment_reward = getattr(environment, "reward_fn", None)
     if reward_fn is None:
-        reward_fn = environment.reward_fn
+        reward_fn = environment_reward
 
     # Optional: wrap reward with Bayesian uncertainty weighting
+    restore_environment_reward = False
     if uncertainty_weighted and reward_fn is not None:
+        wraps_environment_reward = reward_fn is environment_reward
         reward_fn = _wrap_with_uncertainty(reward_fn)
+        if wraps_environment_reward and reward_fn is not environment_reward:
+            # Score each episode once: the environment applies the same wrapped
+            # reward the trainer would, so the trainer reuses its score instead
+            # of calling the base reward a second time. Restored on exit.
+            environment.reward_fn = reward_fn
+            restore_environment_reward = True
 
+    try:
+        return await _run_training(
+            agent,
+            environment,
+            config,
+            reward_fn,
+            dataset,
+            dataset_path,
+            training_mode,
+            save_path,
+            callbacks,
+            explicit_fields,
+        )
+    finally:
+        if restore_environment_reward:
+            environment.reward_fn = environment_reward
+
+
+async def _run_training(
+    agent: Any,
+    environment: Any,
+    config: Any,
+    reward_fn: Any,
+    dataset: Any,
+    dataset_path: str | None,
+    training_mode: str,
+    save_path: str | None,
+    callbacks: Any,
+    explicit_fields: Any,
+) -> Agent:
+    """Dispatch to the trainer for ``training_mode`` once rewards are wired."""
     # Load dataset for offline/hybrid modes
     if training_mode in ("offline", "hybrid") and dataset is None and dataset_path:
         dataset = _load_dataset(dataset_path)
@@ -192,85 +262,32 @@ async def train(
     return trained_agent
 
 
-def _build_training_config(
-    *,
-    profile: str,
-    num_episodes: int,
-    config_overrides: dict[str, Any] | None,
-    resume_from_checkpoint: str | None,
-    objective: str | None,
-    objective_overrides: dict[str, Any] | None,
-    extra_config: dict[str, Any],
-) -> TrainingConfig:
-    """Merge every ``train()`` config source, rejecting unknown or conflicting keys."""
-    field_names = set(TrainingConfig.__dataclass_fields__)
-    unknown = sorted(set(extra_config) - field_names)
-    if unknown:
-        hints = []
-        for name in unknown:
-            close = difflib.get_close_matches(name, field_names, n=1)
-            hints.append(
-                f"{name!r}" + (f" (did you mean {close[0]!r}?)" if close else "")
-            )
-        raise TypeError(
-            "train() got unexpected keyword argument(s): " + ", ".join(hints)
-        )
-
-    merged = dict(config_overrides or {})
-    named = {
-        "resume_from_checkpoint": resume_from_checkpoint,
-        "objective": objective,
-        "objective_overrides": objective_overrides,
-    }
-    sources = [
-        (name, value) for name, value in named.items() if value is not None
-    ] + list(extra_config.items())
-    for name, value in sources:
-        if name in merged and merged[name] != value:
-            raise TypeError(
-                f"train() got conflicting values for {name!r}: "
-                f"{merged[name]!r} and {value!r}"
-            )
-        merged[name] = value
-    if "num_episodes" in merged:
-        raise TypeError(
-            "pass num_episodes as train()'s own argument, not as a config override"
-        )
-    if merged.get("objective") is not None:
-        from .objectives import OBJECTIVES
-
-        if merged["objective"] not in OBJECTIVES:
-            raise ValueError(
-                f"objective {merged['objective']!r} is not a known preset; "
-                f"expected one of: {', '.join(sorted(OBJECTIVES))}"
-            )
-
-    return TrainingConfig.from_profile(
-        profile=TrainingProfile(profile),
-        num_episodes=num_episodes,
-        **merged,
-    )
-
-
 def _wrap_with_uncertainty(reward_fn: RewardFunction) -> RewardFunction:
-    """Wrap a reward function with Bayesian uncertainty weighting.
+    """Wrap a reward function with uncertainty weighting.
 
-    When the Bayesian reward model is available, this wraps the base reward
-    function to discount rewards that have high uncertainty.  Falls back to
-    the original reward when Bayesian models aren't available.
+    :class:`UncertaintyWeightedReward` discounts a score by the
+    ``total_uncertainty`` / ``epistemic_uncertainty`` the base reward reports
+    (for example the experimental Bayesian reward model) and leaves scores
+    without an estimate unchanged. It needs nothing from the experimental
+    layer, so it no longer probes for it (that probe was a hidden
+    stable -> experimental import).
     """
+    logger.info("Wrapping reward function with uncertainty weighting")
+    return UncertaintyWeightedReward(reward_fn)
+
+
+def _finite_nonnegative_uncertainty(value: Any, name: str) -> float:
+    """Accept finite real estimates without coercing strings or booleans."""
+    message = f"{name} must be a finite nonnegative uncertainty value"
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise ValueError(message)
     try:
-        import importlib
-
-        importlib.import_module("stateset_agents.experimental.bayesian_reward_model")
-
-        logger.info("Wrapping reward function with Bayesian uncertainty weighting")
-        return UncertaintyWeightedReward(reward_fn)
-    except UNCERTAINTY_WRAP_EXCEPTIONS as exc:
-        logger.warning(
-            "Bayesian uncertainty weighting unavailable: %s — using base reward", exc
-        )
-        return reward_fn
+        numeric = float(value)
+    except (OverflowError, TypeError, ValueError) as exc:
+        raise ValueError(message) from exc
+    if not math.isfinite(numeric) or numeric < 0:
+        raise ValueError(message)
+    return numeric
 
 
 class UncertaintyWeightedReward(RewardFunction):
@@ -287,32 +304,58 @@ class UncertaintyWeightedReward(RewardFunction):
         self,
         base_reward: RewardFunction,
         uncertainty_discount: float = 0.5,
-    ):
+    ) -> None:
+        discount = _finite_nonnegative_uncertainty(
+            uncertainty_discount, "uncertainty_discount"
+        )
         super().__init__(
             weight=base_reward.weight,
             reward_type=base_reward.reward_type,
             name=f"UncertaintyWeighted({base_reward.name})",
         )
         self.base_reward = base_reward
-        self.uncertainty_discount = uncertainty_discount
+        self._reward_type_override: RewardType | None = None
+        self.uncertainty_discount = discount
 
-    async def compute_reward(self, turns, context=None):
-        from stateset_agents.core.reward_base import RewardResult
+    @property
+    def reward_type(self) -> RewardType:
+        """Use the wrapped reward's current step or episode timing."""
+        if self._reward_type_override is not None:
+            return self._reward_type_override
+        return self.base_reward.reward_type
 
+    @reward_type.setter
+    def reward_type(self, value: RewardType) -> None:
+        # RewardFunction also initializes this field before base_reward is
+        # attached. The constructor clears that initial value to track the base.
+        self._reward_type_override = value
+
+    @property
+    def fail_on_error(self) -> bool:
+        """Keep the wrapped reward's critical failures visible to trainers."""
+        return bool(getattr(self.base_reward, "fail_on_error", False))
+
+    @property
+    def requires_environment_context(self) -> bool:
+        """Forward the wrapped reward's need for private evaluator state."""
+        return bool(getattr(self.base_reward, "requires_environment_context", False))
+
+    async def compute_reward(
+        self, turns: list[ConversationTurn], context: dict[str, Any] | None = None
+    ) -> RewardResult:
+        """Discount valid uncertainty while retaining the underlying outcome evidence."""
         result = await self.base_reward.compute_reward(turns, context)
-
-        # Extract uncertainty from breakdown/metadata if the base reward
-        # provides it (e.g. BayesianRewardFunction, LLMJudgeRewardWithFallback)
+        if not math.isfinite(result.score):
+            raise ValueError("Base reward score must be finite")
+        # Validate every supplied estimate: NaN must not be silently replaced
+        # by a max/min clamp, and negative uncertainty must not amplify scores.
         uncertainty = 0.0
-        if hasattr(result, "breakdown"):
-            uncertainty = result.breakdown.get(
-                "total_uncertainty",
-                result.breakdown.get("epistemic_uncertainty", 0.0),
-            )
-        if hasattr(result, "metadata"):
-            uncertainty = max(
-                uncertainty, result.metadata.get("total_uncertainty", 0.0)
-            )
+        for evidence in (result.breakdown, result.metadata):
+            for key in ("total_uncertainty", "epistemic_uncertainty"):
+                if key not in evidence:
+                    continue
+                value = _finite_nonnegative_uncertainty(evidence[key], key)
+                uncertainty = max(uncertainty, value)
 
         # Scale score by confidence
         confidence = max(0.0, 1.0 - self.uncertainty_discount * uncertainty)
@@ -320,15 +363,25 @@ class UncertaintyWeightedReward(RewardFunction):
 
         return RewardResult(
             score=adjusted,
+            breakdown={
+                **result.breakdown,
+                "base_score": result.score,
+                "uncertainty": uncertainty,
+                "confidence": confidence,
+            },
             components={
+                **result.components,
                 "base_score": result.score,
                 "uncertainty": uncertainty,
                 "confidence": confidence,
             },
             metadata={
+                **result.metadata,
                 "uncertainty_weighted": True,
-                "base_metadata": result.metadata,
+                "base_metadata": dict(result.metadata),
+                "base_breakdown": dict(result.breakdown),
             },
+            explanation=result.explanation,
         )
 
 
@@ -348,18 +401,58 @@ def _load_dataset(dataset_path: str) -> Any:
         raise
 
 
-# TrainingConfig fields the offline trainer honours, copied onto
-# OfflineGRPOConfig. ``seed`` is applied to the global RNGs instead.
+# Fields used by offline policy extraction and its checkpointed sampler.
 _OFFLINE_MAPPED_FIELDS = (
     "model_name",
     "model_revision",
     "learning_rate",
-    "num_episodes",
     "num_epochs",
     "max_grad_norm",
-    "advantage_normalization",
+    "seed",
+    "max_prompt_length",
+    "max_completion_length",
+    "gradient_accumulation_steps",
+    "adam_beta1",
+    "adam_beta2",
+    "weight_decay",
 )
-_OFFLINE_HONOURED_FIELDS = frozenset(_OFFLINE_MAPPED_FIELDS) | {"seed"}
+_OFFLINE_HONOURED_FIELDS = frozenset(_OFFLINE_MAPPED_FIELDS) | {
+    "batch_size",
+    "per_device_train_batch_size",
+    "resume_from_checkpoint",
+}
+
+
+#: The implicit import below is the one stable-training -> experimental edge
+#: (tests/unit/test_layering.py allowlist); it goes in this release.
+_IMPLICIT_OFFLINE_REMOVAL = "0.72.0"
+
+
+def _offline_trainer() -> tuple[type[Any], type[Any]]:
+    """``(config_class, trainer_class)`` of the registered offline trainer.
+
+    ``import stateset_agents.experimental.offline_rl`` registers it (see
+    :mod:`stateset_agents.training.offline_backend`). Without that import the
+    experimental component is loaded implicitly, which is deprecated and will
+    be removed in v0.72.0.
+    """
+    loaded = load_offline_trainer()
+    if loaded is None:
+        warn_deprecated(
+            "train(training_mode='offline'|'hybrid') loading the experimental "
+            "offline-RL trainer implicitly",
+            removal=_IMPLICIT_OFFLINE_REMOVAL,
+            replacement="`import stateset_agents.experimental.offline_rl` first",
+            stacklevel=3,
+        )
+        # Layering allowlist entry (dated): see the warning above. Importing
+        # the package registers its trainer with training.offline_backend.
+        import stateset_agents.experimental.offline_rl  # noqa: F401
+
+        loaded = load_offline_trainer()
+    if loaded is None:  # pragma: no cover - offline_rl always registers
+        raise ConfigurationError("no offline trainer is registered")
+    return loaded
 
 
 def _offline_config(
@@ -371,11 +464,11 @@ def _offline_config(
     trainer would ignore raises instead of being silently dropped; in hybrid
     mode such fields still apply to the online phase.
     """
-    from ..experimental.offline_rl.offline_grpo import OfflineGRPOConfig
+    offline_config_cls, _ = _offline_trainer()
 
     ignored = sorted(set(explicit_fields) - _OFFLINE_HONOURED_FIELDS)
     if ignored and strict:
-        raise ValueError(
+        raise ConfigurationError(
             "offline training does not use "
             + ", ".join(repr(name) for name in ignored)
             + "; it honours only "
@@ -386,8 +479,9 @@ def _offline_config(
             "Offline pre-training phase ignores %s (applied to the online phase)",
             ", ".join(ignored),
         )
-    return OfflineGRPOConfig(
+    return offline_config_cls(
         **{name: getattr(config, name) for name in _OFFLINE_MAPPED_FIELDS},
+        batch_size=config.batch_size or config.per_device_train_batch_size,
         offline_algorithm="iql",
     )
 
@@ -409,17 +503,6 @@ def _seed_offline(config: Any, explicit_fields: set[str] | frozenset[str]) -> No
     torch.manual_seed(seed)
 
 
-def _save_offline(agent: Agent, trainer: Any, save_path: str) -> None:
-    """Persist the offline trainer state plus the agent's model/tokenizer."""
-    os.makedirs(save_path, exist_ok=True)
-    trainer.save(os.path.join(save_path, "offline_grpo_trainer.pt"))
-    for part in ("model", "tokenizer"):
-        saver = getattr(getattr(agent, part, None), "save_pretrained", None)
-        if callable(saver):
-            saver(save_path)
-    logger.info("Offline-trained agent saved to %s", save_path)
-
-
 async def _train_offline(
     agent: Agent,
     config: Any,
@@ -432,30 +515,52 @@ async def _train_offline(
     strict: bool = True,
 ) -> Agent:
     """Train using offline RL from a dataset of logged conversations."""
-    from ..experimental.offline_rl.offline_grpo import OfflineGRPOTrainer
+    from stateset_agents.data.conversation_dataset import (
+        ConversationDataset,
+        EmbeddingCache,
+    )
 
     if dataset is None:
-        raise ValueError(
+        raise ConfigurationError(
             "Offline training requires a dataset. "
             "Pass dataset= or dataset_path= to train()."
         )
 
     offline_config = _offline_config(config, explicit_fields, strict=strict)
     _seed_offline(config, explicit_fields)
+    if getattr(agent, "model", None) is None:
+        await agent.initialize()
+    if isinstance(dataset, ConversationDataset):
+        if dataset.embedding_cache is None:
+            dataset.embedding_cache = EmbeddingCache(
+                embedding_model=dataset.config.embedding_model
+            )
+        dimensions = dataset.embedding_cache.embedding_dim
+        offline_config.state_dim = dimensions
+        offline_config.action_dim = dimensions
 
-    trainer = OfflineGRPOTrainer(
+    _, offline_trainer_cls = _offline_trainer()
+    trainer = offline_trainer_cls(
         config=offline_config,
         model=agent.model,
         tokenizer=getattr(agent, "tokenizer", None),
         reward_fn=reward_fn,
         dataset=dataset,
     )
+    trainer.callbacks = [DiagnosticsMonitor(config), *(callbacks or [])]
 
     logger.info("Starting offline training with IQL on %s samples", len(dataset))
 
-    # Pre-train value functions
-    pretrain_metrics = await trainer.pretrain_value_functions(dataset, num_steps=100)
-    logger.info("Value pre-training: %s", pretrain_metrics)
+    if config.resume_from_checkpoint:
+        from .checkpoint_publication import validate_checkpoint_publication
+
+        validate_checkpoint_publication(
+            Path(config.resume_from_checkpoint), required=True
+        )
+        trainer.load(
+            str(Path(config.resume_from_checkpoint) / "training_state.pt"),
+            require_policy=True,
+        )
 
     # Main training
     await trainer.train(
@@ -464,7 +569,8 @@ async def _train_offline(
     )
 
     if save_path:
-        _save_offline(agent, trainer, save_path)
+        trainer.save_checkpoint(save_path)
+        logger.info("Saving offline-trained model to %s", save_path)
 
     return agent
 

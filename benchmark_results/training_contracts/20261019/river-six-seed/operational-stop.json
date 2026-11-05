@@ -1,0 +1,9 @@
+{
+  "reason": "Two initial seeds timed out before complete paired held-out reports. Stop remaining training; preserve failed attempts and reuse completed trained checkpoints in a fresh-holdout recovery plan.",
+  "stopped_at": "2026-10-19T15:25:49.929509+00:00",
+  "interrupted_workers": [
+    4006579,
+    4008222
+  ],
+  "never_count_incomplete_tests_as_success": true
+}

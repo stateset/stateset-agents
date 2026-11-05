@@ -1,0 +1,74 @@
+{
+  "models": {
+    "base": "/workspace/hf/hub/models--Qwen--Qwen3.5-0.8B/snapshots/2fc06364715b967f1860aea9cf38778875588b17",
+    "neuron": "/workspace/ckpt/side_neuron_v3t"
+  },
+  "mmlu": {
+    "base": {
+      "accuracy": 0.45,
+      "mean_p_think_end": 1.1862975722195302e-05,
+      "mean_p_letters": 0.9790829472988843
+    },
+    "neuron": {
+      "accuracy": 0.463,
+      "mean_p_think_end": 4.9976200253887275e-06,
+      "mean_p_letters": 0.9810936180502177
+    }
+  },
+  "wikitext": {
+    "base": {
+      "tokens": 65535,
+      "perplexity": 17.3782,
+      "mean_p_think_end": 3.4432946999030155e-06
+    },
+    "neuron": {
+      "tokens": 65535,
+      "perplexity": 17.4313,
+      "mean_p_think_end": 0.0005068176536143958
+    }
+  },
+  "gsm8k_no_thinking": {
+    "base": {
+      "n": 500,
+      "accuracy": 0.546,
+      "strict": 0.54,
+      "stray_think_end": 0.0,
+      "hit_limit": 0.112,
+      "mean_tokens": 625.0
+    },
+    "neuron": {
+      "n": 500,
+      "accuracy": 0.55,
+      "strict": 0.514,
+      "stray_think_end": 0.068,
+      "hit_limit": 0.048,
+      "mean_tokens": 553.8
+    }
+  },
+  "paired_vs_base": {
+    "neuron": {
+      "mmlu": {
+        "n": 1000,
+        "gained": 16,
+        "lost": 3,
+        "delta": 0.013,
+        "delta_95ci": [
+          0.005,
+          0.022
+        ],
+        "mcnemar_p": 0.004425048828125
+      },
+      "gsm8k_no_thinking_strict": {
+        "n": 500,
+        "gained": 32,
+        "lost": 45,
+        "delta": -0.026,
+        "delta_95ci": [
+          -0.06,
+          0.01
+        ],
+        "mcnemar_p": 0.17106097355391156
+      }
+    }
+  }
+}

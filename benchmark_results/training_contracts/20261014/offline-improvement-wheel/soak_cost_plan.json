@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "kind": "estimated_distributed_soak_cost_plan",
+  "provisions_hardware": false,
+  "publication_gate_passed": false,
+  "initial_compute_cap_usd": 10,
+  "catalog_source": "https://api.runpod.io/graphql",
+  "catalog_observed_at": "2026-10-15T03:22:17.784554+00:00",
+  "catalog_is_authoritative_whole_pod_price": false,
+  "topology": {
+    "nodes": 2,
+    "gpus_per_node": 1,
+    "seeds": 3
+  },
+  "durations_seconds": {
+    "steady_state_soak": 43200,
+    "worker_exit": 300,
+    "controller_restart": 300,
+    "network_interruption": 300
+  },
+  "minimum_gpu_hours": 73.5,
+  "quotes": [
+    {
+      "gpu": "NVIDIA RTX A4000",
+      "secure_catalog_usd_per_gpu_hour": 0.25,
+      "distributed_matrix_compute_floor_usd": 18.375,
+      "with_equivalent_synchronous_baseline_compute_floor_usd": 36.75
+    },
+    {
+      "gpu": "NVIDIA RTX A5000",
+      "secure_catalog_usd_per_gpu_hour": 0.27,
+      "distributed_matrix_compute_floor_usd": 19.845,
+      "with_equivalent_synchronous_baseline_compute_floor_usd": 39.69
+    }
+  ],
+  "excluded_costs": [
+    "provisioning time",
+    "dependency installation",
+    "storage",
+    "network",
+    "retries"
+  ],
+  "remaining_requirements": [
+    "Completed provider driver and short fault-injection preflight",
+    "Digest-pinned image and committed source manifest",
+    "Actual whole-pod pricing and cleanup controls",
+    "Separate explicit spending ceiling covering the full matrix"
+  ]
+}

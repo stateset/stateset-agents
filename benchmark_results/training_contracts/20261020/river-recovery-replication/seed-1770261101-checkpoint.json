@@ -1,0 +1,11 @@
+{
+  "checkpoint_type": "inference",
+  "path": "river://0374ed52-14b5-4a55-9380-8f9ce1faf48a/sampler_weights/recovery-rl-one-update-4e891b3a-1e65-4e42-850e-59b24189776c",
+  "policy_version": {
+    "id": "a03ea63f-17d2-40a6-9277-81a8d62e5393",
+    "lineage_id": "244c17bc-0583-4f01-b070-2821a761708c",
+    "parent_id": "244c17bc-0583-4f01-b070-2821a761708c",
+    "step": 103
+  },
+  "step": 1
+}

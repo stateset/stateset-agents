@@ -55,6 +55,9 @@ spec:
         - --gpu-memory-utilization=0.90
         - --enable-chunked-prefill
         - --enable-prefix-caching
+        # Trust decision: --trust-remote-code is required because these model
+        # repos ship custom modeling/tokenizer code. It executes Python from the
+        # model repo, so only serve pinned, reviewed model sources.
         - --trust-remote-code
         - --host=0.0.0.0
         - --port=8000
@@ -116,3 +119,30 @@ spec:
   - protocol: TCP
     port: 8000
     targetPort: 8000
+
+---
+# vLLM has no --api-key here, so restrict who can reach it: only the
+# StateSet gateway pods (app: stateset-agents-api) and the GKE managed
+# Prometheus collectors (gmp-system, for /metrics) may connect on 8000.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qwen3-5-27b-vllm-finetuned-ingress
+  namespace: stateset-agents
+spec:
+  podSelector:
+    matchLabels:
+      app: qwen3-5-27b-vllm-finetuned
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: stateset-agents-api
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: gmp-system
+    ports:
+    - protocol: TCP
+      port: 8000

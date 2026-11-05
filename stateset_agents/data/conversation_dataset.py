@@ -7,8 +7,10 @@ for training offline RL algorithms on conversation data.
 
 import asyncio
 import dataclasses
+import hashlib
 import json
 import logging
+import math
 import random
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -16,15 +18,31 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 
+from stateset_agents.data.identity import (
+    first_user_text,
+    normalize_identity_text,
+    prompt_identity,
+)
+from stateset_agents.exceptions import SERIALIZATION_EXCEPTIONS
+from stateset_agents.utils.provenance import json_sha256
+
+from .._deprecation import warn_deprecated
+
 try:
-    import torch
-    from torch.utils.data import Dataset as TorchDataset
+    import torch as _torch
+
+    torch: Any = _torch
 except ImportError:
     torch = None
-    TorchDataset = object
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from sentence_transformers import SentenceTransformer
+    from torch.utils.data import Dataset as TorchDataset
+else:
+    try:
+        from torch.utils.data import Dataset as TorchDataset
+    except ImportError:
+        TorchDataset = object
 
 
 def _load_sentence_transformer_cls() -> Any:
@@ -43,7 +61,14 @@ def _load_sentence_transformer_cls() -> Any:
 
 logger = logging.getLogger(__name__)
 
-HF_PARSE_EXCEPTIONS = (AttributeError, KeyError, TypeError, ValueError)
+HF_PARSE_EXCEPTIONS = SERIALIZATION_EXCEPTIONS
+
+#: ``TrajectoryData.metadata`` marker for a trajectory whose only reward is
+#: its ``total_reward``, placed on the final turn (no per-turn rewards given).
+REWARD_PLACEMENT_KEY = "reward_placement"
+TERMINAL_REWARD = "terminal"
+#: Seed used by :meth:`ConversationDataset.split` when none is given.
+DEFAULT_SPLIT_SEED = 0
 
 
 def _require_torch():
@@ -57,7 +82,14 @@ def _require_torch():
 
 @dataclass
 class ConversationDatasetConfig:
-    """Configuration for conversation dataset loading"""
+    """Configuration for conversation dataset loading.
+
+    ``min_trajectory_length`` / ``max_trajectory_length`` (turns, inclusive)
+    are enforced when a :class:`ConversationDataset` is built: trajectories
+    outside the range are dropped and counted in a warning. ``max_turns`` is
+    deprecated and ignored (it will be removed in v0.72.0); use
+    ``max_trajectory_length``.
+    """
 
     data_path: str = ""
     format: str = "jsonl"  # jsonl, json, parquet, hf_dataset
@@ -69,6 +101,16 @@ class ConversationDatasetConfig:
     discount_factor: float = 0.99
     min_trajectory_length: int = 1
     max_trajectory_length: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.max_turns != 20:
+            # Ignored since v0.69.0.
+            warn_deprecated(
+                "ConversationDatasetConfig.max_turns (ignored)",
+                removal="0.72.0",
+                replacement="max_trajectory_length to drop longer trajectories",
+                stacklevel=3,
+            )
 
 
 @dataclass
@@ -128,8 +170,9 @@ class ConversationDataset(TorchDataset):
         config: ConversationDatasetConfig | None = None,
         embedding_cache: Optional["EmbeddingCache"] = None,
     ):
-        self.trajectories = trajectories
         self.config = config or ConversationDatasetConfig()
+        _require_finite_rewards(trajectories)
+        self.trajectories = self._within_length_limits(trajectories)
         self.embedding_cache = embedding_cache
         self._embedding_dim: int | None = None
         self._statistics: dict[str, float] | None = None
@@ -139,6 +182,29 @@ class ConversationDataset(TorchDataset):
 
         if self.config.compute_returns:
             self.compute_all_returns(self.config.discount_factor)
+
+    def _within_length_limits(
+        self, trajectories: list[TrajectoryData]
+    ) -> list[TrajectoryData]:
+        """Drop trajectories outside the configured turn-count range."""
+        low = self.config.min_trajectory_length
+        high = self.config.max_trajectory_length
+        kept = [
+            t
+            for t in trajectories
+            if len(t.turns) >= low and (high is None or len(t.turns) <= high)
+        ]
+        if len(kept) == len(trajectories):
+            return trajectories
+        logger.warning(
+            "Dropped %d of %d trajectories outside the configured length range "
+            "[%d, %s] turns.",
+            len(trajectories) - len(kept),
+            len(trajectories),
+            low,
+            "inf" if high is None else high,
+        )
+        return kept
 
     def __len__(self) -> int:
         return len(self.trajectories)
@@ -166,6 +232,11 @@ class ConversationDataset(TorchDataset):
             "total_reward": 0.8,
             "metadata": {...}
         }
+
+        Per-turn ``reward`` values are optional. When no turn carries a
+        nonzero reward, ``total_reward`` is the trajectory's only signal and
+        is placed on the final turn (as for Hugging Face rows), so batches,
+        returns-to-go and policy transitions all see it.
         """
         config = config or ConversationDatasetConfig(data_path=path, format="jsonl")
         trajectories = []
@@ -280,7 +351,12 @@ class ConversationDataset(TorchDataset):
 
     @staticmethod
     def _parse_trajectory(data: dict[str, Any], idx: int) -> TrajectoryData | None:
-        """Parse a single trajectory from dictionary"""
+        """Parse a single trajectory from dictionary.
+
+        Without per-turn rewards (none given, or all zero) ``total_reward`` is
+        placed on the final turn and the trajectory is marked as carrying a
+        terminal reward; otherwise the per-turn rewards are kept as given.
+        """
         try:
             turns = []
             turn_rewards = []
@@ -301,14 +377,21 @@ class ConversationDataset(TorchDataset):
             if not turns:
                 return None
 
+            total_reward = float(data.get("total_reward", sum(turn_rewards)))
+            metadata = dict(data.get("metadata") or {})
+            if not any(turn_rewards):
+                turn_rewards = [0.0] * (len(turns) - 1) + [total_reward]
+                turns[-1].reward = total_reward
+                metadata[REWARD_PLACEMENT_KEY] = TERMINAL_REWARD
+
             return TrajectoryData(
                 trajectory_id=data.get("trajectory_id", f"traj_{idx}"),
                 turns=turns,
-                total_reward=float(data.get("total_reward", sum(turn_rewards))),
+                total_reward=total_reward,
                 turn_rewards=turn_rewards,
                 is_simulated=data.get("is_simulated", False),
                 domain_label=data.get("domain_label"),
-                metadata=data.get("metadata", {}),
+                metadata=metadata,
             )
         except (KeyError, ValueError, TypeError) as e:
             logger.warning(f"Failed to parse trajectory {idx}: {e}")
@@ -356,13 +439,17 @@ class ConversationDataset(TorchDataset):
 
             reward = float(item.get(reward_column, 0.0))
             turn_rewards = [0.0] * (len(turns) - 1) + [reward]
+            turns[-1].reward = reward
 
             return TrajectoryData(
                 trajectory_id=f"hf_{idx}",
                 turns=turns,
                 total_reward=reward,
                 turn_rewards=turn_rewards,
-                metadata={"source": "huggingface"},
+                metadata={
+                    "source": "huggingface",
+                    REWARD_PLACEMENT_KEY: TERMINAL_REWARD,
+                },
             )
         except HF_PARSE_EXCEPTIONS as e:
             logger.warning(f"Failed to parse HF item {idx}: {e}")
@@ -443,12 +530,10 @@ class ConversationDataset(TorchDataset):
                     actions.append(action_embedding)
                     history += f"assistant: {turn.content}\n"
 
-        if states:
-            states = torch.stack(states)
-        if actions:
-            actions = torch.stack(actions)
-
-        return states, actions
+        # Empty batches keep the original empty lists instead of a tensor.
+        state_batch: Any = torch.stack(states) if states else states
+        action_batch: Any = torch.stack(actions) if actions else actions
+        return state_batch, action_batch
 
     def get_statistics(self) -> dict[str, float]:
         """Compute dataset statistics"""
@@ -485,35 +570,41 @@ class ConversationDataset(TorchDataset):
                 - "standard": (r - mean) / std
                 - "minmax": (r - min) / (max - min)
                 - "percentile": clip to 5-95 percentile, then standard
+
+        Only reward-bearing positions are normalized: every turn of a
+        trajectory with per-turn rewards, but just the final turn of one
+        whose sole reward is its terminal ``total_reward`` (its padding
+        zeros stay zero, so a longer conversation is not penalized for its
+        length). ``total_reward`` becomes the sum of the normalized rewards.
         """
-        all_rewards = []
+        all_rewards: list[float] = []
         for t in self.trajectories:
-            all_rewards.extend(t.turn_rewards)
+            all_rewards.extend(t.turn_rewards[i] for i in _reward_positions(t))
 
         if not all_rewards:
             return
 
-        all_rewards = np.array(all_rewards)
+        reward_array = np.array(all_rewards)
 
         if method == "standard":
-            mean = np.mean(all_rewards)
-            std = np.std(all_rewards) + 1e-8
+            mean = np.mean(reward_array)
+            std = np.std(reward_array) + 1e-8
 
             def normalize(r: float) -> float:
                 return float((r - mean) / std)
 
         elif method == "minmax":
-            min_r: float = float(np.min(all_rewards))
-            max_r: float = float(np.max(all_rewards))
+            min_r: float = float(np.min(reward_array))
+            max_r: float = float(np.max(reward_array))
             range_r = max_r - min_r + 1e-8
 
             def normalize(r: float) -> float:
                 return float((r - min_r) / range_r)
 
         elif method == "percentile":
-            p5 = np.percentile(all_rewards, 5)
-            p95 = np.percentile(all_rewards, 95)
-            clipped = np.clip(all_rewards, p5, p95)
+            p5 = np.percentile(reward_array, 5)
+            p95 = np.percentile(reward_array, 95)
+            clipped = np.clip(reward_array, p5, p95)
             mean = np.mean(clipped)
             std = np.std(clipped) + 1e-8
 
@@ -526,7 +617,11 @@ class ConversationDataset(TorchDataset):
         # Apply normalization (raw totals stay available for raw-scale filters)
         for traj in self.trajectories:
             traj.metadata.setdefault("raw_total_reward", float(traj.total_reward))
-            traj.turn_rewards = [float(normalize(r)) for r in traj.turn_rewards]
+            positions = _reward_positions(traj)
+            traj.turn_rewards = [
+                float(normalize(r)) if i in positions else float(r)
+                for i, r in enumerate(traj.turn_rewards)
+            ]
             traj.total_reward = sum(traj.turn_rewards)
 
         # Clear cached statistics
@@ -592,90 +687,258 @@ class ConversationDataset(TorchDataset):
         shuffle: bool = True,
         seed: int | None = None,
     ) -> tuple["ConversationDataset", "ConversationDataset"]:
-        """Split dataset into train and validation sets"""
-        trajectories = list(self.trajectories)
+        """Split dataset into train and validation sets without leakage.
 
+        Trajectories with the same normalized content (roles and NFKC-,
+        case- and whitespace-normalized text), the same first user request
+        (so rollouts of one prompt stay together), or a shared ``group_id`` /
+        ``source_id`` in their metadata are linked transitively and always
+        land in the same split; ``train_ratio`` applies to these groups. The
+        request identity is :func:`stateset_agents.data.identity.prompt_identity`,
+        the one ``split_finetuning_data`` and the eval ladder use.
+        With ``shuffle`` the groups are ordered by a hash of ``seed`` and
+        their content, so the split is reproducible and independent of
+        input order; ``seed=None`` means :data:`DEFAULT_SPLIT_SEED`. Without
+        ``shuffle`` groups keep their first-appearance order. When there are
+        at least two groups and ``0 < train_ratio < 1``, both splits are
+        non-empty.
+        """
+        groups = _linked_groups(self.trajectories)
         if shuffle:
-            random.Random(seed).shuffle(trajectories)
+            effective_seed = DEFAULT_SPLIT_SEED if seed is None else seed
+            groups.sort(
+                key=lambda group: hashlib.sha256(
+                    f"{effective_seed}:{_group_digest(group)}".encode()
+                ).hexdigest()
+            )
 
-        split_idx = int(len(trajectories) * train_ratio)
-        train_trajectories = trajectories[:split_idx]
-        val_trajectories = trajectories[split_idx:]
+        split_idx = int(len(groups) * train_ratio)
+        if 0 < train_ratio < 1:
+            if len(groups) >= 2:
+                split_idx = min(len(groups) - 1, max(1, split_idx))
+            else:
+                split_idx = round(train_ratio)
+        if len(groups) == 1 and len(self.trajectories) > 1:
+            logger.warning(
+                "All %d trajectories share content or a group/source id; they "
+                "cannot be split without leakage and stay in one split.",
+                len(self.trajectories),
+            )
+        train_trajectories = [t for group in groups[:split_idx] for t in group]
+        val_trajectories = [t for group in groups[split_idx:] for t in group]
 
         return (
             self._derive(train_trajectories),
             self._derive(val_trajectories),
         )
 
-    def to_offline_rl_format(self) -> dict[str, Any]:
-        """
-        Convert to format expected by offline RL algorithms.
+    def policy_transitions(self) -> list[dict[str, Any]]:
+        """Return ordered logged actions and their complete next observations.
 
-        Returns:
-            Dictionary with numpy arrays for states, actions, rewards,
-            next_states, and dones, plus the logged text of each decision:
-            ``contexts`` (the role/content messages before the reply) and
-            ``responses`` (the reply), as lists aligned with the rows.
+        User/tool observations between assistant actions belong to the next state.
+        Terminal rewards after the last assistant action stay on that transition.
         """
-        _require_torch()
-
-        if not self.embedding_cache:
+        transitions = []
+        for trajectory in self.trajectories:
+            messages = [
+                {"role": turn.role, "content": turn.content}
+                for turn in trajectory.turns
+            ]
+            positions = [
+                i for i, turn in enumerate(trajectory.turns) if turn.role == "assistant"
+            ]
+            for offset, index in enumerate(positions):
+                if index == 0:
+                    raise ValueError(
+                        "Offline assistant actions require a preceding observation"
+                    )
+                end = (
+                    positions[offset + 1]
+                    if offset + 1 < len(positions)
+                    else len(messages)
+                )
+                transitions.append(
+                    {
+                        "transition_id": f"{trajectory.trajectory_id}:{index}",
+                        "messages": messages[: index + 1],
+                        "history": messages[:index],
+                        "action": messages[index]["content"],
+                        "next_history": messages[:end],
+                        "reward": float(sum(trajectory.turn_rewards[index:end])),
+                        "done": offset == len(positions) - 1,
+                    }
+                )
+        if not transitions:
             raise ValueError(
-                "Embedding cache required for offline RL format. "
-                "Initialize with EmbeddingCache."
+                "Offline dataset requires at least one logged assistant action"
+            )
+        return transitions
+
+    def to_policy_training_format(
+        self, tokenizer: Any, max_length: int
+    ) -> list[dict[str, Any]]:
+        """Tokenize logged actions with only the current assistant action supervised.
+
+        Overlong examples are rejected rather than truncating the action silently.
+        Feature and token rows share the exact ``policy_transitions`` ordering.
+        """
+        from stateset_agents.core.chat_masking import last_assistant_token_mask
+
+        if type(max_length) is not int or max_length < 2:
+            raise ValueError("max_length must be an integer of at least two")
+        rows = []
+        for transition in self.policy_transitions():
+            encoded = last_assistant_token_mask(tokenizer, transition["messages"])
+            if encoded is None:
+                raise ValueError(
+                    "Tokenizer cannot faithfully mask logged assistant actions"
+                )
+            ids, mask = encoded
+            if len(ids) > max_length or len(ids) < 2 or not any(mask[1:]):
+                raise ValueError("Offline action is empty or exceeds max_length")
+            rows.append(
+                {
+                    "transition_id": transition["transition_id"],
+                    "input_ids": ids,
+                    "labels": [
+                        token if selected else -100
+                        for token, selected in zip(ids, mask, strict=True)
+                    ],
+                }
+            )
+        return rows
+
+    def to_offline_rl_format(self) -> dict[str, Any]:
+        """Embed the real logged transitions, in policy-training row order."""
+        _require_torch()
+        embedding_cache = self.embedding_cache
+        if embedding_cache is None:
+            raise ValueError(
+                "Embedding cache required for offline RL format. Initialize with EmbeddingCache."
             )
 
-        states = []
-        actions = []
-        rewards = []
-        next_states = []
-        dones = []
-        contexts: list[list[dict[str, str]]] = []
-        responses: list[str] = []
+        def render(messages: list[dict[str, str]]) -> str:
+            return "".join(
+                f"{message['role']}: {message['content']}\n" for message in messages
+            )
 
-        cache = self.embedding_cache
-        for traj in self.trajectories:
-            # One transition per assistant turn (a decision). s is the
-            # conversation before the reply; s' is the state at the next
-            # decision (so V is bootstrapped on states it is trained on); the
-            # reward covers every turn from the reply up to that decision; the
-            # last decision is terminal.
-            turn_rewards = list(traj.turn_rewards or [])
-            decisions = [i for i, t in enumerate(traj.turns) if t.role == "assistant"]
-            prefixes = [""]
-            for turn in traj.turns:
-                prefixes.append(prefixes[-1] + f"{turn.role}: {turn.content}\n")
+        states, actions, rewards, next_states, dones = [], [], [], [], []
+        contexts, responses = [], []
 
-            def state_at(index: int, traj: Any = traj, prefixes: Any = prefixes) -> Any:
-                return cache.get_or_compute(
-                    f"{traj.trajectory_id}_s_{index}", prefixes[index]
-                )
+        def embed(identity: str, suffix: str, text: str) -> np.ndarray:
+            assert embedding_cache is not None
+            digest = hashlib.sha256(text.encode()).hexdigest()
+            value = embedding_cache.get_or_compute(
+                f"{identity}_{suffix}_{digest}", text
+            )
+            array: np.ndarray = np.asarray(value.detach().cpu().numpy())
+            return array
 
-            for k, i in enumerate(decisions):
-                is_last = k == len(decisions) - 1
-                stop = len(traj.turns) if is_last else decisions[k + 1]
-                action_emb = cache.get_or_compute(
-                    f"{traj.trajectory_id}_a_{i}", traj.turns[i].content
-                )
-                states.append(state_at(i).numpy())
-                actions.append(action_emb.numpy())
-                rewards.append(float(sum(turn_rewards[i:stop])))
-                next_states.append(state_at(stop).numpy())
-                dones.append(float(is_last))
-                contexts.append(
-                    [{"role": t.role, "content": t.content} for t in traj.turns[:i]]
-                )
-                responses.append(traj.turns[i].content)
-
+        for row in self.policy_transitions():
+            identity = row["transition_id"]
+            states.append(embed(identity, "state", render(row["history"])))
+            actions.append(embed(identity, "action", row["action"]))
+            next_states.append(embed(identity, "next", render(row["next_history"])))
+            rewards.append(row["reward"])
+            dones.append(float(row["done"]))
+            contexts.append(row["history"])
+            responses.append(row["action"])
         return {
-            "states": np.array(states),
-            "actions": np.array(actions),
-            "rewards": np.array(rewards),
-            "next_states": np.array(next_states),
-            "dones": np.array(dones),
+            "states": np.asarray(states),
+            "actions": np.asarray(actions),
+            "rewards": np.asarray(rewards),
+            "next_states": np.asarray(next_states),
+            "dones": np.asarray(dones),
             "contexts": contexts,
             "responses": responses,
         }
+
+
+def _require_finite_rewards(trajectories: list[TrajectoryData]) -> None:
+    """Reject NaN or infinite rewards before they reach normalization.
+
+    ``json.loads`` accepts ``NaN``/``Infinity``, and one such reward made the
+    dataset's mean and standard deviation — and so every normalized reward —
+    NaN, while ``filter_by_quality`` silently dropped the trajectory.
+    """
+    bad = [
+        t.trajectory_id
+        for t in trajectories
+        if not math.isfinite(float(t.total_reward))
+        or not all(math.isfinite(float(r)) for r in t.turn_rewards)
+    ]
+    if bad:
+        shown = ", ".join(map(str, bad[:5]))
+        raise ValueError(
+            f"{len(bad)} trajectory(ies) carry a non-finite reward ({shown}); "
+            "rewards must be finite numbers"
+        )
+
+
+def _reward_positions(trajectory: TrajectoryData) -> set[int]:
+    """Turn indices that carry reward signal (see ``normalize_rewards``)."""
+    if trajectory.metadata.get(REWARD_PLACEMENT_KEY) == TERMINAL_REWARD:
+        return {len(trajectory.turn_rewards) - 1} if trajectory.turn_rewards else set()
+    return set(range(len(trajectory.turn_rewards)))
+
+
+def _normalized_text(text: str) -> str:
+    return normalize_identity_text(text)
+
+
+def _content_digest(trajectory: TrajectoryData) -> str:
+    content = [(turn.role, _normalized_text(turn.content)) for turn in trajectory.turns]
+    return json_sha256(
+        content, sort_keys=False, compact=False, allow_nan=True, ensure_ascii=False
+    )
+
+
+def _identity_keys(trajectory: TrajectoryData) -> set[str]:
+    keys = {"content:" + _content_digest(trajectory)}
+    # Rollouts of one prompt (a GRPO group) differ in every reply but share
+    # the request: they must land in the same split.
+    request = first_user_text(
+        [{"role": turn.role, "content": turn.content} for turn in trajectory.turns]
+    )
+    if request is not None:
+        keys.add("prompt:" + prompt_identity(request))
+    for field_name in ("group_id", "source_id"):
+        value = trajectory.metadata.get(field_name)
+        if isinstance(value, str) and value.strip():
+            keys.add(f"{field_name}:{_normalized_text(value)}")
+    return keys
+
+
+def _linked_groups(trajectories: list[TrajectoryData]) -> list[list[TrajectoryData]]:
+    """Union trajectories that share content or a group/source id."""
+    parents = list(range(len(trajectories)))
+
+    def root(index: int) -> int:
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    owners: dict[str, int] = {}
+    for index, trajectory in enumerate(trajectories):
+        for key in sorted(_identity_keys(trajectory)):
+            if key in owners:
+                parents[root(index)] = root(owners[key])
+            else:
+                owners[key] = index
+    groups: dict[int, list[TrajectoryData]] = {}
+    for index, trajectory in enumerate(trajectories):
+        groups.setdefault(root(index), []).append(trajectory)
+    return list(groups.values())
+
+
+def _group_digest(group: list[TrajectoryData]) -> str:
+    return json_sha256(
+        sorted(_content_digest(t) for t in group),
+        sort_keys=False,
+        compact=False,
+        allow_nan=True,
+    )
 
 
 _ROLE_ALIASES = {

@@ -1,0 +1,10 @@
+{
+  "parent_checkpoint": "river://2490a8d9-f17c-4dbc-922d-fcd6ae3dcd00/sampler_weights/warmup",
+  "policy_version": {
+    "id": "33a64905-6408-4323-ac8a-ddf3f157c7f7",
+    "lineage_id": "33a64905-6408-4323-ac8a-ddf3f157c7f7",
+    "parent_id": null,
+    "step": 102
+  },
+  "step": 0
+}

@@ -1,0 +1,51 @@
+"""Apply only the verified picker delta before the queued snapshot is frozen."""
+from pathlib import Path
+import fcntl
+import hashlib
+import json
+import os
+import stat
+import tempfile
+
+root=Path('/home/dom/stateset-agents')
+candidate=Path('/tmp/stateset-evaluation-case-picker-20261016')
+gate=Path('/tmp/stateset-studio-evaluation-source.lock').open('a')
+fcntl.flock(gate.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+base=json.loads((candidate/'candidate-base.json').read_text())
+wheel=json.loads((candidate/'candidate-wheel-verification.json').read_text())
+terminal=json.loads((candidate/'terminal-verification.json').read_text())
+assert wheel['passed'] and wheel['passed_tests']==142 and terminal['passed'] and len(terminal['checks'])==2
+actual={p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for folder in ['stateset_agents','tests'] for p in (root/folder).rglob('*.py')}
+assert actual==base['base_source_and_tests_sha256'], 'Canonical source changed; inspect before integrating'
+changed=['stateset_agents/tui.py','stateset_agents/finetune_evaluation_tui.py','tests/unit/test_evaluation_case_picker.py']
+assert not (root/changed[-1]).exists()
+for name,digest in {**wheel['source_sha256'],**wheel['test_source_sha256']}.items():
+    assert hashlib.sha256((candidate/name).read_bytes()).hexdigest()==digest
+    if name not in changed:
+        assert hashlib.sha256((root/name).read_bytes()).hexdigest()==digest
+updates={root/name:(candidate/name).read_bytes() for name in changed}
+for suffix in ['prepare','finish']:
+    path=Path('/tmp/stateset-studio-evaluation-'+suffix+'.py')
+    source=path.read_text()
+    needle="['tests/unit/test_finetune_evaluation.py'"
+    assert source.count(needle)==2
+    updates[path]=source.replace(needle,"['tests/unit/test_evaluation_case_picker.py','tests/unit/test_finetune_evaluation.py'").encode()
+for name in ['stateset-evaluation-check.py','stateset-studio-evaluation-gates.py']:
+    path=Path('/tmp')/name
+    source=path.read_text()
+    needle="'tests/unit/test_finetune_evaluation.py', 'tests/unit/test_mypy_allowlist_ratchet.py'"
+    assert source.count(needle)==1
+    updates[path]=source.replace(needle,"'tests/unit/test_evaluation_case_picker.py', "+needle).encode()
+for path,raw in updates.items():
+    mode=stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o644
+    with tempfile.NamedTemporaryFile(dir=path.parent,prefix='.'+path.name+'.',delete=False) as stream:
+        temporary=Path(stream.name)
+        stream.write(raw); stream.flush(); os.fsync(stream.fileno())
+    os.chmod(temporary,mode)
+    os.replace(temporary,path)
+current={p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for folder in ['stateset_agents','tests'] for p in (root/folder).rglob('*.py')}
+expected={name:digest for name,digest in wheel['source_sha256'].items() if name.startswith('stateset_agents/')}
+expected.update(wheel['test_source_sha256'])
+assert current==expected
+(candidate/'canonical-integration.json').write_text(json.dumps({'passed':True,'files':changed,'parent_acceptance_job':'16e925fa033f','source_matches_verified_candidate':True,'installed_wheel_sha256':wheel['wheel_sha256'],'guard':'exclusive nonblocking lock shared with complete queued acceptance'},indent=2)+'\n')
+print('Integrated three verified files and added picker cases to both full-suite selections')

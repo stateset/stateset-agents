@@ -1,0 +1,762 @@
+[
+  {
+    "case": "inner_schedule",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Native DDP learner preflight differs across ranks: ['schedule']",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "accumulation_schedule",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Native DDP learner preflight differs across ranks: ['schedule']",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "objective",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Native DDP learner preflight differs across ranks: ['loss']",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "clip",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Native DDP learner preflight differs across ranks: ['loss']",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "entropy",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Native DDP learner preflight differs across ranks: ['loss']",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "beta",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Native DDP learner preflight differs across ranks: ['loss']",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "normalization",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Native DDP learner preflight differs across ranks: ['loss']",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "global_step",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Native DDP learner preflight differs across ranks: ['schedule']",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "grad_counter",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Native DDP learner preflight differs across ranks: ['schedule']",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "learning_rate",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Native DDP learner preflight differs across ranks: ['optimization']",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "optimizer_type",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Native DDP learner preflight differs across ranks: ['optimization']",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "broadcast_preference",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Native DDP learner preflight differs across ranks: ['model']",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "model_buffer_layout",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Native DDP learner preflight differs across ranks: ['model']",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "trainable_layout",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Native DDP learner preflight differs across ranks: ['model']",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "reference_presence",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Native DDP learner preflight differs across ranks: ['loss', 'model']",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "baseline_mean",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Invalid native DDP learner preflight components: {1: ['estimator']}",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "baseline_sum",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Invalid native DDP learner preflight components: {1: ['estimator']}",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "sampler_source_config",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 3,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Invalid native DDP learner preflight components: {1: ['loss']}",
+    "optimizer_steps_after_recovery": 2
+  },
+  {
+    "case": "sampler_path",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 0,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Native DDP learner preflight differs across ranks: ['rollouts']",
+    "optimizer_steps_after_recovery": 2
+  },
+  {
+    "case": "sampler_required",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 2,
+        "max": 253
+      }
+    ],
+    "recovered": true,
+    "message": "Invalid native DDP learner preflight components: {1: ['rollouts']}",
+    "optimizer_steps_after_recovery": 2
+  },
+  {
+    "case": "missing_metadata",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Invalid native DDP learner preflight components: {1: ['rollouts']}",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "mixed_compatibility_path",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Native DDP learner preflight differs across ranks: ['rollouts']",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "negative_id",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Invalid native DDP learner preflight components: {1: ['rollouts']}",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "boolean_id",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Invalid native DDP learner preflight components: {1: ['rollouts']}",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "input_vocabulary",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Invalid native DDP learner preflight components: {1: ['rollouts']}",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "output_vocabulary",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Invalid native DDP learner preflight components: {1: ['rollouts']}",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "sampler_length",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 3,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Invalid native DDP learner preflight components: {1: ['rollouts']}",
+    "optimizer_steps_after_recovery": 2
+  },
+  {
+    "case": "sampler_positive",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 3,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Invalid native DDP learner preflight components: {1: ['rollouts']}",
+    "optimizer_steps_after_recovery": 2
+  },
+  {
+    "case": "sampler_nan",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 3,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Invalid native DDP learner preflight components: {1: ['rollouts']}",
+    "optimizer_steps_after_recovery": 2
+  },
+  {
+    "case": "policy_version",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Invalid native DDP learner preflight components: {1: ['rollouts']}",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "metadata_type",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Invalid native DDP learner preflight components: {1: ['rollouts']}",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "reward_nan",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Invalid native DDP learner preflight components: {1: ['rollouts']}",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "reward_inf_clipped",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Invalid native DDP learner preflight components: {1: ['rollouts']}",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "reward_overflow",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Invalid native DDP learner preflight components: {1: ['rollouts']}",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "invalid_group",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 1,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Invalid native DDP learner preflight components: {1: ['rollouts']}",
+    "optimizer_steps_after_recovery": 3
+  },
+  {
+    "case": "pending_presence",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 0,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Native DDP learner preflight differs across ranks: ['schedule']",
+    "optimizer_steps_after_recovery": 4
+  },
+  {
+    "case": "pending_normalizer",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 0,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Native DDP learner preflight differs across ranks: ['schedule']",
+    "optimizer_steps_after_recovery": 4
+  },
+  {
+    "case": "pending_counter",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 0,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Native DDP learner preflight differs across ranks: ['schedule']",
+    "optimizer_steps_after_recovery": 4
+  },
+  {
+    "case": "pending_negative_count",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 0,
+        "max": 252
+      }
+    ],
+    "recovered": true,
+    "message": "Invalid native DDP learner preflight components: {1: ['schedule']}",
+    "optimizer_steps_after_recovery": 4
+  },
+  {
+    "case": "pending_measure_switch",
+    "rejected": true,
+    "side_effect_free": true,
+    "nonempty_optimizer_state": true,
+    "wire": [
+      {
+        "dtype": "torch.int64",
+        "shape": [
+          194
+        ],
+        "min": 0,
+        "max": 255
+      }
+    ],
+    "recovered": true,
+    "message": "Invalid native DDP learner preflight components: {0: ['schedule'], 1: ['schedule']}",
+    "optimizer_steps_after_recovery": 2
+  }
+]

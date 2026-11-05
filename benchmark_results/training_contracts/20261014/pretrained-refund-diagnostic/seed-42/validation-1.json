@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "environment": "refund-policy-v2",
+  "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "seed": 42,
+  "split": "test",
+  "case_hashes": {
+    "policy-20759ce7072757b650da8574": "ad865186fed4a48cf4cc227c16c3a92f7bf0def9b081bb864894a3f8f512f5e3",
+    "policy-380c42de48d0baf2d96297b4": "a6f79c2e85ebf4f3e53cc5278e86fb85fb6523ca4ec01559ddf0c1edb54819fb",
+    "policy-5104f2f3249ff5e82304ac2a": "19c75f4926f9407581697e97df29fcb1ac7299946b7b9fbcacffb77c457d1c7b",
+    "policy-8261519da70b193431104b02": "af5ab14c7c30aba960a0db1500dfd6c6eac554489ce1c8cbff163483abc17116",
+    "policy-8468b483b9baf0d1673ea4f0": "1230f27749bd1479a9981aa11338d05b57f6d49d5b31204152f877c200ece7a9",
+    "policy-afee5d2f9a2c8eb15be91a70": "9db51df26475f75dbaa5d0410bdd5294cdbeeba8d8d08fdf0b331d59aefef6a3",
+    "policy-ee0bd898fb98150449c4838e": "9f8e5ec7dbe1e74f9a7ba0634e073ca154b1a67a0824f3bf8a82d7e6ee9fd868",
+    "policy-fa59f3f5d5eb1f226b25394f": "06d23f67b0a64d8852d2bdd58b4e1c6bfa2ff1dc511afe0cf32a1675e9c4102f"
+  },
+  "settings": {
+    "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+    "temperature": 1.0,
+    "max_new_tokens": 192,
+    "max_turns": 4
+  },
+  "selected_checkpoint": {
+    "path": "1"
+  },
+  "outcomes": [
+    {
+      "case_id": "policy-20759ce7072757b650da8574",
+      "success": false,
+      "policy_violations": 4,
+      "truncated": "turn_limit",
+      "reward": -1.0,
+      "generated_tokens": 141,
+      "tool_calls": 4,
+      "elapsed_seconds": 3.026185194030404
+    },
+    {
+      "case_id": "policy-380c42de48d0baf2d96297b4",
+      "success": false,
+      "policy_violations": 4,
+      "truncated": "turn_limit",
+      "reward": -1.0,
+      "generated_tokens": 427,
+      "tool_calls": 4,
+      "elapsed_seconds": 9.174206471070647
+    },
+    {
+      "case_id": "policy-5104f2f3249ff5e82304ac2a",
+      "success": false,
+      "policy_violations": 4,
+      "truncated": "turn_limit",
+      "reward": -1.0,
+      "generated_tokens": 263,
+      "tool_calls": 4,
+      "elapsed_seconds": 5.579111034981906
+    },
+    {
+      "case_id": "policy-8261519da70b193431104b02",
+      "success": false,
+      "policy_violations": 4,
+      "truncated": "turn_limit",
+      "reward": -1.0,
+      "generated_tokens": 192,
+      "tool_calls": 4,
+      "elapsed_seconds": 4.059228027239442
+    },
+    {
+      "case_id": "policy-8468b483b9baf0d1673ea4f0",
+      "success": false,
+      "policy_violations": 4,
+      "truncated": "turn_limit",
+      "reward": -1.0,
+      "generated_tokens": 207,
+      "tool_calls": 4,
+      "elapsed_seconds": 4.378335773944855
+    },
+    {
+      "case_id": "policy-afee5d2f9a2c8eb15be91a70",
+      "success": false,
+      "policy_violations": 4,
+      "truncated": "turn_limit",
+      "reward": -1.0,
+      "generated_tokens": 145,
+      "tool_calls": 4,
+      "elapsed_seconds": 3.057677079923451
+    },
+    {
+      "case_id": "policy-ee0bd898fb98150449c4838e",
+      "success": false,
+      "policy_violations": 4,
+      "truncated": "turn_limit",
+      "reward": -1.0,
+      "generated_tokens": 203,
+      "tool_calls": 4,
+      "elapsed_seconds": 4.2733927154913545
+    },
+    {
+      "case_id": "policy-fa59f3f5d5eb1f226b25394f",
+      "success": false,
+      "policy_violations": 4,
+      "truncated": "turn_limit",
+      "reward": -1.0,
+      "generated_tokens": 274,
+      "tool_calls": 4,
+      "elapsed_seconds": 5.770217478275299
+    }
+  ],
+  "total": 8,
+  "passed": 0,
+  "success_rate": 0.0,
+  "success_wilson_95": [
+    0.0,
+    0.32440756488388023
+  ],
+  "violation_rate": 1.0,
+  "truncation_rate": 1.0,
+  "mean_reward": -1.0,
+  "generated_tokens": 1852,
+  "tool_calls": 32,
+  "mean_tool_calls": 4.0,
+  "trajectory_seconds": 39.31835377495736
+}

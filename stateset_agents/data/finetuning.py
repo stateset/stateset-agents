@@ -8,12 +8,20 @@ import math
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.data.identity import (  # noqa: F401 - re-exported
+    normalize_identity_text,
+    prompt_identity,
+)
+
 __all__ = [
     "load_finetuning_data",
     "validate_finetuning_row",
     "split_finetuning_data",
     "check_finetuning_overlap",
     "group_finetuning_data",
+    "parse_finetuning_json",
+    "validate_finetuning_split",
+    "validate_finetuning_source_split",
 ]
 
 
@@ -21,8 +29,81 @@ def _reject_constant(value: str) -> None:
     raise ValueError(f"Non-finite JSON number: {value}")
 
 
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Duplicate JSON object keys are not allowed")
+        result[key] = value
+    return result
+
+
+def parse_finetuning_json(line: str) -> Any:
+    """Decode JSON without silently overwriting declarations or accepting NaN."""
+    return json.loads(
+        line, object_pairs_hook=_unique_object, parse_constant=_reject_constant
+    )
+
+
+def validate_finetuning_split(row: Any, *, expected_split: str | None = None) -> None:
+    """Check top-level and metadata split declarations without altering the row.
+
+    Unannotated records remain compatible. Declarations cannot establish actual
+    provenance or detect annotations removed or changed before this boundary.
+    With no expected split, this validates declarations for general data reads.
+    """
+    allowed = {"train", "validation", "test"}
+    if expected_split is not None and expected_split not in allowed:
+        raise ValueError("Expected split must be train, validation, or test")
+    if not isinstance(row, dict):
+        return
+    declarations = [row["split"]] if "split" in row else []
+    metadata = row.get("metadata")
+    if isinstance(metadata, dict) and "split" in metadata:
+        declarations.append(metadata["split"])
+    for split in declarations:
+        if not isinstance(split, str) or split not in allowed:
+            raise ValueError(
+                "Dataset split declaration must be train, validation, or test"
+            )
+        if expected_split is not None and split != expected_split:
+            raise ValueError(
+                f"Declared dataset split does not match requested {expected_split} split"
+            )
+    if len(set(declarations)) > 1:
+        raise ValueError("Conflicting dataset split declarations")
+
+
+def validate_finetuning_source_split(
+    path: str | Path, *, expected_split: str = "train"
+) -> None:
+    """Preflight every JSONL declaration before provider setup or allocation.
+
+    This does not validate message structure or replace validation of the staged
+    training input. Callers must keep source files stable during submission.
+    """
+    validate_finetuning_split({}, expected_split=expected_split)
+    with Path(path).open(encoding="utf-8") as stream:
+        for number, line in enumerate(stream, 1):
+            if not line.strip():
+                continue
+            try:
+                row = parse_finetuning_json(line)
+                validate_finetuning_split(row, expected_split=expected_split)
+            except ValueError as exc:
+                message = (
+                    "Invalid JSON record"
+                    if isinstance(exc, json.JSONDecodeError)
+                    else str(exc)
+                )
+                raise ValueError(f"line {number}: {message}") from None
+
+
 def _json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False)
+
+
+_MESSAGE_ROLES = frozenset({"system", "developer", "user", "assistant", "tool"})
 
 
 def validate_finetuning_row(row: Any) -> dict[str, Any]:
@@ -44,46 +125,14 @@ def validate_finetuning_row(row: Any) -> dict[str, Any]:
     messages = row.get("messages")
     if not isinstance(messages, list) or not messages:
         raise ValueError("messages must be a nonempty list")
-    tools = row.get("tools", [])
-    if not isinstance(tools, list):
-        raise ValueError("tools must be a list")
-    names: set[str] = set()
-    for tool in tools:
-        function = tool.get("function") if isinstance(tool, dict) else None
-        if not isinstance(function, dict) or tool.get("type") != "function":
-            raise ValueError(
-                "Each tool must declare type=function and a function object"
-            )
-        name = function.get("name")
-        if not isinstance(name, str) or not name.strip() or name in names:
-            raise ValueError("Tool names must be nonempty and unique")
-        if not isinstance(function.get("parameters", {}), dict):
-            raise ValueError("Tool parameters must be a JSON Schema object")
-        names.add(name)
+    names = _declared_tool_names(row.get("tools", []))
 
     pending: set[str] = set()
     seen_calls: set[str] = set()
     has_user = False
     for index, message in enumerate(messages):
-        if not isinstance(message, dict):
-            raise ValueError(f"message {index} must be an object")
-        role = message.get("role")
-        if not isinstance(role, str) or role not in {
-            "system",
-            "developer",
-            "user",
-            "assistant",
-            "tool",
-        }:
-            raise ValueError(f"message {index} has an unsupported role")
-        calls = message.get("tool_calls", [])
-        if not isinstance(calls, list) or (calls and role != "assistant"):
-            raise ValueError(f"message {index}: tool_calls must be an assistant list")
-        content = message.get("content")
-        if content is None and role == "assistant" and calls:
-            pass
-        elif not isinstance(content, str) or (not content.strip() and not calls):
-            raise ValueError(f"message {index}: nonempty text content is required")
+        calls = _validate_message_shape(index, message)
+        role = message["role"]
         if pending and role != "tool":
             raise ValueError(
                 f"message {index}: missing results for preceding tool calls"
@@ -99,30 +148,12 @@ def validate_finetuning_row(row: Any) -> dict[str, Any]:
             if not isinstance(call_id, str) or call_id not in pending:
                 raise ValueError(f"message {index}: unknown or repeated tool_call_id")
             pending.remove(call_id)
+        terminal = index == len(messages) - 1
         for call in calls:
-            function = call.get("function") if isinstance(call, dict) else None
-            if not isinstance(function, dict) or call.get("type") != "function":
-                raise ValueError("Tool calls must contain type=function and a function")
-            if (
-                not isinstance(function.get("name"), str)
-                or function["name"] not in names
-            ):
-                raise ValueError("Tool call references an undeclared function")
-            arguments = function.get("arguments")
-            if isinstance(arguments, str):
-                try:
-                    arguments = json.loads(arguments, parse_constant=_reject_constant)
-                except ValueError as exc:
-                    raise ValueError("Tool arguments must contain valid JSON") from exc
-            if not isinstance(arguments, dict):
-                raise ValueError(
-                    "Tool arguments must be an object or JSON object string"
-                )
-            call_id = call.get("id")
-            if "id" not in call and index == len(messages) - 1:
-                # Native tool-only templates may omit IDs on terminal targets.
+            call_id = _validate_tool_call(call, names, terminal=terminal)
+            if call_id is None:
                 continue
-            if not isinstance(call_id, str) or not call_id or call_id in seen_calls:
+            if call_id in seen_calls:
                 raise ValueError(
                     "Tool call IDs must be nonempty and unique per conversation"
                 )
@@ -133,15 +164,81 @@ def validate_finetuning_row(row: Any) -> dict[str, Any]:
     return row
 
 
-def load_finetuning_data(path: str | Path) -> list[dict[str, Any]]:
-    """Read UTF-8 JSONL, failing with a line number on any malformed record."""
+def _declared_tool_names(tools: Any) -> set[str]:
+    """Return the declared function names, rejecting malformed declarations."""
+    if not isinstance(tools, list):
+        raise ValueError("tools must be a list")
+    names: set[str] = set()
+    for tool in tools:
+        function = tool.get("function") if isinstance(tool, dict) else None
+        if not isinstance(function, dict) or tool.get("type") != "function":
+            raise ValueError(
+                "Each tool must declare type=function and a function object"
+            )
+        name = function.get("name")
+        if not isinstance(name, str) or not name.strip() or name in names:
+            raise ValueError("Tool names must be nonempty and unique")
+        if not isinstance(function.get("parameters", {}), dict):
+            raise ValueError("Tool parameters must be a JSON Schema object")
+        names.add(name)
+    return names
+
+
+def _validate_message_shape(index: int, message: Any) -> list[Any]:
+    """Check one message's role, tool-call list and content; return its calls."""
+    if not isinstance(message, dict):
+        raise ValueError(f"message {index} must be an object")
+    role = message.get("role")
+    if not isinstance(role, str) or role not in _MESSAGE_ROLES:
+        raise ValueError(f"message {index} has an unsupported role")
+    calls = message.get("tool_calls", [])
+    if not isinstance(calls, list) or (calls and role != "assistant"):
+        raise ValueError(f"message {index}: tool_calls must be an assistant list")
+    content = message.get("content")
+    if content is None and role == "assistant" and calls:
+        pass
+    elif not isinstance(content, str) or (not content.strip() and not calls):
+        raise ValueError(f"message {index}: nonempty text content is required")
+    return calls
+
+
+def _validate_tool_call(call: Any, names: set[str], *, terminal: bool) -> str | None:
+    """Validate one assistant tool call; return its ID (None if omitted at the end)."""
+    function = call.get("function") if isinstance(call, dict) else None
+    if not isinstance(function, dict) or call.get("type") != "function":
+        raise ValueError("Tool calls must contain type=function and a function")
+    if not isinstance(function.get("name"), str) or function["name"] not in names:
+        raise ValueError("Tool call references an undeclared function")
+    arguments = function.get("arguments")
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments, parse_constant=_reject_constant)
+        except ValueError as exc:
+            raise ValueError("Tool arguments must contain valid JSON") from exc
+    if not isinstance(arguments, dict):
+        raise ValueError("Tool arguments must be an object or JSON object string")
+    if "id" not in call and terminal:
+        # Native tool-only templates may omit IDs on terminal targets.
+        return None
+    call_id = call.get("id")
+    if not isinstance(call_id, str) or not call_id:
+        raise ValueError("Tool call IDs must be nonempty and unique per conversation")
+    return call_id
+
+
+def load_finetuning_data(
+    path: str | Path, *, expected_split: str | None = None
+) -> list[dict[str, Any]]:
+    """Read strict UTF-8 JSONL, optionally enforcing its intended split role."""
+    validate_finetuning_split({}, expected_split=expected_split)
     rows = []
     with Path(path).open(encoding="utf-8") as stream:
         for line_number, line in enumerate(stream, 1):
             if not line.strip():
                 continue
             try:
-                row = json.loads(line, parse_constant=_reject_constant)
+                row = parse_finetuning_json(line)
+                validate_finetuning_split(row, expected_split=expected_split)
                 rows.append(validate_finetuning_row(row))
             except (ValueError, TypeError) as exc:
                 raise ValueError(f"{path}: line {line_number}: {exc}") from exc
@@ -155,7 +252,7 @@ def _identity_keys(row: dict[str, Any]) -> set[str]:
     # answers, policies, or tool schemas differ. group_id also links a customer,
     # case, or source conversation across differently worded examples.
     prompt = next(m["content"] for m in row["messages"] if m["role"] == "user")
-    keys = {"prompt:" + " ".join(prompt.split()).casefold()}
+    keys = {"prompt:" + prompt_identity(prompt)}
     if "group_id" in row:
         keys.add("group:" + row["group_id"])
     return keys

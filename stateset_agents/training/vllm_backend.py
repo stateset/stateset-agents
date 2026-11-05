@@ -856,7 +856,10 @@ class HuggingFaceGeneratorFallback:
             )
 
             if self.device != "cuda":
-                self.model = self.model.to(self.device)
+                # PreTrainedModel.to is ``@wraps(nn.Module.to)``; typeshed's
+                # ``_Wrapped`` drops the bound ``self``, so the device argument
+                # is misread as the model.
+                self.model = self.model.to(self.device)  # type: ignore[arg-type, unused-ignore]
 
             self.model.eval()
             self._initialized = True

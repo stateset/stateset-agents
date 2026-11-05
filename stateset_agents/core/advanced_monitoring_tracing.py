@@ -42,16 +42,36 @@ class DistributedTracer:
             self._setup_opentelemetry()
 
     def _setup_opentelemetry(self):
-        """Setup OpenTelemetry tracing."""
+        """Setup OpenTelemetry tracing.
+
+        All four OpenTelemetry components are required; when any is missing the
+        global tracer provider is left untouched instead of being half-installed.
+        """
+        trace_module = self._trace_module
+        tracer_provider_cls = self._tracer_provider_cls
+        jaeger_exporter_cls = self._jaeger_exporter_cls
+        batch_span_processor_cls = self._batch_span_processor_cls
+        if (
+            trace_module is None
+            or tracer_provider_cls is None
+            or jaeger_exporter_cls is None
+            or batch_span_processor_cls is None
+        ):
+            if self._logger is not None:
+                self._logger.warning(
+                    "OpenTelemetry tracing components are incomplete; "
+                    "distributed tracing export is disabled"
+                )
+            return
         try:
-            self._trace_module.set_tracer_provider(self._tracer_provider_cls())
-            jaeger_exporter = self._jaeger_exporter_cls(
+            trace_module.set_tracer_provider(tracer_provider_cls())
+            jaeger_exporter = jaeger_exporter_cls(
                 agent_host_name="localhost",
                 agent_port=6831,
             )
-            span_processor = self._batch_span_processor_cls(jaeger_exporter)
-            self._trace_module.get_tracer_provider().add_span_processor(span_processor)
-            self.tracer = self._trace_module.get_tracer(self.service_name)
+            span_processor = batch_span_processor_cls(jaeger_exporter)
+            trace_module.get_tracer_provider().add_span_processor(span_processor)
+            self.tracer = trace_module.get_tracer(self.service_name)
         except self._handled_exceptions as exc:
             if self._logger is not None:
                 self._logger.warning("Failed to setup OpenTelemetry: %s", exc)

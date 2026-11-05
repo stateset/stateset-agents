@@ -1,0 +1,13 @@
+"""Check the editor refinement without mutating a concurrently frozen run."""
+from pathlib import Path
+import fcntl
+import subprocess
+import sys
+
+with Path('/tmp/stateset-studio-mobile-source.lock').open('a') as lock:
+    try:
+        fcntl.flock(lock.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+    except BlockingIOError:
+        print('Frozen verifier owns source; no separate formatter or checks started.')
+    else:
+        subprocess.run([sys.executable,'/tmp/stateset-studio-mobile-format.py'],check=True)

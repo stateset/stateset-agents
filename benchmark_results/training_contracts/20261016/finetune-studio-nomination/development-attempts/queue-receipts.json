@@ -1,0 +1,208 @@
+[
+  {
+    "id": "d06df5b65706",
+    "state": "failed",
+    "exit_code": 1,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-studio-nomination-dev.py"
+    ],
+    "created": 1792206007.3432298,
+    "started": 1792206007.3565848,
+    "finished": 1792206027.9451826,
+    "wait_seconds": 0.013355016708374023,
+    "elapsed_seconds": 20.588597774505615,
+    "usage": {
+      "cpu_seconds": 19.5984,
+      "sampled_peak_rss_gb": 0.8255844116210938,
+      "samples": 34,
+      "observed_seconds": 20.583570237999083,
+      "observed_at": 1792206027.9449341,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    },
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 0.013355016708374023
+      },
+      "total_seconds": 0.013355016708374023,
+      "observed_seconds": 0,
+      "coverage": 0.0,
+      "current_category": "unobserved",
+      "current_blocker": null,
+      "last_observed_at": 1792206007.3565848,
+      "transitions": [],
+      "transition_count": 0,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    }
+  },
+  {
+    "id": "cbd739c19845",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-studio-nomination-dev.py"
+    ],
+    "created": 1792206055.1656852,
+    "started": 1792206055.176586,
+    "finished": 1792206078.9586387,
+    "wait_seconds": 0.010900735855102539,
+    "elapsed_seconds": 23.782052755355835,
+    "usage": {
+      "cpu_seconds": 22.792,
+      "sampled_peak_rss_gb": 0.8240852355957031,
+      "samples": 39,
+      "observed_seconds": 23.77636911100126,
+      "observed_at": 1792206078.9584746,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    },
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 0.010900735855102539
+      },
+      "total_seconds": 0.010900735855102539,
+      "observed_seconds": 0,
+      "coverage": 0.0,
+      "current_category": "unobserved",
+      "current_blocker": null,
+      "last_observed_at": 1792206055.176586,
+      "transitions": [],
+      "transition_count": 0,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    }
+  },
+  {
+    "id": "96844041c39b",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-studio-nomination-format.py"
+    ],
+    "created": 1792206117.3487868,
+    "started": 1792206117.3756511,
+    "finished": 1792206144.720421,
+    "wait_seconds": 0.026864290237426758,
+    "elapsed_seconds": 27.344769954681396,
+    "usage": {
+      "cpu_seconds": 24.9506,
+      "sampled_peak_rss_gb": 0.8363265991210938,
+      "samples": 45,
+      "observed_seconds": 27.340002661017934,
+      "observed_at": 1792206144.720301,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    },
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 0.026864290237426758
+      },
+      "total_seconds": 0.026864290237426758,
+      "observed_seconds": 0,
+      "coverage": 0.0,
+      "current_category": "unobserved",
+      "current_blocker": null,
+      "last_observed_at": 1792206117.3756511,
+      "transitions": [],
+      "transition_count": 0,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    }
+  },
+  {
+    "id": "46d5738a5c24",
+    "state": "failed",
+    "exit_code": 1,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-studio-nomination-pipeline.py"
+    ],
+    "created": 1792206172.552308,
+    "started": 1792206172.5620093,
+    "finished": 1792206385.3756716,
+    "wait_seconds": 0.009701251983642578,
+    "elapsed_seconds": 212.81366229057312,
+    "usage": {
+      "cpu_seconds": 138.1032,
+      "sampled_peak_rss_gb": 0.9645233154296875,
+      "samples": 348,
+      "observed_seconds": 212.8095824100019,
+      "observed_at": 1792206385.3755374,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    },
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 0.009701251983642578
+      },
+      "total_seconds": 0.009701251983642578,
+      "observed_seconds": 0,
+      "coverage": 0.0,
+      "current_category": "unobserved",
+      "current_blocker": null,
+      "last_observed_at": 1792206172.5620093,
+      "transitions": [],
+      "transition_count": 0,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    }
+  },
+  {
+    "id": "985775e0265a",
+    "state": "failed",
+    "exit_code": 1,
+    "argv": [
+      ".venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "-n0",
+      "-o",
+      "addopts=",
+      "--timeout=90",
+      "--tb=short",
+      "tests/unit/test_finetune_nomination.py",
+      "-k",
+      "real_terminal",
+      "--junitxml=/tmp/stateset-nomination-terminal-probe.xml"
+    ],
+    "created": 1792206302.4492624,
+    "started": 1792206302.4740584,
+    "finished": 1792206353.0539129,
+    "wait_seconds": 0.024796009063720703,
+    "elapsed_seconds": 50.5798544883728,
+    "usage": {
+      "cpu_seconds": 10.6172,
+      "sampled_peak_rss_gb": 0.8103866577148438,
+      "samples": 83,
+      "observed_seconds": 50.569029862002935,
+      "observed_at": 1792206353.053799,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    },
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 0.024796009063720703
+      },
+      "total_seconds": 0.024796009063720703,
+      "observed_seconds": 0,
+      "coverage": 0.0,
+      "current_category": "unobserved",
+      "current_blocker": null,
+      "last_observed_at": 1792206302.4740584,
+      "transitions": [],
+      "transition_count": 0,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    }
+  }
+]

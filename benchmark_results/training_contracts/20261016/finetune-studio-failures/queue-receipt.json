@@ -1,0 +1,20 @@
+{
+  "id": "18ec9773998c",
+  "state": "succeeded",
+  "exit_code": 0,
+  "argv": [
+    "env",
+    "OMP_NUM_THREADS=1",
+    "MKL_NUM_THREADS=1",
+    "OPENBLAS_NUM_THREADS=1",
+    "RAYON_NUM_THREADS=2",
+    "TOKENIZERS_PARALLELISM=false",
+    ".venv/bin/python",
+    "/tmp/stateset-studio-failures-verify.py"
+  ],
+  "created": 1792175060.675613,
+  "started": 1792175263.647376,
+  "finished": 1792175429.4727237,
+  "wait_seconds": 202.97176313400269,
+  "elapsed_seconds": 165.82534766197205
+}

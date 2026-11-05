@@ -1,0 +1,63 @@
+{
+  "started": 1792243240.7013028,
+  "checked": true,
+  "passed": false,
+  "source_frozen": false,
+  "native_modules": [
+    "test_native_checkpoint_safety",
+    "test_runtime_checkpoint_safety",
+    "test_runtime_state",
+    "test_dedicated_entrypoint_resume",
+    "test_training_resume_required",
+    "test_resume_rollout_sync",
+    "test_checkpoint_agent_registration",
+    "test_gspo_query_wiring",
+    "test_gspo_module_exports",
+    "test_dapo_module_exports",
+    "test_ppo_safety",
+    "test_ppo_objective",
+    "test_checkpoint_publication",
+    "test_checkpoint_trust",
+    "test_model_checkpoint",
+    "test_learning_state_recovery",
+    "test_scheduler_identity",
+    "test_native_checkpoint_async",
+    "test_multi_turn_checkpoint_accumulation",
+    "test_ddp_checkpoint_state",
+    "test_multi_turn_trainer",
+    "test_training",
+    "test_single_turn_training_lifecycle",
+    "test_multi_turn_training_lifecycle",
+    "test_online_accumulation_weighting",
+    "test_ewc_estimation",
+    "test_native_evaluation_isolation"
+  ],
+  "operator_modules": [
+    "test_finetune_worker_ownership",
+    "test_finetune_interrupted_stop",
+    "test_finetune_studio",
+    "test_finetune_failures",
+    "test_finetune_backends",
+    "test_finetune_recovery",
+    "test_finetune_seeds",
+    "test_finetune_inspection",
+    "test_finetune_mobile",
+    "test_cli_finetune",
+    "test_finetune_quality",
+    "test_finetune_handoff",
+    "test_remote_runpod_executor"
+  ],
+  "stages": [
+    {
+      "name": "format",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-mobile-format.py",
+        "--format-only"
+      ],
+      "started": 1792243240.7013226,
+      "finished": 1792243254.5089426,
+      "exit_code": 1
+    }
+  ]
+}

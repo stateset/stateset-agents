@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "base_model": "local-synthetic-device-contract",
+      "cost_per_hr": 0.27,
+      "cost_usd": 0.0543,
+      "duration_s": 723.6426882743835,
+      "gpu": "NVIDIA RTX A5000",
+      "gpu_count": 1,
+      "job_id": "iuo6dk72kofvhv",
+      "provider": "runpod",
+      "recorded_at": "2026-10-15T04:53:15.665645+00:00",
+      "status": "failed"
+    }
+  ]
+}

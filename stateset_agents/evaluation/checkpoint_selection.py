@@ -58,12 +58,17 @@ def _finite_reward(value: Any) -> float:
 
 
 def select_validation_checkpoint(
-    evaluations: Any, *, steps: int, cases: dict[str, Any]
+    evaluations: Any,
+    *,
+    steps: int,
+    cases: dict[str, Any],
+    skipped_steps: tuple[int, ...] = (),
 ) -> dict[str, Any]:
     """Require every planned validation step, then select with earliest-step ties.
 
     Duplicate steps are rejected: recovery must replace a replayed evaluation,
-    rather than leave conflicting checkpoints available for selection.
+    rather than leave conflicting checkpoints available for selection. Confirmed
+    skipped optimizer batches remain verified but cannot create new candidates.
     """
     if type(steps) is not int or steps < 1:
         raise ValueError("Planned training steps must be positive")
@@ -90,8 +95,13 @@ def select_validation_checkpoint(
         seen.add(step)
     if seen != set(range(steps + 1)):
         raise ValueError("Incomplete validation checkpoint coverage")
+    if any(type(step) is not int or not 1 <= step <= steps for step in skipped_steps):
+        raise ValueError("Skipped validation steps must be planned training batches")
     return max(
-        sorted(evaluations, key=lambda entry: entry["step"]),
+        sorted(
+            (entry for entry in evaluations if entry["step"] not in skipped_steps),
+            key=lambda entry: entry["step"],
+        ),
         key=lambda entry: entry["metrics"]["reward_mean"],
     )
 
@@ -114,7 +124,7 @@ def require_training_progress(
         or [p["step"] for p in progress] != list(range(1, steps + 1))
     ):
         raise ValueError("Incomplete RL training progress; test split remains sealed")
-    from stateset_agents.training.river_progress import (
+    from stateset_agents.evaluation.river_progress import (
         validate_recovery_receipt,
         validate_training_metrics,
     )

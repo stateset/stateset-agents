@@ -1,0 +1,40 @@
+{"arm": "base", "split": "validation", "passed": 57, "total": 64}
+[river] River account advertises model access: Qwen/Qwen3.5-9B
+[river] built 128 River SFT data from 128 rows
+[river] created River model on Qwen/Qwen3.5-9B (LoRA rank 16, attn+mlp)
+[river] step 10 loss 0.0448
+[river] epoch 1/1 complete (16 steps, loss 0.0061)
+[river] saved River checkpoint: river://0489d065-2c44-458c-9bd1-7b9db376b086/sampler_weights/sft
+{"arm": "sft", "split": "validation", "passed": 51, "total": 64}
+Traceback (most recent call last):
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/warmup_runner.py", line 127, in evaluate
+    async for group in groups:
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/stateset_agents/utils/async_calls.py", line 81, in iterate
+    done, _ = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py", line 464, in wait
+    return await _wait(fs, timeout, return_when, loop)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py", line 550, in _wait
+    await waiter
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/study_runner.py", line 316, in <module>
+    worker(args.seed)
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/study_runner.py", line 239, in worker
+    asyncio.run(w.evaluate(evaluation,renderer,checkpoint,test,'test',arm,budget,plan['implementation']))
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py", line 123, in run
+    raise KeyboardInterrupt()
+KeyboardInterrupt

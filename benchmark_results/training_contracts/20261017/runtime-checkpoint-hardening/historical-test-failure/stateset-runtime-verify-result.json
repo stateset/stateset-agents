@@ -1,0 +1,102 @@
+{
+  "checked": true,
+  "passed": false,
+  "test_modules": [
+    "tests/unit/test_runtime_checkpoint_safety.py",
+    "tests/unit/test_runtime_state.py",
+    "tests/unit/test_dedicated_entrypoint_resume.py",
+    "tests/unit/test_training_resume_required.py",
+    "tests/unit/test_gspo_query_wiring.py",
+    "tests/unit/test_gspo_module_exports.py",
+    "tests/unit/test_dapo_module_exports.py",
+    "tests/unit/test_ppo_safety.py",
+    "tests/unit/test_ppo_objective.py",
+    "tests/unit/test_checkpoint_publication.py",
+    "tests/unit/test_checkpoint_trust.py",
+    "tests/unit/test_model_checkpoint.py",
+    "tests/unit/test_learning_state_recovery.py",
+    "tests/unit/test_scheduler_identity.py",
+    "tests/unit/test_native_checkpoint_async.py",
+    "tests/unit/test_multi_turn_checkpoint_accumulation.py",
+    "tests/unit/test_ddp_checkpoint_state.py"
+  ],
+  "stages": [
+    {
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-mobile-format.py",
+        "--format-only"
+      ],
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "scripts/check_types.py",
+        "--all"
+      ],
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-n0",
+        "-o",
+        "addopts=",
+        "--timeout=90",
+        "--tb=short",
+        "tests/unit/test_runtime_checkpoint_safety.py",
+        "tests/unit/test_runtime_state.py",
+        "tests/unit/test_dedicated_entrypoint_resume.py",
+        "tests/unit/test_training_resume_required.py",
+        "tests/unit/test_gspo_query_wiring.py",
+        "tests/unit/test_gspo_module_exports.py",
+        "tests/unit/test_dapo_module_exports.py",
+        "tests/unit/test_ppo_safety.py",
+        "tests/unit/test_ppo_objective.py",
+        "tests/unit/test_checkpoint_publication.py",
+        "tests/unit/test_checkpoint_trust.py",
+        "tests/unit/test_model_checkpoint.py",
+        "tests/unit/test_learning_state_recovery.py",
+        "tests/unit/test_scheduler_identity.py",
+        "tests/unit/test_native_checkpoint_async.py",
+        "tests/unit/test_multi_turn_checkpoint_accumulation.py",
+        "tests/unit/test_ddp_checkpoint_state.py",
+        "--junitxml=/tmp/stateset-runtime-verify.xml"
+      ],
+      "exit_code": 1
+    },
+    {
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-mobile-gates.py"
+      ],
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-n0",
+        "-o",
+        "addopts=",
+        "--timeout=90",
+        "tests/unit/test_release_governance.py",
+        "--junitxml=/tmp/stateset-runtime-governance.xml"
+      ],
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "/tmp/stateset-actionlint-1.7.12/actionlint",
+        ".github/workflows/training-contracts.yml"
+      ],
+      "exit_code": 0
+    }
+  ]
+}

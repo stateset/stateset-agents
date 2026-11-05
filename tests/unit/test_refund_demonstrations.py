@@ -284,7 +284,7 @@ def test_cli_prepares_offline_and_empty_harvest_fails_without_training_file(tmp_
 async def test_native_collection_uses_only_train_split_and_preserves_partial_candidates(
     tmp_path, monkeypatch, interrupted, timed_out, wrong_input
 ):
-    from stateset_agents.training.river_refund import campaign, prepare_run
+    from stateset_agents.verticals.river_refund import campaign, prepare_run
 
     @dataclass
     class Checkpoint:

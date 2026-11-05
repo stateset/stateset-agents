@@ -1,0 +1,18 @@
+{
+  "admitted_sft_rows": 255,
+  "curriculum_replay": {
+    "contrast_groups": 48,
+    "curriculum_policy": "adjacent_boundary_v1",
+    "data_manifest_hash": "4f96fd45fbf9526369e8e37eea5d2bead3b9a92bb031d4f60a98b892bfd3aeba",
+    "derived_cases": 127,
+    "passed": true,
+    "replayed_demonstrations": 255
+  },
+  "dropped_or_truncated_rows": 0,
+  "local_files_only": true,
+  "maximum_sequence_tokens": 584,
+  "sft_assistant_target_tokens_once": 27286.0,
+  "sft_input_tokens_once": 140888,
+  "tokenizer": "Qwen/Qwen3.5-9B",
+  "training_examples": 255
+}

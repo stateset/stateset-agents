@@ -17,8 +17,10 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from stateset_agents.core.reward import RewardFunction, RewardResult
+from stateset_agents.core.reward_context import RewardUnavailableError
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.training.checkpoint_io import load_checkpoint_file
+from stateset_agents.training.spine.scoring import reward_outage_exceptions
 
 try:
     import torch
@@ -34,8 +36,8 @@ except ImportError:
     nn = cast(Any, None)
     F = cast(Any, None)
     optim = cast(Any, None)
-    DataLoader = cast(Any, None)
-    Dataset = cast(Any, None)
+    # DataLoader/Dataset are not rebound: the module-level nn.Module subclasses
+    # below already require torch at import time.
 
 # Lazy import transformers to avoid torch/torchvision compatibility issues
 _transformers_reward_loaded = False
@@ -369,7 +371,7 @@ class TransformerRewardModel(nn.Module):
         embedding_dim = self.prompt_encoder.config.hidden_size
 
         # Reward head
-        layers = []
+        layers: list[nn.Module] = []
         input_dim = embedding_dim * 2  # Concatenate prompt + response embeddings
 
         for i in range(num_layers):
@@ -433,7 +435,7 @@ class TransformerRewardModel(nn.Module):
         combined = torch.cat([prompt_embedding, response_embedding], dim=-1)
 
         # Pass through reward head
-        reward = self.reward_head(combined)
+        reward: torch.Tensor = self.reward_head(combined)
 
         return reward
 
@@ -555,7 +557,7 @@ class TransformerRewardTrainer:
         if freeze_encoders:
             self.model.freeze_encoders()
             if verbose:
-                print("Training with frozen encoders (reward head only)")
+                logger.info("Training with frozen encoders (reward head only)")
 
         # Create datasets
         train_dataset = RewardDataset(
@@ -621,7 +623,7 @@ class TransformerRewardTrainer:
                     self.patience_counter += 1
                     if self.patience_counter >= self.config.patience:
                         if verbose:
-                            print(f"Early stopping at epoch {epoch + 1}")
+                            logger.info("Early stopping at epoch %d", epoch + 1)
                         break
 
             # Logging
@@ -629,7 +631,7 @@ class TransformerRewardTrainer:
                 msg = f"Epoch {epoch + 1}/{self.config.num_epochs} | Train Loss: {train_loss:.4f}"
                 if val_loss is not None:
                     msg += f" | Val Loss: {val_loss:.4f}"
-                print(msg)
+                logger.info(msg)
 
         return {
             "final_train_loss": self.train_losses[-1],
@@ -844,47 +846,47 @@ class LearnedRewardFunction(RewardFunction):
         turns: list[ConversationTurn],
         context: dict[str, Any] | None = None,
     ) -> RewardResult:
-        """Compute reward using learned model"""
-        try:
-            # Extract prompt and response
-            prompt = " ".join(str(t.content or "") for t in turns if t.role == "user")
-            response_turns = [
-                str(t.content or "") for t in turns if t.role == "assistant"
-            ]
-            response = response_turns[-1] if response_turns else ""
+        """Compute reward using learned model.
 
-            # Check cache
-            cache_key = f"{prompt}||{response}"
-            if self.cache_predictions and cache_key in self._prediction_cache:
-                reward = self._prediction_cache[cache_key]
-            else:
-                # Predict reward
+        An outage (I/O, out of memory, a timeout) raises
+        ``RewardUnavailableError``, which the reward contract lets trainers
+        drop; any other failure is a bug and propagates. Nothing stands in.
+        """
+        # Extract prompt and response
+        prompt = " ".join(str(t.content or "") for t in turns if t.role == "user")
+        response_turns = [str(t.content or "") for t in turns if t.role == "assistant"]
+        response = response_turns[-1] if response_turns else ""
+
+        # Check cache
+        cache_key = f"{prompt}||{response}"
+        if self.cache_predictions and cache_key in self._prediction_cache:
+            reward = self._prediction_cache[cache_key]
+        else:
+            # Predict reward
+            try:
                 reward = self.trainer.predict(prompt, response)
+            except reward_outage_exceptions() as error:
+                raise RewardUnavailableError(
+                    "Learned reward model unavailable: "
+                    f"{type(error).__name__}: {error}"
+                ) from error
 
-                # Normalize to [0, 1] if requested
-                if self.normalize:
-                    reward = torch.sigmoid(torch.tensor(reward)).item()
+            # Normalize to [0, 1] if requested
+            if self.normalize:
+                reward = torch.sigmoid(torch.tensor(reward)).item()
 
-                # Cache prediction
-                if self.cache_predictions:
-                    self._prediction_cache[cache_key] = reward
+            # Cache prediction
+            if self.cache_predictions:
+                self._prediction_cache[cache_key] = reward
 
-            return RewardResult(
-                score=reward,
-                breakdown={"learned_reward": reward},
-                metadata={
-                    "model_type": "transformer",
-                    "base_model": self.trainer.config.base_model,
-                },
-            )
-
-        except REWARD_MODEL_EXCEPTIONS as e:
-            logger.error(f"Learned reward computation failed: {e}")
-            return RewardResult(
-                score=0.5,
-                breakdown={"learned_reward": 0.5, "fallback": True},
-                metadata={"error": str(e)},
-            )
+        return RewardResult(
+            score=reward,
+            breakdown={"learned_reward": reward},
+            metadata={
+                "model_type": "transformer",
+                "base_model": self.trainer.config.base_model,
+            },
+        )
 
 
 # Convenience functions

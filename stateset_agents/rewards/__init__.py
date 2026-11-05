@@ -8,8 +8,11 @@ This module provides various reward computation strategies:
 - Domain-specific reward templates
 """
 
+from typing import Any
+
+from .code_verifier import SandboxedCodeVerifier, SandboxLimits
 from .kimi_k25_reward import (
-    CodeExecutionReward,
+    CodeFormattingHeuristic,
     LongContextReward,
     MultimodalConsistencyReward,
     ThinkingModeReward,
@@ -17,6 +20,7 @@ from .kimi_k25_reward import (
     create_kimi_k25_customer_service_reward,
 )
 from .llm_reward import RewardResult
+from .math_verifier import MathAnswerVerifier
 from .multi_objective_reward import (
     MultiObjectiveRewardFunction,
     create_customer_service_reward,
@@ -27,8 +31,12 @@ from .multi_objective_reward import (
 from .ruler_reward import RulerRewardFunction
 from .ruler_reward import RulerRewardFunction as LLMRewardFunction
 from .ruler_reward import create_customer_service_ruler, create_general_ruler
-from .support_conversation_reward import SupportConversationReward
+from .support_conversation_reward import (
+    SupportConversationReward,
+    SupportConversationRewardV3,
+)
 from .symbolic_physics_reward import SymbolicPhysicsRewardFunction, SymbolicRewardConfig
+from .task_outcome import TaskOutcomeReward
 
 # LLM-as-Judge for RLAIF
 try:
@@ -36,6 +44,7 @@ try:
         EvaluationCriteria,
         JudgeConfig,
         JudgeProvider,
+        JudgeUnavailableError,
         LLMJudge,
         create_llm_judge_reward,
     )
@@ -57,6 +66,9 @@ from .llm_judge_adapter import (
 from .nsr_verifier import NSROutcomeReporter, NSRVerifierConfig, NSRVerifierReward
 
 __all__ = [
+    "SupportConversationReward",
+    "SupportConversationRewardV3",
+    "TaskOutcomeReward",
     "LLMRewardFunction",
     "RewardResult",
     "MultiObjectiveRewardFunction",
@@ -72,8 +84,12 @@ __all__ = [
     "SymbolicRewardConfig",
     "ThinkingModeReward",
     "MultimodalConsistencyReward",
-    "CodeExecutionReward",
+    "CodeFormattingHeuristic",
     "LongContextReward",
+    # Verifiable rewards (provisional).
+    "MathAnswerVerifier",
+    "SandboxedCodeVerifier",
+    "SandboxLimits",
     "create_kimi_k25_customer_service_reward",
     "create_kimi_k25_conversational_reward",
 ]
@@ -85,6 +101,7 @@ if LLM_JUDGE_AVAILABLE:
             "LLMJudge",
             "JudgeConfig",
             "JudgeProvider",
+            "JudgeUnavailableError",
             "EvaluationCriteria",
             "create_llm_judge_reward",
         ]
@@ -102,3 +119,12 @@ __all__.extend(
         "NSRVerifierReward",
     ]
 )
+
+
+def __getattr__(name: str) -> Any:
+    """Serve deprecated names lazily, so importing the package does not warn."""
+    if name == "CodeExecutionReward":
+        from . import kimi_k25_reward
+
+        return kimi_k25_reward.__getattr__(name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

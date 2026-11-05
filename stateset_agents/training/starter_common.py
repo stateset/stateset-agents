@@ -31,6 +31,8 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from stateset_agents.core.agent import AgentConfig
 
+from .config import config_value
+
 CONVERSATIONAL_DEFAULT = (
     "You are helpful, concise, and accurate. "
     "You answer clearly and stay grounded in the user's request."
@@ -367,6 +369,8 @@ def resolve_starter_config(
 
 def create_agent_config(config: Any, **extra_kwargs: Any) -> AgentConfig:
     """Create the matching AgentConfig for a starter config."""
+    if config_value(config, "model_revision") is not None:
+        extra_kwargs.setdefault("model_revision", config.model_revision)
     return AgentConfig(
         model_name=config.model_name,
         system_prompt=config.system_prompt,
@@ -424,7 +428,7 @@ def build_gspo_overrides(config: Any) -> dict[str, Any]:
         overrides["use_reference_model"] = config.use_reference_model
     # Policy objective selection (docs/OBJECTIVES.md); absent or None keeps
     # the native GSPO objective.
-    for key in ("objective", "objective_overrides"):
+    for key in ("objective", "objective_overrides", "model_revision"):
         value = getattr(config, key, None)
         if value is not None:
             overrides[key] = value
@@ -545,6 +549,7 @@ async def run_starter_config(
         CONVERSATION_CONFIGS,
         ConversationEnvironment,
     )
+    from stateset_agents.core.grounding import log_heuristic_reward_notice
     from stateset_agents.rewards.multi_objective_reward import create_domain_reward
     from stateset_agents.training.gspo_trainer import train_with_gspo
 
@@ -561,6 +566,9 @@ async def run_starter_config(
     ).copy()
     environment = ConversationEnvironment(**env_config)
     reward_model = create_domain_reward(config.task)
+    log_heuristic_reward_notice(
+        logger, display_name, f"create_domain_reward({config.task!r})"
+    )
 
     logger.info("Starting GSPO training for %s", config.model_name)
     return await train_with_gspo(

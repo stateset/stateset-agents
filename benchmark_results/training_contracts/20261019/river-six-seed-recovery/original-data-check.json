@@ -1,0 +1,56 @@
+{
+  "datasets": [
+    {
+      "assistant_target_tokens": 13531.0,
+      "input_tokens": 70416,
+      "max_sequence_tokens": 584,
+      "replayed_examples": 128,
+      "seed": 2026101901,
+      "trainable_examples": 128
+    },
+    {
+      "assistant_target_tokens": 13522.0,
+      "input_tokens": 70398,
+      "max_sequence_tokens": 580,
+      "replayed_examples": 128,
+      "seed": 2026101902,
+      "trainable_examples": 128
+    },
+    {
+      "assistant_target_tokens": 13551.0,
+      "input_tokens": 70466,
+      "max_sequence_tokens": 578,
+      "replayed_examples": 128,
+      "seed": 2026101903,
+      "trainable_examples": 128
+    },
+    {
+      "assistant_target_tokens": 13512.0,
+      "input_tokens": 70371,
+      "max_sequence_tokens": 574,
+      "replayed_examples": 128,
+      "seed": 2026101904,
+      "trainable_examples": 128
+    },
+    {
+      "assistant_target_tokens": 13440.0,
+      "input_tokens": 70191,
+      "max_sequence_tokens": 577,
+      "replayed_examples": 128,
+      "seed": 2026101905,
+      "trainable_examples": 128
+    },
+    {
+      "assistant_target_tokens": 13479.0,
+      "input_tokens": 70291,
+      "max_sequence_tokens": 584,
+      "replayed_examples": 128,
+      "seed": 2026101906,
+      "trainable_examples": 128
+    }
+  ],
+  "passed": true,
+  "plan_hash": "69fee58dfb533f77cae819949e2317b2c7fb48269a4514f20b94419a32c36e89",
+  "provider_requests": 0,
+  "replayed_examples": 768
+}

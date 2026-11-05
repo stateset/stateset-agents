@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "kind": "synthetic-ewc-estimation-regression",
+  "passed": true,
+  "package_version": "0.66.1",
+  "release_status": "unreleased-checkout",
+  "wheel_sha256": "dbc9e0cacc149d1cc3e3444e37a45bf1010d762f7d7c76c4a425806365c37acb",
+  "job_id": "5ecfc0d23af4",
+  "full_suite": {
+    "passed": 8528,
+    "skipped": 57,
+    "warnings": 4045,
+    "seconds": 235.93
+  },
+  "focused_tests_passed": 564,
+  "immutable_wheel_contract_tests_passed": 127,
+  "new_regression_cases": 40,
+  "typed_modules": 385,
+  "regression_file": "tests/unit/test_ewc_estimation.py",
+  "regression_file_sha256": "a2d36a74d8954a1873d10e76a4ff2f1a5f270c81a40d98a942beeef22a08e42b",
+  "baseline": {
+    "job_id": "2fcf90c97124",
+    "failed": 25,
+    "passed": 1
+  },
+  "verified": {
+    "accepted_trajectory_denominator": true,
+    "no_data_preserves_fisher_and_anchors": true,
+    "mixed_module_modes_restored": true,
+    "existing_parameter_gradients_preserved": true,
+    "oom_and_interrupts_propagate": true,
+    "fp16_bf16_statistics_promoted_to_fp32": true,
+    "fp64_statistics_retained": true,
+    "running_mean_avoids_sum_overflow": true,
+    "consolidation_validated_before_commit": true,
+    "independent_transformer_causal_gradients": true,
+    "promoted_statistics_survive_checkpoint_restore": true
+  },
+  "transformer_reference_tolerances": {
+    "rtol": 1e-05,
+    "atol": 1e-07
+  },
+  "cpu_contract": {
+    "artifact_sha256": "cba06fefb55f3337f7d8a1d5cee467dc173d4db9c438af1544b98a98cc154bf6",
+    "resumed_weights_match_uninterrupted": true,
+    "reload_inference_finite": true
+  },
+  "native_workflow": {
+    "seeds": [
+      42,
+      43,
+      44
+    ],
+    "rollout_batches_per_seed": 160,
+    "gradient_accumulation_steps": 2,
+    "optimizer_updates_per_seed": 80,
+    "reload_verified": true,
+    "scope": "synthetic sampled-training regression; not an EWC quality study"
+  },
+  "cuda_retested": false,
+  "paid_compute_allocated": false,
+  "representative_quality_demonstrated": false,
+  "production_approved": false
+}

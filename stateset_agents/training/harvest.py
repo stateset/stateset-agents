@@ -34,21 +34,48 @@ from typing import Any
 from stateset_agents.training.sft import (
     evaluate_checks,
     generate_completions,
+    generate_from_prompt,
     gpu_available,
+    has_eval_assertions,
     judge_completion,
     load_base_model_for_sft,
+    load_tokenizer_for,
     normalize_eval_prompts,
+    score_eval_rows,
 )
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "build_harvest_rows",
+    "harvest_seed",
+    "eval_summary",
     "sample_passes",
     "main",
     "run_harvest_job",
     "sample_completions",
 ]
+
+
+#: Sampling seed when a harvest payload does not set one (as SFT's default).
+DEFAULT_HARVEST_SEED = 42
+
+
+def harvest_seed(payload: dict[str, Any]) -> int:
+    """The harvest's sampling seed: ``payload["seed"]`` or the default."""
+    seed = payload.get("seed")
+    if seed is None:
+        return DEFAULT_HARVEST_SEED
+    if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed < 2**32:
+        raise ValueError("harvest seed must be an integer in [0, 4294967295]")
+    return seed
+
+
+def _seed_sampling(seed: int) -> None:
+    """Seed Python, NumPy and torch (all devices) before sampling."""
+    from transformers import set_seed
+
+    set_seed(seed)
 
 
 def sample_completions(
@@ -65,38 +92,19 @@ def sample_completions(
 
     One generate() call with ``num_return_sequences`` — the prompt is
     encoded once and the batch shares its KV cache, which on the headroom
-    run was the difference between a 17-minute and a multi-hour harvest.
+    run was the difference between a 17-minute and a multi-hour harvest. The
+    prompt is encoded by the same path as SFT's eval
+    (:func:`~stateset_agents.training.sft.generate_from_prompt`).
     """
-    import torch
-
-    messages = [{"role": "user", "content": prompt}]
-    try:
-        text = tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=False,
-        )
-    except TypeError:
-        text = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-    inputs = tokenizer(text, return_tensors="pt").to(model.device)
-    with torch.no_grad():
-        output = model.generate(
-            **inputs,
-            do_sample=True,
-            temperature=temperature,
-            top_p=top_p,
-            num_return_sequences=best_of,
-            max_new_tokens=max_new_tokens,
-            pad_token_id=tokenizer.eos_token_id,
-        )
-    prompt_length = inputs["input_ids"].shape[1]
-    return [
-        tokenizer.decode(row[prompt_length:], skip_special_tokens=True)
-        for row in output
-    ]
+    return generate_from_prompt(
+        model,
+        tokenizer,
+        prompt,
+        max_new_tokens=max_new_tokens,
+        num_return_sequences=best_of,
+        temperature=temperature,
+        top_p=top_p,
+    )
 
 
 def _create_nsr_reward() -> Any:
@@ -133,7 +141,9 @@ def nsr_gate_passes(prompt_spec: dict[str, Any], sample: str) -> bool:
                 context={"nsr_request": prompt_spec["nsr"]},
             )
         )
-    except Exception as exc:
+    # Fail-closed gate on an unattended harvest worker: any verifier failure
+    # rejects the sample rather than letting it into the training set.
+    except Exception as exc:  # noqa: BLE001
         logger.warning("NSR gate failed (%s); rejecting sample (fail-closed).", exc)
         return False
     if result.metadata.get("mode") != "verified":
@@ -171,6 +181,31 @@ def sample_passes(prompt_spec: dict[str, Any], sample: str) -> bool:
     return True
 
 
+def eval_summary(
+    eval_specs: list[dict[str, Any]], completions: list[str]
+) -> dict[str, Any]:
+    """The "before" eval of a generation, scored like a training job's.
+
+    Specs without checks cannot fail, so their rows carry no outcome and do
+    not count; ``passed``/``total`` come from
+    :func:`~stateset_agents.training.sft.score_eval_rows`, the scorer the
+    flywheel applies to ``eval_results.json`` — one denominator for every
+    generation, so a real improvement is never read as a plateau.
+    """
+    results = []
+    for spec, completion in zip(eval_specs, completions, strict=True):
+        result: dict[str, Any] = {"prompt": spec["prompt"], "completion": completion}
+        if has_eval_assertions(spec):
+            result.update(
+                evaluate_checks(
+                    completion, spec.get("expect", []), spec.get("forbid", [])
+                )
+            )
+        results.append(result)
+    passed, total = score_eval_rows(results)
+    return {"passed": passed or 0, "total": total or 0, "results": results}
+
+
 def build_harvest_rows(
     prompt_spec: dict[str, Any], samples: list[str]
 ) -> list[dict[str, Any]]:
@@ -201,7 +236,7 @@ def _load_adapter(model: Any, adapter_dir: str) -> Any:
 
 
 def _plan(payload: dict[str, Any]) -> None:
-    print("Harvest Plan (dry run — no GPU detected)")
+    lines = ["Harvest Plan (dry run — no GPU detected)"]
     for key in (
         "base_model",
         "adapter_dir",
@@ -210,9 +245,10 @@ def _plan(payload: dict[str, Any]) -> None:
         "top_p",
         "max_new_tokens",
     ):
-        print(f"  {key}: {payload.get(key)}")
-    print(f"  harvest prompts: {len(payload['harvest_prompts'])}")
-    print(f"  eval prompts: {len(payload.get('eval_prompts') or [])}")
+        lines.append(f"  {key}: {payload.get(key)}")
+    lines.append(f"  harvest prompts: {len(payload['harvest_prompts'])}")
+    lines.append(f"  eval prompts: {len(payload.get('eval_prompts') or [])}")
+    logger.info("%s", "\n".join(lines))
 
 
 def run_harvest_job(payload: dict[str, Any]) -> dict[str, Any]:
@@ -244,6 +280,7 @@ def run_harvest_job(payload: dict[str, Any]) -> dict[str, Any]:
         "prompts_with_a_pass": 0,
         "eval": None,
         "dry_run": False,
+        "seed": harvest_seed(payload),
     }
 
     if payload.get("dry_run") or not gpu_available():
@@ -252,9 +289,9 @@ def run_harvest_job(payload: dict[str, Any]) -> dict[str, Any]:
         (output_dir / "harvest_summary.json").write_text(json.dumps(summary, indent=2))
         return summary
 
-    from transformers import AutoTokenizer
-
-    tokenizer = AutoTokenizer.from_pretrained(payload["base_model"])  # nosec: B615
+    # The same tokenizer (trust_remote_code only for curated presets that
+    # need it) SFT and its eval load for this model.
+    tokenizer = load_tokenizer_for(payload["base_model"])
     model = load_base_model_for_sft(payload["base_model"])
     if payload.get("adapter_dir"):
         model = _load_adapter(model, payload["adapter_dir"])
@@ -277,19 +314,7 @@ def run_harvest_job(payload: dict[str, Any]) -> dict[str, Any]:
             [spec["prompt"] for spec in eval_specs],
             max_new_tokens=payload.get("eval_max_new_tokens", 300),
         )
-        results = []
-        for spec, completion in zip(eval_specs, completions, strict=True):
-            checked = evaluate_checks(
-                completion, spec.get("expect", []), spec.get("forbid", [])
-            )
-            results.append(
-                {"prompt": spec["prompt"], "completion": completion, **checked}
-            )
-        summary["eval"] = {
-            "passed": sum(1 for r in results if r["passed"]),
-            "total": len(results),
-            "results": results,
-        }
+        summary["eval"] = eval_summary(eval_specs, completions)
         logger.info(
             "current generation: %d/%d eval prompts passed",
             summary["eval"]["passed"],
@@ -297,6 +322,8 @@ def run_harvest_job(payload: dict[str, Any]) -> dict[str, Any]:
         )
 
     # -- best-of-N harvest -------------------------------------------------
+    # Seeded, so a harvest is reproducible from its summary.
+    _seed_sampling(summary["seed"])
     rows: list[dict[str, Any]] = []
     for spec in harvest_specs:
         samples = sample_completions(
@@ -359,6 +386,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-new-tokens", type=int, default=300)
     parser.add_argument("--eval-max-new-tokens", type=int, default=300)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help=f"sampling seed (default {DEFAULT_HARVEST_SEED})",
+    )
     return parser
 
 
@@ -383,6 +416,7 @@ def main(argv: list[str] | None = None) -> int:
         "max_new_tokens": args.max_new_tokens,
         "eval_max_new_tokens": args.eval_max_new_tokens,
         "dry_run": args.dry_run,
+        "seed": args.seed,
     }
     run_harvest_job(payload)
     return 0

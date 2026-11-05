@@ -1,0 +1,44 @@
+"""Check the isolated picker candidate without changing the queued source tree."""
+from pathlib import Path
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import black
+import isort
+
+canonical = Path('/home/dom/stateset-agents')
+root = Path('/tmp/stateset-evaluation-case-picker-20261016')
+os.chdir(root)
+os.environ['PATH'] = str(canonical/'.venv/bin') + os.pathsep + os.environ['PATH']
+os.environ['PYTHONPATH'] = str(root)
+os.environ.update(OMP_NUM_THREADS='1', MKL_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', NUMEXPR_NUM_THREADS='1', RAYON_NUM_THREADS='1', TOKENIZERS_PARALLELISM='false', HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1', PYTHONDONTWRITEBYTECODE='1')
+changed = ['stateset_agents/tui.py','stateset_agents/finetune_evaluation_tui.py','tests/unit/test_evaluation_case_picker.py']
+for name in changed:
+    isort.file(root/name)
+    black.format_file_in_place(root/name,fast=False,mode=black.Mode(),write_back=black.WriteBack.YES)
+base=json.loads((root/'candidate-base.json').read_text())
+
+def canonical_unchanged():
+    actual = {p.relative_to(canonical).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for name in ['stateset_agents','tests'] for p in (canonical/name).rglob('*.py')}
+    return actual==base['base_source_and_tests_sha256']
+
+assert canonical_unchanged()
+stages=[]
+for name, argv in [
+    ('ruff',['ruff','check',*changed]),
+    ('tests',[sys.executable,'-m','pytest','-q','-n0','-p','no:cacheprovider','-o','addopts=','--timeout=150','--tb=short','tests/unit/test_evaluation_case_picker.py','tests/unit/test_finetune_evaluation.py','tests/unit/test_finetune_studio.py','--junitxml='+str(root/'picker-tests.xml')]),
+    ('types',[sys.executable,str(canonical/'scripts/check_types.py'),'--all']),
+]:
+    print('Stage:',name,flush=True)
+    with (root/(name+'.log')).open('w') as log:
+        process=subprocess.Popen(argv,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+        for line in process.stdout:
+            print(line,end='',flush=True); log.write(line)
+        code=process.wait()
+    stages.append({'name':name,'argv':argv,'exit_code':code})
+    result={'stages':stages,'canonical_unchanged':canonical_unchanged(),'passed':all(row['exit_code']==0 for row in stages) and canonical_unchanged(),'changed_sha256':{name:hashlib.sha256((root/name).read_bytes()).hexdigest() for name in changed}}
+    (root/'candidate-verification.json').write_text(json.dumps(result,indent=2)+'\n')
+    if code or not result['canonical_unchanged']:
+        raise SystemExit(code or 1)

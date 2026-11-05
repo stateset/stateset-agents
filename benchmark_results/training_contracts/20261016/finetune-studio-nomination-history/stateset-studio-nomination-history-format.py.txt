@@ -1,0 +1,12 @@
+from pathlib import Path
+import os,subprocess,sys
+import black,isort
+root=Path('/home/dom/stateset-agents'); os.chdir(root)
+os.environ.update(OMP_NUM_THREADS='1',MKL_NUM_THREADS='1',OPENBLAS_NUM_THREADS='1',NUMEXPR_NUM_THREADS='1',RAYON_NUM_THREADS='1',TOKENIZERS_PARALLELISM='false',HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1')
+files=['stateset_agents/finetune_nomination.py','stateset_agents/finetune_evaluation_tui.py','stateset_agents/tui.py','stateset_agents/cli_finetune.py','stateset_agents/finetune_workspace.py','tests/unit/test_finetune_nomination_history.py']
+for name in files:
+    isort.file(root/name)
+    black.format_file_in_place(root/name,fast=False,mode=black.Mode(),write_back=black.WriteBack.YES)
+subprocess.run([sys.executable,'-m','ruff','check',*files],check=True)
+if '--format-only' not in sys.argv:
+    subprocess.run([sys.executable,'-m','pytest','-q','-n0','-o','addopts=','--timeout=150','--tb=short','tests/unit/test_finetune_nomination_history.py','--junitxml=/tmp/stateset-nomination-history-dev.xml'],check=True)

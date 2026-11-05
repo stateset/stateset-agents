@@ -1,16 +1,31 @@
 """
 Reward function for symbolic physics relation discovery.
+
+A candidate expression is evaluated at seeded samples of the task's declared
+variables and scored on validity, equivalence to the task's
+``target_expression``, the task's constraints (symmetry, zeros, scaling,
+parity, sum and product forms) and simplicity.
+
+A constant is not a relation: an expression that names none of the declared
+variables, or takes the same value at every sample ("0", "1", "x - x"),
+scores 0, because a constant satisfies symmetry, parity and zero constraints
+trivially. The one exception is a task whose ``target_expression`` is itself
+constant. A task without declared ``variables`` is misconfigured and raises
+``ConfigurationError`` (``fail_on_error``) rather than scoring 0.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import math
+import re
 import zlib
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from stateset_agents.core.errors import ConfigurationError
 from stateset_agents.core.reward_base import RewardFunction, RewardResult, RewardType
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.utils.symbolic_math import (
@@ -46,6 +61,34 @@ class SymbolicRewardConfig:
 
 def _close_enough(a: float, b: float, rel_tol: float, abs_tol: float) -> bool:
     return abs(a - b) <= abs_tol + rel_tol * max(abs(a), abs(b))
+
+
+_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+#: Samples within this tolerance of each other count as one constant value
+#: (floating-point noise, as in ``sin(x)**2 + cos(x)**2``).
+_CONSTANT_REL_TOL = 1e-9
+_CONSTANT_ABS_TOL = 1e-12
+
+
+def is_constant_expression(
+    expression: str, values: Sequence[float], variables: Collection[str]
+) -> bool:
+    """Whether ``expression`` is a constant over the task: it names none of
+    the declared ``variables`` or evaluates to the same value at every sample
+    (``values``)."""
+    if not set(_IDENTIFIER_RE.findall(expression)) & set(variables):
+        return True
+    if len(values) < 2:
+        return False
+    first = values[0]
+    return all(
+        math.isclose(value, first, rel_tol=_CONSTANT_REL_TOL, abs_tol=_CONSTANT_ABS_TOL)
+        for value in values[1:]
+    )
+
+
+def _zero_result(error: str, **metadata: Any) -> RewardResult:
+    return RewardResult(score=0.0, metadata={"error": error, **metadata})
 
 
 def _weighted_average(scores: dict[str, float], weights: dict[str, float]) -> float:
@@ -332,7 +375,16 @@ def _product_score(
 
 
 class SymbolicPhysicsRewardFunction(RewardFunction):
-    """Reward function that scores symbolic expressions against constraints."""
+    """Reward function that scores symbolic expressions against constraints.
+
+    Raises ``ConfigurationError`` for a task without declared ``variables``;
+    a constant candidate scores 0 unless the target is constant (see the
+    module docs).
+    """
+
+    #: A task without declared variables is a configuration error that must
+    #: stop training, not an episode to drop.
+    fail_on_error = True
 
     def __init__(
         self,
@@ -360,31 +412,29 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
         **_: Any,
     ) -> RewardResult:
         context = context or {}
+        variables = list(context.get("variables") or [])
+        if not variables:
+            raise ConfigurationError(
+                "SymbolicPhysicsRewardFunction needs the task's declared "
+                "variables (context['variables']); without them no expression "
+                "can be checked",
+                task_id=context.get("task_id"),
+            )
         if turns is None and turn is not None:
             turns = [turn]
         turns = turns or []
 
         assistant_turn = _extract_last_assistant(turns)
         if assistant_turn is None:
-            result = RewardResult(score=0.0, metadata={"error": "no_assistant_turn"})
-            result.total_reward = 0.0
-            return result
+            return _zero_result("no_assistant_turn")
 
         expression = extract_expression(assistant_turn.content or "")
         if not expression:
-            result = RewardResult(score=0.0, metadata={"error": "no_expression"})
-            result.total_reward = 0.0
-            return result
+            return _zero_result("no_expression")
 
-        variables = list(context.get("variables") or [])
         target_expression = context.get("target_expression")
         derived_variables = dict(context.get("derived_variables") or {})
         constraints = list(context.get("constraints") or [])
-
-        if not variables:
-            result = RewardResult(score=0.0, metadata={"error": "no_variables"})
-            result.total_reward = 0.0
-            return result
 
         samples = generate_samples(
             variables=variables,
@@ -410,12 +460,18 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
                 ]
         except Exception as exc:
             logger.debug("Expression evaluation failed: %s", exc)
-            result = RewardResult(
-                score=0.0,
-                metadata={"error": "evaluation_failed", "expression": expression},
-            )
-            result.total_reward = 0.0
-            return result
+            return _zero_result("evaluation_failed", expression=expression)
+
+        names = [*variables, *derived_variables]
+        constant_target = target_values is not None and is_constant_expression(
+            str(target_expression), target_values, names
+        )
+        if not constant_target and is_constant_expression(
+            expression, candidate_values, names
+        ):
+            # A constant satisfies symmetry, parity and zero constraints
+            # trivially; it earns no validity and nothing can lift it.
+            return _zero_result("trivial_expression", expression=expression)
 
         components: dict[str, float] = {}
         component_weights = dict(self.config.component_weights)
@@ -436,116 +492,21 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
         else:
             component_weights.pop("equivalence", None)
 
-        constraint_scores: dict[str, float] = {}
-        if constraints:
-            for idx, constraint in enumerate(constraints):
-                ctype = str(constraint.get("type", "")).lower()
-                score = 0.0
-                if ctype in {"symmetry", "antisymmetry"}:
-                    pairs = constraint.get("pairs", [])
-                    sign = float(
-                        constraint.get("sign", -1.0 if ctype == "antisymmetry" else 1.0)
-                    )
-                    score = _symmetry_score(
-                        expression,
-                        samples,
-                        pairs,
-                        sign,
-                        self.config.rel_tol,
-                        self.config.abs_tol,
-                        self.allowed_functions,
-                        derived_variables,
-                    )
-                elif ctype == "zeros":
-                    points = constraint.get("points", [])
-                    score = _zeros_score(
-                        expression,
-                        variables,
-                        points,
-                        derived_variables,
-                        self.config.rel_tol,
-                        self.config.abs_tol,
-                        self.allowed_functions,
-                    )
-                elif ctype == "scale":
-                    factors = (
-                        constraint.get("factors")
-                        or constraint.get("scale_factors")
-                        or [0.5, 2.0]
-                    )
-                    power = float(constraint.get("power", 0.0))
-                    score = _scale_score(
-                        expression,
-                        samples,
-                        variables,
-                        derived_variables,
-                        list(factors),
-                        power,
-                        self.config.rel_tol,
-                        self.config.abs_tol,
-                        self.allowed_functions,
-                    )
-                elif ctype == "sign_flip":
-                    variables_to_flip = constraint.get("variables")
-                    if variables_to_flip is None:
-                        single = constraint.get("variable")
-                        variables_to_flip = [single] if single else []
-                    variables_to_flip = [
-                        str(item) for item in variables_to_flip if item is not None
-                    ]
-                    parity = str(constraint.get("parity", "")).lower().strip()
-                    if parity in {"odd", "negative"}:
-                        sign = -1.0
-                    elif parity in {"even", "positive"}:
-                        sign = 1.0
-                    else:
-                        sign = float(constraint.get("sign", 1.0))
-                    score = _sign_flip_score(
-                        expression,
-                        samples,
-                        variables_to_flip,
-                        sign,
-                        self.config.rel_tol,
-                        self.config.abs_tol,
-                        self.allowed_functions,
-                        derived_variables,
-                    )
-                elif ctype == "sum":
-                    terms = list(constraint.get("terms") or [])
-                    weights = constraint.get("weights") or constraint.get(
-                        "coefficients"
-                    )
-                    score = _sum_score(
-                        expression,
-                        samples,
-                        [str(term) for term in terms],
-                        [float(w) for w in weights] if weights else None,
-                        self.config.rel_tol,
-                        self.config.abs_tol,
-                        self.allowed_functions,
-                        candidate_values=candidate_values,
-                    )
-                elif ctype == "product":
-                    factors = list(constraint.get("factors") or [])
-                    exponents = constraint.get("exponents")
-                    score = _product_score(
-                        expression,
-                        samples,
-                        [str(factor) for factor in factors],
-                        [float(e) for e in exponents] if exponents else None,
-                        self.config.rel_tol,
-                        self.config.abs_tol,
-                        self.allowed_functions,
-                        candidate_values=candidate_values,
-                    )
-                else:
-                    logger.debug("Unsupported constraint type: %s", ctype)
-                constraint_scores[f"constraint_{idx}"] = float(score)
-
-            if constraint_scores:
-                components["constraints"] = sum(constraint_scores.values()) / len(
-                    constraint_scores
-                )
+        constraint_scores = {
+            f"constraint_{idx}": self._constraint_score(
+                constraint,
+                expression,
+                samples,
+                variables,
+                derived_variables,
+                candidate_values,
+            )
+            for idx, constraint in enumerate(constraints)
+        }
+        if constraint_scores:
+            components["constraints"] = sum(constraint_scores.values()) / len(
+                constraint_scores
+            )
         else:
             component_weights.pop("constraints", None)
 
@@ -560,7 +521,7 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
         score = _weighted_average(components, component_weights)
         score = max(0.0, min(1.0, score))
 
-        result = RewardResult(
+        return RewardResult(
             score=score,
             components=components,
             metadata={
@@ -569,5 +530,118 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
                 "num_samples": len(samples),
             },
         )
-        result.total_reward = float(score)
-        return result
+
+    def _constraint_score(
+        self,
+        constraint: Mapping[str, Any],
+        expression: str,
+        samples: list[dict[str, float]],
+        variables: list[str],
+        derived_variables: Mapping[str, str],
+        candidate_values: list[float],
+    ) -> float:
+        """The share of samples on which ``expression`` keeps ``constraint``
+        (0 for an unsupported constraint type)."""
+        rel_tol, abs_tol = self.config.rel_tol, self.config.abs_tol
+        ctype = str(constraint.get("type", "")).lower()
+        if ctype in {"symmetry", "antisymmetry"}:
+            sign = float(
+                constraint.get("sign", -1.0 if ctype == "antisymmetry" else 1.0)
+            )
+            return _symmetry_score(
+                expression,
+                samples,
+                constraint.get("pairs", []),
+                sign,
+                rel_tol,
+                abs_tol,
+                self.allowed_functions,
+                derived_variables,
+            )
+        if ctype == "zeros":
+            return _zeros_score(
+                expression,
+                variables,
+                constraint.get("points", []),
+                derived_variables,
+                rel_tol,
+                abs_tol,
+                self.allowed_functions,
+            )
+        if ctype == "scale":
+            factors = (
+                constraint.get("factors")
+                or constraint.get("scale_factors")
+                or [0.5, 2.0]
+            )
+            return _scale_score(
+                expression,
+                samples,
+                variables,
+                derived_variables,
+                list(factors),
+                float(constraint.get("power", 0.0)),
+                rel_tol,
+                abs_tol,
+                self.allowed_functions,
+            )
+        if ctype == "sign_flip":
+            return self._sign_flip_constraint(
+                constraint, expression, samples, derived_variables
+            )
+        if ctype == "sum":
+            weights = constraint.get("weights") or constraint.get("coefficients")
+            return _sum_score(
+                expression,
+                samples,
+                [str(term) for term in constraint.get("terms") or []],
+                [float(w) for w in weights] if weights else None,
+                rel_tol,
+                abs_tol,
+                self.allowed_functions,
+                candidate_values=candidate_values,
+            )
+        if ctype == "product":
+            exponents = constraint.get("exponents")
+            return _product_score(
+                expression,
+                samples,
+                [str(factor) for factor in constraint.get("factors") or []],
+                [float(e) for e in exponents] if exponents else None,
+                rel_tol,
+                abs_tol,
+                self.allowed_functions,
+                candidate_values=candidate_values,
+            )
+        logger.debug("Unsupported constraint type: %s", ctype)
+        return 0.0
+
+    def _sign_flip_constraint(
+        self,
+        constraint: Mapping[str, Any],
+        expression: str,
+        samples: list[dict[str, float]],
+        derived_variables: Mapping[str, str],
+    ) -> float:
+        variables_to_flip = constraint.get("variables")
+        if variables_to_flip is None:
+            single = constraint.get("variable")
+            variables_to_flip = [single] if single else []
+        flipped = [str(item) for item in variables_to_flip if item is not None]
+        parity = str(constraint.get("parity", "")).lower().strip()
+        if parity in {"odd", "negative"}:
+            sign = -1.0
+        elif parity in {"even", "positive"}:
+            sign = 1.0
+        else:
+            sign = float(constraint.get("sign", 1.0))
+        return _sign_flip_score(
+            expression,
+            samples,
+            flipped,
+            sign,
+            self.config.rel_tol,
+            self.config.abs_tol,
+            self.allowed_functions,
+            derived_variables,
+        )

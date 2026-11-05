@@ -1,0 +1,26 @@
+{
+  "model_id": "meta-models/Muse-Spark-Open-816B-A42B",
+  "model_revision": "0fb02478b02565b2ce7fc57e6051c91172774ac9",
+  "gated": "manual",
+  "published_architectures": [
+    "MuseSparkForConditionalGeneration"
+  ],
+  "published_model_type": "muse_spark",
+  "published_safetensors": {
+    "parameters": {
+      "BF16": 821906490368,
+      "F32": 130039296
+    },
+    "total": 822036529664
+  },
+  "pinned_config_access_http_status": 403,
+  "full_checkpoint_configuration_verified": false,
+  "released_weights_loaded": false,
+  "full_size_gpu_training_verified": false,
+  "model_source": "https://huggingface.co/meta-models/Muse-Spark-Open-816B-A42B",
+  "native_architecture_source": "https://github.com/huggingface/transformers/blob/v5.20.0/src/transformers/models/muse_spark/modeling_muse_spark.py",
+  "native_architecture_sha256": "250b582762a72b3fccc0b272c560edd69653a22e83d091bf9958ce245c52a97a",
+  "public_template_sha256": "2341a2d3b1f1b0ac92b6237d46e2fff495109bd3305cacdea54726f5e98411db",
+  "upstream_recipe": "https://github.com/huggingface/trl/tree/main/examples/sft_muse_spark_open",
+  "verification": "in progress"
+}

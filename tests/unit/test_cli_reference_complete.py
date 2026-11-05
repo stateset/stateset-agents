@@ -23,7 +23,9 @@ LAZILY_REGISTERED = {"advanced"}
 def _registered_commands() -> set[str]:
     from stateset_agents.cli import app
 
-    return set(typer.main.get_command(app).commands)
+    # Hidden commands are deprecated aliases; their replacement is documented.
+    commands = typer.main.get_command(app).commands
+    return {name for name, command in commands.items() if not command.hidden}
 
 
 def _documented_commands() -> set[str]:

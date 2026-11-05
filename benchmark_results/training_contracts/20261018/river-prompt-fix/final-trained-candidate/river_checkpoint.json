@@ -1,0 +1,13 @@
+{
+  "provider": "river",
+  "base_model": "Qwen/Qwen3.5-9B",
+  "checkpoint": "river://737b2a80-c4a1-4574-a0b7-9261cf4b42f9/sampler_weights/rl-eval-00000002",
+  "lora": {
+    "rank": 16
+  },
+  "steps": 2,
+  "selected_validation_step": 2,
+  "completed_training_batches": 2,
+  "kind": "final-trained-candidate-not-selected-not-tested",
+  "note": "River-hosted inference weights; no local adapter. Selected baseline and final trained candidate are distinct. Only the validation-selected checkpoint was evaluated on the sealed test split."
+}

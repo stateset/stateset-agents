@@ -7,8 +7,10 @@ API endpoints for training job management.
 from datetime import datetime
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
+
+from stateset_agents.utils.clock import utc_now
 
 from ..dependencies import (
     AuthenticatedUser,
@@ -17,8 +19,12 @@ from ..dependencies import (
     require_role,
 )
 from ..errors import InternalError, TrainingConfigError, TrainingJobNotFoundError
-from ..models import PaginatedResponse
-from ..schemas import ErrorResponse, TrainingRequest, TrainingResponse
+from ..schemas import (
+    ErrorResponse,
+    PaginatedResponse,
+    TrainingRequest,
+    TrainingResponse,
+)
 from ..services.training_service import TrainingService
 
 router = APIRouter(prefix="/training", tags=["training"])
@@ -47,24 +53,28 @@ class TrainingJobDetail(BaseModel):
     training_id: str = Field(..., description="Training job identifier")
     status: str = Field(..., description="Current status")
     created_at: datetime = Field(..., description="Creation timestamp")
-    started_at: datetime | None = Field(None, description="Start timestamp")
-    completed_at: datetime | None = Field(None, description="Completion timestamp")
+    started_at: datetime | None = Field(default=None, description="Start timestamp")
+    completed_at: datetime | None = Field(
+        default=None, description="Completion timestamp"
+    )
     completion_scope: (
         Literal[
             "final_episode_reported", "partial_episode_progress", "no_episode_progress"
         ]
         | None
     ) = Field(
-        None,
+        default=None,
         description="Episode progress observed when the trainer returned normally; not proof of optimizer updates or saved artifacts",
     )
-    progress: float = Field(0.0, ge=0.0, le=100.0, description="Progress percentage")
-    current_episode: int = Field(0, description="Current training episode")
-    total_episodes: int = Field(0, description="Total episodes")
+    progress: float = Field(
+        default=0.0, ge=0.0, le=100.0, description="Progress percentage"
+    )
+    current_episode: int = Field(default=0, description="Current training episode")
+    total_episodes: int = Field(default=0, description="Total episodes")
     metrics: dict[str, Any] = Field(
         default_factory=dict, description="Training metrics"
     )
-    error: str | None = Field(None, description="Error message if failed")
+    error: str | None = Field(default=None, description="Error message if failed")
     config: dict[str, Any] = Field(
         default_factory=dict, description="Training configuration"
     )
@@ -110,6 +120,7 @@ class TrainingCancelResponse(BaseModel):
             "description": "Insufficient permissions or model not permitted",
             "model": ErrorResponse,
         },
+        409: {"description": "Idempotency key conflict", "model": ErrorResponse},
         429: {
             "description": "Training concurrency limit reached",
             "model": ErrorResponse,
@@ -125,6 +136,7 @@ async def start_training(
     request: TrainingRequest,
     svc: TrainingService = Depends(get_training_service),
     user: AuthenticatedUser = Depends(require_role("trainer")),
+    idempotency_key: str | None = Header(None, max_length=256),
 ) -> TrainingResponse:
     """
     Start a new training job.
@@ -153,14 +165,30 @@ async def start_training(
                 detail="environment_scenarios must contain at least one scenario",
             )
 
-        training_id = await svc.start_training(
-            request, user_id=user.user_id, roles=list(user.roles)
-        )
+        if idempotency_key is not None:
+            training_id = await svc.start_training(
+                request,
+                user_id=user.user_id,
+                idempotency_key=idempotency_key,
+                roles=list(user.roles),
+            )
+        else:
+            training_id = await svc.start_training(
+                request, user_id=user.user_id, roles=list(user.roles)
+            )
 
+        persisted = (
+            await svc.aget_training_status(training_id, user_id=user.user_id)
+            if svc.queue is not None
+            else None
+        )
+        accepted_status = (
+            persisted["status"] if isinstance(persisted, dict) else "running"
+        )
         return TrainingResponse(
             training_id=training_id,
-            status="running",
-            message="Training started successfully",
+            status=accepted_status,
+            message="Training request accepted",
             estimated_time=request.num_episodes * 30,  # Rough estimate: 30s per episode
         )
 
@@ -203,32 +231,18 @@ async def list_training_jobs(
     Returns:
         Paginated list of training job details.
     """
-    # Get all jobs from service
-    all_jobs = [
-        (jid, j)
-        for jid, j in list(svc.jobs.items())
-        if _is_admin_user(user) or j.get("user_id") in (None, user.user_id)
-    ]
-
-    # Apply status filter if provided
-    if status:
-        all_jobs = [(jid, j) for jid, j in all_jobs if j.get("status") == status]
-
-    total = len(all_jobs)
-
-    # Sort by creation time (newest first)
-    all_jobs.sort(key=lambda x: x[1].get("created_at", datetime.min), reverse=True)
-
-    # Paginate
-    start_idx = (page - 1) * page_size
-    end_idx = start_idx + page_size
-    page_jobs = all_jobs[start_idx:end_idx]
+    page_jobs, total = await svc.list_training_jobs(
+        page=page,
+        page_size=page_size,
+        status=status,
+        user_id=None if _is_admin_user(user) else user.user_id,
+    )
 
     items = [
         TrainingJobDetail(
             training_id=job_id,
             status=job.get("status", "unknown"),
-            created_at=job.get("created_at", datetime.utcnow()),
+            created_at=job.get("created_at", utc_now()),
             started_at=job.get("started_at"),
             completed_at=job.get("completed_at"),
             completion_scope=job.get("completion_scope"),
@@ -247,7 +261,7 @@ async def list_training_jobs(
         total=total,
         page=page,
         page_size=page_size,
-        has_next=end_idx < total,
+        has_next=page * page_size < total,
         has_prev=page > 1,
     )
 
@@ -281,7 +295,7 @@ async def get_training_status(
     Raises:
         TrainingJobNotFoundError: If the training job doesn't exist.
     """
-    job = svc.get_training_status(training_id, user_id=user.user_id)
+    job = await svc.aget_training_status(training_id, user_id=user.user_id)
 
     if not job:
         raise TrainingJobNotFoundError(training_id)
@@ -289,7 +303,7 @@ async def get_training_status(
     return TrainingJobDetail(
         training_id=training_id,
         status=job.get("status", "unknown"),
-        created_at=job.get("created_at", datetime.utcnow()),
+        created_at=job.get("created_at", utc_now()),
         started_at=job.get("started_at"),
         completed_at=job.get("completed_at"),
         completion_scope=job.get("completion_scope"),
@@ -338,11 +352,11 @@ async def cancel_training(
     Raises:
         TrainingJobNotFoundError: If the training job doesn't exist.
     """
-    if not svc.cancel_training(training_id, user_id=user.user_id):
+    if not await svc.acancel_training(training_id, user_id=user.user_id):
         raise TrainingJobNotFoundError(training_id)
 
     # Status reads are snapshots: fetch the result after requesting cancellation.
-    job = svc.get_training_status(training_id, user_id=user.user_id)
+    job = await svc.aget_training_status(training_id, user_id=user.user_id)
     if not job:
         raise TrainingJobNotFoundError(training_id)
     status = job["status"]

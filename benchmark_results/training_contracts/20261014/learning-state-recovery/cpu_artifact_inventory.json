@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "artifact_sha256": "655776753ede6ebe520af2c0ffeaca8027dd7785f1ff9af10f3fc66720f8ca3b",
+  "files": {
+    ".stateset-checkpoint.json": "51782f094aad21d8069f7b84ec8f24686474d9c2c324c3a3d048fd30ab025be3",
+    "chat_template.jinja": "bbb5be5478b2e408cb14501ff61cbbfe4c71914852cb4ba6a6b3916dff8e333c",
+    "config.json": "3b7f6572ba14ad82c1cb8921335fc34fe9674543a395c145a679aced31ac47f7",
+    "generation_config.json": "2d94f80ccb4fe4cdc0fa382ce548e7384c94693d0e541a11dff37b183d8bc676",
+    "model.safetensors": "b5ceac22186b2e902721d90346e25b8598fbf57b7d8bcdee972646b3be24f0f2",
+    "tokenizer.json": "143bea1069115bace0484148811cc7a2089ad0a02bf64af270ec8aa1b2109573",
+    "tokenizer_config.json": "8630f1f94f74b8def7de6bacd4540dd8e09087e14329b1c148c6c314137ea79c",
+    "training_state.pt": "bdd43a090c6a598dc617a46554bd9b78c3bce5650f4c01731366a508234e703d"
+  },
+  "artifact_revalidated": true
+}

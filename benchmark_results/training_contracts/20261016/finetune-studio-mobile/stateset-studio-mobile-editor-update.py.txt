@@ -1,0 +1,32 @@
+"""Make one mobile edit only before the frozen verifier owns its source lock."""
+from pathlib import Path
+import fcntl
+
+root=Path('/home/dom/stateset-agents')
+with Path('/tmp/stateset-studio-mobile-source.lock').open('a') as lock:
+    fcntl.flock(lock.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+    path=root/'stateset_agents/tui.py'
+    source=path.read_text()
+    needle='                "Arrows/Home/End move | Enter save | Esc discard | Ctrl+U clear",\n'
+    replacement='''                (
+                    "Enter save | Esc discard"
+                    if self.compact_layout or width < COMPACT_COLUMNS
+                    else "Arrows/Home/End move | Enter save | Esc discard | Ctrl+U clear"
+                ),
+'''
+    assert source.count(needle)==1
+    tests=root/'tests/unit/test_finetune_mobile.py'
+    addition='''
+
+def test_phone_field_editor_keeps_save_and_cancel_visible(tmp_path):
+    studio = tui.Studio(tmp_path)
+    studio.lines(39, 24)
+    studio.field = next(i for i, f in enumerate(studio.fields()) if f.name == "seed")
+    studio.handle("ENTER")
+    frame = studio.lines(31, 16)
+    assert frame[-1] == "Enter save | Esc discard"
+'''
+    assert 'test_phone_field_editor_keeps_save_and_cancel_visible' not in tests.read_text()
+    path.write_text(source.replace(needle,replacement,1))
+    tests.write_text(tests.read_text().rstrip()+'\n'+addition)
+print('Updated the phone editor controls before source freeze.')

@@ -1,0 +1,18 @@
+{
+  "stateset_agents/training/state_fingerprint.py": "76bd4a3711a109a98229c8ceb4c9434c2c0e411bc783b6a252e7db3a7dc40384",
+  "stateset_agents/training/scheduler_identity.py": "0c48d0aae2cc130660f2f0030c2b7fe3d2f5eea91b8956976c4c2bfeadb72479",
+  "stateset_agents/training/replica_consensus.py": "dbf90e673381fbd5bcbfb4bb678ccf3f69081d3334b90872eb841dead24bff69",
+  "stateset_agents/training/learner_preflight.py": "dd81a68ba7e17185e095e9237e91e92eeb3f9db95db73093c2f30657a4a284c0",
+  "stateset_agents/training/distributed.py": "ceece337033212e489ff25bf855e695623a61d4a8d76a0681b681164b92bb1c7",
+  "tests/unit/test_state_fingerprint.py": "576a98337d5b430cf48365fe9c2eb0ef27328c46f7e7d39ecf4ea24ffd37f324",
+  "tests/unit/test_scheduler_identity.py": "a938cc911b8053609040b77dde5102a3cade05632d7cd7e8ea0644827483d67f",
+  "tests/integration/test_replica_consensus.py": "1b58b4088eb231b7900144b39babe812c34bb8762b08a5262d7185993d8ed256",
+  "tests/unit/test_learner_preflight.py": "296cda4e8dea4ad2b56288fff676a39b7cf4d550b7e9459c6bca176f294c6f86",
+  "tests/integration/test_learner_preflight.py": "47d1ed2d541ec924ae3eb8ff6abb3c131409ceb709586158992286313ce83bd6",
+  "tests/unit/test_mypy_allowlist_ratchet.py": "6af7c3be28044fb577814f298763d658349277b4db42fa8ed52dfb3b11417d8d",
+  ".github/workflows/training-contracts.yml": "cba95477c36302e9208051d0f30e558eb6bc90d4c50d5347a14ba36aa96cc7b7",
+  "pyproject.toml": "5eaaebdaa2c22e3adf21cc51ef7a939b18ed27d9890366b9f376649508f7c3b9",
+  "docs/OBJECTIVES.md": "492fc89bffdd03192262a18e275379d06952293391d74fa56dafa0511f811b32",
+  "docs/ROADMAP.md": "d1fd0a4bdd11a354dbd5efce4113b8cc344f2aef3bc224740d0356a86b82a026",
+  "CHANGELOG.md": "7a11646ff21239ade7b1d54f4b66b1446b3baa8a4a3a35c67ea46aeb4b50d740"
+}

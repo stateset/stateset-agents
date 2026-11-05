@@ -18,8 +18,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.api.resilience import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    RetryConfig,
+    RetryStrategy,
+)
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
-from stateset_agents.core.error_handling import CircuitBreaker, RetryConfig, retry_async
 
 # Setup logging
 logging.basicConfig(
@@ -70,18 +75,19 @@ class ProductionCustomerServiceAgent:
         self.is_healthy = False
         self.shutdown_requested = False
 
-        # Error handling — wrap calls with `retry_async` (decorator) +
-        # `CircuitBreaker.call(...)` (direct invocation).
-        self.retry_config = RetryConfig(
-            max_attempts=3,
-            base_delay=1.0,
-            max_delay=10.0,
-            exponential_base=2.0,
+        # Error handling (stateset_agents.api.resilience): retry transient
+        # failures with backoff inside an async circuit breaker.
+        self.retry = RetryStrategy(
+            RetryConfig(
+                max_attempts=3,
+                base_delay=1.0,
+                max_delay=10.0,
+                exponential_base=2.0,
+            )
         )
         self.circuit_breaker = CircuitBreaker(
-            failure_threshold=5,
-            recovery_timeout=60.0,
-            expected_exception=Exception,
+            "customer_service_agent",
+            CircuitBreakerConfig(failure_threshold=5, timeout_seconds=60.0),
         )
 
         # Setup signal handlers for graceful shutdown
@@ -174,15 +180,14 @@ class ProductionCustomerServiceAgent:
         logger.info(f"Handling conversation {conversation_id}")
 
         try:
-            # Retry transient failures (`retry_async` decorator) and protect the
-            # downstream call with the circuit breaker (`CircuitBreaker.call`).
-            @retry_async(self.retry_config)
-            async def generate_with_retry():
+            # Retry transient failures and protect the downstream call with
+            # the circuit breaker (both async, from api.resilience).
+            async def generate():
                 return await self.agent.generate_response(
                     messages, conversation_context
                 )
 
-            response = await self.circuit_breaker.call(generate_with_retry)
+            response = await self.circuit_breaker.call(self.retry.execute, generate)
 
             # Calculate response time
             response_time = (datetime.now() - start_time).total_seconds()

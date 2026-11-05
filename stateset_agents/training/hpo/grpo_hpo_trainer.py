@@ -345,8 +345,8 @@ class GRPOHPOTrainer:
         # Save results
         self._save_results()
 
-        # Print summary
-        self.hpo_summary.print_summary()
+        # Log summary
+        logger.info("%s", self.hpo_summary.format_summary())
 
         return self.hpo_summary
 

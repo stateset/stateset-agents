@@ -1,0 +1,271 @@
+{
+  "artifacts": {
+    "ecommerce/README.md": "c7d4cf2fd7b73ab4d8fa57952adf64df0233df30e7b6ecec35ae33c658d911f7",
+    "ecommerce/cases/test.json": "3cc4463900a63dee506ec4dc44457d79a454bc696e7a4b1e9f13c0741ab25088",
+    "ecommerce/cases/train.json": "cca51a9e33fb89760d378a6aa510f11eeab6a050344ab47a8f3bc198613ae7f6",
+    "ecommerce/cases/validation.json": "25ed7ee1b639144a1c3c6e4c3548a02318e858d5ec192b9a6c2e544a7d1e03f3",
+    "ecommerce/manifest.json": "84cca74961888ec7b66a2438788f85797f73a99228300edcea1f9c8345999d27",
+    "ecommerce/test.jsonl": "c0e9bdb8f8a6c3d3353ec8bd1136d2e491bd46ee4a822818fc97684fba2d71ae",
+    "ecommerce/train.jsonl": "3183f1bb2de62479d14c5ad6fdc2d4261574f0d119fecd20216b94f164f15aef",
+    "ecommerce/validation.jsonl": "f2ef1a5df8d588a795fba52af6049d48eec6654f21ae4ee1890f2124a0c81cbd",
+    "logistics/README.md": "8a7393ceb657f00ec6bfff2ff029d01e3c959d99f784531b8317b11db5836002",
+    "logistics/cases/test.json": "ccef6084bc753eead352b9aa2980850d73ddc85403cf789255b57d2b2a288a93",
+    "logistics/cases/train.json": "b636d45ac2f5192b49ea664fdedaba5ae6fe40cfbbc387e0b010dafde5c1ba53",
+    "logistics/cases/validation.json": "158d318ff4206221e55238cd996db7d1384a638efb8e527fab8ea472e35125d7",
+    "logistics/manifest.json": "1b1c896fe53974e0acbfc00d7b403ce72c0ab199ab79911593055bbde86e8101",
+    "logistics/test.jsonl": "991deacd201ce977e27fe8aae384d3fc2bf8b854c3bd16776cb2fc61c0573d6f",
+    "logistics/train.jsonl": "15569aabb497976aedc70956e76af87fea21960904f7b077ec08ada0e361bd3b",
+    "logistics/validation.jsonl": "4891a4322182f9f0a6f189897862bf308589b9a3908a33309206c9944cc14361",
+    "saas/README.md": "113ba8040dc7ef9d80e7a0e2c0942655000e8083a0ce254ac4367f9af43216ed",
+    "saas/cases/test.json": "47e49cb3cbab201e321df4b3dcd12f12f5d1edaa60a3e96716243c0e5514c4b7",
+    "saas/cases/train.json": "4b3c331c1698dca49b9c6e6d2d4eabf5a1e3f4e50f890b0c8a261faa05e454de",
+    "saas/cases/validation.json": "badc0723cf4f3297c5845d1f459f9e73b18bb9fea167a4140c4cff0806b435e5",
+    "saas/manifest.json": "ced5c05e87b7db77981a34fa753bffe1d1e7db1a54d1dbeb18e426c7953b5908",
+    "saas/test.jsonl": "2e04263b3dcb30858817db1ea115fd27a3ee50aadd6ef25d8f15d4ba65c09cca",
+    "saas/train.jsonl": "fba5fa8e6bceed34eb76126c61bdaddf16b1da34780629eb4010dc86fbfec2fd",
+    "saas/validation.jsonl": "b1ef183df6149035887a5c1f7d9fa9c78d2bb6772d1c2313aeac83ff98d2cbea"
+  },
+  "counts_per_domain": {
+    "test": 128,
+    "train": 512,
+    "validation": 64
+  },
+  "datasets": {
+    "ecommerce": {
+      "base_model": "Qwen/Qwen3.5-2B",
+      "case_generation_seeds": {
+        "test": [
+          20261019
+        ],
+        "train": [
+          20261019
+        ],
+        "validation": [
+          20261019
+        ]
+      },
+      "duplicates_removed": 0,
+      "evaluation_criteria": [
+        "correct order lookup",
+        "policy-grounded next step",
+        "no invented refund"
+      ],
+      "family_coverage": {
+        "test": {
+          "already_refunded": 16,
+          "chargeback": 16,
+          "eligible": 16,
+          "misleading_note": 16,
+          "outside_window": 16,
+          "partial_refund": 16,
+          "undelivered": 16,
+          "window_boundary": 16
+        },
+        "train": {
+          "already_refunded": 64,
+          "chargeback": 64,
+          "eligible": 64,
+          "misleading_note": 64,
+          "outside_window": 64,
+          "partial_refund": 64,
+          "undelivered": 64,
+          "window_boundary": 64
+        },
+        "validation": {
+          "already_refunded": 8,
+          "chargeback": 8,
+          "eligible": 8,
+          "misleading_note": 8,
+          "outside_window": 8,
+          "partial_refund": 8,
+          "undelivered": 8,
+          "window_boundary": 8
+        }
+      },
+      "files": {
+        "test.jsonl": "c0e9bdb8f8a6c3d3353ec8bd1136d2e491bd46ee4a822818fc97684fba2d71ae",
+        "train.jsonl": "3183f1bb2de62479d14c5ad6fdc2d4261574f0d119fecd20216b94f164f15aef",
+        "validation.jsonl": "f2ef1a5df8d588a795fba52af6049d48eec6654f21ae4ee1890f2124a0c81cbd"
+      },
+      "industry": "retail",
+      "industry_domain": "ecommerce",
+      "model_preset": "qwen3.5-2b",
+      "model_revision": null,
+      "review_status": "not_independently_reviewed",
+      "schema_version": 1,
+      "seed": 20261019,
+      "source": "industry-policy-simulations-v1",
+      "source_rows": 576,
+      "source_sha256": "ebdb44ebad4a547cec638f85389d01ef0741a501c68a4c65b471011d10633192",
+      "synthetic_rows": 576,
+      "test_rows": 128,
+      "test_status": "reserved_not_evaluated",
+      "train_rows": 512,
+      "validation_fraction": 0.1111111111111111,
+      "validation_rows": 64,
+      "validation_status": "held_out_not_evaluated"
+    },
+    "logistics": {
+      "base_model": "Qwen/Qwen3.5-2B",
+      "case_generation_seeds": {
+        "test": [
+          20261019
+        ],
+        "train": [
+          20261019,
+          21261022
+        ],
+        "validation": [
+          20261019
+        ]
+      },
+      "duplicates_removed": 0,
+      "evaluation_criteria": [
+        "verified shipment facts",
+        "authorized changes",
+        "accurate exception routing"
+      ],
+      "family_coverage": {
+        "test": {
+          "address_change": 16,
+          "cancel_after_dispatch": 16,
+          "cancel_before_dispatch": 16,
+          "delivered": 16,
+          "in_transit": 16,
+          "late_or_lost": 16,
+          "missing_verification": 16,
+          "processing": 16
+        },
+        "train": {
+          "address_change": 64,
+          "cancel_after_dispatch": 64,
+          "cancel_before_dispatch": 64,
+          "delivered": 64,
+          "in_transit": 64,
+          "late_or_lost": 64,
+          "missing_verification": 64,
+          "processing": 64
+        },
+        "validation": {
+          "address_change": 8,
+          "cancel_after_dispatch": 8,
+          "cancel_before_dispatch": 8,
+          "delivered": 8,
+          "in_transit": 8,
+          "late_or_lost": 8,
+          "missing_verification": 8,
+          "processing": 8
+        }
+      },
+      "files": {
+        "test.jsonl": "991deacd201ce977e27fe8aae384d3fc2bf8b854c3bd16776cb2fc61c0573d6f",
+        "train.jsonl": "15569aabb497976aedc70956e76af87fea21960904f7b077ec08ada0e361bd3b",
+        "validation.jsonl": "4891a4322182f9f0a6f189897862bf308589b9a3908a33309206c9944cc14361"
+      },
+      "industry": "logistics",
+      "industry_domain": "logistics",
+      "model_preset": "qwen3.5-2b",
+      "model_revision": null,
+      "review_status": "not_independently_reviewed",
+      "schema_version": 1,
+      "seed": 20261019,
+      "source": "industry-policy-simulations-v1",
+      "source_rows": 576,
+      "source_sha256": "bf6e1bbf6bc1c9f62d85a9e8a4164096b0d6581e572ced6bfe41ad384a937677",
+      "synthetic_rows": 576,
+      "test_rows": 128,
+      "test_status": "reserved_not_evaluated",
+      "train_rows": 512,
+      "validation_fraction": 0.1111111111111111,
+      "validation_rows": 64,
+      "validation_status": "held_out_not_evaluated"
+    },
+    "saas": {
+      "base_model": "Qwen/Qwen3.5-2B",
+      "case_generation_seeds": {
+        "test": [
+          20261019
+        ],
+        "train": [
+          20261019
+        ],
+        "validation": [
+          20261019
+        ]
+      },
+      "duplicates_removed": 0,
+      "evaluation_criteria": [
+        "reproducible next steps",
+        "correct ticket status",
+        "permission-aware actions"
+      ],
+      "family_coverage": {
+        "test": {
+          "admin_change": 16,
+          "missing_verification": 16,
+          "outage": 16,
+          "quota": 16,
+          "read_only_role": 16,
+          "security_incident": 16,
+          "subscription": 16,
+          "technical_issue": 16
+        },
+        "train": {
+          "admin_change": 64,
+          "missing_verification": 64,
+          "outage": 64,
+          "quota": 64,
+          "read_only_role": 64,
+          "security_incident": 64,
+          "subscription": 64,
+          "technical_issue": 64
+        },
+        "validation": {
+          "admin_change": 8,
+          "missing_verification": 8,
+          "outage": 8,
+          "quota": 8,
+          "read_only_role": 8,
+          "security_incident": 8,
+          "subscription": 8,
+          "technical_issue": 8
+        }
+      },
+      "files": {
+        "test.jsonl": "2e04263b3dcb30858817db1ea115fd27a3ee50aadd6ef25d8f15d4ba65c09cca",
+        "train.jsonl": "fba5fa8e6bceed34eb76126c61bdaddf16b1da34780629eb4010dc86fbfec2fd",
+        "validation.jsonl": "b1ef183df6149035887a5c1f7d9fa9c78d2bb6772d1c2313aeac83ff98d2cbea"
+      },
+      "industry": "technology",
+      "industry_domain": "saas",
+      "model_preset": "qwen3.5-2b",
+      "model_revision": null,
+      "review_status": "not_independently_reviewed",
+      "schema_version": 1,
+      "seed": 20261019,
+      "source": "industry-policy-simulations-v1",
+      "source_rows": 576,
+      "source_sha256": "ab6af7fd344e277a114d063d34940a3e1e6bd1dd3be68c2f9c731b8458f5ed3f",
+      "synthetic_rows": 576,
+      "test_rows": 128,
+      "test_status": "reserved_not_evaluated",
+      "train_rows": 512,
+      "validation_fraction": 0.1111111111111111,
+      "validation_rows": 64,
+      "validation_status": "held_out_not_evaluated"
+    }
+  },
+  "domains": [
+    "ecommerce",
+    "logistics",
+    "saas"
+  ],
+  "model_preset": "qwen3.5-2b",
+  "provider_calls": 0,
+  "quality_certification": false,
+  "review_status": "not_independently_reviewed",
+  "schema_version": 1,
+  "seed": 20261019,
+  "source": "industry-policy-simulations-v1",
+  "synthetic": true
+}

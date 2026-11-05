@@ -1,0 +1,26 @@
+[
+  {
+    "case": "measure",
+    "rejected": true,
+    "error": "GRPO normalization measure or entropy differs across DDP ranks"
+  },
+  {
+    "case": "entropy",
+    "rejected": true,
+    "error": "GRPO normalization measure or entropy differs across DDP ranks"
+  },
+  {
+    "case": "invalid_count",
+    "rejected": true,
+    "error": "Invalid GRPO normalization counts on a DDP rank"
+  },
+  {
+    "case": "overflow_count",
+    "rejected": true,
+    "error": "Invalid GRPO normalization counts on a DDP rank"
+  },
+  {
+    "case": "recovery",
+    "rejected": false
+  }
+]

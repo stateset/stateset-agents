@@ -1,0 +1,261 @@
+"""One-shot, preregistered River SFT canary using packaged StateSet components."""
+from __future__ import annotations
+
+import asyncio
+from contextlib import closing
+from dataclasses import asdict
+import getpass
+import hashlib
+import json
+import os
+from pathlib import Path
+import selectors
+import signal
+import subprocess
+import sys
+import time
+
+REPO = Path('/home/dom/stateset-agents')
+ROOT = REPO / 'outputs/river-sft-warmup-20261018'
+MODEL = 'Qwen/Qwen3.5-9B'
+SEED = 20261020
+
+
+def write(name, value):
+    from stateset_agents.remote.river_rl import atomic_json
+    atomic_json(ROOT / name, value)
+
+
+def read(name):
+    return json.loads((ROOT / name).read_text())
+
+
+def spec():
+    from stateset_agents.remote.job import RemoteJobSpec
+    return RemoteJobSpec(dataset=ROOT/'data/train.jsonl', base_model=MODEL,
+        output_dir=ROOT/'sft', num_epochs=1, lora_r=16, learning_rate=2e-5,
+        max_length=4096, per_device_batch_size=8, gradient_accumulation_steps=1,
+        seed=SEED, timeout_s=1800, job_kind='sft')
+
+
+def prepare():
+    from stateset_agents.core.environments.refund_policy_environment import RefundPolicyEnvironment
+    from stateset_agents.data.refund_demonstrations import prepare_refund_data
+    from stateset_agents.evaluation.agent_runs import content_hash
+    from stateset_agents.evaluation.implementation import package_implementation
+    ROOT.mkdir(exist_ok=False)
+    manifest=asyncio.run(prepare_refund_data(ROOT/'data', seed=SEED,
+        train_count=64, validation_count=32, test_count=32))
+    rows=[r for split in ('train','validation','test') for r in read(f'data/{split}.json')]
+    identities={r['order_id'] for r in rows}
+    facts={RefundPolicyEnvironment.case_fingerprint(r) for r in rows}
+    assert len(identities)==len(facts)==128
+    historical=[]
+    for directory in ('river-integration-review-20261018-live','river-prompt-fix-20261018-live'):
+        for split in ('train','validation','test'):
+            historical.extend(json.loads((REPO/'outputs'/directory/'run'/f'{split}.json').read_text()))
+    assert not identities & {r['order_id'] for r in historical}
+    assert not facts & {RefundPolicyEnvironment.case_fingerprint(r) for r in historical}
+    plan={'schema_version':1,'kind':'synthetic-sft-integration-canary', 'seed':SEED,
+        'implementation':package_implementation(), 'data_manifest_hash':content_hash(manifest),
+        'sft_spec':spec().to_dict(),'expected_optimizer_updates':8,
+        'validation':['base','sft'],'selection':'Higher validation success count; ties retain base',
+        'test':'One evaluation of the validation winner after a durable test-attempt seal',
+        'rollout_token_budget':110000,'expected_reserved_output_tokens':98304,
+        'max_sft_attempts':1,'wall_timeout_seconds':1800,'dollar_cap_enforced':False,
+        'quality_certification':False,'historical_case_id_overlap':0,'historical_case_fact_overlap':0}
+    write('plan.json',plan)
+    print(json.dumps({'prepared':True,'root':str(ROOT),'training_examples':64,
+        'validation_cases':32,'test_cases':32,'historical_overlap':0}),flush=True)
+
+
+def check_data():
+    from transformers import AutoTokenizer
+    from stateset_agents.remote.river_batches import build_sft_batch
+    from stateset_agents.data.refund_demonstrations import replay_refund_candidate
+    rows=[json.loads(line) for line in (ROOT/'data/train.jsonl').read_text().splitlines()]
+    by_id={r['order_id']:r for r in read('data/train.json')}
+    async def replay():
+        for row in rows:
+            metadata=row['metadata']
+            assert metadata['split']=='train'
+            await replay_refund_candidate(by_id[metadata['case_id']],
+                {'case_id':metadata['case_id'],'case_hash':metadata['case_hash'],
+                 'messages':row['messages'],'truncated':None})
+    asyncio.run(replay())
+    tokenizer=AutoTokenizer.from_pretrained(MODEL,local_files_only=True)
+    data=build_sft_batch(rows,tokenizer,max_length=4096)
+    assert len(data)==len(rows)==64
+    lengths=[]
+    for row,datum in zip(rows,data,strict=True):
+        rendered=tokenizer.apply_chat_template(row['messages'],tokenize=False,add_generation_prompt=False)
+        length=len(tokenizer.encode(rendered,add_special_tokens=False))
+        assert length<=4096
+        lengths.append(length)
+        trained=tokenizer.decode([token for token,weight in zip(datum['target_tokens'],datum['weights'],strict=True) if weight])
+        assert all(tool in trained for tool in ('lookup_order','finish'))
+        assert 'Please resolve my refund request.' not in trained
+        assert len(datum['input_ids'])==length-1
+    check={'replayed_demonstrations':64,'trainable_rows':len(data),'maximum_sequence_tokens':max(lengths),
+           'total_input_tokens':sum(len(d['input_ids']) for d in data),
+           'assistant_target_tokens':sum(sum(d['weights']) for d in data),
+           'max_length':4096,'truncated_demonstrations':0,'provider_requests':0}
+    write('data-check.json',check)
+    print(json.dumps(check),flush=True)
+
+
+async def evaluate(eval_session,renderer,checkpoint,cases,split,arm,budget,implementation):
+    from river_client import rl
+    from stateset_agents.core.environments.refund_policy_environment import RefundPolicyEnvironment
+    from stateset_agents.evaluation.agent_runs import evaluation_report
+    from stateset_agents.evaluation.refund_trace import audit_refund_traces,replay_refund_trace
+    from stateset_agents.remote.river_environment import river_environment_factory,trajectory_case_identity,trajectory_environment_trace,trajectory_truncation
+    from stateset_agents.training.river_refund import EVALUATION_SETTINGS
+    from stateset_agents.utils.async_calls import closing_async_generator
+    async def reserve():
+        await asyncio.to_thread(budget.reserve)
+    engine=rl.RolloutEngine(rl.CheckpointSampler(eval_session,base_model=MODEL,
+        checkpoint=checkpoint,tokenizer=renderer.tokenizer),
+        env=river_environment_factory(RefundPolicyEnvironment,before_reset=reserve,
+             truncation_reward=-1.0,record_trace=True),renderer=renderer,
+        budget=rl.Budget(**{k:v for k,v in EVALUATION_SETTINGS.items() if k.startswith('max_')}),
+        schedule=rl.Schedule(concurrency=8),temperature=0,top_p=1.0,top_k=-1,seed=SEED)
+    by_id={r['order_id']:r for r in cases}
+    outcomes=[]
+    async with closing_async_generator(engine.rollout(cases,group_size=1,
+        completion=rl.GroupCompletion(mode='wait',min_members=1))) as groups:
+        async for group in groups:
+            for trajectory in group:
+                outcomes.append({**trajectory_case_identity(trajectory,cases=by_id),
+                    'environment_trace':trajectory_environment_trace(trajectory),
+                    'reward':trajectory.reward,'success':trajectory.metrics.get('task_success',0)==1,
+                    'policy_violations':trajectory.metrics.get('policy_violations',0),
+                    'tool_calls':trajectory.metrics.get('tool_calls',0),
+                    'generated_tokens':trajectory.generated_tokens,'elapsed_seconds':trajectory.elapsed,
+                    'truncated':trajectory_truncation(trajectory)})
+                write(f'{arm}-{split}-progress.json',{'completed':len(outcomes),'expected':len(cases)})
+    report=evaluation_report(environment='refund-policy-v2',base_model=MODEL,seed=SEED,
+        cases=by_id,settings=EVALUATION_SETTINGS,checkpoint=asdict(checkpoint),outcomes=outcomes,
+        case_families={r['order_id']:r['family'] for r in cases},implementation=implementation,split=split)
+    if split=='test':
+        audit=await audit_refund_traces(report,cases)
+        assert audit['passed']
+    else:
+        for outcome in report['outcomes']:
+            replay=await replay_refund_trace('refund-policy-v2',by_id[outcome['case_id']],outcome['environment_trace'])
+            for field in ('reward','success','policy_violations','tool_calls','truncated'):
+                assert replay[field]==outcome[field]
+        audit={'passed':True,'replayed_cases':len(outcomes),'split':'validation','provider_requests':0}
+    write(f'{arm}-{split}-audit.json',audit)
+    write(f'{arm}-{split}.json',report)
+    print(json.dumps({'arm':arm,'split':split,'passed':report['passed'],'total':report['total']}),flush=True)
+    return report
+
+
+def worker():
+    import river_client as river
+    from stateset_agents.evaluation.agent_runs import content_hash
+    from stateset_agents.evaluation.implementation import package_implementation
+    from stateset_agents.remote.river import RiverExecutor
+    from stateset_agents.remote.river_renderers import get_river_renderer
+    from stateset_agents.remote.river_rl import exclusive_run
+    from stateset_agents.remote.river_runtime import river_preflight
+    from stateset_agents.remote.rollout_budget import RolloutAdmissionBudget
+    plan=read('plan.json')
+    assert plan['implementation']==package_implementation()
+    assert plan['data_manifest_hash']==content_hash(read('data/data_manifest.json'))
+    for name,digest in read('data/data_manifest.json')['artifacts'].items():
+        assert hashlib.sha256((ROOT/'data'/name).read_bytes()).hexdigest()==digest
+    assert read('data-check.json')['trainable_rows']==64
+    with exclusive_run(ROOT):
+        with (ROOT/'execution-attempt.json').open('x') as stream:
+            json.dump({'plan_hash':content_hash(plan),'pid':os.getpid(),'resubmit':False},stream)
+        preflight=river_preflight([MODEL],live=True,timeout_seconds=20)
+        write('preflight-live.json',preflight)
+        assert preflight['passed'],preflight['issues']
+        budget=RolloutAdmissionBudget(ROOT/'rollout_budget.json',limit=110000,
+            trajectory_tokens=1024,fingerprint=content_hash(plan),create=True)
+        renderer=get_river_renderer(MODEL,thinking=False)
+        with closing(river.Client(api_key=os.environ['RIVER_API_KEY'],timeout=120,enable_retries=False)) as client:
+            with client.session(experiment='stateset-sft-warmup',role='base') as session:
+                model=session.create_model(base_model=MODEL,tokenizer=renderer.tokenizer,
+                    lora=river.LoraConfig(rank=16,seed=SEED,train_unembed=False))
+                base_checkpoint=model.save_weights('base-comparison',mode='inference')
+            write('base-checkpoint.json',asdict(base_checkpoint))
+            with client.session(experiment='stateset-sft-warmup',role='eval') as evaluation:
+                baseline=asyncio.run(evaluate(evaluation,renderer,base_checkpoint,
+                    read('data/validation.json'),'validation','base',budget,plan['implementation']))
+                executor=RiverExecutor(ledger_path=ROOT/'river-ledger.jsonl')
+                executor.MAX_TRANSIENT_ATTEMPTS=1
+                handle=executor.submit(spec())
+                result=executor.wait(handle)
+                write('sft-result.json',{'handle':handle.to_dict(),'status':result.status.value,
+                    'logs':result.logs,'duration_s':result.duration_s,'cost_usd':result.cost_usd})
+                assert result.succeeded
+                pointer=read('sft/river_checkpoint.json')
+                assert pointer['steps']==8
+                sft_checkpoint=river.Checkpoint(path=pointer['checkpoint'],step=8,checkpoint_type='inference')
+                candidate=asyncio.run(evaluate(evaluation,renderer,sft_checkpoint,
+                    read('data/validation.json'),'validation','sft',budget,plan['implementation']))
+                selected='sft' if candidate['passed']>baseline['passed'] else 'base'
+                checkpoint=sft_checkpoint if selected=='sft' else base_checkpoint
+                selection={'selected_arm':selected,'checkpoint':asdict(checkpoint),
+                    'base_validation_passed':baseline['passed'],'sft_validation_passed':candidate['passed'],
+                    'validation_total':32,'criterion':plan['selection'],'plan_hash':content_hash(plan)}
+                write('selection.json',selection)
+                with (ROOT/'test-attempt.json').open('x') as stream:
+                    json.dump({**selection,'test_hash':content_hash(read('data/test.json'))},stream)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                test=asyncio.run(evaluate(evaluation,renderer,checkpoint,read('data/test.json'),
+                    'test',selected,budget,plan['implementation']))
+        assert package_implementation()==plan['implementation']
+        selected_pointer={'provider':'river','base_model':MODEL,'checkpoint':checkpoint.path,
+            'lora':{'rank':16},'steps':checkpoint.step,'selected_arm':selected,
+            'note':'River-hosted pointer; no local adapter weights. Selected using validation only.'}
+        write('selected/river_checkpoint.json',selected_pointer)
+        write('study-result.json',{'selected_arm':selected,'validation':selection,
+            'test':{k:test[k] for k in ('passed','total','success_rate','success_wilson_95','violation_rate','truncation_rate')},
+            'sft_updates':pointer['steps'],'sft_final_loss':pointer['final_loss'],
+            'rollout_budget':budget.snapshot(),'quality_certification':False,'cost_usd':None})
+
+
+def launch():
+    key=getpass.getpass('River credential (hidden): ').strip()
+    assert key
+    env={**os.environ,'RIVER_API_KEY':key,'HF_HUB_DISABLE_PROGRESS_BARS':'1',
+        'TOKENIZERS_PARALLELISM':'false','WANDB_MODE':'disabled','STATESET_RIVER_VERBOSE':'1'}
+    started=time.monotonic()
+    proc=subprocess.Popen([sys.executable,__file__,'worker'],cwd=REPO,env=env,
+        stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)
+    selector=selectors.DefaultSelector()
+    selector.register(proc.stdout,selectors.EVENT_READ)
+    timed_out=False
+    with (ROOT/'live-run.txt').open('x',buffering=1) as log:
+        while proc.poll() is None:
+            if time.monotonic()-started>1800:
+                timed_out=True
+                os.killpg(proc.pid,signal.SIGINT)
+                try:
+                    proc.wait(timeout=30)
+                except subprocess.TimeoutExpired:
+                    os.killpg(proc.pid,signal.SIGKILL)
+                break
+            for registered,_ in selector.select(timeout=1):
+                chunk=os.read(registered.fileobj.fileno(),8192)
+                if chunk:
+                    text=chunk.decode('utf-8',errors='replace').replace(key,'[REDACTED]')
+                    log.write(text)
+                    print(text,end='',flush=True)
+        tail=proc.stdout.read().decode('utf-8',errors='replace').replace(key,'[REDACTED]')
+        log.write(tail)
+        print(tail,end='',flush=True)
+    proc.wait()
+    write('execution-summary.json',{'exit_code':proc.returncode,'timed_out':timed_out,
+        'elapsed_seconds':round(time.monotonic()-started,1),'credential_in_files':False})
+    key=''
+    raise SystemExit(proc.returncode)
+
+
+if __name__=='__main__':
+    {'prepare':prepare,'check':check_data,'worker':worker,'launch':launch}[sys.argv[1]]()

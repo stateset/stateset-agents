@@ -1,0 +1,44 @@
+STATESET / FINE-TUNING STUDIO
+Configure [RUNS] | Tab switches views
+==========================================================================
+No retained runs yet.
+Tab to configure, then p to preview or r to review a launch.
+Workspace: /home/dom/stateset-agents/outputs/finetune
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+--------------------------------------------------------------------------
+Choose a model and dataset. Preview is free.
+Enter details | l logs | r review prepared | c reuse | g metrics
+/ search | t status | Arrows select | PgUp/Dn logs | Tab | q quit

@@ -1,0 +1,11 @@
+{
+  "both_passed": 23,
+  "sft_only_passed": 3,
+  "base_only_passed": 2,
+  "both_failed": 4,
+  "base_passed": 25,
+  "sft_passed": 26,
+  "total": 32,
+  "mean_absolute_gain": 0.03125,
+  "scope": "validation checkpoint selection diagnostics; one seed; not test quality certification"
+}

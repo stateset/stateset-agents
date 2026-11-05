@@ -1,0 +1,9 @@
+{
+  "path": "/tmp/stateset-model-roster-final-20261015-retry3/verification.json",
+  "sha256": "33787881ca295a085b8e577393850e8ae67861a8113e9b347969aa9a3ffe6334",
+  "stages": [
+    "types",
+    "regressions"
+  ],
+  "reason": "Exact packaged Python source unchanged; only optional Torch floor changed from inherited 2.6 to explicit 2.7"
+}

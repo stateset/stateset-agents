@@ -1,0 +1,1 @@
+test_native_campaign_drains_cancelled_validation_write (test_river_native_sdk.NativeRiverIntegration.test_native_campaign_drains_cancelled_validation_write) ... ERROR

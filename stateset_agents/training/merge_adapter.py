@@ -233,12 +233,15 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO)
     args = build_parser().parse_args(argv)
     if args.dry_run or not gpu_available():
-        print("Merge Plan (dry run — no GPU detected)")
-        print(f"  base_model: {args.base_model}")
-        print(f"  adapter:    {args.adapter}")
-        print(f"  output_dir: {args.output_dir}")
+        lines = [
+            "Merge Plan (dry run — no GPU detected)",
+            f"  base_model: {args.base_model}",
+            f"  adapter:    {args.adapter}",
+            f"  output_dir: {args.output_dir}",
+        ]
         if args.revision:
-            print(f"  revision:   {args.revision}")
+            lines.append(f"  revision:   {args.revision}")
+        print("\n".join(lines))  # noqa: T201 - CLI dry-run plan
         return 0
     merge_adapter(
         args.base_model, args.adapter, args.output_dir, revision=args.revision

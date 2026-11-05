@@ -1,0 +1,35 @@
+{
+  "repository": "/home/dom/stateset-agents",
+  "canonical_files_modified": false,
+  "checks_run": false,
+  "source_baseline": {
+    "stateset_agents/finetune_worker.py": "f3d20026bfd668d3ae96adea9e0863ea8dbd59b43521c91ab0e495287ee987f6",
+    "tests/unit/test_finetune_quality.py": "8495293f6fd01c39aab6c4f927838eeb8296732917b1aa59d4db5140e20d732f"
+  },
+  "staged_sha256": {
+    "stateset_agents/finetune_worker.py": "53349bc06174f01a8032142d824c852f085899943e2415958adea644e090d3e4",
+    "tests/unit/test_finetune_worker_ownership.py": "a159847031718b8c53b6e0a07e1332c779fdcab01fc6fc41707f5432a6fb6401",
+    "tests/unit/test_finetune_quality.py": "2c62e3afdf6f8c82e12de524c30030b31c6a6a36c1cf356796ce7fce6732b952"
+  },
+  "new_files": [
+    "tests/unit/test_finetune_worker_ownership.py"
+  ],
+  "phase_guards": {
+    "supervisor": ["prepared"],
+    "direct_execution": ["prepared"],
+    "supervised_execution": ["starting", "queued"]
+  },
+  "admission": {
+    "file": "admission.json",
+    "exclusive_modes": ["direct", "supervised"],
+    "child_token_transport": "private_environment",
+    "environment": "STATESET_FINETUNE_SUPERVISOR_TOKEN",
+    "token_in_argv": false,
+    "token_in_command_json": false,
+    "implicit_child_authority": false,
+    "max_read_bytes": 4096
+  },
+  "expected_test_cases": 71,
+  "automatic_reclaim": false,
+  "requires_launch_receipt": false
+}

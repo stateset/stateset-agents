@@ -1,0 +1,12 @@
+{
+  "experiment_model_sha256": "39fddefab9480ca876a4b5c3d3749632d776169583d044b641e65c33756de03c",
+  "delivered_model_sha256": "428870b477b60c76581796105a11521dde6cf206d0b517a6ed07e494d0d59139",
+  "change_after_experiment": "typing.cast for Linear references only; no tensor operations changed",
+  "handwritten_tensor_equality": true,
+  "random_initialization_tensor_equality_seeds": [
+    0,
+    1,
+    2
+  ],
+  "experiment_source_hashes_verified": true
+}

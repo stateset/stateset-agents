@@ -52,10 +52,15 @@ ANCHORED_FILES: list[tuple[str, str]] = [
     ("stateset_agents/__init__.py", '__version__ = "{v}"'),
     ("deployment/helm/stateset-agents/Chart.yaml", 'appVersion: "{v}"'),
     ("npm/package.json", '"version": "{v}"'),
+    (
+        "stateset_agents/config/presets/experiments/support_recovery_preflight6.json",
+        '"framework_version": "{v}"',
+    ),
     # Current evidence manifests must name the installed version; frozen
     # protocol manifests (shootout v4/v5/v5.1) keep the version they pinned.
     ("benchmarks/flagship_manifest.json", '"framework_version": "{v}"'),
     ("benchmarks/flagship_preflight_manifest.json", '"framework_version": "{v}"'),
+    ("benchmarks/agent_quality_manifest.json", '"framework_version": "{v}"'),
     ("benchmarks/distributed_async_manifest.json", '"framework_version": "{v}"'),
     (
         "benchmarks/distributed_async_local_manifest.json",
@@ -77,6 +82,7 @@ PLAIN_FILES: list[str] = [
     "docs/ARCHITECTURE.md",
     "docs/KIMI_K25_GKE_AUTOPILOT.md",
     "docs/CLI_REFERENCE.md",
+    "docs/ROADMAP.md",
     "npm/package-lock.json",
 ]
 
@@ -165,62 +171,54 @@ def insert_changelog_heading(
 
 
 def rewrite_readme(readme_text: str, current: str, new: str, notes: str | None) -> str:
-    """Update README's What's-new section and other 'latest release' mentions.
+    """Prepare candidate notes without claiming a successful publication.
 
-    - The ``**v<cur> (latest release — [live on PyPI]...)**`` heading becomes
-      a ``**v<new> (latest release ...)**`` heading whose bullets are ``notes``
-      (or a TODO line), and the old block is demoted to ``**v<cur>:**``.
-    - ``# latest release (vX.Y.Z)`` and ``latest release `vX.Y.Z``` mentions
-      are refreshed to v<new> whatever version they currently carry.
+    Preserve verified PyPI versions and install pins. Only the candidate
+    declaration, notes, and Git tag install move with a source version bump.
+    Accept legacy release labels while migrating them to candidate labels.
     """
     latest_re = re.compile(
-        r"^\*\*v" + re.escape(current) + r" \(latest release[^\n]*\):\*\*$",
+        r"^\*\*v"
+        + re.escape(current)
+        + r" \(latest (?:release|candidate)[^\n]*\):\*\*$",
         flags=re.MULTILINE,
     )
     match = latest_re.search(readme_text)
     if match is None:
         raise ReleaseError(
-            f"README.md has no '**v{current} (latest release ...):**' heading"
+            f"README.md has no '**v{current} (latest release/candidate ...):**' heading"
         )
-    old_heading = match.group(0)
-    new_heading = old_heading.replace(f"v{current}", f"v{new}", 1)
+    new_heading = f"**v{new} (latest candidate; publication pending):**"
     body = notes.strip() if notes else "- TODO: describe this release."
     replacement = f"{new_heading}\n\n{body}\n\n**v{current}:**"
     readme_text = latest_re.sub(lambda _m: replacement, readme_text, count=1)
 
-    # The two other "latest release" mentions (which may lag behind).
+    # Unpinned PyPI installs follow publication, never an unverified source tag.
     readme_text = re.sub(
         r"# latest release \(v\d+\.\d+\.\d+\)",
-        f"# latest release (v{new})",
+        "# latest published release",
         readme_text,
     )
     readme_text = re.sub(
-        r"latest release `v\d+\.\d+\.\d+`",
-        f"latest release `v{new}`",
+        r"latest (?:release|candidate) `v\d+\.\d+\.\d+`",
+        f"latest candidate `v{new}`",
         readme_text,
     )
 
-    # Keep the copy-paste installation commands and verification summary on
-    # the release version as well. These used to lag for several releases
-    # because only the What's-new heading was part of the automated rewrite.
+    # A source bump cannot establish registry publication. Keep the verified
+    # PyPI pin unchanged while updating the candidate's source install.
     release_surfaces = [
         (
-            r"(?m)^(- \*\*Current Python release:\*\* `stateset-agents==)"
-            r"\d+\.\d+\.\d+(`,)",
-            rf"\g<1>{new}\g<2>",
-            "current Python release declaration",
-        ),
-        (
-            r'(?m)^(pip install "stateset-agents==)\d+\.\d+\.\d+'
-            r'(" # current stable release)$',
-            rf"\g<1>{new}\g<2>",
-            "stable PyPI install command",
+            r"(?m)^- \*\*Current Python (?:release|candidate):\*\* "
+            r"`stateset-agents==\d+\.\d+\.\d+`,[^\n]*",
+            f"- **Current Python candidate:** `stateset-agents=={new}`, publication pending.",
+            "current Python candidate declaration",
         ),
         (
             r'(?m)^(pip install "stateset-agents @ git\+https://github\.com/'
             r'stateset/stateset-agents\.git@v)\d+\.\d+\.\d+("$)',
             rf"\g<1>{new}\g<2>",
-            "stable Git tag install command",
+            "candidate Git tag install command",
         ),
     ]
     for pattern, replacement, label in release_surfaces:

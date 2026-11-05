@@ -1,0 +1,58 @@
+[
+  {
+    "api": "async",
+    "mode": "true",
+    "rank_local_rng_equal": true,
+    "next_update_equal": true,
+    "coordinated_rejection": false,
+    "reloaded": true
+  },
+  {
+    "api": "async",
+    "mode": "none",
+    "rank_local_rng_equal": true,
+    "next_update_equal": true,
+    "coordinated_rejection": false,
+    "reloaded": true
+  },
+  {
+    "api": "async",
+    "mode": "absent",
+    "rank_local_rng_equal": true,
+    "next_update_equal": true,
+    "coordinated_rejection": false,
+    "reloaded": true
+  },
+  {
+    "api": "async",
+    "mode": "disabled",
+    "rank_local_rng_equal": true,
+    "next_update_equal": true,
+    "coordinated_rejection": false,
+    "reloaded": true
+  },
+  {
+    "api": "async",
+    "mode": "false",
+    "rank_local_rng_equal": true,
+    "next_update_equal": true,
+    "coordinated_rejection": true,
+    "reloaded": true
+  },
+  {
+    "api": "async",
+    "mode": "exception",
+    "rank_local_rng_equal": true,
+    "next_update_equal": true,
+    "coordinated_rejection": true,
+    "reloaded": true
+  },
+  {
+    "api": "async",
+    "mode": "rng",
+    "rank_local_rng_equal": true,
+    "next_update_equal": true,
+    "coordinated_rejection": true,
+    "reloaded": true
+  }
+]

@@ -1,0 +1,13 @@
+{
+  "architecture": "MuseSparkForConditionalGeneration",
+  "parameters": 40688,
+  "random_initialization": true,
+  "released_weights_loaded": false,
+  "device": "cpu",
+  "optimizer_updates": 1,
+  "loss": 4.146481037139893,
+  "nonzero_gradients_verified": true,
+  "language_attention_adapters_only": true,
+  "frozen_vision_audio_verified": true,
+  "adapter_reload_verified": true
+}

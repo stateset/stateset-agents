@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "stages": [
+    {
+      "stage": "baseline_evaluation",
+      "status": "completed",
+      "artifact_sha256": "447851437cde079b0b0eec4a9b97259d7eba0d1ae0779899bda83b9d33122114"
+    },
+    {
+      "stage": "sft",
+      "status": "completed"
+    },
+    {
+      "stage": "rl",
+      "status": "completed"
+    },
+    {
+      "stage": "evaluation",
+      "status": "completed",
+      "report_sha256": "a1432b268112f02aba49932a4b494a62d7b086365c5620d2eb57eb10ecad02b2"
+    },
+    {
+      "stage": "reload_and_serve",
+      "status": "completed"
+    }
+  ]
+}

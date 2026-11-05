@@ -17,8 +17,8 @@ from stateset_agents.core.advanced_monitoring import (
     AlertSeverity,
     DistributedTracer,
     MetricPoint,
-    MetricsCollector,
     MetricType,
+    TimeSeriesMetricsCollector,
     TraceSpan,
 )
 
@@ -174,7 +174,7 @@ class TestMetricsCollector:
         with patch(
             "stateset_agents.core.advanced_monitoring.PROMETHEUS_AVAILABLE", False
         ):
-            collector = MetricsCollector(retention_period=3600)
+            collector = TimeSeriesMetricsCollector(retention_period=3600)
             # Cleanup task is now lazily initialized, so no need to cancel
             return collector
 
@@ -253,7 +253,7 @@ class TestMetricsCollectorWithPrometheus:
             patch("stateset_agents.core.advanced_monitoring.Histogram"),
             patch("stateset_agents.core.advanced_monitoring.Summary"),
         ):
-            collector = MetricsCollector()
+            collector = TimeSeriesMetricsCollector()
             # Cleanup task is now lazily initialized, so no need to cancel
             return collector
 
@@ -431,6 +431,43 @@ class TestAdvancedMonitoringService:
 class TestDistributedTracing:
     """Test distributed tracing functionality."""
 
+    def test_incomplete_opentelemetry_components_leave_provider_untouched(self):
+        """A missing component must not half-install the global provider."""
+        trace_module = MagicMock()
+        logger = MagicMock()
+
+        tracer = DistributedTracer(
+            opentelemetry_available=True,
+            trace_module=trace_module,
+            tracer_provider_cls=MagicMock(),
+            jaeger_exporter_cls=None,
+            batch_span_processor_cls=MagicMock(),
+            logger=logger,
+        )
+
+        trace_module.set_tracer_provider.assert_not_called()
+        assert tracer.tracer is None
+        logger.warning.assert_called_once()
+
+    def test_complete_opentelemetry_components_install_tracer(self):
+        trace_module = MagicMock()
+        processor_cls = MagicMock()
+
+        tracer = DistributedTracer(
+            service_name="svc",
+            opentelemetry_available=True,
+            trace_module=trace_module,
+            tracer_provider_cls=MagicMock(),
+            jaeger_exporter_cls=MagicMock(),
+            batch_span_processor_cls=processor_cls,
+        )
+
+        trace_module.set_tracer_provider.assert_called_once()
+        trace_module.get_tracer_provider().add_span_processor.assert_called_once_with(
+            processor_cls.return_value
+        )
+        assert tracer.tracer is trace_module.get_tracer.return_value
+
     def test_distributed_tracer_child_span_inherits_trace_id(self):
         """Test child spans stay on the same trace."""
         tracer = DistributedTracer()
@@ -592,7 +629,7 @@ class TestMetricAggregation:
         with patch(
             "stateset_agents.core.advanced_monitoring.PROMETHEUS_AVAILABLE", False
         ):
-            collector = MetricsCollector()
+            collector = TimeSeriesMetricsCollector()
             # Cleanup task is now lazily initialized, so no need to cancel
 
             # Add sample metrics
@@ -629,7 +666,7 @@ class TestMetricRetention:
         with patch(
             "stateset_agents.core.advanced_monitoring.PROMETHEUS_AVAILABLE", False
         ):
-            collector = MetricsCollector(retention_period=1)  # 1 second
+            collector = TimeSeriesMetricsCollector(retention_period=1)  # 1 second
             # Cleanup task is now lazily initialized, so no need to cancel
             return collector
 

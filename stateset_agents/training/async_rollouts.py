@@ -20,9 +20,18 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from ..core.errors import ErrorCode, TrainingError
 
-class AsyncRolloutError(RuntimeError):
-    """Base error raised by asynchronous rollout coordination."""
+
+class AsyncRolloutError(TrainingError, RuntimeError):
+    """Base error raised by asynchronous rollout coordination.
+
+    A :class:`~stateset_agents.core.errors.TrainingError` that is still a
+    ``RuntimeError`` and prints its bare message.
+    """
+
+    message_only_str = True
+    default_code = ErrorCode.TRN_ASYNC_ROLLOUT
 
 
 class AsyncRolloutClosed(AsyncRolloutError):

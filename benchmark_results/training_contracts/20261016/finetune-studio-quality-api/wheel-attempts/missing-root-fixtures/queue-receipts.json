@@ -1,0 +1,53 @@
+[
+  {
+    "id": "b84125295d6a",
+    "state": "failed",
+    "exit_code": 1,
+    "argv": [
+      "/home/dom/stateset-agents/.venv/bin/python",
+      "/tmp/stateset-studio-quality-api-wheel.py",
+      "/tmp/stateset-studio-quality-api-20261016-retry3",
+      "1"
+    ],
+    "created": 1792188784.5106986,
+    "started": 1792188950.7338068,
+    "finished": 1792189156.681564,
+    "wait_seconds": 166.22310829162598,
+    "elapsed_seconds": 205.9477572441101,
+    "reason": ""
+  },
+  {
+    "id": "5a572ece1fe3",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      "/home/dom/stateset-agents/.venv/bin/python",
+      "/tmp/stateset-studio-quality-api-wheel.py",
+      "/tmp/stateset-studio-quality-api-20261016-retry3",
+      "2"
+    ],
+    "created": 1792188784.5079753,
+    "started": 1792188912.352467,
+    "finished": 1792188950.201459,
+    "wait_seconds": 127.84449172019958,
+    "elapsed_seconds": 37.84899187088013,
+    "reason": ""
+  },
+  {
+    "id": "059a940673eb",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      "/home/dom/stateset-agents/.venv/bin/python",
+      "/tmp/stateset-studio-quality-api-wheel.py",
+      "/tmp/stateset-studio-quality-api-20261016-retry3",
+      "3"
+    ],
+    "created": 1792188784.4999366,
+    "started": 1792188846.1752262,
+    "finished": 1792188912.181143,
+    "wait_seconds": 61.67528963088989,
+    "elapsed_seconds": 66.00591683387756,
+    "reason": ""
+  }
+]

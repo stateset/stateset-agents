@@ -1,0 +1,30 @@
+{
+  "dataset_provenance": {
+    "train": {
+      "industry_domains": [
+        "logistics"
+      ],
+      "status": "declared_not_independently_verified",
+      "synthetic_examples": 512,
+      "unannotated_examples": 0
+    },
+    "validation": {
+      "industry_domains": [
+        "logistics"
+      ],
+      "status": "declared_not_independently_verified",
+      "synthetic_examples": 64,
+      "unannotated_examples": 0
+    }
+  },
+  "dataset_sha256": {
+    "train": "15569aabb497976aedc70956e76af87fea21960904f7b077ec08ada0e361bd3b",
+    "validation": "4891a4322182f9f0a6f189897862bf308589b9a3908a33309206c9944cc14361"
+  },
+  "train_examples": 512,
+  "training_content_sha256": {
+    "train": "039a3ddbee27c012b47fc091cb2efd2abd0fb411571a447a3b96e91491bedc12",
+    "validation": "c3746f8d9707da0a7feeca3499462d5159e0578f04f9ef60f66fa1fd6b363c72"
+  },
+  "validation_examples": 64
+}

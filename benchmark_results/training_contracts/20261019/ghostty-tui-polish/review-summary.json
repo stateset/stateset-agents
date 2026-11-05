@@ -1,0 +1,16 @@
+{
+  "scope": "Ghostty TUI polish",
+  "unique_tests_passed": 90,
+  "focused_tests": 30,
+  "studio_regressions": 60,
+  "final_polish_recheck": 11,
+  "mypy_source_files": 441,
+  "ruff": "passed",
+  "black": "passed outside worker-IPC-restricted sandbox",
+  "isort": "passed",
+  "repo_hygiene": "passed",
+  "interactive_pty_smoke": "passed; opened Ctrl+P, searched model, escaped, quit normally; no jobs launched",
+  "gui_preview": "launch attempted in dedicated right-side Ghostty window; window lifetime and screenshot could not be independently confirmed",
+  "provider_calls": 0,
+  "model_updates": 0
+}

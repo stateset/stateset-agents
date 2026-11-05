@@ -1,0 +1,48 @@
+{
+  "candidate_version": "0.71.3",
+  "version_choice": "0.72.0 triggers scheduled compatibility removals; this compatible experimental addition stays in 0.71.x.",
+  "initial_full_suite": {
+    "passed": 16808,
+    "failed": 13,
+    "skipped": 133,
+    "subtests_passed": 35,
+    "seconds": 1434.01,
+    "candidate_version": "0.72.0",
+    "command": "PYTHONPATH=. pytest -q -n 2",
+    "default_exclusions": [
+      "performance",
+      "slow",
+      "gpu"
+    ]
+  },
+  "failed_case_rerun": {
+    "passed": 12,
+    "failed": 1,
+    "candidate_version": "0.71.3",
+    "command": "PYTHONPATH=/tmp/sa-weight-release-20261104 pytest -q -n 2 --lf"
+  },
+  "final_release_and_model_guards": {
+    "passed": 42,
+    "failed": 0
+  },
+  "final_weighted_model_tests": {
+    "passed": 18,
+    "failed": 0
+  },
+  "all_source_type_check": {
+    "passed": true,
+    "files": 551
+  },
+  "pre_existing_failure": {
+    "nodeid": "tests/learning/test_online_dpo_learns.py::test_sign_flipped_judge_lowers_the_rate[0]",
+    "before": 0.10625,
+    "after": 0.07981770833333333,
+    "required_drop": 0.05,
+    "reproduces_on_unchanged_weight_worktree": true,
+    "control_head": "1d7d00f5",
+    "control_package_version": "0.71.2",
+    "test_and_training_code_changed_by_this_release": false
+  },
+  "source_note": "The final float64 validation change was checked by the dedicated weighted-model tests after the full suite began.",
+  "subprocess_test_environment": "Absolute PYTHONPATH points child interpreters at the candidate checkout, instead of the unrelated editable install."
+}

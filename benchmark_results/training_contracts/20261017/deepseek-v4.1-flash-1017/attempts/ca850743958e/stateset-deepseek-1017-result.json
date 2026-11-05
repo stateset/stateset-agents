@@ -1,0 +1,70 @@
+{
+  "started": 1792250504.1787348,
+  "passed": false,
+  "source_frozen": true,
+  "modules": [
+    "test_deepseek_v41_1017",
+    "test_frontier_models",
+    "test_example_model_presets",
+    "test_remote_model_catalog",
+    "test_remote_model_evidence",
+    "test_finetune_studio",
+    "test_cli_finetune",
+    "test_finetune_backends",
+    "test_finetune_frontier_readiness"
+  ],
+  "stages": [
+    {
+      "name": "lint",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ],
+      "started": 1792250504.1788838,
+      "finished": 1792250504.9593327,
+      "exit_code": 0
+    },
+    {
+      "name": "types",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "scripts/check_types.py",
+        "--all"
+      ],
+      "started": 1792250504.9596324,
+      "finished": 1792250543.9632275,
+      "exit_code": 0
+    },
+    {
+      "name": "source",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-n0",
+        "-o",
+        "addopts=",
+        "--timeout=140",
+        "--tb=short",
+        "tests/unit/test_deepseek_v41_1017.py",
+        "tests/unit/test_frontier_models.py",
+        "tests/unit/test_example_model_presets.py",
+        "tests/unit/test_remote_model_catalog.py",
+        "tests/unit/test_remote_model_evidence.py",
+        "tests/unit/test_finetune_studio.py",
+        "tests/unit/test_cli_finetune.py",
+        "tests/unit/test_finetune_backends.py",
+        "tests/unit/test_finetune_frontier_readiness.py",
+        "tests/api/test_finetune_operator.py",
+        "--junitxml=/tmp/stateset-deepseek-1017-source.xml"
+      ],
+      "started": 1792250543.9635687,
+      "finished": 1792250802.5337534,
+      "exit_code": 1
+    }
+  ]
+}

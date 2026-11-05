@@ -1,5 +1,10 @@
 # StateSet Agents – Quickstart (the boring path)
 
+> **TraceForge RL rename (Phase 1):** `traceforge-rl` and
+> `import traceforge_rl` are equivalent aliases for the
+> `stateset-agents` / `stateset_agents` names used below; both keep
+> working. See [docs/RENAME_TRACEFORGE.md](docs/RENAME_TRACEFORGE.md).
+
 One loop you can run right away — no GPU, no API keys:
 
 - pip install → ingest sample logs → improve (grade/curate) → one GRPO dry‑run (stub/HF) → serve.

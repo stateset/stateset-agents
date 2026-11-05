@@ -1,0 +1,144 @@
+"""Retain final remote-frontier admission checks without executing workloads."""
+from pathlib import Path
+import argparse
+import fcntl
+import hashlib
+import json
+import shutil
+import tempfile
+import time
+import xml.etree.ElementTree as ET
+import zipfile
+
+ROOT = Path('/home/dom/stateset-agents')
+PREFIX = '/tmp/stateset-remote-frontier'
+OUT = ROOT / 'benchmark_results/training_contracts/20261017/remote-frontier-admission'
+STAGES = ['lint', 'types', 'source', 'hygiene', 'api', 'release', 'workflow', 'wheel']
+TOLERANCE = 0.05
+
+
+def read(path):
+    return json.loads(Path(path).read_text())
+
+
+def sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def inventory(directory):
+    return {p.relative_to(ROOT).as_posix(): sha(p) for p in sorted((ROOT / directory).rglob('*.py'))}
+
+
+def fresh(path, start, finish):
+    path = Path(path)
+    assert path.is_file() and not path.is_symlink(), str(path)
+    assert start - TOLERANCE <= path.stat().st_mtime <= finish + TOLERANCE, str(path)
+
+
+def cases(path):
+    tree = ET.parse(path).getroot()
+    assert not any(list(tree.iter(tag)) for tag in ('failure', 'error', 'skipped'))
+    assert all(int(s.get(k, '0')) == 0 for s in tree.iter('testsuite') for k in ('failures', 'errors', 'skipped'))
+    rows = [(c.get('classname'), c.get('name')) for c in tree.iter('testcase')]
+    assert rows and all(cls and name for cls, name in rows) and len(rows) == len(set(rows))
+    return rows
+
+
+def retain(job_id, queue_path):
+    queue = read(queue_path)
+    assert queue['id'] == job_id and queue['state'] == 'succeeded' and queue['exit_code'] == 0
+    assert queue['argv'] in [['.venv/bin/python', PREFIX + '-verify.py'], [str(ROOT / '.venv/bin/python'), PREFIX + '-verify.py']]
+    created, started, finished = (queue[k] for k in ('created', 'started', 'finished'))
+    assert created <= started <= finished <= time.time() + TOLERANCE
+    frozen, result = read(PREFIX + '-inputs.json'), read(PREFIX + '-result.json')
+    assert result['passed'] is True and result['source_frozen'] is True
+    assert [s['name'] for s in result['stages']] == STAGES and all(s['exit_code'] == 0 for s in result['stages'])
+    assert started - TOLERANCE <= frozen['captured_at'] <= result['started'] + TOLERANCE <= finished + TOLERANCE
+    previous, stages = result['started'], {s['name']: s for s in result['stages']}
+    for stage in result['stages']:
+        assert previous <= stage['started'] <= stage['finished'] <= finished
+        fresh(PREFIX + '-' + stage['name'] + '.log', stage['started'], stage['finished'])
+        previous = stage['finished']
+    for suffix in ('-inputs.json', '-result.json'):
+        fresh(PREFIX + suffix, started, finished)
+    source, tests, changed = inventory('stateset_agents'), inventory('tests'), frozen['changed_files']
+    assert source == frozen['source_sha256'] and tests == frozen['test_source_sha256']
+    for name, digest in {**source, **tests, **changed}.items():
+        assert not Path(name).is_absolute() and '..' not in Path(name).parts
+        assert sha(ROOT / name) == digest and (ROOT / name).stat().st_mtime <= finished + TOLERANCE
+    for name in ('source', 'wheel'):
+        fresh(PREFIX + '-' + name + '.xml', stages[name]['started'], stages[name]['finished'])
+    source_cases, wheel_cases = cases(PREFIX + '-source.xml'), cases(PREFIX + '-wheel.xml')
+    fresh(PREFIX + '-wheel.json', stages['wheel']['started'], stages['wheel']['finished'])
+    wheel = read(PREFIX + '-wheel.json')
+    assert all(wheel[k] is True for k in ('passed', 'wheel_source_matches', 'module_origins_verified', 'case_identities_match_source'))
+    selection = wheel['selection']
+    assert selection and len(selection) == len(set(selection)) and all(name in tests and name.endswith('.py') for name in selection)
+    modules = [name[:-3].replace('/', '.') for name in selection]
+    expected = [case for case in source_cases if any(case[0] == m or case[0].startswith(m + '.') for m in modules)]
+    assert expected and set(wheel_cases) == set(expected) and wheel['test_count'] == len(wheel_cases)
+    artifacts = list((Path(wheel['out']) / 'dist').glob('*.whl'))
+    assert len(artifacts) == 1
+    artifact = artifacts[0]
+    assert artifact.is_file() and not artifact.is_symlink() and artifact.stat().st_size <= 16 * 1024 * 1024 and sha(artifact) == wheel['wheel_sha256']
+    with zipfile.ZipFile(artifact) as archive:
+        names = archive.namelist()
+        assert len(names) == len(set(names))
+        packed = {n: hashlib.sha256(archive.read(n)).hexdigest() for n in names if n.startswith('stateset_agents/') and n.endswith('.py')}
+    assert packed == source
+    optional, live_binding = [], False
+    for suffix in ('-live.json', '-live.txt'):
+        path = Path(PREFIX + suffix)
+        if path.exists():
+            optional.append(path)
+            if suffix == '-live.json':
+                live = read(path)
+                if live.get('source_matches_verified') is True:
+                    assert live.get('source_sha256') == source
+                    assert live.get('focused_job', job_id) == job_id and live.get('created_at', finished) >= finished - TOLERANCE
+                    live_binding = True
+    summary = {
+        'schema_version': 1, 'retained_at': time.time(), 'job_id': job_id, 'passed': True, 'stages': STAGES,
+        'queue_state': queue['state'], 'queue_exit_code': queue['exit_code'],
+        'queue_wait_seconds': started - created, 'queue_runtime_seconds': finished - started,
+        'source_test_count': len(source_cases), 'installed_wheel_test_count': len(wheel_cases),
+        'test_execution_count': len(source_cases) + len(wheel_cases), 'distinct_case_identity_count': len(set(source_cases) | set(wheel_cases)),
+        'source_and_wheel_case_counts_overlap': True, 'wheel_cases_equal_selected_source_cases': True,
+        'failures': 0, 'errors': 0, 'skipped': 0, 'package_file_count': len(source),
+        'source_and_tests_match_frozen_inputs': True, 'wheel_source_sha256_matches': True, 'wheel_sha256': wheel['wheel_sha256'],
+        'docs_workflow_sha256': {n: h for n, h in changed.items() if Path(n).suffix in {'.md', '.yaml', '.yml'}},
+        'live_report_retained': bool(optional), 'live_source_binding_verified': live_binding,
+        'gpu_training_verified': False, 'full_size_model_training_performed': False, 'provider_execution_verified': False,
+        'weights_downloaded': False, 'tokenizer_json_downloaded': False, 'quality_gain_verified': False, 'full_repository_acceptance_claimed': False,
+    }
+    assert not OUT.exists(), 'Refusing to overwrite retained evidence'
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix='.remote-frontier-admission-', dir=OUT.parent))
+    (stage / 'verification.json').write_text(json.dumps(summary, indent=2, allow_nan=False) + '\n')
+    records = [Path(queue_path)] + [Path(PREFIX + s) for s in ('-inputs.json', '-result.json', '-source.xml', '-wheel.xml', '-wheel.json')]
+    records += [Path(PREFIX + '-' + name + '.log') for name in STAGES] + optional
+    if Path(PREFIX + '-handoff.json').exists():
+        records.append(Path(PREFIX + '-handoff.json'))
+    for path in records:
+        shutil.copy2(path, stage / path.name)
+    for suffix in ('-verify.py', '-wheel.py', '-retain.py'):
+        path = Path(PREFIX + suffix)
+        assert suffix == '-retain.py' or path.stat().st_mtime <= started + TOLERANCE
+        shutil.copy2(path, stage / (path.name + '.txt'))
+    shutil.copy2(artifact, stage / artifact.name)
+    assert sha(stage / artifact.name) == wheel['wheel_sha256']
+    (stage / 'README.md').write_text('# Remote frontier admission verification\n\nTargeted source and isolated installed-wheel checks passed with overlapping case identities. Frozen source/tests/docs hashes and retained wheel bytes match the receipts. No GPU, full-size model training, provider execution, weight downloads, quality gain or full-repository acceptance is certified. Optional live reports are separate.\n')
+    assert source == inventory('stateset_agents') and tests == inventory('tests') and all(sha(ROOT / n) == h for n, h in changed.items())
+    (stage / 'artifact-sha256.json').write_text(json.dumps({p.relative_to(stage).as_posix(): sha(p) for p in sorted(stage.rglob('*')) if p.is_file()}, indent=2) + '\n')
+    stage.rename(OUT)
+    print(json.dumps({'path': str(OUT / 'verification.json'), 'verification': summary}, indent=2, allow_nan=False))
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('job_id')
+    parser.add_argument('--queue-json', type=Path, default=Path(PREFIX + '-queue.json'))
+    args = parser.parse_args()
+    with Path('/tmp/stateset-studio-mobile-source.lock').open('a') as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        retain(args.job_id, args.queue_json)

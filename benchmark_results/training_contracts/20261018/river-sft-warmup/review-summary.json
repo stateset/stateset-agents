@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "kind": "river-synthetic-expert-sft-canary",
+  "reviewed_at": "2026-10-19T03:44:35.270531+00:00",
+  "status": "integration_passed_quality_improvement_unconfirmed",
+  "base_model": "Qwen/Qwen3.5-9B",
+  "seed": 20261020,
+  "implementation": {
+    "source_files": 439,
+    "source_hash": "9d3107cd31f49504ff1481c0d3f712c9566426a297439934d37ebd152afff9c1"
+  },
+  "data": {
+    "source": "synthetic rule-based teacher, independently replayed in a fresh instance of the same sandbox; not human reviewed",
+    "train": 64,
+    "validation": 32,
+    "test": 32,
+    "historical_overlap": 0,
+    "training_data_check": {
+      "assistant_target_tokens": 6743.0,
+      "max_length": 4096,
+      "maximum_sequence_tokens": 584,
+      "provider_requests": 0,
+      "replayed_demonstrations": 64,
+      "total_input_tokens": 35164,
+      "trainable_rows": 64,
+      "truncated_demonstrations": 0
+    }
+  },
+  "sft": {
+    "epochs": 1,
+    "batch_size": 8,
+    "optimizer_updates": 8,
+    "learning_rate": 2e-05,
+    "final_training_loss": 0.08616877572979043,
+    "automatic_restart_attempts": 0,
+    "elapsed_training_seconds": 63.07124397699954
+  },
+  "validation": {
+    "base_passed": 25,
+    "sft_passed": 26,
+    "total": 32,
+    "paired": {
+      "both_passed": 23,
+      "sft_only_passed": 3,
+      "base_only_passed": 2,
+      "both_failed": 4,
+      "base_passed": 25,
+      "sft_passed": 26,
+      "total": 32,
+      "mean_absolute_gain": 0.03125,
+      "scope": "validation checkpoint selection diagnostics; one seed; not test quality certification"
+    }
+  },
+  "selected_arm": "sft",
+  "test": {
+    "passed": 28,
+    "success_rate": 0.875,
+    "success_wilson_95": [
+      0.7193169451834978,
+      0.9502986561251991
+    ],
+    "total": 32,
+    "truncation_rate": 0.0,
+    "violation_rate": 0.125
+  },
+  "executed_test_actions": 100,
+  "all_test_actions_valid_json_and_exact_order_ids": true,
+  "remaining_test_failures": {
+    "window_boundary": 2,
+    "misleading_note": 2
+  },
+  "replay_audit_passed": true,
+  "local_tests_passed": 104,
+  "elapsed_seconds": 247.2,
+  "rollout_budget": {
+    "admitted_trajectories": 96,
+    "fingerprint": "e22201422a46451d5a78cd91e23ab0b4031a0ffbccd77dc24554c1780efa5195",
+    "limit": 110000,
+    "reserved_generated_tokens": 98304,
+    "schema_version": 1,
+    "trajectory_tokens": 1024
+  },
+  "cost_usd": null,
+  "dollar_cap_enforced": false,
+  "quality_gate_passed": false,
+  "quality_certification": false,
+  "credential_in_retained_files": false,
+  "limitations": [
+    "One synthetic training seed; observed validation gain is only one case.",
+    "Validation had three improvements and two regressions on identical cases.",
+    "Held-out evaluation covers only the selected SFT arm; no matched base-model test score.",
+    "Standard comparison gate remains failed; no seed-replicated or significant quality improvement established.",
+    "No live crash recovery, independent resource inventory, or final billing verification."
+  ],
+  "next_experiment": "Preregister a larger paired multi-seed study with additional training-only boundary and adversarial-note supervision; use new held-out cases and preserve current holdout."
+}

@@ -16,8 +16,10 @@ from typing import TYPE_CHECKING, Any, cast
 
 from stateset_agents.core.generation_mode import inference_mode
 
+from .._deprecation import warn_deprecated
 from .agent_backends import ModelBackend, StubModel, create_stub_backend
 from .agent_config import LEGACY_STOP_SEQUENCES, AgentConfig, ConfigValidationError
+from .muse_protocol import is_muse_spark, muse_spark_final_response
 from .trajectory import ConversationTurn
 from .transformers_compat import generation_compat_kwargs, load_generation_model
 
@@ -25,12 +27,16 @@ if TYPE_CHECKING:
     from ..experimental.long_term_planning import PlanningManager
 
 try:
-    import torch
+    import torch as _torch
+
+    torch: Any = _torch
 except ImportError:  # pragma: no cover - allow stub mode without PyTorch
     torch = None
 
 try:
-    from jinja2.exceptions import TemplateError as _Jinja2TemplateError
+    from jinja2.exceptions import TemplateError as _ImportedTemplateError
+
+    _Jinja2TemplateError: type[Exception] = _ImportedTemplateError
 except ImportError:  # pragma: no cover
     _Jinja2TemplateError = ValueError
 # Lazy imports for transformers to avoid torch/torchvision compatibility issues
@@ -70,24 +76,22 @@ def _adopt_shim_mocks() -> bool:
     """Adopt test-injected mocks from the ``stateset_agents.core.agent`` shim.
 
     Returns True when both ``AutoModelForCausalLM`` and ``AutoTokenizer`` were
-    replaced with shim values. Any exception typical of missing attributes is
-    swallowed since this path is a best-effort hook for test injection.
+    replaced with shim values; a best-effort hook for test injection.
     """
     global AutoModelForCausalLM, AutoTokenizer
-    try:
-        import sys as _sys
+    import sys as _sys
 
-        shim = _sys.modules.get("stateset_agents.core.agent")
-        if shim is None:
-            return False
-        shim_model = getattr(shim, "AutoModelForCausalLM", None)
-        shim_tokenizer = getattr(shim, "AutoTokenizer", None)
-        if shim_model is not None and shim_tokenizer is not None:
-            AutoModelForCausalLM = shim_model
-            AutoTokenizer = shim_tokenizer
-            return True
-    except AGENT_SHIM_EXCEPTIONS:
-        pass
+    # ``sys.modules.get`` and ``getattr`` with a default cannot raise, so no
+    # handler is needed (the old one could only hide a bug).
+    shim = _sys.modules.get("stateset_agents.core.agent")
+    if shim is None:
+        return False
+    shim_model = getattr(shim, "AutoModelForCausalLM", None)
+    shim_tokenizer = getattr(shim, "AutoTokenizer", None)
+    if shim_model is not None and shim_tokenizer is not None:
+        AutoModelForCausalLM = shim_model
+        AutoTokenizer = shim_tokenizer
+        return True
     return False
 
 
@@ -166,20 +170,19 @@ def _load_peft() -> bool:
 
 logger = logging.getLogger(__name__)
 
-AGENT_SHIM_EXCEPTIONS: tuple[type[BaseException], ...] = (
-    AttributeError,
-    KeyError,
-    TypeError,
-)
+#: What a rollout backend's ``sync_weights`` may raise without being a bug --
+#: the same split as ``training.spine.rollouts`` (engine runtime and I/O).
+_ROLLOUT_SYNC_EXCEPTIONS: tuple[type[BaseException], ...] = (RuntimeError, OSError)
+
 TOKENIZER_ATTR_EXCEPTIONS: tuple[type[BaseException], ...] = (
     AttributeError,
     TypeError,
     ValueError,
 )
+#: Building the experimental planner from ``AgentConfig.planning_config``:
+#: bad keys surface as ``ConfigurationError`` (a ``ValueError``).
 PLANNING_EXCEPTIONS: tuple[type[BaseException], ...] = (
-    TypeError,
     ValueError,
-    KeyError,
     RuntimeError,
 )
 CHAT_TEMPLATE_EXCEPTIONS: tuple[type[BaseException], ...] = (
@@ -544,11 +547,9 @@ class Agent:
         Stores history as a list of dict messages `{role, content}` for
         compatibility with tests and simple consumers.
         """
-        msg: Any
-        try:
+        msg: Any = turn
+        if hasattr(turn, "role") and hasattr(turn, "content"):
             msg = {"role": turn.role, "content": turn.content}
-        except (AttributeError, TypeError):
-            msg = turn
         self.conversation_history.append(msg)
 
     def get_history(self) -> list[ConversationTurn]:
@@ -574,7 +575,8 @@ class Agent:
             if isinstance(value, (int, float, str)):
                 try:
                     return int(value)
-                except (TypeError, ValueError):
+                # int("x") / int(nan) raise ValueError, int(inf) OverflowError.
+                except (ValueError, OverflowError):
                     return None
             return None
 
@@ -637,6 +639,39 @@ def _validated_backend_result(result: Any, prompt: str) -> dict[str, Any]:
     }
 
 
+#: ``AgentConfig(enable_planning=True)`` without an injected manager makes
+#: core build the experimental planner itself; that implicit path is the one
+#: core -> experimental edge left (tests/unit/test_layering.py allowlist).
+_IMPLICIT_PLANNING_REMOVAL = "0.72.0"
+
+
+def _implicit_planning_manager(config: Any) -> Any:
+    """Deprecated bridge: build the experimental planner from ``config``.
+
+    Pass ``planning_manager=`` instead (see
+    ``stateset_agents.experimental.long_term_planning.planning_manager_from_config``);
+    this bridge will be removed in v0.72.0. A bad ``planning_config`` logs a
+    warning and leaves planning off, as before.
+    """
+    warn_deprecated(
+        "AgentConfig(enable_planning=True) without planning_manager=",
+        removal=_IMPLICIT_PLANNING_REMOVAL,
+        replacement=(
+            "MultiTurnAgent(config, planning_manager=stateset_agents.experimental."
+            "long_term_planning.planning_manager_from_config(config.planning_config))"
+        ),
+        stacklevel=3,
+    )
+    # Layering allowlist entry (dated): see the warning above.
+    from ..experimental.long_term_planning import planning_manager_from_config
+
+    try:
+        return planning_manager_from_config(getattr(config, "planning_config", None))
+    except PLANNING_EXCEPTIONS as exc:
+        logger.warning("Failed to init PlanningManager: %s", exc)
+        return None
+
+
 class MultiTurnAgent(Agent):
     """
     Agent designed for multi-turn conversations
@@ -671,20 +706,7 @@ class MultiTurnAgent(Agent):
         self._rollout_sync_warned: bool = False
         self.turn_count = 0
         if planning_manager is None and getattr(config, "enable_planning", False):
-            planning_kwargs = getattr(config, "planning_config", None) or {}
-            try:
-                from ..experimental.long_term_planning import (
-                    PlanningConfig,
-                    PlanningManager,
-                )
-
-                if isinstance(planning_kwargs, dict):
-                    planning_kwargs = dict(planning_kwargs)
-                    planning_kwargs.pop("enabled", None)
-                planning_cfg = PlanningConfig(enabled=True, **planning_kwargs)
-                planning_manager = PlanningManager(planning_cfg)
-            except PLANNING_EXCEPTIONS as exc:
-                logger.warning("Failed to init PlanningManager: %s", exc)
+            planning_manager = _implicit_planning_manager(config)
         self.planning_manager = planning_manager
 
         # Arbitrary caller-attached metadata (e.g. the API layer records the
@@ -817,7 +839,11 @@ class MultiTurnAgent(Agent):
             return False
         try:
             sync(self.model)
-        except Exception as e:  # noqa: BLE001 - engine failures must not kill training
+        except _ROLLOUT_SYNC_EXCEPTIONS as e:
+            # An engine runtime/I-O failure leaves the backend stale and
+            # training goes on; anything else (TypeError, AttributeError, ...)
+            # is a bug in the sync path and propagates instead of turning
+            # into a silently stale backend.
             self._rollout_backend_stale = True
             self._rollout_backend_error = f"{type(e).__name__}: {e}"
             logger.warning(
@@ -912,7 +938,8 @@ class MultiTurnAgent(Agent):
         as one left-padded batch; a stub backend generates them one by one.
         Each turn carries exactly what :meth:`generate_turn` would record for
         its conversation (``prompt_token_ids`` without padding, ``token_ids``,
-        ``sampler_log_probs``), and its ``content`` decodes from ``token_ids``.
+        ``sampler_log_probs``). Ordinary reply content decodes from ``token_ids``;
+        native Muse exposes its final channel while retaining all sampled IDs.
         """
         if contexts is None:
             contexts = [None] * len(histories)
@@ -1205,11 +1232,9 @@ class MultiTurnAgent(Agent):
         if pad_id is not None and pad_id != eos_id:
             while length and int(response_tokens[length - 1]) == int(pad_id):
                 length -= 1
-        # A row stopped by a stop string is cut before it (text and ids);
-        # with pad == eos that also drops the padding, which is not a
-        # sampled EOS.
-        kept, _, _ = self._truncate_at_stop([int(t) for t in response_tokens[:length]])
-        length = len(kept)
+        # Keep the sampled stop tokens. Later HF padding (including pad == eos)
+        # is not an action and must not receive a likelihood or policy loss.
+        length = self._sampled_stop_length([int(t) for t in response_tokens[:length]])
         response_tokens = response_tokens[:length]
         text = self._decode_reply([int(t) for t in response_tokens])
         details: dict[str, Any] = {"response": text}
@@ -1265,9 +1290,14 @@ class MultiTurnAgent(Agent):
         ):
             try:
                 prompt = self.tokenizer.apply_chat_template(
-                    recent_messages, tokenize=False, add_generation_prompt=True
+                    recent_messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    **(self.config.chat_template_kwargs or {}),
                 )
             except CHAT_TEMPLATE_EXCEPTIONS as e:
+                if is_muse_spark(self.config.model_name, self.model):
+                    raise
                 # Fallback to manual formatting if chat template fails
                 logger.debug("Chat template failed, using manual formatting: %s", e)
                 prompt = self._format_conversation(recent_messages)
@@ -1400,6 +1430,10 @@ class MultiTurnAgent(Agent):
                 formatted += f"User: {content}\n"
             elif role == "assistant":
                 formatted += f"Assistant: {content}\n"
+            elif role == "tool":
+                # Tool results are observations the policy must see; the
+                # loss never supervises them (see core/chat_masking.py).
+                formatted += f"Tool: {content}\n"
 
         formatted += "Assistant: "
         return formatted
@@ -1451,26 +1485,45 @@ class MultiTurnAgent(Agent):
         return token_ids[:keep], kept_log_probs, True
 
     def _decode_reply(self, token_ids: list[int]) -> str:
-        """The reply text for sampled ids: their exact decode, nothing else."""
+        """Render user-facing text while retaining the sampled action separately."""
         if self.tokenizer is None:
             raise RuntimeError("Tokenizer must be available to decode replies")
-        return str(self.tokenizer.decode(token_ids, skip_special_tokens=True))
+        if is_muse_spark(self.config.model_name, self.model):
+            text = self._decode_model_response(token_ids)
+        else:
+            text = str(self.tokenizer.decode(token_ids, skip_special_tokens=True))
+        hits = [
+            text.find(stop)
+            for stop in (getattr(self.config, "stop_sequences", None) or [])
+            if stop and stop in text
+        ]
+        return text[: min(hits)] if hits else text
+
+    def _sampled_stop_length(self, token_ids: list[int]) -> int:
+        """Find the complete sampled prefix that triggered a configured stop."""
+        stops = [
+            stop
+            for stop in (getattr(self.config, "stop_sequences", None) or [])
+            if stop
+        ]
+        if not stops or self.tokenizer is None:
+            return len(token_ids)
+        full = str(self.tokenizer.decode(token_ids, skip_special_tokens=True))
+        if not any(stop in full for stop in stops):
+            return len(token_ids)
+        for length in range(1, len(token_ids) + 1):
+            prefix = str(
+                self.tokenizer.decode(token_ids[:length], skip_special_tokens=True)
+            )
+            if any(stop in prefix for stop in stops):
+                return length
+        return len(token_ids)
 
     def _faithful_backend_details(self, details: dict[str, Any]) -> dict[str, Any]:
-        """Apply stop sequences to a rollout-engine result, ids and text alike."""
+        """Render stop-aware text without rewriting the backend's sampled action."""
         if self.tokenizer is None or not getattr(self.config, "stop_sequences", None):
             return details
-        ids, log_probs, stopped = self._truncate_at_stop(
-            list(details["token_ids"]), list(details["sampler_log_probs"])
-        )
-        if stopped:
-            details = {
-                **details,
-                "token_ids": ids,
-                "sampler_log_probs": log_probs,
-                "response": self._decode_reply(ids),
-            }
-        return details
+        return {**details, "response": self._decode_reply(list(details["token_ids"]))}
 
     async def _generate_with_model(
         self, prompt: str, context: dict[str, Any] | None = None
@@ -1579,12 +1632,10 @@ class MultiTurnAgent(Agent):
         sequences = outputs.sequences[0]
         response_tokens = sequences[prompt_len:]
         if torch.is_tensor(response_tokens):
-            kept, _, stopped = self._truncate_at_stop([int(t) for t in response_tokens])
-            if stopped:
-                response_tokens = response_tokens[: len(kept)]
-        # The reply is the exact decode of the sampled ids: no stripping or
-        # speaker-label cutting, so text and recorded ``token_ids`` agree.
-        response = str(self.tokenizer.decode(response_tokens, skip_special_tokens=True))
+            length = self._sampled_stop_length([int(t) for t in response_tokens])
+            response_tokens = response_tokens[:length]
+        # Display processing never changes which complete tokens were sampled.
+        response = self._decode_reply([int(t) for t in response_tokens])
 
         details: dict[str, Any] = {"response": response}
         if backend_error:
@@ -1619,7 +1670,20 @@ class MultiTurnAgent(Agent):
             logger.debug("token capture skipped: %s", e)
         return details
 
-    def _clean_response(self, response: str) -> str:
+    def _decode_model_response(self, token_ids: Any) -> str:
+        """Keep native Muse channel boundaries while retaining the sampled IDs."""
+        tokenizer = self.tokenizer
+        if tokenizer is None:
+            raise RuntimeError("Model tokenizer is not initialized")
+        native = is_muse_spark(self.config.model_name, self.model)
+        response = str(tokenizer.decode(token_ids, skip_special_tokens=not native))
+        if native:
+            return self._clean_response(response, native_protocol=True)
+        return self._clean_response(response)
+
+    def _clean_response(
+        self, response: str, *, native_protocol: bool | None = None
+    ) -> str:
         """Clean up generated response by removing artifacts and stop tokens.
 
         Args:
@@ -1628,6 +1692,12 @@ class MultiTurnAgent(Agent):
         Returns:
             Cleaned response with artifacts removed
         """
+        if native_protocol is not False and is_muse_spark(
+            self.config.model_name, self.model
+        ):
+            response = muse_spark_final_response(
+                response, allow_plain=native_protocol is None
+            )
         # Remove common artifacts
         response = response.strip()
 
@@ -1727,9 +1797,14 @@ class MultiTurnAgent(Agent):
         ):
             try:
                 prompt = self.tokenizer.apply_chat_template(
-                    recent_messages, tokenize=False, add_generation_prompt=True
+                    recent_messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    **(self.config.chat_template_kwargs or {}),
                 )
             except CHAT_TEMPLATE_EXCEPTIONS:
+                if is_muse_spark(self.config.model_name, self.model):
+                    raise
                 prompt = self._format_conversation(recent_messages)
         else:
             prompt = self._format_conversation(recent_messages)
@@ -1737,7 +1812,18 @@ class MultiTurnAgent(Agent):
         response_text = ""
 
         # For stub backend, yield the full response in chunks
-        if self._is_stub_backend and isinstance(self.model, StubModel):
+        if (
+            is_muse_spark(self.config.model_name, self.model)
+            and not self._is_stub_backend
+        ):
+            # Native recipient headers must survive decoding. Buffer the full
+            # generation before emitting user-directed content; a generic
+            # streamer discards those headers and would expose private reasoning.
+            response_text = await self._generate_with_model(prompt, context)
+            for offset in range(0, len(response_text), 32):
+                yield response_text[offset : offset + 32]
+                await asyncio.sleep(0)
+        elif self._is_stub_backend and isinstance(self.model, StubModel):
             response = str(self.model.generate(prompt, context))
             # Simulate streaming by yielding word by word
             words = response.split()
@@ -1859,7 +1945,10 @@ class MultiTurnAgent(Agent):
                     await asyncio.sleep(0.01)
                 response_text = response
 
-        response_text = self._clean_response(response_text)
+        if is_muse_spark(self.config.model_name, self.model):
+            response_text = self._clean_response(response_text, native_protocol=False)
+        else:
+            response_text = self._clean_response(response_text)
         self.conversation_history.append(
             {"role": "assistant", "content": response_text}
         )

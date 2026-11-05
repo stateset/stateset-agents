@@ -1,0 +1,297 @@
+{
+  "bundles": [
+    {
+      "audit": {
+        "contrast_groups": 48,
+        "curriculum_policy": "adjacent_boundary_v1",
+        "data_manifest_hash": "4f96fd45fbf9526369e8e37eea5d2bead3b9a92bb031d4f60a98b892bfd3aeba",
+        "derived_cases": 127,
+        "passed": true,
+        "replayed_demonstrations": 255
+      },
+      "manifest": {
+        "artifacts": {
+          "contrast_groups.json": "e0485c22a9cc1cdb4b97a2fa9e7ec982f58f836fcbb882d9be9f79e2aa8bbd2b",
+          "lineage.json": "75f4b66d5dbc84eabc6026d5ce500bdd934d738ace13a223d28471706c2e442c",
+          "train.json": "fdf074c65e8be76c8d31228d068c97754d86de3eaea2043b3c70fc9c10813124",
+          "train.jsonl": "c7497530a01a1ccb11f35fd793d5f6fb708433893e776f8af8a3863a46e0765b"
+        },
+        "contrast_groups": 48,
+        "curriculum_policy": "adjacent_boundary_v1",
+        "data_manifest_hash": "680bc56fdd55f747c5574ae39e907b14fd22320053515cd5382e75427b051990",
+        "derived_cases": 127,
+        "environment": "refund-policy-v2",
+        "families": {
+          "already_refunded": 16,
+          "chargeback": 16,
+          "eligible": 48,
+          "misleading_note": 16,
+          "outside_window": 64,
+          "partial_refund": 32,
+          "undelivered": 16,
+          "window_boundary": 47
+        },
+        "original_cases": 128,
+        "schema_version": 1,
+        "scope": "training_only",
+        "seed": 2026101901,
+        "selected": 255,
+        "source": "reference_policy_boundary_contrast",
+        "source_training_cases_hash": "ff7ba3fb79300443db3d3cad8cc500de5bba8d97691e313414f774cf6e948934"
+      },
+      "seed": 2026101901
+    },
+    {
+      "audit": {
+        "contrast_groups": 48,
+        "curriculum_policy": "adjacent_boundary_v1",
+        "data_manifest_hash": "aa0b5ce404cc45cc6c6ef8a365c50ef3b1a0fab76f1c4e0f22eadad66814dd8f",
+        "derived_cases": 122,
+        "passed": true,
+        "replayed_demonstrations": 250
+      },
+      "manifest": {
+        "artifacts": {
+          "contrast_groups.json": "d90bae37e8a749f928a0ea55ac665f6d0e2b1b008b0c43278becd821083a29b9",
+          "lineage.json": "e3945f6b295f2d01a15e41338c0285c9ffed7ec8e27d3c4dd108a34e03862947",
+          "train.json": "19989097f2b408521f638daf2259af35925a25620232e6193866ed69841bd304",
+          "train.jsonl": "8be1796875ed9c58f27ef6522de3f41770fc679ba839d05b0a7f69f82e6fa188"
+        },
+        "contrast_groups": 48,
+        "curriculum_policy": "adjacent_boundary_v1",
+        "data_manifest_hash": "89b4542212ea4fc3c2a742ded1ca5ee53760a7d64ac73f8360ea6f3e8cf98899",
+        "derived_cases": 122,
+        "environment": "refund-policy-v2",
+        "families": {
+          "already_refunded": 16,
+          "chargeback": 16,
+          "eligible": 48,
+          "misleading_note": 16,
+          "outside_window": 64,
+          "partial_refund": 28,
+          "undelivered": 16,
+          "window_boundary": 46
+        },
+        "original_cases": 128,
+        "schema_version": 1,
+        "scope": "training_only",
+        "seed": 2026101902,
+        "selected": 250,
+        "source": "reference_policy_boundary_contrast",
+        "source_training_cases_hash": "c08f9a4c27c1f4a2bd5bd0e703ead013fe223599ca193ee4de19b7faaa37ee7c"
+      },
+      "seed": 2026101902
+    },
+    {
+      "audit": {
+        "contrast_groups": 48,
+        "curriculum_policy": "adjacent_boundary_v1",
+        "data_manifest_hash": "924051f2726932cb4403559309ae566f915df0e5207081aa60aebeb340adea29",
+        "derived_cases": 123,
+        "passed": true,
+        "replayed_demonstrations": 251
+      },
+      "manifest": {
+        "artifacts": {
+          "contrast_groups.json": "f4e8dbb2d155fffa813938c5259c325e9d35c5927265d3da5bdf1717f1902028",
+          "lineage.json": "a5cf8714a063b5ed8d8b32b14ef8dd1a43d989055b6d88ec49471a99e37ba323",
+          "train.json": "69b67f25bb09466d8cc4dc02b2ec9de4954cc9f5a8e6bdecfe1ba8fcb78ad115",
+          "train.jsonl": "9571d1cb9d1a0c4f626f801f7cf80260e73c2a8c102e32dd8c6406af7246ef8b"
+        },
+        "contrast_groups": 48,
+        "curriculum_policy": "adjacent_boundary_v1",
+        "data_manifest_hash": "161b3f93a19db257a38653f3c6a31acbb4e3f61ede1e8d27209d328c3909d5bb",
+        "derived_cases": 123,
+        "environment": "refund-policy-v2",
+        "families": {
+          "already_refunded": 16,
+          "chargeback": 16,
+          "eligible": 47,
+          "misleading_note": 16,
+          "outside_window": 64,
+          "partial_refund": 31,
+          "undelivered": 16,
+          "window_boundary": 45
+        },
+        "original_cases": 128,
+        "schema_version": 1,
+        "scope": "training_only",
+        "seed": 2026101903,
+        "selected": 251,
+        "source": "reference_policy_boundary_contrast",
+        "source_training_cases_hash": "114f739ff8d46a67d6c1fd23ddb2237f26c821d9fa3ae7dd43860bd54aea57de"
+      },
+      "seed": 2026101903
+    },
+    {
+      "audit": {
+        "contrast_groups": 48,
+        "curriculum_policy": "adjacent_boundary_v1",
+        "data_manifest_hash": "86fcfc6bc34e8875162a4e8fd1edaa7d4b9bc200cae4bfde2e2db9f0fe658b2c",
+        "derived_cases": 124,
+        "passed": true,
+        "replayed_demonstrations": 252
+      },
+      "manifest": {
+        "artifacts": {
+          "contrast_groups.json": "d6610c9dd157d5f9bab77561ef55ba560fb6b30334aa5248f4c60bf3d49c7318",
+          "lineage.json": "7a3a972332b674dc19f62d5bcd6ccc91e317c42005ed206589c2a0dc3b8b61be",
+          "train.json": "f2b18d8ba1b8953ae68e6c104e6a18b5c67ded0dd60885f9e545811ec6deb391",
+          "train.jsonl": "a936c66cf201e0b071b3525f9694ae5896ce405ee6982dbde1b7f8ad38da22cc"
+        },
+        "contrast_groups": 48,
+        "curriculum_policy": "adjacent_boundary_v1",
+        "data_manifest_hash": "ebd4a5c6a8b305f70b50981ac77e2d725cb53cb7e4dbb6bb4c08ff522e99bd95",
+        "derived_cases": 124,
+        "environment": "refund-policy-v2",
+        "families": {
+          "already_refunded": 16,
+          "chargeback": 16,
+          "eligible": 47,
+          "misleading_note": 16,
+          "outside_window": 64,
+          "partial_refund": 32,
+          "undelivered": 16,
+          "window_boundary": 45
+        },
+        "original_cases": 128,
+        "schema_version": 1,
+        "scope": "training_only",
+        "seed": 2026101904,
+        "selected": 252,
+        "source": "reference_policy_boundary_contrast",
+        "source_training_cases_hash": "2fcf24f31eedb8642540b95a1b786d60c0b224dc5bc3eece3711aa6101343556"
+      },
+      "seed": 2026101904
+    },
+    {
+      "audit": {
+        "contrast_groups": 48,
+        "curriculum_policy": "adjacent_boundary_v1",
+        "data_manifest_hash": "93440653ecbb36141ee1808a00f3190c27e6ef68a15febd9305d01f300675fd9",
+        "derived_cases": 126,
+        "passed": true,
+        "replayed_demonstrations": 254
+      },
+      "manifest": {
+        "artifacts": {
+          "contrast_groups.json": "0055157321bba9ddb5610036d10eef3ec5955f0e70d4ac7b1313c9497b475c63",
+          "lineage.json": "404637d2239dfb8b469caa8d4bb1dbec26104a34dced7882c9564abd3df038f5",
+          "train.json": "66a9b181543cb51067306002fd5ac94ec1a067fc188f5216a223d818abd4abc1",
+          "train.jsonl": "f7800ba21cf2c3cbc988b460ef9666e5ee9fd3d08ef0553088a12870c69ffd36"
+        },
+        "contrast_groups": 48,
+        "curriculum_policy": "adjacent_boundary_v1",
+        "data_manifest_hash": "1001f533410fad73ee2c3b8e58faf175e149626b17676ef2cd4b4fd520e84229",
+        "derived_cases": 126,
+        "environment": "refund-policy-v2",
+        "families": {
+          "already_refunded": 16,
+          "chargeback": 16,
+          "eligible": 48,
+          "misleading_note": 16,
+          "outside_window": 64,
+          "partial_refund": 31,
+          "undelivered": 16,
+          "window_boundary": 47
+        },
+        "original_cases": 128,
+        "schema_version": 1,
+        "scope": "training_only",
+        "seed": 2026101905,
+        "selected": 254,
+        "source": "reference_policy_boundary_contrast",
+        "source_training_cases_hash": "2c1a5be0ca584e6ae6810e08c943eae3e37161bdddd898c3183e679a060548db"
+      },
+      "seed": 2026101905
+    },
+    {
+      "audit": {
+        "contrast_groups": 48,
+        "curriculum_policy": "adjacent_boundary_v1",
+        "data_manifest_hash": "40add303277de2eb3a14434834e99022c005a0b0ab5eba2b7f4758997b8959ef",
+        "derived_cases": 125,
+        "passed": true,
+        "replayed_demonstrations": 253
+      },
+      "manifest": {
+        "artifacts": {
+          "contrast_groups.json": "2e2a951fe3512b5236164d4b56891f0c9fe39ead860661bde73aa1b74623ac5c",
+          "lineage.json": "7276cbb9741920e21e8946bc9b49eabd05e13aada622ba25eb0d5b3364df5a06",
+          "train.json": "5cb67d875983ecbc0da467bb29be6637363fe8fac2b80ab42768a85183b47f0a",
+          "train.jsonl": "ab012d539b4d0098c4e86dcbca8dd0816bfcaad19a1ab8f499b8b86c7aeae75b"
+        },
+        "contrast_groups": 48,
+        "curriculum_policy": "adjacent_boundary_v1",
+        "data_manifest_hash": "91e80450ebc6fe332704d3fb685dd3e09fd94ff2274f47b1c8b49b67df3adc85",
+        "derived_cases": 125,
+        "environment": "refund-policy-v2",
+        "families": {
+          "already_refunded": 16,
+          "chargeback": 16,
+          "eligible": 47,
+          "misleading_note": 16,
+          "outside_window": 64,
+          "partial_refund": 31,
+          "undelivered": 16,
+          "window_boundary": 47
+        },
+        "original_cases": 128,
+        "schema_version": 1,
+        "scope": "training_only",
+        "seed": 2026101906,
+        "selected": 253,
+        "source": "reference_policy_boundary_contrast",
+        "source_training_cases_hash": "f56c4c62b0d9df4be1d9abd9fcd3398bd7a369962c35465b5ba40fb6c0bb4977"
+      },
+      "seed": 2026101906
+    }
+  ],
+  "complete": true,
+  "contrast_groups": 288,
+  "cross_seed_training_overlap": 0,
+  "derived_training_cases": 747,
+  "excluded_cases_unique_by_facts": 1376,
+  "exclusion_sources": {
+    "outputs/river-integration-review-20261018-live/run/test.json": "713b215a86f4238ba7a5d67feaae9117795da2d931b9a16d6951556a003bfec7",
+    "outputs/river-integration-review-20261018-live/run/train.json": "6103c6f44ab667ae2c44cc4c665fd7dc22e673f15c4e20cd3044f1a4f438d5ee",
+    "outputs/river-integration-review-20261018-live/run/validation.json": "f9c2871fdf4fb02487f6c1953b69ff153e8338276f0262730402885f000592be",
+    "outputs/river-prompt-fix-20261018-live/run/test.json": "7ec340f98aeb0b2b983ada205bf01fb54f3a1c93aaa9387f1fe7897242ed58f2",
+    "outputs/river-prompt-fix-20261018-live/run/train.json": "d0b37fe1f181f5e9af55a1e5124e136bb771c33ca63a41596ca3e9714e6d4ba1",
+    "outputs/river-prompt-fix-20261018-live/run/validation.json": "c5be6f823b82dc8ac0218d2951f2a29bdcf3ca84d31fa4ad40598bc1168029e4",
+    "outputs/river-sft-warmup-20261018/data/test.json": "1a6ae8e3ddbe3c21bf8b5151da9e3626782b58a2a20f1a3d2aac8a0c5f801f5d",
+    "outputs/river-sft-warmup-20261018/data/train.json": "7154ce39d3d8398578a5e1909a84d631a3fba2e7e4d91290dfa50886500bcdf3",
+    "outputs/river-sft-warmup-20261018/data/validation.json": "65699ab616a45910b2a12e66f35cf48d3e0e35a9735e3296bfd8f8dc4e78b0ff",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101901/data/test.json": "0813bd32d4a1707fb5fcbef9cad2aae0025c34752b18e255bf31933c15f60156",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101901/data/validation.json": "9076fd4947d1202ea58f3df26aea9993ee9390648194c8ed40a34e30ec18cd11",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101901/primary-test.json": "10b9d3110b73e7beb0e92e69cd378507808614e0d82076d6a8252e9787f79c96",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101902/data/test.json": "e2405e4a559224c030fe794e1abaa70510ee3d143dca20d63f1a9637e42ece41",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101902/data/validation.json": "6dc3cd2760c2a38976d32a03dbec1220e8e4bc155da16a34aefb70728490de38",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101902/primary-test.json": "11a61ab1fe8c41aa6a412176edd438dc4db6c11054653f1036c3f76b731669e5",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101903/data/test.json": "87412dc2c140d089188a2556dd9c2f1f159e9246dc07a0adf2bc60c93688ff21",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101903/data/validation.json": "a21f0691f6d4bb2fc9936a213a18dcb61cbe819bc396d156efc9a35b53338eb0",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101903/primary-test.json": "1a549edec22838ec3a638a637d09518e1dacba09ffe1627a344212de8b655d01",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101904/data/test.json": "139eb1b9370e2be60b00d3b71c605a6ad5418f30ef9a3e2a853c62d938e1004e",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101904/data/validation.json": "98e03a5015c0bd022afdf7e6e5db106c6080ff05b52c0659c154b6c7044b5ff0",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101904/primary-test.json": "9f78de4bc53ec7769275e21a6e7b41c570c4586a413860fbc25a47a344a07643",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101905/data/test.json": "37b80a5e0bd5de156906c9388e214f617fdfd3eb55b15ebd8ac5cea16150a295",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101905/data/validation.json": "1f7a62ca5bf622a6f3ba4e56c586f2ed7471e42d3bfb6015b6011ac6ac2f14f2",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101905/primary-test.json": "4948f1ef0e7e63fae7c0cdf301e2d2a33f85fc3bc81335b1d7e121ccf56279fb",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101906/data/test.json": "de867ae69cee556f07ffeda7b99ef682f432a0c8c17db214dbe3c27f8c8c9b7b",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101906/data/validation.json": "56904835389caa64b47361f93b2ac39d2fcea4f3810590bb3677771996744060",
+    "outputs/river-six-seed-recovery-20261019/seed-2026101906/primary-test.json": "c23edb404334063423f46fc0d498a616d76cd0f40588a9d08d1c3d67b755ea0c"
+  },
+  "limitations": [
+    "Synthetic policy teacher verification is not human review or model quality.",
+    "No live fine-tuning or post-change held-out evaluation was run.",
+    "Existing exposed test outcomes remain diagnostic evidence only.",
+    "A future study needs a new frozen protocol, fresh excluded test cases, and bounded spend."
+  ],
+  "model_updates": 0,
+  "original_training_cases": 768,
+  "provider_calls": 0,
+  "quality_certification": false,
+  "training_demonstrations": 1515,
+  "training_overlap_with_reserved_or_historical_cases": 0,
+  "validation_replayed": 1152
+}

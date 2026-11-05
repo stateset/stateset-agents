@@ -32,15 +32,46 @@ class TestLoadTranscript:
         assert len(turns) == 2
         assert turns[0]["role"] == "user"
 
-    def test_skips_malformed_lines(self, tmp_path: Path) -> None:
+    def test_malformed_line_fails_with_its_location(self, tmp_path: Path) -> None:
+        """Skipping it shifted every later turn onto the wrong context."""
         p = tmp_path / "t.jsonl"
         p.write_text(
             '{"role": "user", "content": "hi"}\n'
             "not json\n"
             '{"role": "assistant", "content": "ok"}\n'
         )
-        turns = grader.load_transcript(p)
-        assert len(turns) == 2
+        with pytest.raises(ValueError, match=r"t\.jsonl:2: malformed"):
+            grader.load_transcript(p)
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            '{"content": "no role"}',
+            '{"role": "user"}',
+            '{"role": "", "content": "x"}',
+            '{"role": "user", "content": null}',
+            '["user", "x"]',
+        ],
+    )
+    def test_role_less_or_content_less_line_fails(
+        self, tmp_path: Path, line: str
+    ) -> None:
+        p = tmp_path / "t.jsonl"
+        p.write_text('{"role": "user", "content": "hi"}\n' + line + "\n")
+        with pytest.raises(ValueError, match=":2: each line needs"):
+            grader.load_transcript(p)
+
+    def test_reads_utf8_regardless_of_locale(self, tmp_path: Path, monkeypatch) -> None:
+        import locale
+
+        monkeypatch.setattr(locale, "getpreferredencoding", lambda *_: "ascii")
+        p = tmp_path / "t.jsonl"
+        p.write_text(
+            json.dumps({"role": "user", "content": "Café 12€"}, ensure_ascii=False)
+            + "\n",
+            encoding="utf-8",
+        )
+        assert grader.load_transcript(p)[0]["content"] == "Café 12€"
 
     def test_missing_file_raises(self, tmp_path: Path) -> None:
         with pytest.raises(FileNotFoundError):
@@ -63,6 +94,91 @@ class TestLoadContexts:
         ctxs = grader.load_contexts(p)
         assert len(ctxs) == 2
         assert ctxs[0]["intent"] == "refund"
+
+    def test_malformed_context_line_fails(self, tmp_path: Path) -> None:
+        p = tmp_path / "ctx.jsonl"
+        p.write_text('{"gold_answer": 4}\n[1, 2]\n')
+        with pytest.raises(ValueError, match=":2: each context"):
+            grader.load_contexts(p)
+
+
+GSM_TURNS = [
+    {"role": "user", "content": "Q1: 2+2?"},
+    {"role": "assistant", "content": "The answer is 4"},
+    {"role": "user", "content": "Q2: 3+3?"},
+    {"role": "assistant", "content": "The answer is 6"},
+]
+
+
+class TestContextAlignment:
+    """Contexts are 1:1 with assistant turns; a dropped transcript line used
+    to grade Q2's correct answer against Q1's gold (score 0)."""
+
+    @pytest.mark.asyncio
+    async def test_truncated_line_can_no_longer_misalign_gold_answers(
+        self, tmp_path: Path
+    ) -> None:
+        p = tmp_path / "t.jsonl"
+        lines = [json.dumps(t) for t in GSM_TURNS]
+        lines[1] = lines[1][:-1]  # truncated write of the first answer
+        p.write_text("\n".join(lines) + "\n")
+        with pytest.raises(ValueError, match="malformed"):
+            grader.load_transcript(p)
+        rows = await grader.grade_transcript(
+            GSM_TURNS,
+            [{"gold_answer": 4}, {"gold_answer": 6}],
+            grader.get_reward("gsm8k"),
+        )
+        assert [r["score"] for r in rows] == [1.0, 1.0]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("count", [1, 3])
+    async def test_context_count_must_match_assistant_turns(self, count) -> None:
+        with pytest.raises(ValueError, match="exactly one context per assistant"):
+            await grader.grade_transcript(
+                GSM_TURNS, [{"gold_answer": 4}] * count, grader.get_reward("gsm8k")
+            )
+
+    @pytest.mark.asyncio
+    async def test_user_query_is_the_preceding_user_turn(self) -> None:
+        turns = [
+            {"role": "system", "content": "Be brief."},
+            *GSM_TURNS[:2],
+            {"role": "assistant", "content": "Also, 4 is even."},
+            *GSM_TURNS[2:],
+        ]
+        rows = await grader.grade_transcript(turns, [], grader.get_reward("gsm8k"))
+        assert [r["user_query"] for r in rows] == [
+            "Q1: 2+2?",
+            "Q1: 2+2?",
+            "Q2: 3+3?",
+        ]
+
+    def test_cli_rejects_a_mismatched_context_file(self, tmp_path: Path) -> None:
+        import subprocess
+
+        history, contexts = tmp_path / "h.jsonl", tmp_path / "c.jsonl"
+        _write_jsonl(history, GSM_TURNS)
+        _write_jsonl(contexts, [{"gold_answer": 4}])
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_DIR / "grade_transcript.py"),
+                "--history",
+                str(history),
+                "--reward",
+                "gsm8k",
+                "--context-file",
+                str(contexts),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        assert result.returncode == 2
+        assert "must match 1:1" in result.stderr
 
 
 class TestGetReward:
@@ -253,6 +369,64 @@ class TestWriteCuratedExamples:
         )
         assert n2 == 0, "Second run should not duplicate"
         assert len(curated.read_text(encoding="utf-8").splitlines()) == 1
+
+    @pytest.mark.asyncio
+    async def test_curated_examples_keep_the_graded_multi_turn_context(
+        self, tmp_path: Path
+    ) -> None:
+        """Pairs used to be flattened to (last user, response); consecutive
+        assistant turns got the prompt ""."""
+        turns = [
+            {"role": "system", "content": "Be brief."},
+            *GSM_TURNS[:2],
+            {"role": "assistant", "content": "Also, 4 is even."},
+            *GSM_TURNS[2:],
+        ]
+        rows = [{"score": 1.0}, {"score": 1.0}, {"score": 1.0}]
+        curated = tmp_path / "curated.jsonl"
+        assert (
+            grader.write_curated_examples(
+                Path("s.jsonl"), turns, rows, threshold=0.5, output_path=curated
+            )
+            == 3
+        )
+        entries = [json.loads(x) for x in curated.read_text().splitlines()]
+
+        def context(upto):
+            return [
+                {**t, "weight": 0} if t["role"] == "assistant" else t
+                for t in turns[: upto - 1]
+            ] + [turns[upto - 1]]
+
+        assert [e["messages"] for e in entries] == [
+            context(3),
+            context(4),
+            context(6),
+        ]
+        assert [e["prompt"] for e in entries] == ["Q1: 2+2?", "Q1: 2+2?", "Q2: 3+3?"]
+        assert entries[2]["response"] == "The answer is 6"
+        # Rerunning adds nothing: identity is the full context.
+        assert (
+            grader.write_curated_examples(
+                Path("s.jsonl"), turns, rows, threshold=0.5, output_path=curated
+            )
+            == 0
+        )
+
+    @pytest.mark.asyncio
+    async def test_legacy_pairs_are_not_duplicated(self, tmp_path: Path) -> None:
+        curated = tmp_path / "curated.jsonl"
+        curated.write_text(
+            json.dumps({"prompt": "Q1: 2+2?", "response": "The answer is 4"}) + "\n"
+        )
+        written = grader.write_curated_examples(
+            Path("s.jsonl"),
+            GSM_TURNS[:2],
+            [{"score": 1.0}],
+            threshold=0.5,
+            output_path=curated,
+        )
+        assert written == 0
 
 
 class TestSummarizeGradedBatch:

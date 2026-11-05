@@ -1,0 +1,1411 @@
+{
+  "checks": {
+    "cookbook-sample-eval": {
+      "eval_sets": {
+        "sample_eval_set.jsonl": {
+          "checked_rows": 10,
+          "contaminated_rows": 0,
+          "contamination_rate": 0.0,
+          "evidence": [],
+          "max_ngram_overlap": 0.0,
+          "near_duplicate_rows": 0,
+          "rows": 10,
+          "sha256": "5d80d1439228a7e114cd1a92fcf347d25e0542bcaf92c2f01441376bafaad259",
+          "unchecked_short_segments": 0
+        }
+      },
+      "summary": {
+        "clean": true,
+        "contaminated_eval_rows": 0,
+        "contaminating_train_rows": 0,
+        "eval_rows": 10
+      },
+      "train": [
+        {
+          "name": "starter-scenarios.jsonl",
+          "rows": 8,
+          "sha256": null
+        },
+        {
+          "name": "support-bench",
+          "rows": 24,
+          "sha256": null
+        }
+      ]
+    },
+    "eval-ladder:depth2-refusal0.0": {
+      "eval_sets": {
+        "ladder-eval": {
+          "checked_rows": 12,
+          "contaminated_rows": 0,
+          "contamination_rate": 0.0,
+          "evidence": [],
+          "max_ngram_overlap": 0.0,
+          "near_duplicate_rows": 0,
+          "rows": 12,
+          "sha256": null,
+          "unchecked_short_segments": 0
+        }
+      },
+      "summary": {
+        "clean": true,
+        "contaminated_eval_rows": 0,
+        "contaminating_train_rows": 0,
+        "eval_rows": 12
+      },
+      "train": [
+        {
+          "name": "ladder-train",
+          "rows": 140,
+          "sha256": null
+        },
+        {
+          "name": "ladder-harvest",
+          "rows": 30,
+          "sha256": null
+        }
+      ]
+    },
+    "eval-ladder:depth2-refusal0.5": {
+      "eval_sets": {
+        "ladder-eval": {
+          "checked_rows": 12,
+          "contaminated_rows": 6,
+          "contamination_rate": 0.5,
+          "evidence": [
+            {
+              "index": 0,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.333333,
+              "overlap_ngram_count": 8,
+              "overlap_ngrams": [
+                "one more thing the printer shows offline too but don t touch the",
+                "more thing the printer shows offline too but don t touch the printer",
+                "thing the printer shows offline too but don t touch the printer i",
+                "the printer shows offline too but don t touch the printer i just",
+                "printer shows offline too but don t touch the printer i just want"
+              ],
+              "row": "eval[0]",
+              "train_examples": [
+                "harvest[18]"
+              ]
+            },
+            {
+              "index": 1,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.347826,
+              "overlap_ngram_count": 8,
+              "overlap_ngrams": [
+                "one more thing the vpn won t connect too but leave the vpn",
+                "more thing the vpn won t connect too but leave the vpn alone",
+                "thing the vpn won t connect too but leave the vpn alone i",
+                "the vpn won t connect too but leave the vpn alone i just",
+                "vpn won t connect too but leave the vpn alone i just want"
+              ],
+              "row": "eval[1]",
+              "train_examples": [
+                "harvest[5]",
+                "harvest[15]"
+              ]
+            },
+            {
+              "index": 3,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.318182,
+              "overlap_ngram_count": 7,
+              "overlap_ngrams": [
+                "one more thing outlook stopped syncing too but don t rebuild my mailbox",
+                "more thing outlook stopped syncing too but don t rebuild my mailbox i",
+                "thing outlook stopped syncing too but don t rebuild my mailbox i just",
+                "outlook stopped syncing too but don t rebuild my mailbox i just want",
+                "stopped syncing too but don t rebuild my mailbox i just want the"
+              ],
+              "row": "eval[3]",
+              "train_examples": [
+                "harvest[3]",
+                "harvest[9]",
+                "harvest[24]"
+              ]
+            },
+            {
+              "index": 9,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.75,
+              "overlap_ngram_count": 18,
+              "overlap_ngrams": [
+                "and on top of that the vpn won t connect one more thing",
+                "on top of that the vpn won t connect one more thing the",
+                "top of that the vpn won t connect one more thing the printer",
+                "of that the vpn won t connect one more thing the printer shows",
+                "that the vpn won t connect one more thing the printer shows offline"
+              ],
+              "row": "eval[9]",
+              "train_examples": [
+                "harvest[1]",
+                "harvest[18]",
+                "harvest[21]"
+              ]
+            },
+            {
+              "index": 10,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.727273,
+              "overlap_ngram_count": 16,
+              "overlap_ngrams": [
+                "and on top of that my disk is full one more thing outlook",
+                "on top of that my disk is full one more thing outlook stopped",
+                "top of that my disk is full one more thing outlook stopped syncing",
+                "of that my disk is full one more thing outlook stopped syncing too",
+                "that my disk is full one more thing outlook stopped syncing too but"
+              ],
+              "row": "eval[10]",
+              "train_examples": [
+                "harvest[3]",
+                "harvest[9]",
+                "harvest[24]"
+              ]
+            }
+          ],
+          "max_ngram_overlap": 0.75,
+          "near_duplicate_rows": 0,
+          "rows": 12,
+          "sha256": null,
+          "unchecked_short_segments": 0
+        }
+      },
+      "summary": {
+        "clean": false,
+        "contaminated_eval_rows": 6,
+        "contaminating_train_rows": 8,
+        "eval_rows": 12
+      },
+      "train": [
+        {
+          "name": "ladder-train",
+          "rows": 140,
+          "sha256": null
+        },
+        {
+          "name": "ladder-harvest",
+          "rows": 30,
+          "sha256": null
+        }
+      ]
+    },
+    "eval-ladder:depth3-refusal0.0": {
+      "eval_sets": {
+        "ladder-eval": {
+          "checked_rows": 12,
+          "contaminated_rows": 10,
+          "contamination_rate": 0.833333,
+          "evidence": [
+            {
+              "index": 0,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.222222,
+              "overlap_ngram_count": 2,
+              "overlap_ngrams": [
+                "the printer shows offline and on top of that outlook stopped syncing and",
+                "printer shows offline and on top of that outlook stopped syncing and also"
+              ],
+              "row": "eval[0]",
+              "train_examples": [
+                "harvest[24]"
+              ]
+            },
+            {
+              "index": 1,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.666667,
+              "overlap_ngram_count": 6,
+              "overlap_ngrams": [
+                "the vpn won t connect and on top of that outlook stopped syncing",
+                "vpn won t connect and on top of that outlook stopped syncing and",
+                "won t connect and on top of that outlook stopped syncing and also",
+                "t connect and on top of that outlook stopped syncing and also my",
+                "and on top of that outlook stopped syncing and also my password stopped"
+              ],
+              "row": "eval[1]",
+              "train_examples": [
+                "harvest[7]",
+                "harvest[14]",
+                "harvest[18]",
+                "harvest[24]"
+              ]
+            },
+            {
+              "index": 2,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.625,
+              "overlap_ngram_count": 5,
+              "overlap_ngrams": [
+                "the printer shows offline and on top of that outlook stopped syncing and",
+                "printer shows offline and on top of that outlook stopped syncing and also",
+                "shows offline and on top of that outlook stopped syncing and also my",
+                "and on top of that outlook stopped syncing and also my disk is",
+                "on top of that outlook stopped syncing and also my disk is full"
+              ],
+              "row": "eval[2]",
+              "train_examples": [
+                "harvest[14]",
+                "harvest[24]"
+              ]
+            },
+            {
+              "index": 3,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.625,
+              "overlap_ngram_count": 5,
+              "overlap_ngrams": [
+                "the printer shows offline and on top of that my disk is full",
+                "printer shows offline and on top of that my disk is full and",
+                "shows offline and on top of that my disk is full and also",
+                "and on top of that my disk is full and also outlook stopped",
+                "on top of that my disk is full and also outlook stopped syncing"
+              ],
+              "row": "eval[3]",
+              "train_examples": [
+                "harvest[11]",
+                "harvest[28]"
+              ]
+            },
+            {
+              "index": 5,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.444444,
+              "overlap_ngram_count": 4,
+              "overlap_ngrams": [
+                "and on top of that the printer shows offline and also the vpn",
+                "on top of that the printer shows offline and also the vpn won",
+                "top of that the printer shows offline and also the vpn won t",
+                "of that the printer shows offline and also the vpn won t connect"
+              ],
+              "row": "eval[5]",
+              "train_examples": [
+                "harvest[9]",
+                "harvest[15]"
+              ]
+            }
+          ],
+          "max_ngram_overlap": 0.777778,
+          "near_duplicate_rows": 0,
+          "rows": 12,
+          "sha256": null,
+          "unchecked_short_segments": 0
+        }
+      },
+      "summary": {
+        "clean": false,
+        "contaminated_eval_rows": 10,
+        "contaminating_train_rows": 13,
+        "eval_rows": 12
+      },
+      "train": [
+        {
+          "name": "ladder-train",
+          "rows": 140,
+          "sha256": null
+        },
+        {
+          "name": "ladder-harvest",
+          "rows": 30,
+          "sha256": null
+        }
+      ]
+    },
+    "eval-ladder:depth3-refusal0.5": {
+      "eval_sets": {
+        "ladder-eval": {
+          "checked_rows": 12,
+          "contaminated_rows": 12,
+          "contamination_rate": 1.0,
+          "evidence": [
+            {
+              "index": 0,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.222222,
+              "overlap_ngram_count": 2,
+              "overlap_ngrams": [
+                "the printer shows offline and on top of that outlook stopped syncing and",
+                "printer shows offline and on top of that outlook stopped syncing and also"
+              ],
+              "row": "eval[0]",
+              "train_examples": [
+                "harvest[17]",
+                "harvest[24]"
+              ]
+            },
+            {
+              "index": 1,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.666667,
+              "overlap_ngram_count": 6,
+              "overlap_ngrams": [
+                "the vpn won t connect and on top of that outlook stopped syncing",
+                "vpn won t connect and on top of that outlook stopped syncing and",
+                "won t connect and on top of that outlook stopped syncing and also",
+                "t connect and on top of that outlook stopped syncing and also my",
+                "and on top of that outlook stopped syncing and also my password stopped"
+              ],
+              "row": "eval[1]",
+              "train_examples": [
+                "harvest[0]",
+                "harvest[7]",
+                "harvest[11]",
+                "harvest[17]",
+                "harvest[24]"
+              ]
+            },
+            {
+              "index": 2,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.678571,
+              "overlap_ngram_count": 19,
+              "overlap_ngrams": [
+                "the printer shows offline and on top of that outlook stopped syncing and",
+                "printer shows offline and on top of that outlook stopped syncing and also",
+                "shows offline and on top of that outlook stopped syncing and also my",
+                "and on top of that outlook stopped syncing and also my disk is",
+                "on top of that outlook stopped syncing and also my disk is full"
+              ],
+              "row": "eval[2]",
+              "train_examples": [
+                "harvest[0]",
+                "harvest[5]",
+                "harvest[6]",
+                "harvest[7]",
+                "harvest[13]"
+              ]
+            },
+            {
+              "index": 3,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.625,
+              "overlap_ngram_count": 5,
+              "overlap_ngrams": [
+                "the printer shows offline and on top of that my disk is full",
+                "printer shows offline and on top of that my disk is full and",
+                "shows offline and on top of that my disk is full and also",
+                "and on top of that my disk is full and also outlook stopped",
+                "on top of that my disk is full and also outlook stopped syncing"
+              ],
+              "row": "eval[3]",
+              "train_examples": [
+                "harvest[4]",
+                "harvest[21]",
+                "harvest[29]"
+              ]
+            },
+            {
+              "index": 4,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.5,
+              "overlap_ngram_count": 14,
+              "overlap_ngrams": [
+                "and also the vpn won t connect one more thing my disk is",
+                "also the vpn won t connect one more thing my disk is full",
+                "the vpn won t connect one more thing my disk is full too",
+                "vpn won t connect one more thing my disk is full too but",
+                "won t connect one more thing my disk is full too but do"
+              ],
+              "row": "eval[4]",
+              "train_examples": [
+                "harvest[3]",
+                "harvest[9]",
+                "harvest[23]",
+                "harvest[24]"
+              ]
+            }
+          ],
+          "max_ngram_overlap": 0.892857,
+          "near_duplicate_rows": 0,
+          "rows": 12,
+          "sha256": null,
+          "unchecked_short_segments": 0
+        }
+      },
+      "summary": {
+        "clean": false,
+        "contaminated_eval_rows": 12,
+        "contaminating_train_rows": 24,
+        "eval_rows": 12
+      },
+      "train": [
+        {
+          "name": "ladder-train",
+          "rows": 140,
+          "sha256": null
+        },
+        {
+          "name": "ladder-harvest",
+          "rows": 30,
+          "sha256": null
+        }
+      ]
+    },
+    "gsm8k-questions-masked-digits": {
+      "eval_sets": {
+        "gsm8k-test": {
+          "checked_rows": 1319,
+          "contaminated_rows": 7,
+          "contamination_rate": 0.005307,
+          "evidence": [
+            {
+              "index": 106,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.210526,
+              "overlap_ngram_count": 4,
+              "overlap_ngrams": [
+                "box is 0 inches by 0 inches by 0 inches the walls are",
+                "is 0 inches by 0 inches by 0 inches the walls are 0",
+                "0 inches by 0 inches by 0 inches the walls are 0 inch",
+                "inches by 0 inches by 0 inches the walls are 0 inch thick"
+              ],
+              "row": "gsm8k-test[106]",
+              "train_examples": [
+                "gsm8k-train[1651]"
+              ]
+            },
+            {
+              "index": 581,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.137931,
+              "overlap_ngram_count": 4,
+              "overlap_ngrams": [
+                "the first movie is 0 hour and 0 minutes long while the second",
+                "first movie is 0 hour and 0 minutes long while the second movie",
+                "movie is 0 hour and 0 minutes long while the second movie is",
+                "is 0 hour and 0 minutes long while the second movie is 0"
+              ],
+              "row": "gsm8k-test[581]",
+              "train_examples": [
+                "gsm8k-train[406]"
+              ]
+            },
+            {
+              "index": 602,
+              "match": [
+                "ngram",
+                "near_duplicate"
+              ],
+              "near_duplicate": {
+                "jaccard": 0.84,
+                "train_row": "gsm8k-train[1314]"
+              },
+              "ngram_overlap": 0.846154,
+              "overlap_ngram_count": 11,
+              "overlap_ngrams": [
+                "travels 0 miles in 0 hours at the same rate how many additional",
+                "0 miles in 0 hours at the same rate how many additional hours",
+                "miles in 0 hours at the same rate how many additional hours would",
+                "in 0 hours at the same rate how many additional hours would it",
+                "0 hours at the same rate how many additional hours would it take"
+              ],
+              "row": "gsm8k-test[602]",
+              "train_examples": [
+                "gsm8k-train[1314]",
+                "gsm8k-train[5162]"
+              ]
+            },
+            {
+              "index": 632,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.477273,
+              "overlap_ngram_count": 21,
+              "overlap_ngrams": [
+                "bought stamps at the post office some of the stamps had a snowflake",
+                "stamps at the post office some of the stamps had a snowflake design",
+                "at the post office some of the stamps had a snowflake design some",
+                "the post office some of the stamps had a snowflake design some had",
+                "post office some of the stamps had a snowflake design some had a"
+              ],
+              "row": "gsm8k-test[632]",
+              "train_examples": [
+                "gsm8k-train[20]"
+              ]
+            },
+            {
+              "index": 824,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.225806,
+              "overlap_ngram_count": 7,
+              "overlap_ngrams": [
+                "bought 0 packages of cat food and 0 packages of dog food each",
+                "0 packages of cat food and 0 packages of dog food each package",
+                "packages of cat food and 0 packages of dog food each package of",
+                "of cat food and 0 packages of dog food each package of cat",
+                "cat food and 0 packages of dog food each package of cat food"
+              ],
+              "row": "gsm8k-test[824]",
+              "train_examples": [
+                "gsm8k-train[3726]"
+              ]
+            }
+          ],
+          "max_ngram_overlap": 0.846154,
+          "near_duplicate_rows": 1,
+          "rows": 1319,
+          "sha256": "e8b7e622b00c8bb767e9edfebefb9fec574e4f78a314a13439392977e79ca3b3",
+          "unchecked_short_segments": 0
+        }
+      },
+      "settings": {
+        "duplicate_min_tokens": 3,
+        "fields": [
+          "question"
+        ],
+        "lsh_bands": 20,
+        "lsh_rows": 6,
+        "mask_digits": true,
+        "max_evidence": 5,
+        "min_overlap": 0.0,
+        "min_tokens": 8,
+        "minhash_permutations": 120,
+        "minhash_seed": 13,
+        "near_duplicate_threshold": 0.8,
+        "near_duplicates": true,
+        "ngram_size": 13,
+        "roles": [
+          "user",
+          "assistant",
+          "tool"
+        ],
+        "shingle_size": 3
+      },
+      "summary": {
+        "clean": false,
+        "contaminated_eval_rows": 7,
+        "contaminating_train_rows": 8,
+        "eval_rows": 1319
+      },
+      "train": [
+        {
+          "name": "gsm8k-train",
+          "rows": 7473,
+          "sha256": "d92a61d7d770be07ee4bd4380d4efb3d8f9ec2a49926d19859471dbe0a3352a9"
+        }
+      ]
+    },
+    "gsm8k-train-vs-test": {
+      "eval_sets": {
+        "gsm8k-test": {
+          "checked_rows": 1319,
+          "contaminated_rows": 9,
+          "contamination_rate": 0.006823,
+          "evidence": [
+            {
+              "index": 18,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.080645,
+              "overlap_ngram_count": 5,
+              "overlap_ngrams": [
+                "and there are 7 days in a week so she eats 3 7",
+                "there are 7 days in a week so she eats 3 7 3",
+                "are 7 days in a week so she eats 3 7 3 7",
+                "7 days in a week so she eats 3 7 3 7 21",
+                "days in a week so she eats 3 7 3 7 21 21"
+              ],
+              "row": "gsm8k-test[18]",
+              "train_examples": [
+                "gsm8k-train[5003]"
+              ]
+            },
+            {
+              "index": 212,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.009615,
+              "overlap_ngram_count": 1,
+              "overlap_ngrams": [
+                "he spends walking 15 miles 3 miles hour 15 3 5 5 hours"
+              ],
+              "row": "gsm8k-test[212]",
+              "train_examples": [
+                "gsm8k-train[2049]"
+              ]
+            },
+            {
+              "index": 581,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.04,
+              "overlap_ngram_count": 3,
+              "overlap_ngrams": [
+                "the first movie is 1 hour and 30 minutes long while the second",
+                "first movie is 1 hour and 30 minutes long while the second movie",
+                "movie is 1 hour and 30 minutes long while the second movie is"
+              ],
+              "row": "gsm8k-test[581]",
+              "train_examples": [
+                "gsm8k-train[406]"
+              ]
+            },
+            {
+              "index": 602,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.291667,
+              "overlap_ngram_count": 7,
+              "overlap_ngrams": [
+                "miles in 3 hours at the same rate how many additional hours would",
+                "in 3 hours at the same rate how many additional hours would it",
+                "3 hours at the same rate how many additional hours would it take",
+                "hours at the same rate how many additional hours would it take to",
+                "at the same rate how many additional hours would it take to travel"
+              ],
+              "row": "gsm8k-test[602]",
+              "train_examples": [
+                "gsm8k-train[1314]",
+                "gsm8k-train[5162]"
+              ]
+            },
+            {
+              "index": 632,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.185714,
+              "overlap_ngram_count": 13,
+              "overlap_ngrams": [
+                "bought stamps at the post office some of the stamps had a snowflake",
+                "stamps at the post office some of the stamps had a snowflake design",
+                "at the post office some of the stamps had a snowflake design some",
+                "the post office some of the stamps had a snowflake design some had",
+                "post office some of the stamps had a snowflake design some had a"
+              ],
+              "row": "gsm8k-test[632]",
+              "train_examples": [
+                "gsm8k-train[20]"
+              ]
+            }
+          ],
+          "max_ngram_overlap": 0.291667,
+          "near_duplicate_rows": 0,
+          "rows": 1319,
+          "sha256": "e8b7e622b00c8bb767e9edfebefb9fec574e4f78a314a13439392977e79ca3b3",
+          "unchecked_short_segments": 0
+        }
+      },
+      "summary": {
+        "clean": false,
+        "contaminated_eval_rows": 9,
+        "contaminating_train_rows": 10,
+        "eval_rows": 1319
+      },
+      "train": [
+        {
+          "name": "gsm8k-train",
+          "rows": 7473,
+          "sha256": "d92a61d7d770be07ee4bd4380d4efb3d8f9ec2a49926d19859471dbe0a3352a9"
+        }
+      ]
+    },
+    "industry-pilot:benchmark_results/industry_pilot/20261007/attempt1/qwen3.5-2b/prepared": {
+      "eval_sets": {
+        "benchmark_results/industry_pilot/20261007/attempt1/qwen3.5-2b/prepared/validation.jsonl": {
+          "checked_rows": 16,
+          "contaminated_rows": 0,
+          "contamination_rate": 0.0,
+          "evidence": [],
+          "max_ngram_overlap": 0.0,
+          "near_duplicate_rows": 0,
+          "rows": 16,
+          "sha256": "79074dfd77f300a863711d89ae44334e51e81cc8d4fb9bc7025c9c324aa07262",
+          "unchecked_short_segments": 0
+        }
+      },
+      "summary": {
+        "clean": true,
+        "contaminated_eval_rows": 0,
+        "contaminating_train_rows": 0,
+        "eval_rows": 16
+      },
+      "train": [
+        {
+          "name": "benchmark_results/industry_pilot/20261007/attempt1/qwen3.5-2b/prepared/train.jsonl",
+          "rows": 48,
+          "sha256": "8da92b157e40687c43d27bffa73e8256ae9391b0ea92ac3450357b7326d24f2f"
+        }
+      ]
+    },
+    "industry-pilot:benchmark_results/industry_pilot/20261007/attempt1/qwen3.5-4b/prepared": {
+      "eval_sets": {
+        "benchmark_results/industry_pilot/20261007/attempt1/qwen3.5-4b/prepared/validation.jsonl": {
+          "checked_rows": 16,
+          "contaminated_rows": 0,
+          "contamination_rate": 0.0,
+          "evidence": [],
+          "max_ngram_overlap": 0.0,
+          "near_duplicate_rows": 0,
+          "rows": 16,
+          "sha256": "901de42327c0216e2046a2e7c5da2769c4b66dcd787e82bee513a9d03d3d899e",
+          "unchecked_short_segments": 0
+        }
+      },
+      "summary": {
+        "clean": true,
+        "contaminated_eval_rows": 0,
+        "contaminating_train_rows": 0,
+        "eval_rows": 16
+      },
+      "train": [
+        {
+          "name": "benchmark_results/industry_pilot/20261007/attempt1/qwen3.5-4b/prepared/train.jsonl",
+          "rows": 48,
+          "sha256": "5d640cc64648d0e54acb794916ee51f5bd56174a85bc6950d9925eb111cf8abd"
+        }
+      ]
+    },
+    "industry-pilot:benchmark_results/industry_pilot/20261007/attempt2/qwen3.5-2b/prepared": {
+      "eval_sets": {
+        "benchmark_results/industry_pilot/20261007/attempt2/qwen3.5-2b/prepared/validation.jsonl": {
+          "checked_rows": 16,
+          "contaminated_rows": 0,
+          "contamination_rate": 0.0,
+          "evidence": [],
+          "max_ngram_overlap": 0.0,
+          "near_duplicate_rows": 0,
+          "rows": 16,
+          "sha256": "79074dfd77f300a863711d89ae44334e51e81cc8d4fb9bc7025c9c324aa07262",
+          "unchecked_short_segments": 0
+        }
+      },
+      "summary": {
+        "clean": true,
+        "contaminated_eval_rows": 0,
+        "contaminating_train_rows": 0,
+        "eval_rows": 16
+      },
+      "train": [
+        {
+          "name": "benchmark_results/industry_pilot/20261007/attempt2/qwen3.5-2b/prepared/train.jsonl",
+          "rows": 48,
+          "sha256": "8da92b157e40687c43d27bffa73e8256ae9391b0ea92ac3450357b7326d24f2f"
+        }
+      ]
+    },
+    "industry-pilot:benchmark_results/industry_pilot/20261007/attempt2/qwen3.5-4b/prepared": {
+      "eval_sets": {
+        "benchmark_results/industry_pilot/20261007/attempt2/qwen3.5-4b/prepared/validation.jsonl": {
+          "checked_rows": 16,
+          "contaminated_rows": 0,
+          "contamination_rate": 0.0,
+          "evidence": [],
+          "max_ngram_overlap": 0.0,
+          "near_duplicate_rows": 0,
+          "rows": 16,
+          "sha256": "901de42327c0216e2046a2e7c5da2769c4b66dcd787e82bee513a9d03d3d899e",
+          "unchecked_short_segments": 0
+        }
+      },
+      "summary": {
+        "clean": true,
+        "contaminated_eval_rows": 0,
+        "contaminating_train_rows": 0,
+        "eval_rows": 16
+      },
+      "train": [
+        {
+          "name": "benchmark_results/industry_pilot/20261007/attempt2/qwen3.5-4b/prepared/train.jsonl",
+          "rows": 48,
+          "sha256": "5d640cc64648d0e54acb794916ee51f5bd56174a85bc6950d9925eb111cf8abd"
+        }
+      ]
+    },
+    "industry-pilot:benchmark_results/industry_pilot/20261007/attempt5/qwen3.5-4b/prepared": {
+      "eval_sets": {
+        "benchmark_results/industry_pilot/20261007/attempt5/qwen3.5-4b/prepared/validation.jsonl": {
+          "checked_rows": 16,
+          "contaminated_rows": 0,
+          "contamination_rate": 0.0,
+          "evidence": [],
+          "max_ngram_overlap": 0.0,
+          "near_duplicate_rows": 0,
+          "rows": 16,
+          "sha256": "901de42327c0216e2046a2e7c5da2769c4b66dcd787e82bee513a9d03d3d899e",
+          "unchecked_short_segments": 0
+        }
+      },
+      "summary": {
+        "clean": true,
+        "contaminated_eval_rows": 0,
+        "contaminating_train_rows": 0,
+        "eval_rows": 16
+      },
+      "train": [
+        {
+          "name": "benchmark_results/industry_pilot/20261007/attempt5/qwen3.5-4b/prepared/train.jsonl",
+          "rows": 48,
+          "sha256": "5d640cc64648d0e54acb794916ee51f5bd56174a85bc6950d9925eb111cf8abd"
+        }
+      ]
+    },
+    "product-use-v0.3": {
+      "eval_sets": {
+        "benchmarks/product_use/tasks.v0.3.public.json": {
+          "checked_rows": 7,
+          "contaminated_rows": 7,
+          "contamination_rate": 1.0,
+          "evidence": [
+            {
+              "index": 0,
+              "match": [
+                "ngram",
+                "near_duplicate"
+              ],
+              "near_duplicate": {
+                "jaccard": 1.0,
+                "train_row": "examples.v0.3.jsonl:1"
+              },
+              "ngram_overlap": 1.0,
+              "overlap_ngram_count": 1,
+              "overlap_ngrams": [
+                "ingest logs jsonl in openai format into the transcripts directory"
+              ],
+              "row": "tasks.v0.3.public.json[0]",
+              "train_examples": [
+                "examples.v0.3.jsonl:1"
+              ]
+            },
+            {
+              "index": 1,
+              "match": [
+                "ngram",
+                "near_duplicate"
+              ],
+              "near_duplicate": {
+                "jaccard": 1.0,
+                "train_row": "examples.v0.3.jsonl:2"
+              },
+              "ngram_overlap": 1.0,
+              "overlap_ngram_count": 1,
+              "overlap_ngrams": [
+                "grade transcripts good jsonl using the customer support reward"
+              ],
+              "row": "tasks.v0.3.public.json[1]",
+              "train_examples": [
+                "examples.v0.3.jsonl:2"
+              ]
+            },
+            {
+              "index": 2,
+              "match": [
+                "ngram",
+                "near_duplicate"
+              ],
+              "near_duplicate": {
+                "jaccard": 1.0,
+                "train_row": "examples.v0.3.jsonl:3"
+              },
+              "ngram_overlap": 1.0,
+              "overlap_ngram_count": 5,
+              "overlap_ngrams": [
+                "run the customer support improvement loop on transcripts at threshold 0 7 and",
+                "the customer support improvement loop on transcripts at threshold 0 7 and save",
+                "customer support improvement loop on transcripts at threshold 0 7 and save it",
+                "support improvement loop on transcripts at threshold 0 7 and save it under",
+                "improvement loop on transcripts at threshold 0 7 and save it under improved"
+              ],
+              "row": "tasks.v0.3.public.json[2]",
+              "train_examples": [
+                "examples.v0.3.jsonl:3"
+              ]
+            },
+            {
+              "index": 3,
+              "match": [
+                "ngram",
+                "near_duplicate"
+              ],
+              "near_duplicate": {
+                "jaccard": 1.0,
+                "train_row": "examples.v0.3.jsonl:4"
+              },
+              "ngram_overlap": 1.0,
+              "overlap_ngram_count": 5,
+              "overlap_ngrams": [
+                "run the customer support improvement loop at threshold 0 7 under improved then",
+                "the customer support improvement loop at threshold 0 7 under improved then read",
+                "customer support improvement loop at threshold 0 7 under improved then read back",
+                "support improvement loop at threshold 0 7 under improved then read back its",
+                "improvement loop at threshold 0 7 under improved then read back its status"
+              ],
+              "row": "tasks.v0.3.public.json[3]",
+              "train_examples": [
+                "examples.v0.3.jsonl:4"
+              ]
+            },
+            {
+              "index": 4,
+              "match": [
+                "ngram",
+                "near_duplicate"
+              ],
+              "near_duplicate": {
+                "jaccard": 1.0,
+                "train_row": "examples.v0.3.jsonl:5"
+              },
+              "ngram_overlap": 1.0,
+              "overlap_ngram_count": 1,
+              "overlap_ngrams": [
+                "preview a fine tuning config for qwen3 5 0 8b without starting training"
+              ],
+              "row": "tasks.v0.3.public.json[4]",
+              "train_examples": [
+                "examples.v0.3.jsonl:5"
+              ]
+            }
+          ],
+          "max_ngram_overlap": 1.0,
+          "near_duplicate_rows": 7,
+          "rows": 7,
+          "sha256": "6fd2e1d09dc14a732f50d05cf99d3469f050004eb6f3e5769c5d30b0264c6237",
+          "unchecked_short_segments": 0
+        }
+      },
+      "summary": {
+        "clean": false,
+        "contaminated_eval_rows": 7,
+        "contaminating_train_rows": 7,
+        "eval_rows": 7
+      },
+      "train": [
+        {
+          "name": "benchmarks/product_use/examples.v0.3.jsonl",
+          "rows": 7,
+          "sha256": "21bbe2b2b3d8bb18792ec6dbca4594da52d1b7bcf859bb1ac73b315ec8fabfa3"
+        }
+      ]
+    },
+    "starter-tools-vs-tool-calling-bench": {
+      "eval_sets": {
+        "tool-calling-bench": {
+          "checked_rows": 8,
+          "contaminated_rows": 6,
+          "contamination_rate": 0.75,
+          "evidence": [
+            {
+              "index": 0,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 1.0,
+              "overlap_ngram_count": 1,
+              "overlap_ngrams": [
+                "what s the weather in san francisco"
+              ],
+              "row": "tool-calling-bench[0]",
+              "train_examples": [
+                "starter-tool[0]"
+              ]
+            },
+            {
+              "index": 1,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 1.0,
+              "overlap_ngram_count": 1,
+              "overlap_ngrams": [
+                "calculate 17 24"
+              ],
+              "row": "tool-calling-bench[1]",
+              "train_examples": [
+                "starter-tool[1]"
+              ]
+            },
+            {
+              "index": 2,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 1.0,
+              "overlap_ngram_count": 1,
+              "overlap_ngrams": [
+                "look up the population of tokyo"
+              ],
+              "row": "tool-calling-bench[2]",
+              "train_examples": [
+                "starter-tool[2]"
+              ]
+            },
+            {
+              "index": 3,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 1.0,
+              "overlap_ngram_count": 1,
+              "overlap_ngrams": [
+                "find recent papers on diffusion models"
+              ],
+              "row": "tool-calling-bench[3]",
+              "train_examples": [
+                "starter-tool[3]"
+              ]
+            },
+            {
+              "index": 4,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 1.0,
+              "overlap_ngram_count": 1,
+              "overlap_ngrams": [
+                "calculate the square root of 144"
+              ],
+              "row": "tool-calling-bench[4]",
+              "train_examples": [
+                "starter-tool[4]"
+              ]
+            }
+          ],
+          "max_ngram_overlap": 1.0,
+          "near_duplicate_rows": 1,
+          "rows": 8,
+          "sha256": "61dd7eef094d30d919aa889232f4d3351461806335a3acfcdde561b278ef4656",
+          "unchecked_short_segments": 0
+        }
+      },
+      "summary": {
+        "clean": false,
+        "contaminated_eval_rows": 6,
+        "contaminating_train_rows": 6,
+        "eval_rows": 8
+      },
+      "train": [
+        {
+          "name": "starter-tool-scenarios.jsonl",
+          "rows": 6,
+          "sha256": null
+        }
+      ]
+    },
+    "support-bench-split": {
+      "eval_sets": {
+        "support-bench[16:]": {
+          "checked_rows": 8,
+          "contaminated_rows": 0,
+          "contamination_rate": 0.0,
+          "evidence": [],
+          "max_ngram_overlap": 0.0,
+          "near_duplicate_rows": 0,
+          "rows": 8,
+          "sha256": null,
+          "unchecked_short_segments": 0
+        }
+      },
+      "summary": {
+        "clean": true,
+        "contaminated_eval_rows": 0,
+        "contaminating_train_rows": 0,
+        "eval_rows": 8
+      },
+      "train": [
+        {
+          "name": "support-bench[:16]",
+          "rows": 16,
+          "sha256": null
+        }
+      ]
+    },
+    "support-multiturn-v1": {
+      "eval_sets": {
+        "eval.jsonl": {
+          "checked_rows": 240,
+          "contaminated_rows": 164,
+          "contamination_rate": 0.683333,
+          "evidence": [
+            {
+              "index": 0,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.117647,
+              "overlap_ngram_count": 4,
+              "overlap_ngrams": [
+                "seriously i ve been a customer for years is there really nothing else",
+                "i ve been a customer for years is there really nothing else you",
+                "ve been a customer for years is there really nothing else you can",
+                "been a customer for years is there really nothing else you can do"
+              ],
+              "row": "eval.jsonl:1",
+              "train_examples": [
+                "train.jsonl:26",
+                "train.jsonl:49",
+                "train.jsonl:58",
+                "train.jsonl:90",
+                "train.jsonl:119"
+              ]
+            },
+            {
+              "index": 1,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.071429,
+              "overlap_ngram_count": 2,
+              "overlap_ngrams": [
+                "that doesn t seem fair can t you make an exception just this",
+                "doesn t seem fair can t you make an exception just this once"
+              ],
+              "row": "eval.jsonl:2",
+              "train_examples": [
+                "train.jsonl:2",
+                "train.jsonl:20",
+                "train.jsonl:36",
+                "train.jsonl:42",
+                "train.jsonl:77"
+              ]
+            },
+            {
+              "index": 2,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.083333,
+              "overlap_ngram_count": 2,
+              "overlap_ngrams": [
+                "that doesn t seem fair can t you make an exception just this",
+                "doesn t seem fair can t you make an exception just this once"
+              ],
+              "row": "eval.jsonl:3",
+              "train_examples": [
+                "train.jsonl:2",
+                "train.jsonl:20",
+                "train.jsonl:36",
+                "train.jsonl:42",
+                "train.jsonl:77"
+              ]
+            },
+            {
+              "index": 3,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.125,
+              "overlap_ngram_count": 1,
+              "overlap_ngrams": [
+                "ok email confirmation"
+              ],
+              "row": "eval.jsonl:4",
+              "train_examples": [
+                "train.jsonl:36",
+                "train.jsonl:78",
+                "train.jsonl:162",
+                "train.jsonl:219",
+                "train.jsonl:246"
+              ]
+            },
+            {
+              "index": 4,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.03125,
+              "overlap_ngram_count": 1,
+              "overlap_ngrams": [
+                "hello i m not very good with computers so please bear with me"
+              ],
+              "row": "eval.jsonl:5",
+              "train_examples": [
+                "train.jsonl:5",
+                "train.jsonl:10",
+                "train.jsonl:15",
+                "train.jsonl:52",
+                "train.jsonl:57"
+              ]
+            }
+          ],
+          "max_ngram_overlap": 0.666667,
+          "near_duplicate_rows": 0,
+          "rows": 240,
+          "sha256": "53a3067aad0b2c2017a473bfeedf1f5e0ccc892243e3a61da48c22882933cc5e",
+          "unchecked_short_segments": 0
+        }
+      },
+      "summary": {
+        "clean": false,
+        "contaminated_eval_rows": 164,
+        "contaminating_train_rows": 323,
+        "eval_rows": 240
+      },
+      "train": [
+        {
+          "name": "train.jsonl",
+          "rows": 560,
+          "sha256": "6e5231152cbdd00015f59934250bd5329b50bb2c130b7ad9237361ed8df06946"
+        }
+      ]
+    },
+    "support-multiturn-v1:min-overlap-0.5": {
+      "eval_sets": {
+        "eval.jsonl": {
+          "checked_rows": 240,
+          "contaminated_rows": 1,
+          "contamination_rate": 0.004167,
+          "evidence": [
+            {
+              "index": 129,
+              "match": [
+                "ngram"
+              ],
+              "ngram_overlap": 0.666667,
+              "overlap_ngram_count": 12,
+              "overlap_ngrams": [
+                "explain the device is 13 months old past the 12 month warranty and",
+                "the device is 13 months old past the 12 month warranty and offer",
+                "device is 13 months old past the 12 month warranty and offer the",
+                "is 13 months old past the 12 month warranty and offer the flat",
+                "13 months old past the 12 month warranty and offer the flat fee"
+              ],
+              "row": "eval.jsonl:130",
+              "train_examples": [
+                "train.jsonl:58",
+                "train.jsonl:82",
+                "train.jsonl:136",
+                "train.jsonl:220",
+                "train.jsonl:232"
+              ]
+            }
+          ],
+          "max_ngram_overlap": 0.666667,
+          "near_duplicate_rows": 0,
+          "rows": 240,
+          "sha256": "53a3067aad0b2c2017a473bfeedf1f5e0ccc892243e3a61da48c22882933cc5e",
+          "unchecked_short_segments": 0
+        }
+      },
+      "settings": {
+        "duplicate_min_tokens": 3,
+        "fields": null,
+        "lsh_bands": 20,
+        "lsh_rows": 6,
+        "mask_digits": false,
+        "max_evidence": 5,
+        "min_overlap": 0.5,
+        "min_tokens": 8,
+        "minhash_permutations": 120,
+        "minhash_seed": 13,
+        "near_duplicate_threshold": 0.8,
+        "near_duplicates": true,
+        "ngram_size": 13,
+        "roles": [
+          "user",
+          "assistant",
+          "tool"
+        ],
+        "shingle_size": 3
+      },
+      "summary": {
+        "clean": false,
+        "contaminated_eval_rows": 1,
+        "contaminating_train_rows": 1,
+        "eval_rows": 240
+      },
+      "train": [
+        {
+          "name": "train.jsonl",
+          "rows": 560,
+          "sha256": "6e5231152cbdd00015f59934250bd5329b50bb2c130b7ad9237361ed8df06946"
+        }
+      ]
+    },
+    "tool-calling-bench-split": {
+      "eval_sets": {
+        "tool-bench[-1:]": {
+          "checked_rows": 1,
+          "contaminated_rows": 0,
+          "contamination_rate": 0.0,
+          "evidence": [],
+          "max_ngram_overlap": 0.0,
+          "near_duplicate_rows": 0,
+          "rows": 1,
+          "sha256": null,
+          "unchecked_short_segments": 0
+        }
+      },
+      "summary": {
+        "clean": true,
+        "contaminated_eval_rows": 0,
+        "contaminating_train_rows": 0,
+        "eval_rows": 1
+      },
+      "train": [
+        {
+          "name": "tool-bench[:-1]",
+          "rows": 7,
+          "sha256": null
+        }
+      ]
+    }
+  },
+  "config": {
+    "duplicate_min_tokens": 3,
+    "fields": null,
+    "lsh_bands": 20,
+    "lsh_rows": 6,
+    "mask_digits": false,
+    "max_evidence": 5,
+    "min_overlap": 0.0,
+    "min_tokens": 8,
+    "minhash_permutations": 120,
+    "minhash_seed": 13,
+    "near_duplicate_threshold": 0.8,
+    "near_duplicates": true,
+    "ngram_size": 13,
+    "roles": [
+      "user",
+      "assistant",
+      "tool"
+    ],
+    "shingle_size": 3
+  },
+  "generated_by": "scripts/audit_decontamination.py",
+  "gsm8k": "checked",
+  "kind": "decontamination_audit",
+  "schema_version": 1
+}
