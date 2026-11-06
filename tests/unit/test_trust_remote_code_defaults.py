@@ -25,6 +25,8 @@ _REMOTE_CODE_MODELS = frozenset(
     {
         "meta-models/Muse-Glimmer-30B",
         "moonshotai/Kimi-K3",
+        # Pinned preview; native training remains blocked pending codec review.
+        "moonshotai/Kimi-K3.1-Pro",
         "moonshotai/Kimi-K2.5",
         "moonshotai/Kimi-K2.6",
         "zai-org/GLM-5.1",

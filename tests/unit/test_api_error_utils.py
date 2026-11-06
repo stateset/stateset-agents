@@ -7,6 +7,7 @@ from stateset_agents.api.messages_utils import (
     MessageLimitError,
     estimate_message_content_length,
     inference_error_text,
+    inference_http_error,
     validate_message_limits,
 )
 from stateset_agents.api.routers import messages as messages_router
@@ -45,8 +46,10 @@ def test_inference_error_text_variants():
 
 def test_routers_share_one_implementation() -> None:
     """The three chat routers used to carry byte-identical private copies."""
+    for router in (messages_router, openai_router):
+        assert router.inference_http_error is inference_http_error
+    assert v1_router.inference_error_text is inference_error_text
     for router in (messages_router, openai_router, v1_router):
-        assert router.inference_error_text is inference_error_text
         assert not hasattr(router, "_extract_inference_error_text")
         assert not hasattr(router, "_estimate_message_content_length")
     for router in (messages_router, openai_router, v1_router):

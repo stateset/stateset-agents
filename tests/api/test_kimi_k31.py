@@ -10,6 +10,7 @@ import pytest_asyncio
 
 from stateset_agents.api import config as api_config
 from stateset_agents.api.dependencies import get_inference_service
+from stateset_agents.api.messages_models import MessagesRequest
 from stateset_agents.api.services.inference_service import (
     InferenceConfig,
     InferenceService,
@@ -180,3 +181,57 @@ async def test_invalid_reasoning_history_is_rejected_before_backend(gateway):
     )
     assert response.status_code == 422
     assert captured == []
+
+
+@pytest.mark.parametrize("route", ["/v1/chat/completions", "/v1/messages"])
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("target", ["kimi-k3.1-pro", "kimi-k3.1-pro-highspeed"])
+async def test_alias_rejects_unsupported_effort_before_backend(
+    gateway, route, stream, target
+):
+    client, service, captured = gateway
+    service.config.model_map["support-model"] = target
+    response = await client.post(
+        route,
+        json={
+            "model": "support-model",
+            "messages": [{"role": "user", "content": "Hello"}],
+            "reasoning_effort": "medium",
+            "stream": stream,
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert "low, high, or max" in response.text
+    assert captured == []
+
+
+async def test_direct_service_validates_resolved_model(gateway):
+    _, service, captured = gateway
+    service.config.model_map["support-model"] = "kimi-k3.1-pro"
+    request = MessagesRequest(
+        model="support-model",
+        messages=[{"role": "user", "content": "Hello"}],
+        reasoning_effort="medium",
+    )
+    with pytest.raises(ValueError, match="low, high, or max"):
+        await service.create_openai_response(request)
+    assert captured == []
+
+
+@pytest.mark.parametrize("effort", ["low", "high", "max"])
+async def test_alias_preserves_supported_effort_and_public_name(gateway, effort):
+    client, service, captured = gateway
+    service.config.model_map["support-model"] = "kimi-k3.1-pro"
+    response = await client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "support-model",
+            "messages": [{"role": "user", "content": "Hello"}],
+            "reasoning_effort": effort,
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["model"] == "support-model"
+    sent = json.loads(captured[0].content)
+    assert sent["model"] == "kimi-k3.1-pro"
+    assert sent["reasoning_effort"] == effort

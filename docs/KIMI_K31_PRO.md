@@ -46,6 +46,13 @@ Kimi supports `reasoning_effort` values `low`, `high`, and `max`. If omitted,
 the backend chooses its default. The gateway does not add a temperature when
 the caller omits it. Set `stream: true` for OpenAI-style SSE responses.
 
+Model-specific reasoning limits also apply to public aliases configured in
+`INFERENCE_MODEL_MAP`. For non-streaming requests, upstream throttling remains
+HTTP 429 with the provider's `Retry-After` header; backend credential failures
+return HTTP 502. The gateway does not retry permanent request errors,
+throttling, or errors carrying provider backoff instructions. Other transient
+failures use the bounded `INFERENCE_MAX_RETRIES` policy.
+
 For tool loops and multi-turn use, append the complete assistant message from
 `choices[0].message` to the next request, including `reasoning_content` and
 `tool_calls`. Use `/v1/chat/completions` to retain this OpenAI message format.

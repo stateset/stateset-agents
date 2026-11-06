@@ -26,7 +26,7 @@ from ..dependencies import (
 from ..generation_params import validate_generation_request
 from ..messages_models import MessageInput, MessagesRequest
 from ..messages_utils import (
-    inference_error_text,
+    inference_http_error,
     validate_message_limits,
     validate_tool_choice,
     validate_tools,
@@ -139,7 +139,11 @@ async def chat_completions(
             max_messages=config.validation.max_conversation_messages,
             max_length=config.validation.max_message_length,
         )
-        validate_generation_request(messages_request, config.validation)
+        validate_generation_request(
+            messages_request,
+            config.validation,
+            resolved_model=service.config.resolve_model(messages_request.model),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -180,30 +184,16 @@ async def chat_completions(
         )
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except httpx.HTTPStatusError as exc:
-        status_code = getattr(exc.response, "status_code", None)
-        detail = inference_error_text(exc)
-        if isinstance(status_code, int) and 500 <= status_code < 600:
-            logger.error(
-                "OpenAI chat.completions upstream service error",
-                extra={
-                    "request_id": request_id,
-                    "status_code": status_code,
-                    "detail": detail,
-                },
-            )
-            raise HTTPException(
-                status_code=502, detail="Inference backend unavailable"
-            ) from exc
-
+        error = inference_http_error(exc)
         logger.warning(
-            "OpenAI chat.completions request rejected",
+            "OpenAI chat.completions upstream request failed",
             extra={
                 "request_id": request_id,
-                "status_code": status_code,
-                "detail": detail,
+                "status_code": exc.response.status_code,
+                "detail": error.detail,
             },
         )
-        raise HTTPException(status_code=422, detail=detail) from exc
+        raise error from exc
     except httpx.HTTPError as exc:
         logger.warning(
             "OpenAI chat.completions upstream unavailable",

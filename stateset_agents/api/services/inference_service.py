@@ -45,6 +45,21 @@ INFERENCE_EXCEPTIONS = (
 )
 
 
+def _retryable_inference_error(exc: Exception) -> bool:
+    """Retry transient failures only when no provider backoff must be relayed.
+
+    Return throttling and explicit Retry-After instructions to the caller
+    immediately, avoiding retries sooner than the provider permits or holding
+    a request open for an unbounded provider-specified delay.
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        return (status == 408 or 500 <= status < 600) and (
+            "Retry-After" not in exc.response.headers
+        )
+    return isinstance(exc, (httpx.TransportError, asyncio.TimeoutError))
+
+
 def _compact_json(data: dict[str, Any]) -> str:
     """Serialize SSE payloads deterministically and without cosmetic whitespace."""
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
@@ -325,7 +340,10 @@ class InferenceService:
                 response.raise_for_status()
                 return cast(dict[str, Any], response.json())
             except INFERENCE_EXCEPTIONS as exc:
-                if attempt >= self.config.max_retries:
+                if (
+                    attempt >= self.config.max_retries
+                    or not _retryable_inference_error(exc)
+                ):
                     logger.error("Inference backend failed listing models: %s", exc)
                     break
                 await asyncio.sleep(0.5 * (attempt + 1))
@@ -380,7 +398,11 @@ class InferenceService:
         # Forward only allowlisted, bounded sampling parameters. Unknown extra
         # fields are dropped so clients cannot reach unbounded backend knobs
         # (e.g. vLLM's ignore_eos / guided decoding / large ``n`` fan-out).
-        payload.update(validate_generation_request(request, get_config().validation))
+        payload.update(
+            validate_generation_request(
+                request, get_config().validation, resolved_model=model_name
+            )
+        )
 
         return payload
 
@@ -461,7 +483,10 @@ class InferenceService:
                     _record_usage_from_response(call, data)
                     return data
                 except INFERENCE_EXCEPTIONS as exc:
-                    if attempt >= self.config.max_retries:
+                    if (
+                        attempt >= self.config.max_retries
+                        or not _retryable_inference_error(exc)
+                    ):
                         logger.error("Inference backend failed: %s", exc)
                         raise
                     await asyncio.sleep(0.5 * (attempt + 1))

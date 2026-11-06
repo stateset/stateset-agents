@@ -12,6 +12,7 @@ from collections.abc import Iterable, Sequence
 from typing import Any, Literal
 
 import httpx
+from fastapi import HTTPException
 
 from stateset_agents.core.errors import ValidationError
 
@@ -513,3 +514,35 @@ def inference_error_text(exc: Exception) -> str:
             return payload
 
     return "Inference backend request failed"
+
+
+def inference_http_error(exc: httpx.HTTPStatusError) -> HTTPException:
+    """Map upstream failures consistently without blaming client credentials.
+
+    Throttling remains HTTP 429. An upstream authentication failure concerns
+    the gateway's backend credentials, so it is HTTP 502 rather than a request
+    to change the client's gateway credentials. Preserve provider backoff for
+    throttling and service failures; do not expose their diagnostic bodies.
+    """
+    status = exc.response.status_code
+    headers = {}
+    retry_after = exc.response.headers.get("Retry-After")
+    if retry_after is not None and (status == 429 or 500 <= status < 600):
+        headers["Retry-After"] = retry_after
+    if status == 429:
+        return HTTPException(
+            status_code=429,
+            detail="Inference backend rate limit exceeded",
+            headers=headers,
+        )
+    if status in {401, 403}:
+        return HTTPException(
+            status_code=502, detail="Inference backend authentication failed"
+        )
+    if 500 <= status < 600:
+        return HTTPException(
+            status_code=502,
+            detail="Inference backend unavailable",
+            headers=headers,
+        )
+    return HTTPException(status_code=422, detail=inference_error_text(exc))

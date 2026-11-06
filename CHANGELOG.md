@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve upstream inference rate limits and Retry-After headers, report
+  backend credential failures as gateway errors, and retry only transient
+  failures without provider-specified backoff on non-streaming requests.
+- Validate Kimi K3.1 Pro reasoning effort against the resolved backend model,
+  including public aliases and streaming requests on both inference routes.
+- Update the type-checking coverage guard to include the Inkling batch module.
+
 ## [0.71.7] - 2026-11-06 — Kimi K3.1 Pro inference and pinned readiness
 
 ### Added

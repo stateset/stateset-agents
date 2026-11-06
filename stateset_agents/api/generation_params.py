@@ -229,9 +229,15 @@ def sanitize_passthrough_params(
 
 
 def validate_generation_request(
-    request: MessagesRequest, limits: ValidationConfig
+    request: MessagesRequest,
+    limits: ValidationConfig,
+    *,
+    resolved_model: str | None = None,
 ) -> dict[str, Any]:
     """Validate generation limits on a request and return safe passthrough fields.
+
+    ``resolved_model`` applies backend-specific limits after resolving a public
+    model alias. Callers without a mapping use the request's model directly.
 
     Raises:
         ValueError: If ``max_tokens``, stop sequences, or any allowlisted
@@ -248,7 +254,8 @@ def validate_generation_request(
         limits,
         max_tokens=request.max_tokens,
     )
-    model = request.model.strip().casefold().removeprefix("moonshotai/")
+    model = resolved_model if resolved_model is not None else request.model
+    model = model.strip().casefold().removeprefix("moonshotai/")
     if model in {"kimi-k3.1-pro", "kimi-k3.1-pro-highspeed"}:
         effort = forwarded.get("reasoning_effort")
         if effort is not None and effort not in {"low", "high", "max"}:
