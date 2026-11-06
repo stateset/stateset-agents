@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Calibrate the online DPO and distillation CPU learning fixtures on training
+  prompts, using smaller updates and sufficient optimization budgets while
+  retaining the held-out thresholds, all three seeds, and negative controls.
+  Record the calibration trials and subsequent held-out measurements.
+- Restore UI directory-scan mocks before pytest cleans temporary directories.
 - Bound online DPO and on-policy distillation generation by each prompt's
   remaining sequence budget. Judge and train on the same sampled tokens,
   avoiding preferences based on discarded suffixes and generation past

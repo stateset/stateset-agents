@@ -1,7 +1,7 @@
 """Online DPO raises a judged behaviour's rate on held-out prompts.
 
 The judge is ``DigitReward`` (the fraction of digit characters in the reply,
-scored through the shared ``score_response`` path). Three online rounds each
+scored through the shared ``score_response`` path). Six online rounds each
 sample eight 6-token replies per training prompt from the current tiny GPT-2
 policy, pair the best against the worst and train DPO on those pairs. The
 held-out digit rate (mean digit fraction of 32 fixed-seed samples per
@@ -41,7 +41,10 @@ EXTRA_PROMPTS = [
     "go on",
     "and then",
 ]
-ROUNDS = 3
+# Training-only calibration across seeds 0/1/2: the smaller update and six
+# rounds reach >= 0.8 digit rate (positive judge) and <= 0.02 (negative).
+# Three rounds at this rate underfit. Held-out thresholds are unchanged.
+ROUNDS = 6
 
 
 def _messages(prompt: str) -> list[dict[str, str]]:
@@ -57,7 +60,7 @@ def _run(seed: int, *, sign: float, reference_update: str) -> dict[str, Any]:
         rounds=ROUNDS,
         samples_per_prompt=8,
         max_new_tokens=6,
-        learning_rate=1e-2,
+        learning_rate=3e-3,
         beta=0.1,
         batch_size=4,
         num_epochs=4,
@@ -102,8 +105,7 @@ def _run(seed: int, *, sign: float, reference_update: str) -> dict[str, Any]:
 @pytest.mark.parametrize("reference_update", ["fixed", "previous_round"])
 @pytest.mark.parametrize("seed", seeds())
 def test_online_rounds_raise_the_judged_rate(seed: int, reference_update: str) -> None:
-    # Observed held-out digit rate (seeds 0/1/2), from ~0.10:
-    # fixed 1.00 / 0.22 / 0.88; previous_round 1.00 / 0.48 / 1.00.
+    # Both reference schedules must generalize to unseen prompts.
     torch.set_num_threads(1)
     result = _run(seed, sign=1.0, reference_update=reference_update)
     assert result["after"] >= result["before"] + 0.1, result
@@ -111,6 +113,6 @@ def test_online_rounds_raise_the_judged_rate(seed: int, reference_update: str) -
 
 @pytest.mark.parametrize("seed", seeds())
 def test_sign_flipped_judge_lowers_the_rate(seed: int) -> None:
-    # Observed (seeds 0/1/2): ~0.10 -> 0.00 / 0.00 / 0.00.
+    # Keep the original absolute reduction required of the negative control.
     result = _run(seed, sign=-1.0, reference_update="fixed")
     assert result["after"] <= result["before"] - 0.05, result

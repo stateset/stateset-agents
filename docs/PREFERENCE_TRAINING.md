@@ -324,38 +324,37 @@ See [CLI_REFERENCE.md](CLI_REFERENCE.md#stateset-agents-preference).
 - A LoRA reward model's adapter needs its base model available locally to
   load (or save it merged).
 - CPU toy learning checks cover `tests/learning/test_preference_learns.py`
-  and `tests/learning/test_online_dpo_learns.py` with three seeds. See the
-  current online-DPO limitation below; large-model evidence is a graduation
-  criterion.
+  and `tests/learning/test_online_dpo_learns.py` with three seeds; large-model
+  evidence is a graduation criterion.
 
 ### Online DPO evidence
 
 `tests/learning/test_online_dpo_learns.py` (seeds 0, 1, 2): a tiny GPT-2
 policy, the `DigitReward` judge (fraction of digit characters), 12 training
-prompts, K = 8 six-token samples, 3 rounds of 4 DPO epochs. Held-out digit
-rate (32 fixed-seed samples on each of 4 unseen prompts):
-
-The table records the original measurements. A 2026-11-06 reproduction with
-Transformers 5.14.1 and both PyTorch 2.11.0 and 2.13.0 finds that the seed-0
-negative control falls from 0.10625 to 0.07982, missing the required 0.05
-reduction. It also fails on the unmodified v0.71.7 release. The learning
-assertion is unchanged and this discrepancy remains unresolved; the context
-budget fix does not affect this test's short prompts.
+prompts, K = 8 six-token samples, 6 rounds of 4 DPO epochs at learning rate
+3e-3. Held-out digit rate (32 fixed-seed samples on each of 4 unseen prompts):
 
 | seed | judge | reference | held-out digit rate | pairs per round |
 |---|---|---|---|---|
-| 0 | +digits | fixed | 0.105 → 0.999 | 12, 12, 12 |
-| 0 | +digits | previous_round | 0.105 → 0.999 | 12, 12, 12 |
-| 0 | −digits (control) | fixed | 0.105 → 0.000 | 12, 12, 6 |
-| 1 | +digits | fixed | 0.093 → 0.224 | 12, 12, 10 |
-| 1 | +digits | previous_round | 0.093 → 0.484 | 12, 12, 11 |
-| 1 | −digits (control) | fixed | 0.093 → 0.001 | 12, 12, 0 |
-| 2 | +digits | fixed | 0.093 → 0.884 | 11, 12, 12 |
-| 2 | +digits | previous_round | 0.093 → 0.999 | 11, 12, 12 |
-| 2 | −digits (control) | fixed | 0.093 → 0.000 | 11, 9, 2 |
+| 0 | +digits | fixed | 0.106 → 0.871 | 12, 12, 12, 12, 12, 12 |
+| 0 | +digits | previous_round | 0.106 → 0.871 | 12, 12, 12, 12, 12, 12 |
+| 0 | −digits (control) | fixed | 0.106 → 0.018 | 12, 12, 12, 11, 11, 12 |
+| 1 | +digits | fixed | 0.096 → 0.948 | 12, 12, 12, 12, 12, 12 |
+| 1 | +digits | previous_round | 0.096 → 0.971 | 12, 12, 12, 12, 12, 12 |
+| 1 | −digits (control) | fixed | 0.096 → 0.012 | 12, 12, 10, 12, 4, 4 |
+| 2 | +digits | fixed | 0.093 → 0.920 | 11, 12, 12, 12, 12, 12 |
+| 2 | +digits | previous_round | 0.093 → 0.849 | 11, 12, 12, 12, 12, 12 |
+| 2 | −digits (control) | fixed | 0.093 → 0.011 | 11, 12, 12, 10, 11, 11 |
 
-The test asserts a rise of at least 0.1 with the real judge and a fall of at
-least 0.05 with the sign-flipped one. Seed 1 with a fixed reference shows the
-toy's limit: the training prompts reach a 0.97 judged rate by round 3 while
-the held-out rate only doubles. Rounds without pairs (the control saturating
-at zero digits, so every group ties) train nothing, as designed.
+The assertions still require a rise of at least 0.1 with the positive judge
+and a fall of at least 0.05 with the sign-flipped one. The earlier three-round
+fixture at 1e-2 missed the negative-control threshold on seed 0, including on
+unmodified v0.71.7. Smaller updates and six rounds were selected using only
+training prompts: all three seeds reached a digit rate above 0.8 with either
+positive reference schedule and below 0.02 with the negative judge. Three
+rounds at the smaller rate were insufficient.
+
+All nine held-out checks pass with PyTorch 2.11.0 and 2.13.0 and Transformers
+5.14.1. These are CPU toy convergence results, not large-model certification.
+The trainer implementation and defaults are unchanged by this fixture
+calibration. [Recorded calibration and held-out measurements](../benchmark_results/training_contracts/20261106/learning-gates/README.md).

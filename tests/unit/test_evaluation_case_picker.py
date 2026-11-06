@@ -143,13 +143,14 @@ def test_directory_permission_failure_can_return_without_losing_editor(
     def denied(*args, **kwargs):
         raise PermissionError("PRIVATE_DIRECTORY_ERROR")
 
-    monkeypatch.setattr("stateset_agents.tui_panels.os.scandir", denied)
-    studio.handle("f")
-    assert "PermissionError" in studio.file_picker.error
-    assert "PRIVATE_DIRECTORY_ERROR" not in studio.file_picker.error
-    assert studio.file_picker.entries[0][0] == ".."
-    studio.handle("ESC")
-    assert studio.overlay == "evaluation" and panel.values == before
+    with monkeypatch.context() as scoped:
+        scoped.setattr("stateset_agents.tui_panels.os.scandir", denied)
+        studio.handle("f")
+        assert "PermissionError" in studio.file_picker.error
+        assert "PRIVATE_DIRECTORY_ERROR" not in studio.file_picker.error
+        assert studio.file_picker.entries[0][0] == ".."
+        studio.handle("ESC")
+        assert studio.overlay == "evaluation" and panel.values == before
 
 
 def test_directory_scan_is_bounded_and_pages_keep_selection_visible(
@@ -172,17 +173,20 @@ def test_directory_scan_is_bounded_and_pages_keep_selection_visible(
 
         yield rows()
 
-    monkeypatch.setattr("stateset_agents.tui_panels.os.scandir", entries)
-    studio.handle("f")
-    assert len(scanned) == 2000 and len(studio.file_picker.entries) == 2001
-    studio.handle("PAGEDOWN")
-    assert studio.file_picker.index == 8
-    studio.handle("PAGEUP")
-    assert studio.file_picker.index == 0
-    studio.handle("END")
-    assert "case-1999.json" in "\n".join(studio.lines(74, 44))
-    studio.handle("HOME")
-    studio.handle("ESC")
+    # os is shared process-wide: restore scandir before tmp_path teardown,
+    # including when pytest removes passed-test directories immediately.
+    with monkeypatch.context() as scoped:
+        scoped.setattr("stateset_agents.tui_panels.os.scandir", entries)
+        studio.handle("f")
+        assert len(scanned) == 2000 and len(studio.file_picker.entries) == 2001
+        studio.handle("PAGEDOWN")
+        assert studio.file_picker.index == 8
+        studio.handle("PAGEUP")
+        assert studio.file_picker.index == 0
+        studio.handle("END")
+        assert "case-1999.json" in "\n".join(studio.lines(74, 44))
+        studio.handle("HOME")
+        studio.handle("ESC")
 
 
 def test_browsing_does_not_load_model_libraries(tmp_path):

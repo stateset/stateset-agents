@@ -231,66 +231,60 @@ See [CLI_REFERENCE.md](CLI_REFERENCE.md#stateset-agents-distill).
 
 ## Evidence
 
-`tests/learning/test_distillation_learns.py` (`LEARNING_SEEDS=0,1,2`, a few
-seconds of single-threaded CPU per run). The teacher is a tiny GPT-2 fine-tuned for 60 steps to
-answer any prompt with digits (~0.99 of its first-token mass on digits); the
-student is an untrained tiny GPT-2 (~0.10). Training data are teacher samples
-on 4 training prompts; held-out data are teacher samples on 4 other prompts.
-30 updates per run. Every mode must cut the held-out forward KL (teacher-forced
-on teacher completions) and the on-policy reverse KL (student samples) by at
-least 65% and lift the digit mass above 0.6:
+`tests/learning/test_distillation_learns.py` runs with `LEARNING_SEEDS=0,1,2`.
+A tiny GPT-2 teacher is fine-tuned for 60 supervised steps to emit digits;
+the student starts untrained. The teacher generates training data on four
+prompts and held-out data on four different prompts. Every positive mode
+must reduce both held-out KLs by at least 65% and raise the first-token digit
+mass above 0.6. The forward KL uses teacher completions; the reverse KL uses
+fixed-seed student samples.
 
-The tables below record the original measurements. A 2026-11-06 reproduction
-with Transformers 5.14.1 and PyTorch 2.11.0 finds three seed-1 threshold
-failures: pure on-policy JSD, full-distribution reverse KL, and sampled
-reverse KL. All three reproduce with identical values on unmodified v0.71.7;
-their short prompts are unaffected by the context budget fix. The learning
-assertions remain unchanged and these discrepancies remain unresolved.
+The 2026-11-06 run below reports the **worst** result across the three seeds:
+maximum after/before ratio for each KL (must be ≤ 35%) and minimum final
+digit mass (must be ≥ 0.6). All 21 positive cases pass.
 
-| seed | mode | fwd KL before → after | on-policy rev KL before → after | digit mass |
-|---|---|---|---|---|
-| 0 | offline forward KL | 2.423 → 0.224 | 5.343 → 0.055 | 0.100 → 0.942 |
-| 1 | offline forward KL | 2.798 → 0.240 | 5.047 → 0.062 | 0.096 → 0.963 |
-| 2 | offline forward KL | 2.461 → 0.168 | 3.445 → 0.172 | 0.099 → 0.959 |
-| 0 | offline JSD (β 0.5) | 2.423 → 0.177 | 5.343 → 0.234 | 0.100 → 0.898 |
-| 1 | offline JSD (β 0.5) | 2.798 → 0.180 | 5.047 → 0.135 | 0.096 → 0.960 |
-| 2 | offline JSD (β 0.5) | 2.461 → 0.315 | 3.445 → 0.354 | 0.099 → 0.929 |
-| 0 | offline, top-8 cache | 2.423 → 0.559 | 5.343 → 0.542 | 0.100 → 0.796 |
-| 1 | offline, top-8 cache | 2.798 → 0.272 | 5.047 → 0.220 | 0.096 → 0.899 |
-| 2 | offline, top-8 cache | 2.461 → 0.300 | 3.445 → 0.319 | 0.099 → 0.911 |
-| 0 | GKD λ 0.5, forward KL | 2.423 → 0.113 | 5.343 → 0.163 | 0.100 → 0.903 |
-| 1 | GKD λ 0.5, forward KL | 2.798 → 0.166 | 5.047 → 0.132 | 0.096 → 0.937 |
-| 2 | GKD λ 0.5, forward KL | 2.461 → 0.323 | 3.445 → 0.693 | 0.099 → 0.769 |
-| 0 | GKD λ 1, JSD (β 0.5, lr 2e-3) | 2.423 → 0.365 | 5.343 → 0.723 | 0.100 → 0.792 |
-| 1 | GKD λ 1, JSD (β 0.5, lr 2e-3) | 2.798 → 0.747 | 5.047 → 1.160 | 0.096 → 0.779 |
-| 2 | GKD λ 1, JSD (β 0.5, lr 2e-3) | 2.461 → 0.590 | 3.445 → 0.719 | 0.099 → 0.840 |
-| 0 | GKD λ 1, reverse KL | 2.423 → 0.254 | 5.343 → 0.227 | 0.100 → 0.951 |
-| 1 | GKD λ 1, reverse KL | 2.798 → 0.488 | 5.047 → 0.788 | 0.096 → 0.932 |
-| 2 | GKD λ 1, reverse KL | 2.461 → 0.367 | 3.445 → 0.450 | 0.099 → 0.927 |
-| 0 | λ 1, sampled reverse KL | 2.423 → 0.331 | 5.343 → 0.362 | 0.100 → 0.914 |
-| 1 | λ 1, sampled reverse KL | 2.798 → 0.745 | 5.047 → 1.050 | 0.096 → 0.869 |
-| 2 | λ 1, sampled reverse KL | 2.461 → 0.706 | 3.445 → 0.651 | 0.099 → 0.931 |
+| mode | learning rate | updates | worst forward-KL ratio | worst reverse-KL ratio | lowest digit mass |
+|---|---|---|---|---|---|
+| `gkd_mixed` | 0.005 | 30 | 12.8% | 23.5% | 0.833 |
+| `gkd_on_policy_jsd` | 0.001 | 240 | 9.0% | 7.3% | 0.948 |
+| `gkd_on_policy_reverse_kl` | 0.001 | 240 | 18.8% | 19.1% | 0.950 |
+| `offline_forward_kl` | 0.005 | 30 | 14.4% | 17.2% | 0.748 |
+| `offline_jsd` | 0.005 | 30 | 18.3% | 27.4% | 0.889 |
+| `offline_topk_cache` | 0.005 | 30 | 19.8% | 19.2% | 0.751 |
+| `on_policy_sampled_reverse_kl` | 0.001 | 960 | 12.5% | 7.0% | 0.962 |
 
-Negative control: the same runs against a shuffled teacher (its logits
-permuted over the vocabulary: equally sharp, wrong tokens) must not lower
-either KL to the real teacher and keep the digit mass below 0.4:
+Shuffled-teacher controls preserve the teacher's confidence while permuting
+its logits over vocabulary tokens. They use the same update budget as their
+positive counterparts. Neither KL to the real teacher may decrease, and
+digit mass must stay below 0.4. All six controls pass; the table shows the
+smallest KL increase and largest final digit mass across seeds.
 
-| seed | mode | fwd KL before → after | on-policy rev KL before → after | digit mass |
-|---|---|---|---|---|
-| 0 | shuffled teacher, offline forward KL | 2.423 → 4.721 | 5.343 → 7.867 | 0.100 → 0.100 |
-| 1 | shuffled teacher, offline forward KL | 2.798 → 5.009 | 5.047 → 7.907 | 0.096 → 0.204 |
-| 2 | shuffled teacher, offline forward KL | 2.461 → 5.613 | 3.445 → 6.017 | 0.099 → 0.004 |
-| 0 | shuffled teacher, λ 1, sampled reverse KL | 2.423 → 4.447 | 5.343 → 6.895 | 0.100 → 0.115 |
-| 1 | shuffled teacher, λ 1, sampled reverse KL | 2.798 → 5.385 | 5.047 → 6.456 | 0.096 → 0.209 |
-| 2 | shuffled teacher, λ 1, sampled reverse KL | 2.461 → 5.542 | 3.445 → 5.824 | 0.099 → 0.005 |
+| control | minimum forward-KL increase | minimum reverse-KL increase | highest digit mass |
+|---|---|---|---|
+| `offline_forward_kl` | +1.893 | +1.829 | 0.260 |
+| `on_policy_sampled_reverse_kl` | +2.889 | +1.343 | 0.274 |
 
-Observed failure mode: pure on-policy JSD(0.5) at the common learning rate
-(5e-3) collapsed on seed 2 (held-out forward KL 2.46 → 7.97, digit mass to
-0): the student's own samples left the teacher's support, where the bounded
-JSD saturates (≤ ln 2 per token) and its gradient vanishes, while the
-later-position terms kept training on junk contexts. Forward KL, reverse KL,
-JSD with β 0.1 or 0.9, or JSD at 2e-3 all converge on that seed; the test
-runs JSD at 2e-3.
+### Workload calibration
+
+The earlier 30-update fixture missed thresholds on seed 1 in pure on-policy
+JSD, full-distribution reverse KL, and sampled reverse KL, including on
+unmodified v0.71.7. Optimization settings were selected using training
+prompts before evaluating the revised workloads on held-out prompts. The
+quality assertions, teacher construction, evaluation data, seeds, and
+negative controls are unchanged.
+
+At a learning rate of 1e-3, the two full-distribution modes satisfy the
+training criteria at 240 updates. The sampled estimator needs 960 updates:
+seed 1 remains stalled at 480 before converging. Larger batches, a detached
+state-baseline prototype, and temperature 2 did not resolve that short-run
+stall and were not adopted. The estimator and trainer implementations and
+defaults remain unchanged. Longer runs increase test runtime.
+
+The results above use CPU PyTorch 2.13.0 and Transformers 5.14.1; the same
+27 learning checks pass on PyTorch 2.11.0. [Calibration trials and all
+per-seed held-out measurements](../benchmark_results/training_contracts/20261106/learning-gates/README.md)
+are recorded with the online-DPO results. These toy checks do not certify
+large-model training quality.
 
 ## Limitations
 

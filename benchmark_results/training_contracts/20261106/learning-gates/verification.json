@@ -1,0 +1,68 @@
+{
+  "source_commit": "d121ae500525ee3034e5ba5d6496f255f15cf386",
+  "package_tree": "239fc3d719e0f30717ebde396141374698bdf51a",
+  "quality_assertions_unchanged_from_source_commit": true,
+  "fixture_sha256": {
+    "tests/learning/test_online_dpo_learns.py": "b2e23bde28e3cbd398971e5d94b7884397336a6ccd2ce94c227e6b95082401cd",
+    "tests/learning/test_distillation_learns.py": "71b38328372be1fe4c27ef845dfe84417dd8285888d2b454c277b31db9230603",
+    "tests/unit/test_evaluation_case_picker.py": "a980712ae8d421ad31f33261af31f48ea65dcff017f38c8feda64837a991086e"
+  },
+  "full_default_suite": {
+    "name": "pytest",
+    "errors": "1",
+    "failures": "0",
+    "skipped": "137",
+    "tests": "17160",
+    "time": "629.791",
+    "timestamp": "2026-11-06T15:34:37.779701-08:00",
+    "command": "pytest -q -o tmp_path_retention_policy=failed -o tmp_path_retention_count=1 --tb=short",
+    "scope_note": "Final learning fixture configurations; default seed 0; no coverage collector. All 16988 tests passed their assertions; a directory-picker test mock caused one teardown error, fixed and verified in the followup below."
+  },
+  "directory_cleanup_followup": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "12",
+    "time": "3.110",
+    "timestamp": "2026-11-06T15:46:03.889612-08:00",
+    "fix": "Scope os.scandir mocks to browsing steps so pytest cleanup uses the real filesystem.",
+    "command": "pytest -q tests/unit/test_evaluation_case_picker.py -o tmp_path_retention_policy=failed -o tmp_path_retention_count=1",
+    "full_suite_repeated_after_this_fix": false
+  },
+  "final_learning_pytest_torch_2_11_0": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "36",
+    "time": "88.841",
+    "timestamp": "2026-11-06T15:17:17.006940-08:00",
+    "seeds": [
+      0,
+      1,
+      2
+    ]
+  },
+  "final_learning_assertions_torch_2_13_0_cpu": {
+    "passed": 36,
+    "failed": 0,
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "method": "Fixture helpers invoked with all original quality assertions checked; measurements in heldout.json."
+  },
+  "interrupted_coverage_attempt": {
+    "exit_code": 120,
+    "reason": "Filesystem exhausted near the end of the run; pytest-cov SQLite internal error; no complete JUnit or coverage report. This attempt is not counted as a passing suite."
+  },
+  "static_checks": {
+    "ruff": "whole repository passed",
+    "black": "1626 files unchanged",
+    "isort": "whole repository passed",
+    "repo_hygiene": "passed",
+    "git_diff_check": "passed"
+  }
+}

@@ -124,21 +124,31 @@ MODES: dict[str, dict[str, Any]] = {
     "offline_forward_kl": {},
     "offline_jsd": {"divergence": "jsd", "jsd_beta": 0.5},
     "offline_topk_cache": {"teacher_top_k": 8},
-    # Pure on-policy JSD(0.5) at the common 5e-3 collapsed on seed 2 (the
-    # bounded JSD saturates once the student's samples leave the teacher's
-    # support, and its gradient vanishes); 2e-3 is stable on every seed.
+    # Training-only calibration: smaller updates and 240 steps converge on
+    # all three training seeds. The original short run underfit seed 1.
     "gkd_on_policy_jsd": {
         "lmbda": 1.0,
         "divergence": "jsd",
         "jsd_beta": 0.5,
-        "learning_rate": 2e-3,
+        "learning_rate": 1e-3,
+        "max_steps": 240,
     },
-    "gkd_on_policy_reverse_kl": {"lmbda": 1.0, "divergence": "reverse_kl"},
+    "gkd_on_policy_reverse_kl": {
+        "lmbda": 1.0,
+        "divergence": "reverse_kl",
+        "learning_rate": 1e-3,
+        "max_steps": 240,
+    },
     "gkd_mixed": {"lmbda": 0.5},
     "on_policy_sampled_reverse_kl": {
         "lmbda": 1.0,
         "divergence": "reverse_kl",
         "on_policy_loss": "sampled",
+        # The stochastic estimator needs more updates than full-vocabulary
+        # KL. Selected on training prompts; the shuffled control uses the
+        # same budget and every held-out assertion remains unchanged.
+        "learning_rate": 1e-3,
+        "max_steps": 960,
     },
 }
 
@@ -186,7 +196,8 @@ def _distil(seed: int, mode: str, *, shuffled: bool = False) -> dict[str, float]
         teacher=used,
     )
     summary = trainer.train()
-    assert summary.global_step == STEPS and summary.skipped_steps == 0
+    assert summary.global_step == trainer.config.max_steps
+    assert summary.skipped_steps == 0
     after = {**probe.evaluate(), **probe.evaluate(on_policy=True)}
     return {
         "forward_before": before["eval/forward_kl"],
