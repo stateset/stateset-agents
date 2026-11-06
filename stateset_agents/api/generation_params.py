@@ -112,7 +112,17 @@ def _validate_user(value: Any) -> Any:
     return value
 
 
+def _validate_reasoning_effort(value: Any) -> str:
+    choices = {"none", "minimal", "low", "medium", "high", "xhigh", "max"}
+    if not isinstance(value, str) or value not in choices:
+        raise ValueError(
+            "'reasoning_effort' must be one of " + ", ".join(sorted(choices))
+        )
+    return value
+
+
 _SIMPLE_VALIDATORS: dict[str, Callable[[Any], Any]] = {
+    "reasoning_effort": _validate_reasoning_effort,
     "presence_penalty": _float_in_range("presence_penalty", -2.0, 2.0),
     "frequency_penalty": _float_in_range("frequency_penalty", -2.0, 2.0),
     "repetition_penalty": _positive_float("repetition_penalty", 2.0),
@@ -233,8 +243,14 @@ def validate_generation_request(
         and len(request.stop_sequences) > limits.max_stop_sequences
     ):
         raise ValueError(f"Too many stop sequences (max {limits.max_stop_sequences})")
-    return sanitize_passthrough_params(
+    forwarded = sanitize_passthrough_params(
         request.model_extra,
         limits,
         max_tokens=request.max_tokens,
     )
+    model = request.model.strip().casefold().removeprefix("moonshotai/")
+    if model in {"kimi-k3.1-pro", "kimi-k3.1-pro-highspeed"}:
+        effort = forwarded.get("reasoning_effort")
+        if effort is not None and effort not in {"low", "high", "max"}:
+            raise ValueError("Kimi K3.1 Pro reasoning_effort must be low, high, or max")
+    return forwarded

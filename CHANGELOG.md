@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add Kimi K3.1 Pro hosted inference through an authenticated OpenAI-compatible
+  backend, preserving reasoning effort, assistant reasoning/tool history, and
+  streamed deltas. Bound reasoning history by existing message-length limits.
+- Register the distinct pinned `moonshotai/Kimi-K3.1-Pro` checkpoint and audited
+  KDA/DSA attention targets. Expose local training blockers before packaged
+  worker uploads or allocation; do not reuse the Kimi K3 loader.
+
 ## [0.71.6] - 2026-11-06 — Inkling 2 Small on Tinker
 
 ### Added

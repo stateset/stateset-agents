@@ -32,6 +32,7 @@ BLOCKED_KEYS = [
     "mimo-v2.6-pro",
     "mimo-v2.6-pro-mopd",
     "kimi-k3",
+    "kimi-k3.1-pro",
     "deepseek-v4.1-flash",
     "deepseek-v4.1-flash-1017",
 ]
@@ -56,7 +57,11 @@ def _data(tmp_path):
 @pytest.mark.parametrize("spec", FRONTIER_MODELS, ids=lambda spec: spec.key)
 def test_pinned_roster_and_actual_published_attention_targets(spec):
     evidence_root = Path(__file__).parents[2] / "benchmark_results/training_contracts"
-    audits = ("20261015/frontier-models", "20261017/deepseek-v4.1-flash-1017")
+    audits = (
+        "20261015/frontier-models",
+        "20261017/deepseek-v4.1-flash-1017",
+        "20261106/kimi-k3.1-pro",
+    )
     row = next(
         item
         for audit in audits
@@ -356,7 +361,7 @@ def test_cli_roster_and_config_are_lightweight_and_report_blockers(tmp_path):
     result = runner.invoke(app, ["frontier-models"])
     assert result.exit_code == 0, result.output
     rows = json.loads(result.stdout)
-    assert len(rows) == 9
+    assert len(rows) == 10
     assert sum(row["training_path_available"] for row in rows) == 4
     config = tmp_path / "sft.json"
     result = runner.invoke(

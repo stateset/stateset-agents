@@ -141,6 +141,9 @@ def anthropic_messages_to_openai(
 
     for message in messages:
         role = message.get("role", "user")
+        reasoning = message.get("reasoning_content") if role == "assistant" else None
+        if reasoning is not None and not isinstance(reasoning, str):
+            raise ValueError("assistant reasoning_content must be a string")
         content = message.get("content", "")
         if content is None:
             content = ""
@@ -152,6 +155,8 @@ def anthropic_messages_to_openai(
 
             base_message: dict[str, Any] = {"role": role}
             base_message["content"] = content_value or ""
+            if reasoning is not None:
+                base_message["reasoning_content"] = reasoning
 
             # Preserve existing tool_calls if present
             if isinstance(message.get("tool_calls"), list):
@@ -189,6 +194,10 @@ def anthropic_messages_to_openai(
 
         # Non-list content: pass through
         flat_message: dict[str, Any] = {"role": role, "content": content}
+        if reasoning is not None:
+            flat_message["reasoning_content"] = reasoning
+            if message.get("content") is None:
+                flat_message["content"] = None
 
         if isinstance(message.get("tool_calls"), list):
             flat_message["tool_calls"] = message.get("tool_calls")
@@ -463,12 +472,19 @@ def validate_message_limits(
     if len(messages) > max_messages:
         raise MessageLimitError(f"Too many messages (max {max_messages})", kind="count")
     for index, message in enumerate(messages):
+        reasoning = (
+            message.get("reasoning_content")
+            if isinstance(message, dict)
+            else getattr(message, "reasoning_content", None)
+        )
+        if reasoning is not None and not isinstance(reasoning, str):
+            raise ValueError("reasoning_content must be a string")
         content = (
             message.get("content")
             if isinstance(message, dict)
             else getattr(message, "content", None)
         )
-        if estimate_message_content_length(content) > max_length:
+        if estimate_message_content_length(content) + len(reasoning or "") > max_length:
             raise MessageLimitError(
                 f"Message content too long at index {index}",
                 kind="length",

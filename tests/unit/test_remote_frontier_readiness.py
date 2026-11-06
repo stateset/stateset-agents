@@ -28,6 +28,25 @@ PACKAGED = ("local", "runpod", "modal", "coreweave", "nebius", "huggingface")
 MANAGED = ("river", "tinker", "fireworks", "together", "prime")
 
 
+@pytest.mark.parametrize("provider", PACKAGED)
+def test_kimi31_rejected_before_packaged_training_side_effects(
+    dataset, tmp_path, monkeypatch, provider
+):
+    executor = executor_for(provider, tmp_path)
+    spec = make_spec(dataset, tmp_path, "moonshotai/Kimi-K3.1-Pro")
+    with monkeypatch.context() as patch:
+        calls = block_submission_effects(executor, patch)
+        with pytest.raises(
+            RemoteExecutionError, match="training is blocked"
+        ) as rejected:
+            executor.submit(spec)
+    assert calls == []
+    assert (
+        rejected.value.context.details["model_revision"]
+        == get_frontier_model("kimi-k3.1-pro").revision
+    )
+
+
 @pytest.fixture
 def dataset(tmp_path):
     path = tmp_path / "input.jsonl"

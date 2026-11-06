@@ -67,6 +67,7 @@ def test_presets_registry_has_expected_models():
         "gpt-oss",
         "deepseek-v4",
         "kimi-k3",
+        "kimi-k3.1-pro",
         "kimi-k2.5",
         "kimi-k2.6",
         "glm5.1",

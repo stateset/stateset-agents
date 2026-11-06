@@ -163,6 +163,28 @@ FRONTIER_MODELS: tuple[FrontierModel, ...] = (
         True,
     ),
     FrontierModel(
+        "kimi-k3.1-pro",
+        "moonshotai/Kimi-K3.1-Pro",
+        "d9e99b0792a5e93b78ea9bea62a68167e36ddd9e",
+        "KimiK31ForConditionalGeneration",
+        "kimi_k31",
+        r"language_model\.model\.layers",
+        KIMI_TARGETS + ("wq_b", "wk", "weights_proj"),
+        "mxfp4-pack-quantized",
+        1561217377280,
+        "kimi-k3.1-pro",
+        (
+            "Released MXFP4 routed experts require a verified compressed-tensors "
+            "training/decompression loader and KDA/Gated DSA backward kernels; "
+            "generic bitsandbytes QLoRA cannot substitute for this layout.",
+            "The pinned repository supplies no modeling implementation or standard "
+            "chat template. Its custom encoding_k3.py codec and kimi_k31 architecture "
+            "require a reviewed training implementation; do not reuse the Kimi K3 loader.",
+        ),
+        trust_remote_code=True,
+        audit_date="2026-11-06",
+    ),
+    FrontierModel(
         "glm5.3-flash",
         "zai-org/GLM-5.3-Flash",
         "46a050bec13002ad29ee795c16e61cf4fa3c4a9c",

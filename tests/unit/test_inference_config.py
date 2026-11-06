@@ -106,3 +106,14 @@ def test_inference_config_respects_stream_usage_flag_truthy_forms(monkeypatch):
     config = InferenceConfig.from_env()
 
     assert config.include_stream_usage is True
+
+
+def test_hosted_openai_backend_uses_explicit_credentials_and_models_health(monkeypatch):
+    monkeypatch.setenv("INFERENCE_BACKEND", "openai")
+    monkeypatch.setenv("INFERENCE_BACKEND_API_KEY", "  test-hosted-key  ")
+    monkeypatch.delenv("INFERENCE_HEALTH_PATH", raising=False)
+    config = InferenceConfig.from_env()
+    assert config.backend == "openai"
+    assert config.api_key == "test-hosted-key"
+    assert config.health_path == "/v1/models"
+    assert "test-hosted-key" not in repr(config)

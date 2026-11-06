@@ -169,7 +169,7 @@ def _normalize_path(value: str | None, *, default: str) -> str:
 class InferenceConfig:
     """Configuration for inference backend."""
 
-    backend: str = "vllm"  # "vllm" | "stub"
+    backend: str = "vllm"  # "vllm" | "openai" | "stub"
     base_url: str = "http://localhost:8000"
     timeout_seconds: float = 120.0
     max_retries: int = 2
@@ -178,13 +178,14 @@ class InferenceConfig:
     health_path: str = "/health"
     include_stream_usage: bool = False
     model_map: dict[str, str] = field(default_factory=dict)
+    api_key: str | None = field(default=None, repr=False)
 
     @classmethod
     def from_env(cls) -> InferenceConfig:
         environment = os.getenv("API_ENVIRONMENT", "production").lower()
         default_backend = "stub" if environment != "production" else "vllm"
         backend = os.getenv("INFERENCE_BACKEND", default_backend).strip().lower()
-        if backend not in ("stub", "vllm"):
+        if backend not in ("stub", "vllm", "openai"):
             logger.warning(
                 "Unknown INFERENCE_BACKEND=%s; using %s",
                 backend,
@@ -213,7 +214,7 @@ class InferenceConfig:
             ),
             health_path=_normalize_path(
                 os.getenv("INFERENCE_HEALTH_PATH"),
-                default="/health",
+                default="/v1/models" if backend == "openai" else "/health",
             ),
             include_stream_usage=os.getenv(
                 "INFERENCE_STREAM_INCLUDE_USAGE", "false"
@@ -224,6 +225,7 @@ class InferenceConfig:
                 os.getenv("INFERENCE_DEFAULT_MODEL"), default=""
             )
             or None,
+            api_key=os.getenv("INFERENCE_BACKEND_API_KEY", "").strip() or None,
         )
 
     def resolve_model(self, model_name: str | None) -> str:
@@ -251,6 +253,11 @@ class InferenceService:
             self._client = httpx.AsyncClient(
                 base_url=self.config.base_url,
                 timeout=self.config.timeout_seconds,
+                headers=(
+                    {"Authorization": f"Bearer {self.config.api_key}"}
+                    if self.config.api_key
+                    else None
+                ),
             )
         return self._client
 

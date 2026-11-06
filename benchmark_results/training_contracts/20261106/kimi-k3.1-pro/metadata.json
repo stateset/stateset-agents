@@ -1,0 +1,125 @@
+[
+  {
+    "key": "kimi-k3.1-pro",
+    "model_id": "moonshotai/Kimi-K3.1-Pro",
+    "revision": "d9e99b0792a5e93b78ea9bea62a68167e36ddd9e",
+    "architecture": "KimiK31ForConditionalGeneration",
+    "model_type": "kimi_k31",
+    "attention_prefix": "language_model\\.model\\.layers",
+    "attention_targets": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "f_a_proj",
+      "f_b_proj",
+      "g_proj",
+      "b_proj",
+      "q_a_proj",
+      "q_b_proj",
+      "kv_a_proj_with_mqa",
+      "kv_b_proj",
+      "wq_b",
+      "wk",
+      "weights_proj"
+    ],
+    "checkpoint_format": "mxfp4-pack-quantized",
+    "checkpoint_bytes": 1561217377280,
+    "license": "kimi-k3.1-pro",
+    "blockers": [
+      "Released MXFP4 routed experts require a verified compressed-tensors training/decompression loader and KDA/Gated DSA backward kernels; generic bitsandbytes QLoRA cannot substitute for this layout.",
+      "The pinned repository supplies no modeling implementation or standard chat template. Its custom encoding_k3.py codec and kimi_k31 architecture require a reviewed training implementation; do not reuse the Kimi K3 loader."
+    ],
+    "trust_remote_code": true,
+    "chat_template_options": [],
+    "audit_date": "2026-11-06",
+    "lora_regex": "language_model\\.model\\.layers\\.\\d+\\.(?:self_attn|linear_attn|attn)\\.(?:(?:indexer|forget_gate)\\.)?(?:q_proj|k_proj|v_proj|o_proj|f_a_proj|f_b_proj|g_proj|b_proj|q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|wq_b|wk|weights_proj)",
+    "source": "https://huggingface.co/moonshotai/Kimi-K3.1-Pro/tree/d9e99b0792a5e93b78ea9bea62a68167e36ddd9e",
+    "training_path_available": false,
+    "full_size_training_verified": false,
+    "multimodal_training_verified": false,
+    "optimizer_resume_supported": false,
+    "training_dtype": "bfloat16",
+    "memory_note": "Checkpoint bytes describe stored tensors, not training memory. Dequantized base weights, adapters, activations and sharding buffers must fit; active parameter counts do not determine capacity.",
+    "config_sha256": "d95037631e3f23bf527a9f476f25209b231b46853a84877b9c56d5672b8d1202",
+    "index_sha256": "6500b553254ae3955e19bbf93d8cf3eee17101df4430493b33ce44d8ea1e2925",
+    "index_metadata": {
+      "total_size": 1561217377280
+    },
+    "index_tensor_count": 497340,
+    "index_shard_count": 96,
+    "attention_module_count": 768,
+    "representative_attention_modules": [
+      "language_model.model.layers.0.self_attn.q_proj",
+      "language_model.model.layers.0.self_attn.k_proj",
+      "language_model.model.layers.0.self_attn.v_proj",
+      "language_model.model.layers.0.self_attn.o_proj",
+      "language_model.model.layers.0.self_attn.f_a_proj",
+      "language_model.model.layers.0.self_attn.f_b_proj",
+      "language_model.model.layers.0.self_attn.g_proj",
+      "language_model.model.layers.0.self_attn.b_proj",
+      "language_model.model.layers.11.self_attn.q_a_proj",
+      "language_model.model.layers.11.self_attn.q_b_proj",
+      "language_model.model.layers.11.self_attn.kv_a_proj_with_mqa",
+      "language_model.model.layers.11.self_attn.kv_b_proj",
+      "language_model.model.layers.11.self_attn.indexer.wq_b",
+      "language_model.model.layers.11.self_attn.indexer.wk",
+      "language_model.model.layers.11.self_attn.indexer.weights_proj"
+    ],
+    "quantization_config": {
+      "config_groups": {
+        "group_0": {
+          "format": "mxfp4-pack-quantized",
+          "input_activations": null,
+          "output_activations": null,
+          "targets": [
+            "Linear"
+          ],
+          "weights": {
+            "actorder": null,
+            "block_structure": null,
+            "dynamic": false,
+            "group_size": 32,
+            "num_bits": 4,
+            "observer": "minmax",
+            "observer_kwargs": {},
+            "scale_dtype": "torch.uint8",
+            "strategy": "group",
+            "symmetric": true,
+            "type": "float",
+            "zp_dtype": null
+          }
+        }
+      },
+      "format": "mxfp4-pack-quantized",
+      "global_compression_ratio": null,
+      "ignore": [
+        "re:.*self_attn.*",
+        "re:.*shared_experts.*",
+        "re:.*mlp\\.(gate|up|gate_up|down)_proj.*",
+        "re:.*block_sparse_moe\\.gate$",
+        "re:.*block_sparse_moe\\.routed_expert_(up|down)_proj.*",
+        "re:.*lm_head.*",
+        "re:.*vision_tower.*",
+        "re:.*mm_projector.*"
+      ],
+      "kv_cache_scheme": null,
+      "quant_method": "compressed-tensors",
+      "quantization_status": "compressed"
+    },
+    "license_metadata": {
+      "tags": [
+        "compressed-tensors",
+        "conversational"
+      ],
+      "license": "other",
+      "license_name": "kimi-k3.1-pro",
+      "library_name": "transformers",
+      "pipeline_tag": "image-text-to-text"
+    },
+    "max_position_embeddings": 1048576,
+    "num_hidden_layers": 93,
+    "kda_layer_count": 69,
+    "dsa_layer_count": 24
+  }
+]
