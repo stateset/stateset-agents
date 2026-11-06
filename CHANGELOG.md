@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Bound online DPO and on-policy distillation generation by each prompt's
+  remaining sequence budget. Judge and train on the same sampled tokens,
+  avoiding preferences based on discarded suffixes and generation past
+  the configured context limit.
 - Preserve upstream inference rate limits and Retry-After headers, report
   backend credential failures as gateway errors, and retry only transient
   failures without provider-specified backoff on non-streaming requests.

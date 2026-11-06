@@ -151,6 +151,19 @@ def test_only_response_tokens_count(tokenizer: Any) -> None:
     assert loss.weights.tolist() == [float(loss.tokens)]
 
 
+def test_on_policy_generation_stays_inside_the_context_window(tokenizer: Any) -> None:
+    trainer = DistillationTrainer(
+        make_model(0, n_embd=16, n_positions=8),
+        tokenizer,
+        _config(lmbda=1.0, max_length=8, max_new_tokens=4),
+        DistillationDataset.from_records([{"prompt": "abcdefg"}, {"prompt": "xyz"}]),
+        teacher=make_model(50, n_embd=16, n_positions=8),
+    )
+    sequences = trainer._sample(trainer._train_items)
+    assert all(len(sequence) <= 8 and not sequence.truncated for sequence in sequences)
+    assert trainer.train().global_step == 2
+
+
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [

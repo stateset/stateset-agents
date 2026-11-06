@@ -124,6 +124,48 @@ def test_round_pairs_best_against_worst_on_exact_sampled_tokens(
         assert len(pair.chosen) > len(pair.rejected)  # what the reward prefers
 
 
+def test_round_never_judges_tokens_outside_the_training_window(
+    tokenizer: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class RecordingReward(DigitReward):
+        def __init__(self) -> None:
+            super().__init__()
+            self.replies: list[str] = []
+
+        async def compute_reward(self, turns: Any, context: Any = None) -> Any:
+            self.replies.append(turns[-1].content)
+            return await super().compute_reward(turns, context)
+
+    model = make_model(0, n_embd=16)
+
+    def generate(input_ids: Any, generation_config: Any, **kwargs: Any) -> Any:
+        # The preference is entirely in token 3. A six-token prompt only
+        # leaves room for two tokens, so its replies must tie when judged.
+        length = generation_config.max_new_tokens
+        suffixes = torch.tensor(
+            [
+                tokenizer.encode(("aa1", "aa!")[row % 2][:length])
+                for row in range(len(input_ids))
+            ]
+        )
+        return torch.cat([input_ids, suffixes], dim=1)
+
+    monkeypatch.setattr(model, "generate", generate)
+    reward = RecordingReward()
+    trainer = OnlineDPOTrainer(
+        model,
+        tokenizer,
+        reward,
+        ["abcdef", "xyz"],
+        _config(rounds=1, samples_per_prompt=2, max_new_tokens=3, max_length=8),
+    )
+    summary = trainer.run_round()
+    assert reward.replies == ["aa", "aa", "aa1", "aa!"]
+    assert summary.pairs == 1 and summary.skipped == {"tie": 1}
+    assert trainer.last_pairs.pairs[0].prompt == "xyz"
+    assert summary.training is not None
+
+
 class ScriptedReward:
     """Scores by reply text from a script; raises what it is told to."""
 

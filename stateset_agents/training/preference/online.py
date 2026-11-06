@@ -316,6 +316,7 @@ class OnlineDPOTrainer:
             pad_token_id=self.encoder.pad_token_id,
             stop_ids=self._stop_ids,
             batch_size=config.generation_batch_size,
+            max_length=config.max_length,
         )
 
     def _decode(self, tokens: Sequence[int]) -> str:
@@ -409,8 +410,8 @@ class OnlineDPOTrainer:
             prompt_ids = self._prompt_ids[index]
             encoded.append(
                 (
-                    self._sequence(prompt_ids, completions[index][best]),
-                    self._sequence(prompt_ids, completions[index][worst]),
+                    EncodedSequence(prompt_ids, completions[index][best]),
+                    EncodedSequence(prompt_ids, completions[index][worst]),
                 )
             )
             pairs.append(pair)
@@ -420,13 +421,6 @@ class OnlineDPOTrainer:
         summary.mean_chosen_score = _loop.mean(chosen_scores) if pairs else None
         summary.mean_rejected_score = _loop.mean(rejected_scores) if pairs else None
         return pairs, encoded
-
-    def _sequence(
-        self, prompt_ids: tuple[int, ...], completion: tuple[int, ...]
-    ) -> EncodedSequence:
-        room = self.config.max_length - len(prompt_ids)
-        kept = completion[:room]
-        return EncodedSequence(prompt_ids, kept, len(kept) < len(completion))
 
     # -------------------------------------------------------------- training
 

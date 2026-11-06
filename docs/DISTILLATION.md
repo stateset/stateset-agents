@@ -42,6 +42,11 @@ rescaled by `τ²`.
   ids by the preference encoder (chat template via
   `core.chat_masking.final_turn_token_mask`, `MultiTurnAgent`'s plain format,
   or raw prompts), so the mask is exact; position `t` predicts token `t+1`.
+- **Generation length.** On-policy sampling caps each completion at
+  `min(max_new_tokens, max_length - prompt_tokens)` before generation.
+  Teacher scoring and training use the entire sampled completion. Equal
+  budgets are batched together; shorter prompts keep their own budgets.
+  Set `max_length` within both models' supported context windows.
 - **Reduction.** The token mean: each example contributes
   `weight × response tokens`, and gradient accumulation divides by the
   window's total, so micro-batches add up to exactly the large-batch loss
@@ -234,6 +239,13 @@ on 4 training prompts; held-out data are teacher samples on 4 other prompts.
 30 updates per run. Every mode must cut the held-out forward KL (teacher-forced
 on teacher completions) and the on-policy reverse KL (student samples) by at
 least 65% and lift the digit mass above 0.6:
+
+The tables below record the original measurements. A 2026-11-06 reproduction
+with Transformers 5.14.1 and PyTorch 2.11.0 finds three seed-1 threshold
+failures: pure on-policy JSD, full-distribution reverse KL, and sampled
+reverse KL. All three reproduce with identical values on unmodified v0.71.7;
+their short prompts are unaffected by the context budget fix. The learning
+assertions remain unchanged and these discrepancies remain unresolved.
 
 | seed | mode | fwd KL before → after | on-policy rev KL before → after | digit mass |
 |---|---|---|---|---|

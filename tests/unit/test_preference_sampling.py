@@ -100,3 +100,57 @@ def test_completions_end_at_the_first_stop_token(tokenizer: Any) -> None:
     # Without EOS as a stop token the completion runs to max_new_tokens.
     longer = _sample(model, tokenizer, stop_ids=[])
     assert all(c == (eos,) * 5 for group in longer for c in group)
+
+
+def test_sampling_fits_each_prompt_in_the_context_window(tokenizer: Any) -> None:
+    model = make_model(0, n_embd=16, n_positions=8)
+    samples = _sample(
+        model,
+        tokenizer,
+        max_new_tokens=6,
+        max_length=8,
+        stop_ids=[],
+    )
+    assert [[len(c) for c in group] for group in samples] == [[5] * 6, [6] * 6]
+
+
+def test_context_budgets_preserve_prompt_and_sample_association(
+    tokenizer: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model = make_model(0, n_embd=16)
+
+    def generate(input_ids: Any, generation_config: Any, **kwargs: Any) -> Any:
+        continuation = input_ids[:, -1:].repeat(1, generation_config.max_new_tokens)
+        return SimpleNamespace(sequences=torch.cat([input_ids, continuation], dim=1))
+
+    monkeypatch.setattr(model, "generate", generate)
+    samples = sample_completions(
+        model,
+        [(10, 11, 12), (13,), (14, 15, 16)],
+        num_samples=3,
+        max_new_tokens=6,
+        max_length=8,
+        temperature=1.0,
+        top_p=1.0,
+        pad_token_id=tokenizer.pad_token_id,
+        stop_ids=[],
+        batch_size=4,
+    )
+    assert samples == [[(12,) * 5] * 3, [(13,) * 6] * 3, [(16,) * 5] * 3]
+
+
+def test_nonbinding_context_budget_keeps_the_same_samples(tokenizer: Any) -> None:
+    model = make_model(0, n_embd=16)
+    torch.manual_seed(1)
+    original = _sample(model, tokenizer)
+    torch.manual_seed(1)
+    assert _sample(model, tokenizer, max_length=64) == original
+
+
+@pytest.mark.parametrize("max_length", [0, 3, True, 4.5])
+def test_sampling_rejects_an_invalid_context_budget(
+    tokenizer: Any, max_length: Any
+) -> None:
+    model = make_model(0, n_embd=16)
+    with pytest.raises(ValueError, match="max_length"):
+        _sample(model, tokenizer, max_length=max_length)

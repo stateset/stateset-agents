@@ -389,15 +389,12 @@ class DistillationTrainer(_loop.WindowedTrainer):
             stop_ids=self._stop_ids,
             batch_size=config.batch_size,
             suppress_tokens=self._suppressed or None,
+            max_length=config.max_length,
         )
-        sequences = []
-        for item, (completion,) in zip(items, completions, strict=True):
-            room = config.max_length - len(item.prompt_ids)
-            kept = completion[:room]
-            sequences.append(
-                EncodedSequence(item.prompt_ids, kept, len(kept) < len(completion))
-            )
-        return sequences
+        return [
+            EncodedSequence(item.prompt_ids, completion)
+            for item, (completion,) in zip(items, completions, strict=True)
+        ]
 
     def _draw_on_policy(self, batch_index: int) -> bool:
         """GKD's λ draw for one micro-batch (deterministic per seed/position)."""

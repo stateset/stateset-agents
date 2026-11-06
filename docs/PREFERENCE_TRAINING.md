@@ -230,6 +230,14 @@ rounds of:
    `"previous_round"` (a frozen copy of the policy as the previous round left
    it). A round without pairs trains nothing.
 
+Generation reserves the encoded prompt's tokens inside `max_length`: each
+completion is capped at `min(max_new_tokens, max_length - prompt_tokens)`.
+The judge and the DPO loss therefore see the same complete sampled reply;
+no suffix is discarded after judging. Evaluation uses the same limit.
+Prompts with equal completion budgets are batched together, so a long prompt
+does not reduce a shorter prompt's budget. Set `max_length` within the
+model's supported context window.
+
 Each round's summary (`OnlineRoundSummary`) records samples, scored and
 unavailable counts, pairs, skip reasons, mean/chosen/rejected judge scores,
 the DPO training summary and, with `eval_prompts` (prompt-disjoint from the
@@ -315,9 +323,10 @@ See [CLI_REFERENCE.md](CLI_REFERENCE.md#stateset-agents-preference).
   with its own reward call, and pairs only best vs worst per prompt.
 - A LoRA reward model's adapter needs its base model available locally to
   load (or save it merged).
-- Learning is verified on CPU toy models (`tests/learning/test_preference_learns.py`,
-  `tests/learning/test_online_dpo_learns.py`, three seeds); large-model
-  evidence is a graduation criterion.
+- CPU toy learning checks cover `tests/learning/test_preference_learns.py`
+  and `tests/learning/test_online_dpo_learns.py` with three seeds. See the
+  current online-DPO limitation below; large-model evidence is a graduation
+  criterion.
 
 ### Online DPO evidence
 
@@ -325,6 +334,13 @@ See [CLI_REFERENCE.md](CLI_REFERENCE.md#stateset-agents-preference).
 policy, the `DigitReward` judge (fraction of digit characters), 12 training
 prompts, K = 8 six-token samples, 3 rounds of 4 DPO epochs. Held-out digit
 rate (32 fixed-seed samples on each of 4 unseen prompts):
+
+The table records the original measurements. A 2026-11-06 reproduction with
+Transformers 5.14.1 and both PyTorch 2.11.0 and 2.13.0 finds that the seed-0
+negative control falls from 0.10625 to 0.07982, missing the required 0.05
+reduction. It also fails on the unmodified v0.71.7 release. The learning
+assertion is unchanged and this discrepancy remains unresolved; the context
+budget fix does not affect this test's short prompts.
 
 | seed | judge | reference | held-out digit rate | pairs per round |
 |---|---|---|---|---|
