@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stateset-agents"
-version = "0.71.5"
+version = "0.71.6"
 description = "Production-ready RL framework for training multi-turn conversational AI agents using GRPO and GSPO"
 readme = "README.md"
 license = "BUSL-1.1"
@@ -304,6 +304,8 @@ huggingface = [
 tinker = [
     "stateset-agents[training]",
     "tinker>=0.4.0",
+    "torch>=2.10.0,<3; python_version >= '3.11'",
+    "tml-renderers>=0.4.0; python_version >= '3.11'",
 ]
 together = [
     "together>=2.0.0",

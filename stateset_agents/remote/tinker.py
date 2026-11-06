@@ -16,10 +16,12 @@ from typing import Any
 from stateset_agents.remote.executor import RemoteExecutionError, RemoteExecutor
 from stateset_agents.remote.job import JobHandle, JobStatus, RemoteJobSpec
 from stateset_agents.remote.river_batches import build_sft_batch
+from stateset_agents.remote.tinker_batches import build_inkling2_sft_batch
 
 TINKER_API_KEY_ENV = "TINKER_API_KEY"
 TINKER_POINTER = "tinker_checkpoint.json"
 INKLING_SMALL = "thinkingmachines/Inkling-Small"
+INKLING_2_SMALL = "thinkingmachines/Inkling-2-Small"
 #: Seed for the per-epoch shuffle, so reruns of a job see the same order.
 SHUFFLE_SEED = 0
 
@@ -107,20 +109,29 @@ class TinkerExecutor(RemoteExecutor):
         try:
             module, service = self._sdk()
             record.status = JobStatus.RUNNING
-            record.logs.append(f"creating Tinker LoRA model {record.spec.base_model}")
-            training = service.create_lora_training_client(
-                base_model=record.spec.base_model, rank=record.spec.lora_r
-            )
-            tokenizer = self._tokenizer or training.get_tokenizer()
             rows = [
                 json.loads(line)
                 for line in record.spec.dataset.read_text(encoding="utf-8").splitlines()
                 if line.strip()
             ]
+            inkling2_sft = (
+                record.spec.job_kind == "sft"
+                and record.spec.base_model == INKLING_2_SMALL
+            )
+            if inkling2_sft:
+                datums = build_inkling2_sft_batch(rows, record.spec.max_length)
+                if not datums:
+                    raise ValueError("dataset contains no trainable assistant tokens")
+            record.logs.append(f"creating Tinker LoRA model {record.spec.base_model}")
+            training = service.create_lora_training_client(
+                base_model=record.spec.base_model, rank=record.spec.lora_r
+            )
             if record.spec.job_kind == "sft":
-                datums = build_sft_batch(
-                    rows, tokenizer, max_length=record.spec.max_length
-                )
+                if not inkling2_sft:
+                    tokenizer = self._tokenizer or training.get_tokenizer()
+                    datums = build_sft_batch(
+                        rows, tokenizer, max_length=record.spec.max_length
+                    )
                 loss_fn = "cross_entropy"
             else:
                 datums = self._validate_rl_rows(rows)
@@ -239,4 +250,4 @@ class TinkerExecutor(RemoteExecutor):
             record.status = JobStatus.CANCELLED
 
 
-__all__ = ["INKLING_SMALL", "TinkerExecutor"]
+__all__ = ["INKLING_2_SMALL", "INKLING_SMALL", "TinkerExecutor"]

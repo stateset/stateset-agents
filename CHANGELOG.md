@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.71.6] - 2026-11-06 — Inkling 2 Small on Tinker
+
+### Added
+
+- Add Inkling 2 Small (`thinkingmachines/Inkling-2-Small`) through the Tinker provider with native text/tool SFT rendering and hosted checkpoint pointers.
+- Verify assistant masking, multi-turn conversations, tool calls, SDK Datum construction, and checkpoint handoff offline; live training certification remains pending.
+
+### Fixed
+
+- Reject empty Inkling 2 rendered datasets before creating a remote training client.
+
 ## [0.71.5] - 2026-11-04 — Reusable neural arithmetic and verified weight-editing experiments
 
 ### Added

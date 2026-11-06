@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from stateset_agents.remote.deployment import DeploymentSpec
 from stateset_agents.remote.huggingface import (
     HuggingFaceEndpointProvider,
@@ -13,7 +15,7 @@ from stateset_agents.remote.huggingface import (
 from stateset_agents.remote.job import JobHandle, JobStatus, RemoteJobSpec
 from stateset_agents.remote.prime import prime_lab_config
 from stateset_agents.remote.registry import available_providers
-from stateset_agents.remote.tinker import TinkerExecutor
+from stateset_agents.remote.tinker import INKLING_2_SMALL, INKLING_SMALL, TinkerExecutor
 from stateset_agents.remote.together import TogetherExecutor
 
 
@@ -210,14 +212,38 @@ class _TinkerModule:
             self.learning_rate = learning_rate
 
 
-def test_tinker_remote_autograd_lifecycle(tmp_path: Path) -> None:
+@pytest.mark.parametrize("base_model", [INKLING_SMALL, INKLING_2_SMALL])
+def test_tinker_remote_autograd_lifecycle(
+    tmp_path: Path, monkeypatch, base_model
+) -> None:
     training = _TinkerTraining()
-    service = SimpleNamespace(create_lora_training_client=lambda **kwargs: training)
+    calls = []
+
+    def create(**kwargs):
+        calls.append(kwargs)
+        return training
+
+    if base_model == INKLING_2_SMALL:
+
+        def native_batch(rows, max_length):
+            assert rows[0]["messages"][1]["content"] == "hello"
+            assert max_length == 1024
+            return [
+                {"input_ids": [1, 2], "target_tokens": [2, 3], "weights": [0.0, 1.0]}
+            ]
+
+        monkeypatch.setattr(
+            "stateset_agents.remote.tinker.build_inkling2_sft_batch", native_batch
+        )
+        training.get_tokenizer = lambda: pytest.fail(
+            "Inkling 2 must use native rendering"
+        )
+    service = SimpleNamespace(create_lora_training_client=create)
     executor = TinkerExecutor(service, tinker_module=_TinkerModule())
     handle = executor.submit(
         RemoteJobSpec(
             dataset=_dataset(tmp_path),
-            base_model="thinkingmachines/Inkling-Small",
+            base_model=base_model,
             num_epochs=1,
             gradient_accumulation_steps=1,
         )
@@ -225,4 +251,36 @@ def test_tinker_remote_autograd_lifecycle(tmp_path: Path) -> None:
     result = executor.wait(handle, poll_interval_s=0.001)
     assert result.succeeded
     assert training.steps == 1
+    assert calls[0]["base_model"] == base_model
     assert (result.output_dir / "tinker_checkpoint.json").exists()
+
+
+@pytest.mark.parametrize("failure", ["missing-renderer", "no-assistant-tokens"])
+def test_inkling2_renderer_failure_does_not_create_training_client(
+    tmp_path: Path, monkeypatch, failure
+) -> None:
+    def unavailable(*args):
+        if failure == "missing-renderer":
+            raise RuntimeError("install the native renderer")
+        return []
+
+    monkeypatch.setattr(
+        "stateset_agents.remote.tinker.build_inkling2_sft_batch", unavailable
+    )
+    service = SimpleNamespace(
+        create_lora_training_client=lambda **kwargs: pytest.fail(
+            "renderer failure must precede model creation"
+        )
+    )
+    executor = TinkerExecutor(service, tinker_module=_TinkerModule())
+    handle = executor.submit(
+        RemoteJobSpec(dataset=_dataset(tmp_path), base_model=INKLING_2_SMALL)
+    )
+    result = executor.wait(handle, poll_interval_s=0.001)
+    assert result.status is JobStatus.FAILED
+    expected = (
+        "install the native renderer"
+        if failure == "missing-renderer"
+        else "no trainable assistant tokens"
+    )
+    assert expected in " ".join(result.logs)
