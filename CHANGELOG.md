@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.71.7] - 2026-11-06 — Kimi K3.1 Pro inference and pinned readiness
+
 ### Added
 
 - Add Kimi K3.1 Pro hosted inference through an authenticated OpenAI-compatible

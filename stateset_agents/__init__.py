@@ -15,7 +15,7 @@ from typing import Any
 
 from ._deprecation import warn_deprecated
 
-__version__ = "0.71.6"
+__version__ = "0.71.7"
 __author__ = "StateSet Team"
 __email__ = "team@stateset.ai"
 
