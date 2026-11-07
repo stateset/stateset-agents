@@ -400,7 +400,15 @@ class TestCliRegistration:
         monkeypatch.setattr(mcp_server, "create_server", fake_create_server)
         result = runner.invoke(app, ["mcp", *args])
         assert result.exit_code == 0, result.output
-        assert calls == [{"weight_space": expected}, {"transport": "stdio"}]
+        assert calls == [
+            {
+                "weight_space": expected,
+                "finetune_workspace": None,
+                "allow_training": False,
+                "allow_paid": False,
+            },
+            {"transport": "stdio"},
+        ]
 
 
 @pytest.mark.slow

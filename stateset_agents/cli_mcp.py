@@ -12,6 +12,8 @@ this module imports the shared ``app`` and attaches its command via
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 
 from stateset_agents import cli as _cli
@@ -35,6 +37,17 @@ def mcp(
             "(loads models into the server process)."
         ),
     ),
+    finetune_workspace: Path | None = typer.Option(
+        None,
+        "--finetune-workspace",
+        help="Enable preparation and inspection of fine-tuning runs in this directory.",
+    ),
+    allow_training: bool = typer.Option(
+        False, "--allow-training", help="Enable real training launch and stop tools."
+    ),
+    allow_paid: bool = typer.Option(
+        False, "--allow-paid", help="Also permit launches on paid training providers."
+    ),
 ) -> None:
     """Run the StateSet Agents MCP server (stdio transport by default).
 
@@ -44,7 +57,7 @@ def mcp(
 
         claude mcp add stateset-agents -- stateset-agents mcp
 
-    v1 scope: no tool starts real GPU training (dry-run only).
+    Real training requires --finetune-workspace and --allow-training.
     """
     if transport != "stdio":
         _echo(
@@ -55,9 +68,18 @@ def mcp(
 
     try:
         from stateset_agents.mcp_server import create_server
+
+        server = create_server(
+            weight_space=weight_space,
+            finetune_workspace=finetune_workspace,
+            allow_training=allow_training,
+            allow_paid=allow_paid,
+        )
     except ImportError as exc:
         _echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
+    except ValueError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
 
-    server = create_server(weight_space=weight_space)
     server.run(transport="stdio")

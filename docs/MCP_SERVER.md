@@ -11,11 +11,11 @@ trajectory_ingest`, `scripts/grade_transcript.py`, `examples/
 model_presets.py`, `examples/finetune_gspo.py`). No grading, curation, or
 training logic is reimplemented in the server.
 
-**v1 scope: no tool starts real GPU training.** `dry_run_finetune` only ever
-runs `examples/finetune_gspo.py --dry-run` (stub backend, no model download,
-no training). Use the CLI (`stateset-agents fine-tune`, `examples/
-finetune_gspo.py --no-dry-run`, or the packaged starters) for real training
-runs.
+The default seven tools preview training. Add `--finetune-workspace` for
+durable run preparation and inspection, and `--allow-training` to enable
+real training launch and stop. These tools reuse the same workspace and
+detached workers as `stateset-agents finetune` and the training studio.
+`dry_run_finetune` remains a preview without model downloads or training.
 
 ## Install
 
@@ -74,9 +74,104 @@ Add to your `claude_desktop_config.json`:
 | `list_model_presets()` | `examples/model_presets.py` | List model preset names and key hyperparameter fields (model id, learning rate, prompt/completion lengths, LoRA/quantization flags). |
 | `dry_run_finetune(model_preset)` | `examples/finetune_gspo.py --dry-run` | Preview the resolved agent/reward/trainer config for a preset without downloading weights or training. |
 
-Every tool validates its inputs and returns a structured dict — on failure
+These original tools validate inputs and return a structured dict — on failure
 that's `{"error": "..."}` rather than a raised traceback, so MCP clients get
 an actionable message instead of a stack trace.
+
+### Fine-tuning management
+
+Configure a dedicated local directory containing your datasets and saved runs:
+
+```bash
+# Prepare and inspect runs without enabling launch or stop.
+stateset-agents mcp --finetune-workspace /absolute/path/to/finetune
+
+# Also expose real training launch and stop.
+stateset-agents mcp --finetune-workspace /absolute/path/to/finetune --allow-training
+```
+
+Local training requires the framework's `training` extra and supported CUDA
+hardware; installing `[mcp]` alone is sufficient for preparation and inspection.
+Configure remote dependencies and credentials in the server environment.
+Paid launches additionally require `--allow-paid` at server startup. A tool
+argument cannot grant this capability. Backend cost policies still apply:
+RunPod has a quoted pod-lifetime ceiling; Modal and River require
+`cost_policy="provider_billed"` and do not enforce a dollar ceiling here.
+`max_cost_usd` is not a universal spending guarantee.
+
+For a client registration with local training enabled:
+
+```json
+{
+  "mcpServers": {
+    "stateset-agents": {
+      "command": "stateset-agents",
+      "args": ["mcp", "--finetune-workspace", "/absolute/path/to/finetune", "--allow-training"]
+    }
+  }
+}
+```
+
+| Tool | Behavior |
+|---|---|
+| `finetune_capabilities()` | Config schema, backend restrictions and startup permissions. |
+| `finetune_prepare(config)` | Validate a dataset and settings, retain exact input bytes and return a run ID, plan and SHA-256. Every call creates a new run; no training starts. |
+| `finetune_list_runs(limit=20)` | List up to 100 recent saved runs. |
+| `finetune_status(run_id)` | Read the reviewed plan, checksum, lifecycle state and up to 80 recent metric records. |
+| `finetune_logs(run_id, lines=80, offset=0, source="auto")` | Read up to 200 lines from a bounded log tail; redact known environment credential values and remove terminal escapes. |
+| `finetune_checkpoints(run_id)` | Verify recovery checkpoints for a terminal local run with a pinned model revision and matching code. Reads and hashes artifacts without loading optimizer state. |
+| `finetune_launch(run_id, expected_plan_sha256)` | Requires `--allow-training`. Submit the reviewed run once to a detached supervisor. Retries return the existing submission. |
+| `finetune_stop(run_id, expected_plan_sha256)` | Requires `--allow-training`. Request cooperative local cancellation, or signal a verified RunPod worker on POSIX. |
+
+Local backends support SFT, GRPO, GSPO and DAPO. The RunPod, Modal and River
+integrations currently support SFT. A model's availability through an inference
+API does not establish that its weights can be fine-tuned with these backends.
+Use `finetune_capabilities` for the actual configuration restrictions.
+
+For example, put chat-format SFT records in `datasets/train.jsonl` inside the
+workspace, then call these tools through your MCP client:
+
+```text
+finetune_capabilities()
+finetune_prepare(config={
+  "model": "Qwen/Qwen3.5-0.8B",
+  "method": "sft",
+  "provider": "local",
+  "dataset": "datasets/train.jsonl",
+  "epochs": 1
+})
+```
+
+Review `result.run.plan`, retain `result.run.run_id` and
+`result.run.plan_sha256`, then pass that exact pair to `finetune_launch`.
+The worker verifies retained dataset bytes and package identity before launch.
+Poll `finetune_status` and read `finetune_logs` while the job runs. Closing
+the MCP client does not cancel a submitted job; reconnect to the same workspace
+to continue managing it. Repeated launch calls do not retry a failed job: prepare
+a new run after resolving the failure. `prepare` itself is not idempotent; if
+its response is lost, inspect the run list before preparing again.
+
+Stop acknowledges a request, not necessarily worker exit. Check `terminal`
+and `execution_unconfirmed`; a missing supervisor does not prove detached
+training has stopped. Modal and River require provider-specific stop controls.
+Completion and training loss do not prove an improvement on held-out examples.
+
+These tools return the same JSON in MCP `structuredContent` and text content:
+
+```json
+{"schema_version": 1, "ok": true, "command": "status", "result": {"run_id": "..."}}
+```
+
+Execution failures return `ok=false`, an `error` object, and MCP `isError=true`.
+SDK input-schema validation also reports MCP errors. Tool annotations distinguish
+inspection, preparation and execution; they are client hints, not authorization.
+
+Dataset paths for preparation must remain inside the configured workspace,
+and run IDs must be single directory names. Symlinked inputs are rejected.
+This is a trusted local stdio interface running with the user's OS permissions:
+the original ingest/improve tools and optional weight-space tools retain their
+existing path behavior. The workspace checks are not an OS sandbox. Keep the
+workspace private, and treat dataset, log and model-produced text as data.
 
 ### Experimental: weight-space programming tools (`--weight-space`)
 
@@ -102,11 +197,14 @@ goes through it, and an exhausted budget returns `{"error": ...}`.
 
 ## Resources
 
-v1 ships tools only, not MCP resources. The tool surface (in particular
-`improve_status`) already covers reading back a previous run's summary, and
-the SDK's resource templating adds indirection this version doesn't need
-yet — revisit if a client workflow specifically wants
-`improve://summary/{output_dir}`-style addressing.
+With `--finetune-workspace`, the server also exposes JSON resources:
+
+- `finetune://capabilities`: configuration and permissions.
+- `finetune://runs`: the latest 20 saved runs.
+- `finetune://runs/{run_id}`: a saved plan, state and recent metrics.
+
+They use the same redacted response envelopes and workspace checks as the
+tools. Clients can poll resources; this version does not push subscriptions.
 
 ## A typical session
 
@@ -119,9 +217,30 @@ list_model_presets()
 dry_run_finetune("qwen3.5-0.8b")
 ```
 
-Then hand off to a real training run outside the MCP server — e.g.
+Then use the optional management tools above, or hand off to a CLI run — e.g.
 `stateset-agents fine-tune --input improved/curated.jsonl` or
 `python examples/finetune_gspo.py --model qwen3.5-0.8b --no-dry-run`.
 
 See also: [`docs/COOKBOOK.md`](COOKBOOK.md) — "The improvement loop in one
 command" walks through the same flow via the CLI directly.
+
+## Further improvements
+
+The first management surface deliberately shares the existing scheduler,
+worker and receipts. The next useful additions are:
+
+1. Expose the backend's held-out evaluation, checkpoint comparison and recovery
+   preparation workflows, each with its existing review and provenance checks.
+   Require measured quality improvements before recommending artifact promotion.
+2. Add durable preparation request IDs and paginated history for large workspaces.
+   Integrate the MCP tasks extension when the server SDK and client negotiate it;
+   current clients can use durable run IDs and status polling.
+3. Add a separate authenticated remote service with workspace ownership, per-user
+   permissions, quotas and audit events before enabling team access. Do not expose
+   this stdio interface directly as an unauthenticated HTTP service.
+4. Migrate the pinned MCP SDK v1 surface to v2 in a separately tested change.
+   The current dependency intentionally retains FastMCP compatibility.
+
+Protocol references: [MCP Python SDK v1](https://py.sdk.modelcontextprotocol.io/v1/),
+[SDK migration guide](https://github.com/modelcontextprotocol/python-sdk/blob/main/docs/migration.md),
+and [MCP tasks extension](https://github.com/modelcontextprotocol/ext-tasks/blob/main/specification/2026-07-28/tasks.md).

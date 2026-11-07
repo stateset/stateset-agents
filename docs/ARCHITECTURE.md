@@ -194,7 +194,7 @@ flowchart TD
 
 | Unit | Imports |
 |------|---------|
-| `cli` | `api`, `config`, `core`, `data`, `errors`, `evaluation`, `exceptions`, `experimental`, `facade`, `finetune`, `flywheel`, `remote`, `rewards`, `scaffolding`, `training`, `tui`, `verticals` |
+| `cli` | `api`, `config`, `core`, `data`, `errors`, `evaluation`, `exceptions`, `experimental`, `facade`, `finetune`, `flywheel`, `remote`, `rewards`, `scaffolding`, `training`, `tui`, `utils`, `verticals` |
 | `api` | `_deprecation`, `core`, `errors`, `exceptions`, `experimental`, `facade`, `finetune`, `rewards`, `training`, `utils` |
 | `tui` | `core`, `data`, `evaluation`, `finetune`, `remote` |
 | `finetune` | `core`, `data`, `evaluation`, `facade`, `remote`, `rewards`, `training`, `utils` |
@@ -242,7 +242,7 @@ trainers, evaluation and the remote runtime into end-to-end studies lives in
 
 | Unit | Layer | Path (under `stateset_agents/`) | Modules | Lines |
 |------|-------|-------------------------------|--------:|------:|
-| `cli` | entry points | `cli*.py`, `__main__.py`, `mcp_server.py` | 26 | ~10.0K |
+| `cli` | entry points | `cli*.py`, `__main__.py`, `mcp_server.py` | 27 | ~10K |
 | `api` | interfaces | `api/` | 57 | ~24K |
 | `tui` | interfaces | `tui*.py`, `finetune_evaluation_tui.py` | 11 | ~5.8K |
 | `finetune` | studio | `finetune_*.py` | 11 | ~8.4K |
@@ -265,7 +265,7 @@ trainers, evaluation and the remote runtime into end-to-end studies lives in
 | `_deprecation` | foundation | `_deprecation.py` | 1 | ~0.1K |
 | `exceptions` | foundation | `exceptions.py` | 1 | ~0.1K |
 | `facade` | facade | `__init__.py` | 1 | ~0.4K |
-| **total** | | | 554 | ~226K |
+| **total** | | | 555 | ~227K |
 <!-- package-layout:end -->
 
 Outside the package: `deployment/` (Helm chart and value profiles, Kubernetes
