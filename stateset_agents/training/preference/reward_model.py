@@ -366,6 +366,9 @@ class RewardModelTrainer(_loop.WindowedTrainer):
         meta = _loop.read_json(path / _TRAINER_META)
         if meta.get("schema") != _TRAINER_SCHEMA:
             raise ValueError(f"{path} is not a reward-model checkpoint")
+        _loop.validate_resume_config(
+            meta.get("config"), self.config, allowed_changes=("max_steps", "num_epochs")
+        )
         model_dir = path / "reward_model"
         saved = _read_model_meta(model_dir)
         if bool(saved.get("lora")) != _is_peft(self.model.backbone):

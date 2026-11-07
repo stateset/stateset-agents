@@ -567,13 +567,9 @@ class DistillationTrainer(_loop.WindowedTrainer):
         meta = _loop.read_json(path / _META_FILE)
         if meta.get("schema") != CHECKPOINT_SCHEMA:
             raise ValueError(f"{path} is not a distillation checkpoint")
-        saved = meta.get("config") or {}
-        for name in ("divergence", "jsd_beta", "temperature", "lmbda"):
-            if saved.get(name) != getattr(self.config, name):
-                raise ValueError(
-                    f"checkpoint {name} {saved.get(name)!r} differs from "
-                    f"{getattr(self.config, name)!r}"
-                )
+        _loop.validate_resume_config(
+            meta.get("config"), self.config, allowed_changes=("max_steps", "num_epochs")
+        )
         if not load_model_checkpoint(
             self.model, path / "model", torch_module=require_torch(), trusted=trusted
         ):

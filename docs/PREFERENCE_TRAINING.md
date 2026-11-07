@@ -194,6 +194,18 @@ resuming an interrupted run reproduces the uninterrupted one exactly.
 Construct the trainer from the original model before resuming: the reference
 comes from it.
 
+Preference and reward-model trainers validate the saved configuration before
+loading weights, optimizer state or progress. All training settings must
+match, including the objective, optimizer, batching, seed, encoding and
+LoRA settings. Missing training settings and invalid saved configurations
+raise `ConfigurationError` (also a `ValueError`). You may change `device`,
+`output_dir`, `logging_steps`, `eval_steps` and `save_steps`, and adjust the
+whole-run limits `max_steps` and `num_epochs`. Resuming preserves the saved
+optimizer and scheduler, including its original schedule horizon; increasing
+the run limit does not restart or stretch the learning-rate schedule.
+Use the same data, tokenizer and reference model for an exact continuation;
+these identities are not checked by configuration validation.
+
 ## Online DPO
 
 `OnlineDPOTrainer(model, tokenizer, reward_fn, prompts, OnlineDPOConfig(...),
@@ -248,6 +260,13 @@ history) and `train(resume_from=...)` continues from the next round exactly
 (construct the trainer from the original model first; a `fixed` reference
 comes from it).
 
+Online checkpoints enforce the same configuration checks, including the
+reference schedule and sampling settings. `rounds` may change along with
+the device, output and reporting settings listed above. `max_steps` and
+`num_epochs` must match here: they control training **within each round**.
+Keep the same prompts, tokenizer, reward function and initial reference;
+their identities are not checked by configuration validation.
+
 ```python
 from stateset_agents.training.preference import (
     OnlineDPOConfig, load_reward_function, train_online_dpo,
@@ -297,8 +316,9 @@ adapter onto `base_model` (a loaded backbone, a local path, or by default the
 recorded base from the local Hugging Face cache, no downloads), and adapter
 weights load through `training.model_checkpoint` (weights-only unless
 `trusted=True`). `save_reward_model(..., merge_lora=True)` writes a merged,
-standalone backbone instead. Trainer checkpoints resume exactly and refuse a
-`use_lora` mismatch. Use it like any other reward, preferably composed with
+standalone backbone instead. Trainer checkpoints enforce the configuration
+compatibility checks described above, including `use_lora` and the adapter
+settings. Use it like any other reward, preferably composed with
 an outcome or verifier reward (see [REWARD_CONTRACT.md](REWARD_CONTRACT.md)):
 learned rewards can be exploited by the policy they train.
 

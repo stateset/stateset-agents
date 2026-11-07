@@ -18,6 +18,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from stateset_agents.core.checkpoint_io import load_checkpoint_file
+from stateset_agents.core.errors import ConfigurationError
 
 from ..trainer_utils import backward_training_loss, require_torch, safe_optimizer_step
 from .encoding import EncodedSequence
@@ -260,6 +261,46 @@ def read_json(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"checkpoint metadata {path} must be a JSON object")
     return payload
+
+
+def validate_resume_config(
+    saved: Any, config: Any, *, allowed_changes: Sequence[str]
+) -> None:
+    """Reject incompatible training settings before checkpoint state is loaded.
+
+    Device, output and reporting settings may change. Callers also identify
+    their whole-run limits: steps/epochs for windowed trainers, rounds for
+    online DPO (whose steps/epochs instead determine each round's training).
+    Missing training fields must not silently acquire today's defaults.
+    """
+    if not isinstance(saved, dict):
+        raise ConfigurationError("checkpoint config must be a JSON object")
+    current = config.to_dict()
+    permitted = {
+        "device",
+        "output_dir",
+        "logging_steps",
+        "eval_steps",
+        "save_steps",
+        *allowed_changes,
+    }
+    missing = sorted(set(current) - set(saved) - permitted)
+    if missing:
+        raise ConfigurationError(f"checkpoint config is missing settings: {missing}")
+    try:
+        type(config).from_dict(saved)
+    except (TypeError, ValueError) as exc:
+        raise ConfigurationError(f"invalid checkpoint config: {exc}") from exc
+    differences = [
+        f"{name}: checkpoint={saved[name]!r}, current={value!r}"
+        for name, value in current.items()
+        if name not in permitted and saved[name] != value
+    ]
+    if differences:
+        raise ConfigurationError(
+            f"checkpoint training settings differ ({'; '.join(differences)}); "
+            "construct the trainer with the checkpoint's training settings"
+        )
 
 
 def mean(values: Sequence[float]) -> float:

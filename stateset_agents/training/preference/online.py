@@ -561,6 +561,9 @@ class OnlineDPOTrainer:
         meta = _loop.read_json(path / _META_FILE)
         if meta.get("schema") != ONLINE_SCHEMA:
             raise ValueError(f"{path} is not an online DPO checkpoint")
+        _loop.validate_resume_config(
+            meta.get("config"), self.config, allowed_changes=("rounds",)
+        )
         if not load_model_checkpoint(
             self.model, path / "model", torch_module=require_torch(), trusted=trusted
         ):

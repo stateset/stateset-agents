@@ -658,6 +658,9 @@ class PreferenceTrainer(_loop.WindowedTrainer):
                 f"checkpoint method {meta.get('method')!r} differs from "
                 f"{self.method!r}"
             )
+        _loop.validate_resume_config(
+            meta.get("config"), self.config, allowed_changes=("max_steps", "num_epochs")
+        )
         if not load_model_checkpoint(
             self.model, path / "model", torch_module=require_torch(), trusted=trusted
         ):

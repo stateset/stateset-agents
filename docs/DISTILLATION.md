@@ -203,10 +203,20 @@ coarse-grained ones.
 LoRA, plus the tokenizer), `trainer_state.pt` (optimizer, scheduler, torch
 RNG) and `distillation_checkpoint.json` (written last). `load_checkpoint` /
 `train(resume_from=dir)` load through `training.model_checkpoint` and
-`core.checkpoint_io` (weights-only unless `trusted=True`) and refuse a
-checkpoint with a different divergence, `jsd_beta`, temperature or `lmbda`;
-resuming reproduces the uninterrupted run exactly, on-policy sampling
-included. Teacher caches save with `TeacherCache.save` and load weights-only.
+`core.checkpoint_io` (weights-only unless `trusted=True`). Before loading
+weights or training state, they require matching training settings, including
+the divergence, temperature, `lmbda`, `on_policy_loss`, sampling, optimizer,
+batching, seed, encoding and LoRA settings. Missing training settings,
+invalid configurations and mismatches raise `ConfigurationError` (also a
+`ValueError`). You may change `device`, `output_dir`, `logging_steps`,
+`eval_steps` and `save_steps`, and adjust `max_steps` and `num_epochs`.
+The saved optimizer and scheduler are restored unchanged: extending the
+run limit does not extend the original learning-rate schedule.
+
+Use the same data, tokenizers and teacher (or teacher cache) for an exact
+continuation, including on-policy sampling. Configuration validation does
+not check their identities. Teacher caches save with `TeacherCache.save`
+and load weights-only.
 
 ## CLI
 
