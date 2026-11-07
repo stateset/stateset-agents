@@ -22,6 +22,7 @@ from stateset_agents.core.checkpoint_io import load_checkpoint_file
 from stateset_agents.core.errors import ConfigurationError
 from stateset_agents.utils.provenance import canonical_json, content_hash
 
+from ..state_fingerprint import state_fingerprint
 from ..trainer_utils import backward_training_loss, require_torch, safe_optimizer_step
 from .encoding import EncodedSequence
 
@@ -367,27 +368,68 @@ def tokenizer_fingerprint(encoder: Any) -> str:
     )
 
 
+def checkpoint_state_fingerprint(state: Any) -> str:
+    """Hash exact tensor state in bounded chunks, rejecting unverifiable values."""
+    try:
+        return state_fingerprint(state)
+    except (TypeError, ValueError) as exc:
+        raise ConfigurationError(
+            f"cannot fingerprint checkpoint model state: {exc}"
+        ) from exc
+
+
+def model_state_fingerprint(model: Any, *, frozen_only: bool = False) -> str:
+    """Hash parameters and persistent buffers without copying the whole model.
+
+    Adapter checkpoints need the frozen base that they do not save. Exclude
+    trainable parameters there, including every name of tied parameters.
+    """
+    state = model.state_dict()
+    if frozen_only:
+        trainable = {
+            name
+            for name, parameter in model.named_parameters(remove_duplicate=False)
+            if parameter.requires_grad
+        }
+        state = {name: value for name, value in state.items() if name not in trainable}
+    return checkpoint_state_fingerprint(state)
+
+
+def adapter_base_fingerprints(model: Any) -> dict[str, str]:
+    """Identify the frozen base required to restore an adapter checkpoint."""
+    if not getattr(model, "peft_config", None):
+        return {}
+    return {"policy_base": model_state_fingerprint(model, frozen_only=True)}
+
+
 def validate_resume_inputs(
-    saved: Any, build_current: Callable[[], dict[str, str]], *, legacy: bool
+    saved: Any,
+    build_current: Callable[[], dict[str, str]],
+    *,
+    legacy: bool,
+    kind: str = "input",
 ) -> None:
-    """Require matching input fingerprints; warn for pre-fingerprint checkpoints."""
+    """Require matching input/model fingerprints; warn for legacy checkpoints."""
     if legacy and saved is None:
+        scope = "data and tokenizer" if kind == "input" else "external model state"
         logger.warning(
-            "Loading a legacy checkpoint without input fingerprints: data and "
-            "tokenizer identity cannot be verified. Use the original training inputs."
+            "Loading a legacy checkpoint without %s fingerprints: %s "
+            "identity cannot be verified. Use the original training inputs.",
+            kind,
+            scope,
         )
         return
     current = build_current()
     if not isinstance(saved, dict) or set(saved) != set(current):
         raise ConfigurationError(
-            "checkpoint input fingerprints are missing or malformed; "
+            f"checkpoint {kind} fingerprints are missing or malformed; "
             f"expected {sorted(current)}"
         )
     differences = [name for name, digest in current.items() if saved[name] != digest]
     if differences:
         raise ConfigurationError(
-            f"checkpoint input identities differ: {', '.join(differences)}; "
-            "use the original data order, tokenizer and sampling inputs"
+            f"checkpoint {kind} identities differ: {', '.join(differences)}; "
+            "use the original training inputs and external model state"
         )
 
 

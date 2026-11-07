@@ -215,10 +215,28 @@ tokenizer can be reloaded from another directory. Custom tokenizers without
 `get_vocab()` have their encoded examples checked, but their full vocabulary
 and custom implementation cannot be verified.
 
-Version-1 checkpoints remain readable with a warning that their input
-identity cannot be verified. Version-2 checkpoints require valid input
-fingerprints. These checks do not hash reference-model weights: construct
-the trainer with the original reference for an exact continuation.
+Version-3 checkpoints additionally require exact fingerprints of external
+model state before restoring any weights or optimizer state. These cover the
+reference model's parameters and persistent buffers, or the actual cached
+reference log-probabilities when `precompute_reference_logps=True`. LoRA
+checkpoints also verify the frozen base parameters and persistent buffers
+that an adapter checkpoint does not contain, including for reward models.
+Trainable policy parameters are restored from the checkpoint and do not
+need to match the freshly constructed policy.
+
+Model fingerprints are recomputed at save/load and include tensor names,
+dtypes, shapes and values. Hashing scans the frozen state in bounded tensor
+chunks (4 MiB by default), without copying the whole model to CPU. Fingerprints
+are device-independent but require exact values and dtypes; unsupported state,
+such as unmaterialized meta tensors, fails before a checkpoint is written.
+These are state checks, not verification of custom model code or forward-pass
+configuration. Construct the trainer with the original model implementation
+and reference settings.
+
+Version-1 and version-2 checkpoints remain readable with warnings for missing
+identity checks. Version 2 still requires matching input fingerprints; version
+3 requires both input and model fingerprints. Older readers cannot load
+version-3 checkpoints.
 
 ## Online DPO
 
@@ -280,9 +298,11 @@ the device, output and reporting settings listed above. `max_steps` and
 `num_epochs` must match here: they control training **within each round**.
 Its input fingerprints include the ordered prompts, encoded prompt tokens,
 reward scenarios, evaluation prompts, tokenizer and generation stop tokens.
-Checkpointed scenarios must contain finite JSON values. Keep the same reward
-function and initial reference; their weights and implementation are not
-verified by these checks.
+Checkpointed scenarios must contain finite JSON values. Version-3 checkpoints
+also verify the initial reference state (including for `previous_round`, so
+construct from the original model) and the frozen base of LoRA policies.
+Keep the same reward function: its implementation and external dependencies
+are not verified by these checks.
 
 ```python
 from stateset_agents.training.preference import (

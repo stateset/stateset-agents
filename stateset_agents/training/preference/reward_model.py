@@ -73,8 +73,9 @@ __all__ = [
 ]
 
 REWARD_MODEL_SCHEMA = "stateset-reward-model-v1"
-_TRAINER_SCHEMA = "stateset-reward-model-checkpoint-v2"
+_TRAINER_SCHEMA = "stateset-reward-model-checkpoint-v3"
 _LEGACY_TRAINER_SCHEMA = "stateset-reward-model-checkpoint-v1"
+_V2_TRAINER_SCHEMA = "stateset-reward-model-checkpoint-v2"
 _MODEL_META = "reward_model.json"
 _HEAD_FILE = "reward_head.pt"
 _TRAINER_META = "reward_model_checkpoint.json"
@@ -344,12 +345,16 @@ class RewardModelTrainer(_loop.WindowedTrainer):
             "tokenizer": _loop.tokenizer_fingerprint(self.encoder),
         }
 
+    def _resume_models(self) -> dict[str, str]:
+        return _loop.adapter_base_fingerprints(self.model.backbone)
+
     def save_checkpoint(self, directory: str | Path) -> Path:
         """Save the reward model (``reward_model/``), optimizer state and
         progress; ``reward_model/`` alone loads with :func:`load_reward_function`."""
         from stateset_agents import __version__
 
         inputs = self._resume_inputs()
+        models = self._resume_models()
         path = Path(directory)
         path.mkdir(parents=True, exist_ok=True)
         save_reward_model(
@@ -363,6 +368,7 @@ class RewardModelTrainer(_loop.WindowedTrainer):
                 "trainer": type(self).__name__,
                 "config": self.config.to_dict(),
                 "inputs": inputs,
+                "models": models,
                 "package_version": __version__,
                 **self._progress(),
             },
@@ -375,7 +381,11 @@ class RewardModelTrainer(_loop.WindowedTrainer):
 
         path = Path(directory)
         meta = _loop.read_json(path / _TRAINER_META)
-        if meta.get("schema") not in (_TRAINER_SCHEMA, _LEGACY_TRAINER_SCHEMA):
+        if meta.get("schema") not in (
+            _TRAINER_SCHEMA,
+            _LEGACY_TRAINER_SCHEMA,
+            _V2_TRAINER_SCHEMA,
+        ):
             raise ValueError(f"{path} is not a reward-model checkpoint")
         _loop.validate_resume_config(
             meta.get("config"), self.config, allowed_changes=("max_steps", "num_epochs")
@@ -384,6 +394,12 @@ class RewardModelTrainer(_loop.WindowedTrainer):
             meta.get("inputs"),
             self._resume_inputs,
             legacy=meta["schema"] == _LEGACY_TRAINER_SCHEMA,
+        )
+        _loop.validate_resume_inputs(
+            meta.get("models"),
+            self._resume_models,
+            legacy=meta["schema"] != _TRAINER_SCHEMA,
+            kind="model",
         )
         model_dir = path / "reward_model"
         saved = _read_model_meta(model_dir)

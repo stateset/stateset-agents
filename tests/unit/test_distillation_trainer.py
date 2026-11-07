@@ -504,7 +504,7 @@ def test_checkpoint_resume_is_exact_with_on_policy_sampling(
     interrupted.train()
     checkpoint = interrupted.save_checkpoint(tmp_path / "ckpt")
     meta = json.loads((checkpoint / "distillation_checkpoint.json").read_text())
-    assert meta["schema"] == "stateset-distillation-checkpoint-v2"
+    assert meta["schema"] == "stateset-distillation-checkpoint-v3"
     assert meta["global_step"] == 2
     resumed = _trainer(tokenizer, **settings)
     summary = resumed.train(resume_from=checkpoint)

@@ -22,7 +22,7 @@ from __future__ import annotations
 import copy
 import logging
 import random
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -61,8 +61,9 @@ __all__ = [
     "train_preference",
 ]
 
-CHECKPOINT_SCHEMA = "stateset-preference-checkpoint-v2"
+CHECKPOINT_SCHEMA = "stateset-preference-checkpoint-v3"
 _LEGACY_CHECKPOINT_SCHEMA = "stateset-preference-checkpoint-v1"
+_V2_CHECKPOINT_SCHEMA = "stateset-preference-checkpoint-v2"
 _META_FILE = "preference_checkpoint.json"
 _STATE_FILE = "trainer_state.pt"
 
@@ -637,6 +638,35 @@ class PreferenceTrainer(_loop.WindowedTrainer):
 
     # ----------------------------------------------------------- checkpoints
 
+    def _cached_reference_rows(
+        self,
+    ) -> Iterator[tuple[str, float | None, float | None]]:
+        for name, pairs in (
+            ("train_pairs", self._train_pairs),
+            ("eval_pairs", self._eval_pairs),
+        ):
+            for pair in pairs:
+                yield name, pair.ref_chosen, pair.ref_rejected
+        for name, unpaired in (
+            ("train_unpaired", self._train_unpaired),
+            ("eval_unpaired", self._eval_unpaired),
+        ):
+            for example in unpaired:
+                yield name, example.ref, example.ref_kl
+
+    def _resume_models(self) -> dict[str, str]:
+        models = _loop.adapter_base_fingerprints(self.model)
+        if self.config.reference_free:
+            return models
+        if self.config.precompute_reference_logps:
+            models["reference_logps"] = _loop.fingerprint_rows(
+                self._cached_reference_rows()
+            )
+        elif self.ref_model is not None:
+            models["reference"] = _loop.model_state_fingerprint(self.ref_model)
+        # With LoRA and no explicit reference, policy_base is the reference.
+        return models
+
     def _resume_inputs(self) -> dict[str, str]:
         return {
             "train_data": (
@@ -662,6 +692,7 @@ class PreferenceTrainer(_loop.WindowedTrainer):
         from stateset_agents import __version__
 
         inputs = self._resume_inputs()
+        models = self._resume_models()
         path = Path(directory)
         path.mkdir(parents=True, exist_ok=True)
         _loop.save_model_dir(self.model, self.tokenizer, path / "model")
@@ -674,6 +705,7 @@ class PreferenceTrainer(_loop.WindowedTrainer):
                 "method": self.method,
                 "config": self.config.to_dict(),
                 "inputs": inputs,
+                "models": models,
                 "encoder": self.encoder.settings(),
                 "lora": bool(getattr(self.model, "peft_config", None)),
                 "package_version": __version__,
@@ -694,7 +726,11 @@ class PreferenceTrainer(_loop.WindowedTrainer):
 
         path = Path(directory)
         meta = _loop.read_json(path / _META_FILE)
-        if meta.get("schema") not in (CHECKPOINT_SCHEMA, _LEGACY_CHECKPOINT_SCHEMA):
+        if meta.get("schema") not in (
+            CHECKPOINT_SCHEMA,
+            _LEGACY_CHECKPOINT_SCHEMA,
+            _V2_CHECKPOINT_SCHEMA,
+        ):
             raise ValueError(f"{path} is not a preference checkpoint")
         if meta.get("method") != self.method:
             raise ValueError(
@@ -708,6 +744,12 @@ class PreferenceTrainer(_loop.WindowedTrainer):
             meta.get("inputs"),
             self._resume_inputs,
             legacy=meta["schema"] == _LEGACY_CHECKPOINT_SCHEMA,
+        )
+        _loop.validate_resume_inputs(
+            meta.get("models"),
+            self._resume_models,
+            legacy=meta["schema"] != CHECKPOINT_SCHEMA,
+            kind="model",
         )
         if not load_model_checkpoint(
             self.model, path / "model", torch_module=require_torch(), trusted=trusted

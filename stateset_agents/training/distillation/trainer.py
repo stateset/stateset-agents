@@ -67,8 +67,9 @@ __all__ = [
     "train_distillation",
 ]
 
-CHECKPOINT_SCHEMA = "stateset-distillation-checkpoint-v2"
+CHECKPOINT_SCHEMA = "stateset-distillation-checkpoint-v3"
 _LEGACY_CHECKPOINT_SCHEMA = "stateset-distillation-checkpoint-v1"
+_V2_CHECKPOINT_SCHEMA = "stateset-distillation-checkpoint-v2"
 _META_FILE = "distillation_checkpoint.json"
 _STATE_FILE = "trainer_state.pt"
 
@@ -535,6 +536,20 @@ class DistillationTrainer(_loop.WindowedTrainer):
 
     # ----------------------------------------------------------- checkpoints
 
+    def _resume_models(self) -> dict[str, str]:
+        from .cache import sequence_key
+
+        models = _loop.adapter_base_fingerprints(self.model)
+        if self.teacher_cache is not None:
+            entries = {
+                sequence_key(sequence): self.teacher_cache.lookup(sequence)
+                for sequence in self._all_sequences()
+            }
+            models["teacher_cache"] = _loop.checkpoint_state_fingerprint(entries)
+        else:
+            models["teacher"] = _loop.model_state_fingerprint(self.teacher)
+        return models
+
     def _resume_inputs(self) -> dict[str, str]:
         def data_fingerprint(items: Sequence[_Item]) -> str:
             return _loop.fingerprint_rows(
@@ -561,6 +576,7 @@ class DistillationTrainer(_loop.WindowedTrainer):
         from stateset_agents import __version__
 
         inputs = self._resume_inputs()
+        models = self._resume_models()
         path = Path(directory)
         path.mkdir(parents=True, exist_ok=True)
         _loop.save_model_dir(self.model, self.tokenizer, path / "model")
@@ -572,6 +588,7 @@ class DistillationTrainer(_loop.WindowedTrainer):
                 "trainer": type(self).__name__,
                 "config": self.config.to_dict(),
                 "inputs": inputs,
+                "models": models,
                 "encoder": self.encoder.settings(),
                 "vocab": self.mapping.stats(),
                 "lora": bool(getattr(self.model, "peft_config", None)),
@@ -588,7 +605,11 @@ class DistillationTrainer(_loop.WindowedTrainer):
 
         path = Path(directory)
         meta = _loop.read_json(path / _META_FILE)
-        if meta.get("schema") not in (CHECKPOINT_SCHEMA, _LEGACY_CHECKPOINT_SCHEMA):
+        if meta.get("schema") not in (
+            CHECKPOINT_SCHEMA,
+            _LEGACY_CHECKPOINT_SCHEMA,
+            _V2_CHECKPOINT_SCHEMA,
+        ):
             raise ValueError(f"{path} is not a distillation checkpoint")
         _loop.validate_resume_config(
             meta.get("config"), self.config, allowed_changes=("max_steps", "num_epochs")
@@ -597,6 +618,12 @@ class DistillationTrainer(_loop.WindowedTrainer):
             meta.get("inputs"),
             self._resume_inputs,
             legacy=meta["schema"] == _LEGACY_CHECKPOINT_SCHEMA,
+        )
+        _loop.validate_resume_inputs(
+            meta.get("models"),
+            self._resume_models,
+            legacy=meta["schema"] != CHECKPOINT_SCHEMA,
+            kind="model",
         )
         if not load_model_checkpoint(
             self.model, path / "model", torch_module=require_torch(), trusted=trusted

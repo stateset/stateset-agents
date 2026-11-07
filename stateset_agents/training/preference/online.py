@@ -63,8 +63,9 @@ __all__ = [
     "train_online_dpo",
 ]
 
-ONLINE_SCHEMA = "stateset-online-dpo-checkpoint-v2"
+ONLINE_SCHEMA = "stateset-online-dpo-checkpoint-v3"
 _LEGACY_ONLINE_SCHEMA = "stateset-online-dpo-checkpoint-v1"
+_V2_ONLINE_SCHEMA = "stateset-online-dpo-checkpoint-v2"
 _META_FILE = "online_dpo_checkpoint.json"
 _T = TypeVar("_T")
 
@@ -527,6 +528,12 @@ class OnlineDPOTrainer:
 
     # ----------------------------------------------------------- checkpoints
 
+    def _resume_models(self) -> dict[str, str]:
+        models = _loop.adapter_base_fingerprints(self.model)
+        if self._initial_reference is not None:
+            models["reference"] = _loop.model_state_fingerprint(self._initial_reference)
+        return models
+
     def _resume_inputs(self) -> dict[str, str]:
         def data_fingerprint(
             prompts: Sequence[OnlinePrompt], ids: Sequence[tuple[int, ...]]
@@ -558,6 +565,7 @@ class OnlineDPOTrainer:
         from .data import write_preference_jsonl
 
         inputs = self._resume_inputs()
+        models = self._resume_models()
         path = Path(directory)
         path.mkdir(parents=True, exist_ok=True)
         _loop.save_model_dir(self.model, self.tokenizer, path / "model")
@@ -570,6 +578,7 @@ class OnlineDPOTrainer:
                 "rounds_completed": self.round,
                 "config": self.config.to_dict(),
                 "inputs": inputs,
+                "models": models,
                 "encoder": self.encoder.settings(),
                 "history": [summary.to_dict() for summary in self.history],
                 "lora": bool(getattr(self.model, "peft_config", None)),
@@ -585,7 +594,11 @@ class OnlineDPOTrainer:
 
         path = Path(directory)
         meta = _loop.read_json(path / _META_FILE)
-        if meta.get("schema") not in (ONLINE_SCHEMA, _LEGACY_ONLINE_SCHEMA):
+        if meta.get("schema") not in (
+            ONLINE_SCHEMA,
+            _LEGACY_ONLINE_SCHEMA,
+            _V2_ONLINE_SCHEMA,
+        ):
             raise ValueError(f"{path} is not an online DPO checkpoint")
         _loop.validate_resume_config(
             meta.get("config"), self.config, allowed_changes=("rounds",)
@@ -594,6 +607,12 @@ class OnlineDPOTrainer:
             meta.get("inputs"),
             self._resume_inputs,
             legacy=meta["schema"] == _LEGACY_ONLINE_SCHEMA,
+        )
+        _loop.validate_resume_inputs(
+            meta.get("models"),
+            self._resume_models,
+            legacy=meta["schema"] != ONLINE_SCHEMA,
+            kind="model",
         )
         if not load_model_checkpoint(
             self.model, path / "model", torch_module=require_torch(), trusted=trusted

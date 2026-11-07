@@ -223,11 +223,25 @@ tokenizer file paths and transient tokenizer padding/truncation state are
 excluded. Custom tokenizers without `get_vocab()` have their encoded examples
 checked, but their full vocabulary and custom implementation cannot be verified.
 
-Version-1 checkpoints remain readable with a warning that their input
-identity cannot be verified; missing fingerprints in version 2 are an error.
-Use the original teacher weights or teacher-cache contents for an exact
-continuation: these are not hashed by the input checks. Teacher caches save
-with `TeacherCache.save` and load weights-only.
+Version-3 checkpoints additionally require matching fingerprints of the
+teacher's parameters and persistent buffers, or the exact token ids and
+log-probabilities in the teacher-cache entries used by training/evaluation.
+Unused cache entries are ignored. LoRA students also require the same frozen
+base state, which an adapter checkpoint does not contain. All checks finish
+before restoring student weights, optimizer state or progress.
+
+State fingerprints are recomputed at save/load, include names, dtypes, shapes
+and values, and use bounded tensor chunks (4 MiB by default) without copying
+the whole teacher to CPU. They are device-independent but require exact values
+and dtypes. Unsupported state, such as unmaterialized meta tensors, fails
+before checkpoint writes. Model code and forward-pass configuration are not
+identified by these fingerprints; use the original teacher implementation and
+settings. Teacher caches save with `TeacherCache.save` and load weights-only.
+
+Version-1 and version-2 checkpoints remain readable with warnings for missing
+identity checks. Version 2 still requires matching input fingerprints; version
+3 requires both input and model fingerprints. Older readers cannot load
+version-3 checkpoints.
 
 ## CLI
 
