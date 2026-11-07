@@ -203,8 +203,22 @@ raise `ConfigurationError` (also a `ValueError`). You may change `device`,
 whole-run limits `max_steps` and `num_epochs`. Resuming preserves the saved
 optimizer and scheduler, including its original schedule horizon; increasing
 the run limit does not restart or stretch the learning-rate schedule.
-Use the same data, tokenizer and reference model for an exact continuation;
-these identities are not checked by configuration validation.
+
+Version-2 checkpoints also store SHA-256 fingerprints of the ordered,
+encoded training and evaluation examples, including response boundaries,
+weights, margins and KTO labels. Reordering, replacing or changing these
+inputs raises `ConfigurationError` before weights or training state load.
+Annotation-only metadata is excluded. Tokenizer checks cover the vocabulary,
+special token ids, chat template and fast-tokenizer rules when available;
+local paths and transient padding/truncation state are excluded, so a
+tokenizer can be reloaded from another directory. Custom tokenizers without
+`get_vocab()` have their encoded examples checked, but their full vocabulary
+and custom implementation cannot be verified.
+
+Version-1 checkpoints remain readable with a warning that their input
+identity cannot be verified. Version-2 checkpoints require valid input
+fingerprints. These checks do not hash reference-model weights: construct
+the trainer with the original reference for an exact continuation.
 
 ## Online DPO
 
@@ -264,8 +278,11 @@ Online checkpoints enforce the same configuration checks, including the
 reference schedule and sampling settings. `rounds` may change along with
 the device, output and reporting settings listed above. `max_steps` and
 `num_epochs` must match here: they control training **within each round**.
-Keep the same prompts, tokenizer, reward function and initial reference;
-their identities are not checked by configuration validation.
+Its input fingerprints include the ordered prompts, encoded prompt tokens,
+reward scenarios, evaluation prompts, tokenizer and generation stop tokens.
+Checkpointed scenarios must contain finite JSON values. Keep the same reward
+function and initial reference; their weights and implementation are not
+verified by these checks.
 
 ```python
 from stateset_agents.training.preference import (

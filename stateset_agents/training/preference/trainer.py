@@ -61,7 +61,8 @@ __all__ = [
     "train_preference",
 ]
 
-CHECKPOINT_SCHEMA = "stateset-preference-checkpoint-v1"
+CHECKPOINT_SCHEMA = "stateset-preference-checkpoint-v2"
+_LEGACY_CHECKPOINT_SCHEMA = "stateset-preference-checkpoint-v1"
 _META_FILE = "preference_checkpoint.json"
 _STATE_FILE = "trainer_state.pt"
 
@@ -84,6 +85,30 @@ class _UnpairedItem:
     weight: float
     ref: float | None = None
     ref_kl: float | None = None
+
+
+def _pair_fingerprint(items: Sequence[_PairItem]) -> str:
+    return _loop.fingerprint_rows(
+        (
+            _loop.sequence_identity(item.chosen),
+            _loop.sequence_identity(item.rejected),
+            item.weight,
+            item.margin,
+        )
+        for item in items
+    )
+
+
+def _unpaired_fingerprint(items: Sequence[_UnpairedItem]) -> str:
+    return _loop.fingerprint_rows(
+        (
+            _loop.sequence_identity(item.sequence),
+            _loop.sequence_identity(item.kl_sequence),
+            item.label,
+            item.weight,
+        )
+        for item in items
+    )
 
 
 @dataclass
@@ -612,6 +637,22 @@ class PreferenceTrainer(_loop.WindowedTrainer):
 
     # ----------------------------------------------------------- checkpoints
 
+    def _resume_inputs(self) -> dict[str, str]:
+        return {
+            "train_data": (
+                _unpaired_fingerprint(self._train_unpaired)
+                if self.method == "kto"
+                else _pair_fingerprint(self._train_pairs)
+            ),
+            "eval_data": _loop.fingerprint_rows(
+                [
+                    _pair_fingerprint(self._eval_pairs),
+                    _unpaired_fingerprint(self._eval_unpaired),
+                ]
+            ),
+            "tokenizer": _loop.tokenizer_fingerprint(self.encoder),
+        }
+
     def save_checkpoint(self, directory: str | Path) -> Path:
         """Save weights (``model/``), optimizer/scheduler state and metadata.
 
@@ -620,6 +661,7 @@ class PreferenceTrainer(_loop.WindowedTrainer):
         """
         from stateset_agents import __version__
 
+        inputs = self._resume_inputs()
         path = Path(directory)
         path.mkdir(parents=True, exist_ok=True)
         _loop.save_model_dir(self.model, self.tokenizer, path / "model")
@@ -631,6 +673,7 @@ class PreferenceTrainer(_loop.WindowedTrainer):
                 "trainer": type(self).__name__,
                 "method": self.method,
                 "config": self.config.to_dict(),
+                "inputs": inputs,
                 "encoder": self.encoder.settings(),
                 "lora": bool(getattr(self.model, "peft_config", None)),
                 "package_version": __version__,
@@ -651,7 +694,7 @@ class PreferenceTrainer(_loop.WindowedTrainer):
 
         path = Path(directory)
         meta = _loop.read_json(path / _META_FILE)
-        if meta.get("schema") != CHECKPOINT_SCHEMA:
+        if meta.get("schema") not in (CHECKPOINT_SCHEMA, _LEGACY_CHECKPOINT_SCHEMA):
             raise ValueError(f"{path} is not a preference checkpoint")
         if meta.get("method") != self.method:
             raise ValueError(
@@ -660,6 +703,11 @@ class PreferenceTrainer(_loop.WindowedTrainer):
             )
         _loop.validate_resume_config(
             meta.get("config"), self.config, allowed_changes=("max_steps", "num_epochs")
+        )
+        _loop.validate_resume_inputs(
+            meta.get("inputs"),
+            self._resume_inputs,
+            legacy=meta["schema"] == _LEGACY_CHECKPOINT_SCHEMA,
         )
         if not load_model_checkpoint(
             self.model, path / "model", torch_module=require_torch(), trusted=trusted

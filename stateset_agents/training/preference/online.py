@@ -63,7 +63,8 @@ __all__ = [
     "train_online_dpo",
 ]
 
-ONLINE_SCHEMA = "stateset-online-dpo-checkpoint-v1"
+ONLINE_SCHEMA = "stateset-online-dpo-checkpoint-v2"
+_LEGACY_ONLINE_SCHEMA = "stateset-online-dpo-checkpoint-v1"
 _META_FILE = "online_dpo_checkpoint.json"
 _T = TypeVar("_T")
 
@@ -526,6 +527,29 @@ class OnlineDPOTrainer:
 
     # ----------------------------------------------------------- checkpoints
 
+    def _resume_inputs(self) -> dict[str, str]:
+        def data_fingerprint(
+            prompts: Sequence[OnlinePrompt], ids: Sequence[tuple[int, ...]]
+        ) -> str:
+            return _loop.fingerprint_rows(
+                (
+                    prompt.prompt,
+                    tokens,
+                    dict(prompt.scenario) if prompt.scenario is not None else None,
+                )
+                for prompt, tokens in zip(prompts, ids, strict=True)
+            )
+
+        return {
+            "train_data": data_fingerprint(self.prompts, self._prompt_ids),
+            "eval_data": data_fingerprint(
+                self.eval_prompts,
+                [self.encoder.encode_prompt(p.prompt) for p in self.eval_prompts],
+            ),
+            "tokenizer": _loop.tokenizer_fingerprint(self.encoder),
+            "sampling": _loop.fingerprint_rows([self._stop_ids]),
+        }
+
     def save_checkpoint(self, directory: str | Path) -> Path:
         """Save the policy (``model/``), the last round's pairs
         (``pairs.jsonl``) and the round history (metadata written last)."""
@@ -533,6 +557,7 @@ class OnlineDPOTrainer:
 
         from .data import write_preference_jsonl
 
+        inputs = self._resume_inputs()
         path = Path(directory)
         path.mkdir(parents=True, exist_ok=True)
         _loop.save_model_dir(self.model, self.tokenizer, path / "model")
@@ -544,6 +569,7 @@ class OnlineDPOTrainer:
                 "schema": ONLINE_SCHEMA,
                 "rounds_completed": self.round,
                 "config": self.config.to_dict(),
+                "inputs": inputs,
                 "encoder": self.encoder.settings(),
                 "history": [summary.to_dict() for summary in self.history],
                 "lora": bool(getattr(self.model, "peft_config", None)),
@@ -559,10 +585,15 @@ class OnlineDPOTrainer:
 
         path = Path(directory)
         meta = _loop.read_json(path / _META_FILE)
-        if meta.get("schema") != ONLINE_SCHEMA:
+        if meta.get("schema") not in (ONLINE_SCHEMA, _LEGACY_ONLINE_SCHEMA):
             raise ValueError(f"{path} is not an online DPO checkpoint")
         _loop.validate_resume_config(
             meta.get("config"), self.config, allowed_changes=("rounds",)
+        )
+        _loop.validate_resume_inputs(
+            meta.get("inputs"),
+            self._resume_inputs,
+            legacy=meta["schema"] == _LEGACY_ONLINE_SCHEMA,
         )
         if not load_model_checkpoint(
             self.model, path / "model", torch_module=require_torch(), trusted=trusted

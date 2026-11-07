@@ -8,17 +8,19 @@ small adapter exposing the attributes it reads.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import logging
 import math
 import random
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 from stateset_agents.core.checkpoint_io import load_checkpoint_file
 from stateset_agents.core.errors import ConfigurationError
+from stateset_agents.utils.provenance import canonical_json, content_hash
 
 from ..trainer_utils import backward_training_loss, require_torch, safe_optimizer_step
 from .encoding import EncodedSequence
@@ -300,6 +302,92 @@ def validate_resume_config(
         raise ConfigurationError(
             f"checkpoint training settings differ ({'; '.join(differences)}); "
             "construct the trainer with the checkpoint's training settings"
+        )
+
+
+def fingerprint_rows(rows: Iterable[Any]) -> str:
+    """Hash ordered input rows incrementally, without persisting their content."""
+    digest = hashlib.sha256()
+    try:
+        for row in rows:
+            digest.update(canonical_json(row).encode("utf-8"))
+            digest.update(b"\n")
+    except (TypeError, ValueError) as exc:
+        raise ConfigurationError(
+            "checkpoint inputs (including online reward scenarios) must be finite JSON"
+        ) from exc
+    return digest.hexdigest()
+
+
+def sequence_identity(
+    sequence: EncodedSequence | None,
+) -> tuple[tuple[int, ...], tuple[int, ...]] | None:
+    """The effective prompt/response boundary, excluding truncation diagnostics."""
+    if sequence is None:
+        return None
+    return sequence.prompt_ids, sequence.response_ids
+
+
+def tokenizer_fingerprint(encoder: Any) -> str:
+    """Hash vocabulary, special ids, template and available fast-tokenizer rules.
+
+    Per-call backend padding/truncation state and local file paths are excluded.
+    Custom tokenizers without ``get_vocab`` still have their effective encoded
+    data checked by the trainer, but their full vocabulary cannot be verified.
+    """
+    tokenizer = encoder.tokenizer
+    get_vocab = getattr(tokenizer, "get_vocab", None)
+    backend = getattr(tokenizer, "backend_tokenizer", None)
+    serialize = getattr(backend, "to_str", None)
+    rules = json.loads(serialize()) if callable(serialize) else None
+    if isinstance(rules, dict):
+        rules.pop("padding", None)
+        rules.pop("truncation", None)
+    return content_hash(
+        {
+            "vocab": get_vocab() if callable(get_vocab) else None,
+            "special_ids": {
+                name: getattr(tokenizer, name, None)
+                for name in (
+                    "bos_token_id",
+                    "eos_token_id",
+                    "unk_token_id",
+                )
+            },
+            "all_special_ids": sorted(
+                getattr(tokenizer, "all_special_ids", None) or []
+            ),
+            "pad_token_id": encoder.pad_token_id,
+            "chat_template": getattr(tokenizer, "chat_template", None),
+            "clean_up_tokenization_spaces": getattr(
+                tokenizer, "clean_up_tokenization_spaces", None
+            ),
+            "backend": rules,
+        }
+    )
+
+
+def validate_resume_inputs(
+    saved: Any, build_current: Callable[[], dict[str, str]], *, legacy: bool
+) -> None:
+    """Require matching input fingerprints; warn for pre-fingerprint checkpoints."""
+    if legacy and saved is None:
+        logger.warning(
+            "Loading a legacy checkpoint without input fingerprints: data and "
+            "tokenizer identity cannot be verified. Use the original training inputs."
+        )
+        return
+    current = build_current()
+    if not isinstance(saved, dict) or set(saved) != set(current):
+        raise ConfigurationError(
+            "checkpoint input fingerprints are missing or malformed; "
+            f"expected {sorted(current)}"
+        )
+    differences = [name for name, digest in current.items() if saved[name] != digest]
+    if differences:
+        raise ConfigurationError(
+            f"checkpoint input identities differ: {', '.join(differences)}; "
+            "use the original data order, tokenizer and sampling inputs"
         )
 
 

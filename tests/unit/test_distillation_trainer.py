@@ -399,6 +399,46 @@ def test_cache_round_trips_and_trains_without_a_teacher(
         trainer.evaluate(_data(HELD), on_policy=True)
 
 
+def test_checkpoint_resumes_with_reloaded_teacher_cache(
+    tokenizer: Any, tmp_path: Path
+) -> None:
+    straight = _trainer(tokenizer, teacher_top_k=5, max_steps=3)
+    straight.train()
+    interrupted = _trainer(tokenizer, teacher_top_k=5)
+    interrupted.train()
+    checkpoint = interrupted.save_checkpoint(tmp_path / "checkpoint")
+    cache = TeacherCache.load(interrupted.teacher_cache.save(tmp_path / "cache.pt"))
+    resumed = DistillationTrainer(
+        make_model(0, n_embd=16),
+        tokenizer,
+        _config(teacher_top_k=5, max_steps=3),
+        _data(TRAIN),
+        _data(HELD),
+        teacher_cache=cache,
+    )
+    assert resumed.train(resume_from=checkpoint).global_step == 3
+    assert _max_diff(_params(straight.model), _params(resumed.model)) == 0.0
+
+
+def test_checkpoint_rejects_changed_teacher_vocabulary_mapping(
+    tokenizer: Any, tmp_path: Path
+) -> None:
+    checkpoint = _trainer(tokenizer, vocab_alignment="shared").save_checkpoint(tmp_path)
+    changed = DistillationTrainer(
+        make_model(0, n_embd=16),
+        tokenizer,
+        _config(vocab_alignment="shared"),
+        _data(TRAIN),
+        _data(HELD),
+        teacher=make_model(50, n_embd=16),
+        teacher_tokenizer=_permuted_tokenizer(list(reversed(range(VOCAB_SIZE)))),
+    )
+    before = _params(changed.model)
+    with pytest.raises(ValueError, match="vocab_mapping"):
+        changed.load_checkpoint(checkpoint)
+    assert _max_diff(before, _params(changed.model)) == 0.0
+
+
 def test_cache_mismatches_are_rejected(tokenizer: Any) -> None:
     config = _config(teacher_top_k=5)
     cache = precompute_teacher_cache(
@@ -464,7 +504,7 @@ def test_checkpoint_resume_is_exact_with_on_policy_sampling(
     interrupted.train()
     checkpoint = interrupted.save_checkpoint(tmp_path / "ckpt")
     meta = json.loads((checkpoint / "distillation_checkpoint.json").read_text())
-    assert meta["schema"] == "stateset-distillation-checkpoint-v1"
+    assert meta["schema"] == "stateset-distillation-checkpoint-v2"
     assert meta["global_step"] == 2
     resumed = _trainer(tokenizer, **settings)
     summary = resumed.train(resume_from=checkpoint)

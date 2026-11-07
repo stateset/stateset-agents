@@ -213,10 +213,21 @@ invalid configurations and mismatches raise `ConfigurationError` (also a
 The saved optimizer and scheduler are restored unchanged: extending the
 run limit does not extend the original learning-rate schedule.
 
-Use the same data, tokenizers and teacher (or teacher cache) for an exact
-continuation, including on-policy sampling. Configuration validation does
-not check their identities. Teacher caches save with `TeacherCache.save`
-and load weights-only.
+Version-2 checkpoints also require matching input fingerprints before loading
+weights or training state. These cover ordered training and evaluation token
+sequences, prompt/response boundaries, example weights, student tokenizer
+vocabulary and available fast-tokenizer rules, special tokens, chat template,
+generation stop tokens and the student/teacher vocabulary mapping. Raw
+examples are not stored in the fingerprints. Annotation-only metadata,
+tokenizer file paths and transient tokenizer padding/truncation state are
+excluded. Custom tokenizers without `get_vocab()` have their encoded examples
+checked, but their full vocabulary and custom implementation cannot be verified.
+
+Version-1 checkpoints remain readable with a warning that their input
+identity cannot be verified; missing fingerprints in version 2 are an error.
+Use the original teacher weights or teacher-cache contents for an exact
+continuation: these are not hashed by the input checks. Teacher caches save
+with `TeacherCache.save` and load weights-only.
 
 ## CLI
 

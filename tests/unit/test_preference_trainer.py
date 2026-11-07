@@ -278,7 +278,7 @@ def test_checkpoint_resume_is_exact(tokenizer: Any, tmp_path: Path) -> None:
     checkpoint = interrupted.save_checkpoint(tmp_path / "ckpt")
     meta = json.loads((checkpoint / "preference_checkpoint.json").read_text())
     assert (
-        meta["schema"] == "stateset-preference-checkpoint-v1"
+        meta["schema"] == "stateset-preference-checkpoint-v2"
         and meta["global_step"] == 2
     )
     resumed = _trainer(tokenizer, max_steps=4, batch_size=2, lr_scheduler="linear")
