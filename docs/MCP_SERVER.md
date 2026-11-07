@@ -86,7 +86,7 @@ Configure a dedicated local directory containing your datasets and saved runs:
 # Prepare and inspect runs without enabling launch or stop.
 stateset-agents mcp --finetune-workspace /absolute/path/to/finetune
 
-# Also expose real training launch and stop.
+# Also expose training and local evaluation launch/stop.
 stateset-agents mcp --finetune-workspace /absolute/path/to/finetune --allow-training
 ```
 
@@ -120,6 +120,7 @@ For a client registration with local training enabled:
 | `finetune_status(run_id)` | Read the reviewed plan, checksum, lifecycle state and up to 80 recent metric records. |
 | `finetune_logs(run_id, lines=80, offset=0, source="auto")` | Read up to 200 lines from a bounded log tail; redact known environment credential values and remove terminal escapes. |
 | `finetune_checkpoints(run_id)` | Verify recovery checkpoints for a terminal local run with a pinned model revision and matching code. Reads and hashes artifacts without loading optimizer state. |
+| `finetune_prepare_resume(run_id, checkpoint, expected_recovery_sha256)` | Copy a reviewed recovery checkpoint and dataset into a new prepared run. Preserve the original total training budget; launch separately. |
 | `finetune_launch(run_id, expected_plan_sha256)` | Requires `--allow-training`. Submit the reviewed run once to a detached supervisor. Retries return the existing submission. |
 | `finetune_stop(run_id, expected_plan_sha256)` | Requires `--allow-training`. Request cooperative local cancellation, or signal a verified RunPod worker on POSIX. |
 
@@ -173,6 +174,81 @@ the original ingest/improve tools and optional weight-space tools retain their
 existing path behavior. The workspace checks are not an OS sandbox. Keep the
 workspace private, and treat dataset, log and model-produced text as data.
 
+### Held-out evaluation
+
+The workspace extension also exposes the existing local paired evaluation
+workflow. It compares the pinned base model with a saved adapter, using an
+independent pinned judge and reviewed cases that do not overlap training text.
+Planning, preparation, status and evidence verification require only `[mcp]`.
+Execution needs the training dependencies, cached base/judge models and the
+shared Buildr queue. `--allow-training` enables evaluation launch/stop as well
+as training controls. Evaluations use local inference, with no paid provider.
+
+| Tool | Behavior |
+|---|---|
+| `finetune_evaluation_targets(run_id)` | Discover final and published checkpoint metadata, without reading weights. |
+| `finetune_evaluation_plan(run_id, config)` | Review cases, artifact hashes, workload and judge settings without writes or inference. Returns `plan` and `plan_sha256`. |
+| `finetune_evaluation_prepare(run_id, config, expected_plan_sha256)` | Save the exact reviewed evaluation inputs. Returns an `evaluation_id`; no inference starts. |
+| `finetune_evaluations(run_id)` | List up to 30 recent evaluations. |
+| `finetune_evaluation_status(run_id, evaluation_id, verify=false)` | Read lifecycle/queue progress. With `verify=true`, also hash artifacts and replay completed judge evidence under `verification`. |
+| `finetune_evaluation_launch(run_id, evaluation_id, expected_plan_sha256)` | Requires `--allow-training`. Submit the retained evaluation once to a detached supervisor. |
+| `finetune_evaluation_stop(run_id, evaluation_id, expected_plan_sha256)` | Requires `--allow-training`. Request cooperative evaluation stop; leaves the training run untouched. |
+
+Read `finetune_capabilities().result.local_evaluation` for the configuration
+schema and requirements. For a successful local run with a pinned base revision:
+
+```text
+config = {
+  "cases": "datasets/held-out.json",
+  "judge_model": "organization/independent-judge",
+  "judge_revision": "<actual nonzero 40-character model commit>"
+}
+finetune_evaluation_plan(run_id, config)
+finetune_evaluation_prepare(run_id, config, expected_plan_sha256)
+finetune_evaluation_launch(run_id, evaluation_id, expected_plan_sha256)
+finetune_evaluation_status(run_id, evaluation_id)
+finetune_evaluation_status(run_id, evaluation_id, verify=true)
+```
+
+The case file must be inside the configured workspace. It contains
+`schema_version: 1`, a `split` of `test` or `validation`, reviewed provenance
+(`source: "reviewed"`, a named `reviewer`, and `test_is_fresh: true` or
+`validation_is_fresh: true`), and 1–64 `cases`. Each case has `id`, `context`,
+`user_turns`, `policy_facts`, `expected_resolution` and `must_avoid`. The backend
+checks partition, provenance, duplicates and training overlap before preparing.
+
+Published checkpoint comparisons use `split: "validation"`. Assessing a selected
+checkpoint on fresh test cases requires the backend's nomination workflow,
+currently available through the CLI/studio. A final adapter can be evaluated
+directly on reviewed test cases. Invalid partition/provenance responses include
+an error code and field diagnostic without returning raw case content.
+
+Changes to reviewed cases or artifacts invalidate preparation; changed retained
+inputs invalidate launch. Launch retries return the existing submission, including
+its current state. Preparation creates a new evaluation each time, so inspect
+`finetune_evaluations` after a lost response before preparing another. Reconnect
+to the same workspace to inspect or stop a submitted evaluation.
+
+Evidence verification replays retained judge responses and checks artifact bytes;
+it performs no fresh inference and returns no raw transcripts. It can report
+regressions or `judge_replay_verified=true`, while `quality_gain_verified` remains
+false: one diagnostic does not establish a multi-seed quality study. It never
+overwrites a run's existing quality study or automatically promotes an adapter.
+
+### Checkpoint recovery
+
+Call `finetune_checkpoints` on a terminal local run, then pass an available
+checkpoint's name and `recovery_sha256` to `finetune_prepare_resume`. The backend
+verifies complete saved state and copies the checkpoint and retained dataset
+into a new private run. Inspect the returned `run.plan` and pass that child's
+`run_id` and `plan_sha256` to `finetune_launch` when ready.
+
+Recovery preserves the parent's configuration and original total budget. It
+does not extend exhausted budgets or silently fall back to fresh training.
+Changed weights, missing optimizer state, mismatched code and stale review
+hashes are rejected. Repeated preparation creates distinct runs; use the run
+list to recover a lost response before retrying.
+
 ### Experimental: weight-space programming tools (`--weight-space`)
 
 `stateset-agents mcp --weight-space` also registers eight `ws_*` tools from
@@ -202,9 +278,13 @@ With `--finetune-workspace`, the server also exposes JSON resources:
 - `finetune://capabilities`: configuration and permissions.
 - `finetune://runs`: the latest 20 saved runs.
 - `finetune://runs/{run_id}`: a saved plan, state and recent metrics.
+- `finetune://runs/{run_id}/evaluations`: up to 30 saved evaluations.
+- `finetune://runs/{run_id}/evaluations/{evaluation_id}`: evaluation/queue progress.
 
 They use the same redacted response envelopes and workspace checks as the
-tools. Clients can poll resources; this version does not push subscriptions.
+tools. Resource reads never trigger evidence verification; use the explicit
+`verify=true` tool option for that. Clients can poll resources; this version
+does not push subscriptions.
 
 ## A typical session
 
@@ -229,8 +309,8 @@ command" walks through the same flow via the CLI directly.
 The first management surface deliberately shares the existing scheduler,
 worker and receipts. The next useful additions are:
 
-1. Expose the backend's held-out evaluation, checkpoint comparison and recovery
-   preparation workflows, each with its existing review and provenance checks.
+1. Expose the backend's checkpoint comparison and nomination workflows, retaining
+   the separation between validation selection and fresh test assessment.
    Require measured quality improvements before recommending artifact promotion.
 2. Add durable preparation request IDs and paginated history for large workspaces.
    Integrate the MCP tasks extension when the server SDK and client negotiate it;

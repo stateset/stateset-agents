@@ -31,7 +31,7 @@ jobs:
       # exercise a minimal MCP installation and mock worker submission.
       run: >-
         pytest --confcutdir=tests/unit -n 0 -o addopts=''
-        --timeout=60 tests/unit/test_mcp_finetune.py
+        --timeout=60 tests/unit/test_mcp_finetune.py tests/unit/test_mcp_finetune_evaluation.py
 
   river-native:
     strategy:

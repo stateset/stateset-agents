@@ -17,8 +17,21 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import Field
 
 from stateset_agents.core.errors import ConfigurationError
+from stateset_agents.finetune_evaluation import (
+    EvaluationConfig,
+    EvaluationProtocolError,
+    EvaluationReview,
+    evaluation_status,
+    evaluation_targets,
+    inspect_evaluation,
+    launch_evaluation,
+    list_evaluations,
+    plan_evaluation,
+    prepare_evaluation,
+    stop_evaluation,
+)
 from stateset_agents.finetune_inspection import metric_history
-from stateset_agents.finetune_recovery import inspect_checkpoints
+from stateset_agents.finetune_recovery import inspect_checkpoints, prepare_resume
 from stateset_agents.finetune_workspace import (
     FinetuneConfig,
     check_config_values,
@@ -67,11 +80,14 @@ class FinetuneTools:
                 "result": result,
             }
         except (ValueError, OSError, RuntimeError, TypeError, KeyError) as exc:
+            error: dict[str, Any] = {"type": type(exc).__name__, "message": str(exc)}
+            if isinstance(exc, EvaluationProtocolError):
+                error.update(code=exc.code, diagnostic=exc.diagnostic)
             payload = {
                 "schema_version": 1,
                 "ok": False,
                 "command": command,
-                "error": {"type": type(exc).__name__, "message": str(exc)},
+                "error": error,
             }
         payload = redact_finetune_secrets(payload)
         return CallToolResult(
@@ -127,12 +143,15 @@ class FinetuneTools:
                     "launch_requires",
                     "remote_submission_receipts",
                     "checkpoint_retention",
+                    "checkpoint_recovery",
+                    "local_evaluation",
                     "log_sources",
                 )
             } | {
                 "workspace": str(self.workspace),
                 "launch_enabled": self.allow_training,
                 "paid_launch_enabled": self.allow_paid,
+                "evaluation_launch_enabled": self.allow_training,
                 "dataset_paths": "Files inside this workspace; no symbolic links",
                 "job_lifetime": "Detached workers survive MCP client disconnection",
                 "quality_gain_verified": False,
@@ -243,9 +262,221 @@ class FinetuneTools:
             "checkpoints", lambda: inspect_checkpoints(self._run(run_id))
         )
 
-    def _reviewed_run(self, run_id: str, expected_plan_sha256: str) -> Path:
+    async def finetune_prepare_resume(
+        self, run_id: str, checkpoint: str, expected_recovery_sha256: str
+    ) -> CallToolResult:
+        """Copy a reviewed recovery checkpoint into a new private prepared run.
+
+        Use a recovery_sha256 from finetune_checkpoints. Preserves the original
+        total budget and settings. Each call creates a new run; launch requires
+        its own run ID and plan checksum. This tool never starts training.
+        """
+
+        def prepare() -> dict[str, Any]:
+            child = prepare_resume(
+                self._run(run_id),
+                checkpoint,
+                expected_recovery_sha256=expected_recovery_sha256,
+            )
+            return {
+                "prepared": True,
+                "launched": False,
+                "parent_run_id": run_id,
+                "run": self._summary(child),
+            }
+
+        return await self._call("prepare_resume", prepare)
+
+    def _evaluation_review(
+        self, run_id: str, config: dict[str, Any]
+    ) -> EvaluationReview:
+        try:
+            settings = EvaluationConfig(**config)
+            settings.validate()
+        except TypeError:
+            raise ConfigurationError(
+                "Invalid evaluation configuration; inspect finetune_capabilities"
+            ) from None
+        # Resolve relative case paths against the configured workspace, not cwd.
+        settings = EvaluationConfig(
+            **{**config, "cases": str(self._path(settings.cases))}
+        )
+        return plan_evaluation(self._run(run_id), settings)
+
+    def _evaluation_path(self, run_id: str, evaluation_id: str) -> Path:
+        if not re.fullmatch(r"[0-9]{8}-[0-9]{6}-[0-9a-f]{8}", evaluation_id):
+            raise ConfigurationError("Expected a retained evaluation ID")
+        path = self._path(str(self._run(run_id) / "evaluations" / evaluation_id))
+        if not path.is_dir():
+            raise ConfigurationError("No retained evaluation with that ID exists")
+        return path
+
+    def _evaluation_summary(self, path: Path) -> dict[str, Any]:
+        return {
+            **evaluation_status(path),
+            "run_id": path.parent.parent.name,
+            "resource_uri": f"finetune://runs/{path.parent.parent.name}/evaluations/{path.name}",
+        }
+
+    async def finetune_evaluation_targets(self, run_id: str) -> CallToolResult:
+        """List final and published checkpoint metadata without reading weights.
+
+        Published checkpoints use validation cases; fresh test assessment of a
+        selected checkpoint requires a retained nomination from the CLI/studio.
+        """
+        return await self._call(
+            "evaluation_targets", lambda: evaluation_targets(self._run(run_id))
+        )
+
+    async def finetune_evaluation_plan(
+        self, run_id: str, config: dict[str, Any]
+    ) -> CallToolResult:
+        """Review a paired base/adapter evaluation without writing or inference.
+
+        Read local_evaluation.config_schema in finetune_capabilities. Cases must
+        be workspace files with reviewed provenance and no training overlap.
+        Artifact hashing can take time. Returns no raw cases or transcripts.
+        """
+
+        def review() -> dict[str, Any]:
+            planned = self._evaluation_review(run_id, config)
+            return {
+                "plan": planned.plan,
+                "plan_sha256": planned.sha256,
+                "prepared": False,
+                "launched": False,
+            }
+
+        return await self._call("evaluation_plan", review)
+
+    async def finetune_evaluation_prepare(
+        self, run_id: str, config: dict[str, Any], expected_plan_sha256: str
+    ) -> CallToolResult:
+        """Snapshot exactly the reviewed evaluation inputs; never start inference.
+
+        Pass the config and checksum from finetune_evaluation_plan. Each call
+        creates a new evaluation; retain its ID or inspect finetune_evaluations
+        if a response is lost. Launch is a separate tool call.
+        """
+
+        def prepare() -> dict[str, Any]:
+            path = prepare_evaluation(
+                self._evaluation_review(run_id, config),
+                expected_plan_sha256=expected_plan_sha256,
+            )
+            return {
+                **self._evaluation_summary(path),
+                "prepared": True,
+                "launched": False,
+            }
+
+        return await self._call("evaluation_prepare", prepare)
+
+    async def finetune_evaluations(self, run_id: str) -> CallToolResult:
+        """List up to 30 retained evaluations without inference or artifact hashing."""
+        return await self._call(
+            "evaluations", lambda: {"evaluations": list_evaluations(self._run(run_id))}
+        )
+
+    async def finetune_evaluation_status(
+        self,
+        run_id: str,
+        evaluation_id: str,
+        verify: Annotated[bool, Field(strict=True)] = False,
+    ) -> CallToolResult:
+        """Read evaluation progress; verify=True also checks completed evidence.
+
+        Verification hashes artifacts and replays recorded judge evidence,
+        without running a model. A verified diagnostic is not a certified
+        quality gain. Raw cases, transcripts and judge recordings stay private.
+        """
+
+        def inspect() -> dict[str, Any]:
+            path = self._evaluation_path(run_id, evaluation_id)
+            status = self._evaluation_summary(path)
+            if verify:
+                status["verification"] = inspect_evaluation(path)
+            return status
+
+        return await self._call("evaluation_status", inspect)
+
+    def _require_execution(self) -> None:
         if not self.allow_training:
-            raise ConfigurationError("Training controls require --allow-training")
+            raise ConfigurationError(
+                "Training/evaluation controls require --allow-training"
+            )
+
+    def _launch_evaluation(
+        self, run_id: str, evaluation_id: str, expected_plan_sha256: str
+    ) -> dict[str, Any]:
+        self._require_execution()
+        path = self._evaluation_path(run_id, evaluation_id)
+        if self._evaluation_summary(path)["plan_sha256"] != expected_plan_sha256:
+            raise ConfigurationError(
+                "Evaluation checksum differs from the reviewed plan"
+            )
+
+        def submitted() -> dict[str, Any]:
+            if (
+                read_json(path / "launch.lock", max_bytes=4096).get("plan_sha256")
+                != expected_plan_sha256
+            ):
+                raise ConfigurationError(
+                    "Launch receipt differs from the reviewed evaluation"
+                )
+            return {
+                **self._evaluation_summary(path),
+                "launched": False,
+                "already_submitted": True,
+            }
+
+        if (path / "launch.lock").exists() or (path / "launch.lock").is_symlink():
+            return submitted()
+        try:
+            pid = launch_evaluation(path, expected_plan_sha256=expected_plan_sha256)
+        except FileExistsError:
+            return submitted()
+        return {
+            **self._evaluation_summary(path),
+            "launched": True,
+            "already_submitted": False,
+            "supervisor_pid": pid,
+        }
+
+    async def finetune_evaluation_launch(
+        self, run_id: str, evaluation_id: str, expected_plan_sha256: str
+    ) -> CallToolResult:
+        """Submit a reviewed local evaluation once through the Buildr queue.
+
+        Requires server --allow-training. Loads pinned models from local cache
+        in detached workers; no paid provider is used. Poll status after launch.
+        """
+        return await self._call(
+            "evaluation_launch",
+            lambda: self._launch_evaluation(
+                run_id, evaluation_id, expected_plan_sha256
+            ),
+        )
+
+    async def finetune_evaluation_stop(
+        self, run_id: str, evaluation_id: str, expected_plan_sha256: str
+    ) -> CallToolResult:
+        """Request cooperative evaluation stop; training is unaffected.
+
+        Requires server --allow-training. Poll status to confirm termination;
+        execution_unconfirmed means worker exit has not been established.
+        """
+
+        def stop() -> dict[str, Any]:
+            self._require_execution()
+            path = self._evaluation_path(run_id, evaluation_id)
+            stop_evaluation(path, expected_plan_sha256=expected_plan_sha256)
+            return self._evaluation_summary(path)
+
+        return await self._call("evaluation_stop", stop)
+
+    def _reviewed_run(self, run_id: str, expected_plan_sha256: str) -> Path:
+        self._require_execution()
         run = self._run(run_id)
         if not re.fullmatch(r"[0-9a-f]{64}", expected_plan_sha256) or (
             read_run_plan(run)[1] != expected_plan_sha256
@@ -327,16 +558,31 @@ def register_finetune_tools(
     service = FinetuneTools(
         workspace, allow_training=allow_training, allow_paid=allow_paid
     )
-    names = ["capabilities", "prepare", "list_runs", "status", "logs", "checkpoints"]
+    preparations = {"prepare", "prepare_resume", "evaluation_prepare"}
+    executions = {"launch", "stop", "evaluation_launch", "evaluation_stop"}
+    names = [
+        "capabilities",
+        "prepare",
+        "list_runs",
+        "status",
+        "logs",
+        "checkpoints",
+        "prepare_resume",
+        "evaluation_targets",
+        "evaluation_plan",
+        "evaluation_prepare",
+        "evaluations",
+        "evaluation_status",
+    ]
     if allow_training:
-        names.extend(["launch", "stop"])
+        names.extend(["launch", "stop", "evaluation_launch", "evaluation_stop"])
     for name in names:
         server.tool(
             annotations=ToolAnnotations(
-                readOnlyHint=name not in {"prepare", "launch", "stop"},
-                destructiveHint=name in {"launch", "stop"},
-                idempotentHint=name != "prepare",
-                openWorldHint=name in {"launch", "stop"},
+                readOnlyHint=name not in preparations | executions,
+                destructiveHint=name in executions,
+                idempotentHint=name not in preparations,
+                openWorldHint=name in executions,
             )
         )(getattr(service, f"finetune_{name}"))
 
@@ -354,3 +600,24 @@ def register_finetune_tools(
     async def run_resource(run_id: str) -> str:
         """One run's reviewed plan, lifecycle state and recent training metrics."""
         return json.dumps((await service.finetune_status(run_id)).structuredContent)
+
+    @server.resource(
+        "finetune://runs/{run_id}/evaluations", mime_type="application/json"
+    )
+    async def evaluations_resource(run_id: str) -> str:
+        """Up to 30 retained evaluations for one training run."""
+        return json.dumps(
+            (await service.finetune_evaluations(run_id)).structuredContent
+        )
+
+    @server.resource(
+        "finetune://runs/{run_id}/evaluations/{evaluation_id}",
+        mime_type="application/json",
+    )
+    async def evaluation_resource(run_id: str, evaluation_id: str) -> str:
+        """Evaluation progress; evidence verification remains an explicit tool call."""
+        return json.dumps(
+            (
+                await service.finetune_evaluation_status(run_id, evaluation_id)
+            ).structuredContent
+        )

@@ -408,8 +408,9 @@ claude mcp add stateset-agents -- stateset-agents mcp
 Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
 `improve_run`, `improve_status`, `list_model_presets`, `dry_run_finetune`) are
 available by default. Add `--finetune-workspace /path/to/workspace` for run
-preparation, status, logs, checkpoint inspection and MCP resources. Add
-`--allow-training` to launch and stop durable fine-tuning jobs; paid providers
+preparation, status, logs, checkpoint recovery, held-out evaluation and MCP
+resources. Add `--allow-training` to launch and stop durable training and
+local evaluation jobs; paid training providers
 also require `--allow-paid`. See [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md)
 for setup and the supported SFT/RL backends.
 

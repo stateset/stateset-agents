@@ -43,7 +43,9 @@ def mcp(
         help="Enable preparation and inspection of fine-tuning runs in this directory.",
     ),
     allow_training: bool = typer.Option(
-        False, "--allow-training", help="Enable real training launch and stop tools."
+        False,
+        "--allow-training",
+        help="Enable real training and local evaluation launch/stop tools.",
     ),
     allow_paid: bool = typer.Option(
         False, "--allow-paid", help="Also permit launches on paid training providers."
