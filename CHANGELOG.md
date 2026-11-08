@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Experimental dense constrained weight editing: minimum-norm batched edits
+  with reference-span preservation, numerical/precision gates, and update-norm
+  limits. Sessions can capture layer inputs and apply/revert these edits.
+- Independent dense-model experiment with sequential edits and two controls;
+  retains successful local constraints and substantial held-out drift. See
+  `docs/WEIGHT_EDITING.md` for the measured limits and reproduction steps.
+
 - Selective arithmetic weight edits: `compile_relu_program(..., output_index=...)`
   replaces one output while preserving every other output's dependency paths.
   Reject insufficient disconnected capacity and audit saved weights independently
@@ -20,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Weight-space sessions own edit factors and undo snapshots, reject nonfinite
+  updates/shared parameter storage, and detect external changes to edited weights.
+  LoRA manifests report merge discrepancies caused by floating-point accumulation.
 - Reject CPU subnormal-flushing modes during arithmetic compilation and symbolic
   verification, where stored nonzero connections could otherwise be overlooked.
 

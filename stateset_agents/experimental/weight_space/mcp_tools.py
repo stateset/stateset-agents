@@ -182,7 +182,7 @@ def ws_ablate(
         "module": module,
         "rank": delta.rank,
         "changed_weights": int((delta.dense() != 0).sum()),
-        "active_edits": [e.edit_id for e in handle.session.edits],
+        "active_edits": handle.session.active_edit_ids,
     }
 
 
@@ -204,7 +204,7 @@ def ws_evaluate(session_id: str) -> dict[str, Any]:
             if baseline
             else None
         ),
-        "active_edits": [e.edit_id for e in session.edits],
+        "active_edits": session.active_edit_ids,
         "budget": session.budget.as_dict(),
     }
 
@@ -214,12 +214,12 @@ def ws_revert(session_id: str) -> dict[str, Any]:
     try:
         session = _handle(session_id).session
         edit = session.revert()
-    except (_ToolError, IndexError) as exc:
+    except (_ToolError, IndexError, ValueError) as exc:
         return _err(str(exc))
     return {
         "reverted": edit.edit_id,
         "module": edit.module,
-        "active_edits": [e.edit_id for e in session.edits],
+        "active_edits": session.active_edit_ids,
     }
 
 
@@ -232,7 +232,7 @@ def ws_export(session_id: str, output_dir: str) -> dict[str, Any]:
         return _err(str(exc))
     return {
         "path": str(path),
-        "edits": len(session.edits),
+        "edits": len(session.active_edit_ids),
         "budget": session.budget.as_dict(),
     }
 

@@ -267,6 +267,54 @@ def test_capture_many_reads_several_modules_in_one_forward_pass(tiny_model) -> N
         session.capture_many([], prompts)
 
 
+def test_capture_inputs_and_constrained_edit_on_real_transformer_layer(
+    tiny_model,
+    tmp_path,
+) -> None:
+    peft = pytest.importorskip("peft")
+    session = make_session(tiny_model, budget=1)
+    prompts = ["ab ab ab", "xyz", "count", "hi there"]
+    inputs = session.capture_many([MLP_OUT], prompts, read="input")[MLP_OUT]
+    layer = tiny_model.get_submodule(MLP_OUT)
+    assert inputs.shape == (4, 32)
+    assert inputs.dtype == layer.weight.dtype
+    # Independently capture a full forward to check padding/position selection.
+    seen = []
+    handle = layer.register_forward_pre_hook(
+        lambda _m, args: seen.append(args[0].detach().clone())
+    )
+    with torch.no_grad():
+        tiny_model(input_ids=torch.tensor([encode(prompts[1])]))
+    handle.remove()
+    torch.testing.assert_close(inputs[1], seen[0][0, -1], atol=1e-6, rtol=1e-5)
+    original = layer.weight.detach().clone()
+    targets = inputs[:2] @ original.T + 0.02
+    protected = inputs[2:] @ original.T
+    _, result = session.apply_constrained(
+        MLP_OUT, inputs[:2], targets, protect=inputs[2:]
+    )
+    torch.testing.assert_close(layer(inputs[:2]), targets, atol=1e-5, rtol=1e-5)
+    torch.testing.assert_close(layer(inputs[2:]), protected, atol=1e-5, rtol=1e-5)
+    assert result.diagnostics.protected_rank == 2
+    assert session.budget.used == 1  # Solving/editing adds no model forwards.
+    expected_logits = logits(tiny_model, "one two three")
+    exported = session.export(tmp_path / "constrained_adapter")
+    session.revert()
+    assert torch.equal(layer.weight, original)
+    reloaded = peft.PeftModel.from_pretrained(tiny_model, exported)
+    torch.testing.assert_close(
+        logits(reloaded, "one two three"), expected_logits, atol=1e-5, rtol=1e-5
+    )
+
+
+@pytest.mark.parametrize("kwargs", [{"read": "bad"}, {"position": "bad"}])
+def test_invalid_capture_does_not_spend_budget(tiny_model, kwargs):
+    session = make_session(tiny_model)
+    with pytest.raises(ValueError):
+        session.capture_many([MLP_OUT], ["hello"], **kwargs)
+    assert session.budget.used == 0
+
+
 # --------------------------------------------------------------- export
 
 

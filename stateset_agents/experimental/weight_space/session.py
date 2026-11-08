@@ -13,6 +13,7 @@ sees practice splits, mirroring "Astra never sees [the test sets]".
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import uuid
@@ -21,7 +22,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from ...core.errors import StateSetError
+from ...core.errors import ConfigurationError, StateSetError
+from .constrained import ConstrainedEdit, constrained_edit
 from .deltas import LowRankDelta
 
 if TYPE_CHECKING:
@@ -107,6 +109,7 @@ class WeightSpaceSession:
         self.batch_size = batch_size
         self.evaluations: list[dict[str, Any]] = []
         self._edits: list[AppliedEdit] = []
+        self._weight_hashes: dict[str, str] = {}
 
     @classmethod
     def from_pretrained(
@@ -172,31 +175,122 @@ class WeightSpaceSession:
 
     @property
     def edits(self) -> list[AppliedEdit]:
-        return list(self._edits)
+        """Detached snapshots; mutating them cannot corrupt export or rollback."""
+        return [
+            AppliedEdit(
+                edit_id=e.edit_id,
+                module=e.module,
+                delta=LowRankDelta(B=e.delta.B.clone(), A=e.delta.A.clone()),
+                note=e.note,
+                previous=e.previous.clone(),
+            )
+            for e in self._edits
+        ]
+
+    @property
+    def active_edit_ids(self) -> list[str]:
+        """Active edit ids without copying tensor snapshots."""
+        return [e.edit_id for e in self._edits]
 
     def apply(self, module: str, delta: LowRankDelta, note: str = "") -> str:
         """Add ``delta`` to ``module``'s weight in place; return the edit id."""
         import torch
 
         param = self._linear(module).weight
+        self._check_weight(module)
+        if (
+            param.device.type == "meta"
+            or param.dtype not in (torch.float16, torch.bfloat16, torch.float32)
+            or not bool(torch.isfinite(param).all())
+        ):
+            raise ConfigurationError(
+                "editable weights must be finite float16/bfloat16/float32 tensors"
+            )
+        aliases = [
+            name
+            for name, p in self.model.named_parameters(remove_duplicate=False)
+            if p.device == param.device
+            and p.untyped_storage().data_ptr() == param.untyped_storage().data_ptr()
+        ]
+        if len(aliases) != 1:
+            raise ConfigurationError(
+                "shared weight storage cannot be represented by a module-local adapter"
+            )
         if delta.shape != tuple(param.shape):
-            raise ValueError(
+            raise ConfigurationError(
                 f"delta shape {delta.shape} does not match {module} weight shape "
                 f"{tuple(param.shape)}"
             )
-        previous = param.detach().clone()
+        if delta.rank < 1 or any(
+            not t.is_floating_point()
+            or t.device.type == "meta"
+            or not bool(torch.isfinite(t).all())
+            for t in (delta.B, delta.A)
+        ):
+            raise ConfigurationError(
+                "delta factors must be finite floating-point tensors with positive rank"
+            )
+        # Own the factors: caller mutation must never change the exported edit.
+        owned = LowRankDelta(
+            B=delta.B.detach().to(device=param.device, dtype=torch.float32).clone(),
+            A=delta.A.detach().to(device=param.device, dtype=torch.float32).clone(),
+        )
         with torch.no_grad():
-            param.add_(delta.dense().to(device=param.device, dtype=param.dtype))
+            candidate = param + owned.dense().to(dtype=param.dtype)
+        if not bool(torch.isfinite(candidate).all()):
+            raise ConfigurationError(
+                "delta produces nonfinite weights; no edit applied"
+            )
+        previous = param.detach().clone()
         edit = AppliedEdit(
             edit_id=uuid.uuid4().hex[:8],
             module=module,
-            delta=delta,
+            delta=owned,
             note=note,
             previous=previous,
         )
+        candidate_hash = _weight_hash(candidate)
+        with torch.no_grad():
+            param.copy_(candidate)
         self._edits.append(edit)
+        self._weight_hashes[module] = candidate_hash
         logger.info("applied edit %s to %s (rank %d)", edit.edit_id, module, delta.rank)
         return edit.edit_id
+
+    def apply_constrained(
+        self,
+        module: str,
+        keys: torch.Tensor,
+        targets: torch.Tensor,
+        *,
+        protect: torch.Tensor | None = None,
+        note: str = "",
+        rcond: float = 1e-10,
+        target_atol: float = 1e-5,
+        target_rtol: float = 1e-5,
+        preservation_atol: float = 1e-5,
+        max_update_norm: float | None = None,
+    ) -> tuple[str, ConstrainedEdit]:
+        """Solve, validate and apply a constrained edit without spending forwards.
+
+        Use fresh module input activations as keys/references. The guarantee is
+        local to this Linear layer; evaluate the complete model separately.
+        """
+        layer = self._linear(module)
+        self._check_weight(module)
+        result = constrained_edit(
+            layer.weight,
+            keys,
+            targets,
+            protect=protect,
+            bias=layer.bias,
+            rcond=rcond,
+            target_atol=target_atol,
+            target_rtol=target_rtol,
+            preservation_atol=preservation_atol,
+            max_update_norm=max_update_norm,
+        )
+        return self.apply(module, result.delta, note=note), result
 
     def revert(self) -> AppliedEdit:
         """Undo the most recent edit, restoring the exact previous weight."""
@@ -204,9 +298,12 @@ class WeightSpaceSession:
 
         if not self._edits:
             raise IndexError("no edits to revert")
-        edit = self._edits.pop()
+        edit = self._edits[-1]
+        self._check_weight(edit.module)
         with torch.no_grad():
             self._linear(edit.module).weight.copy_(edit.previous)
+        self._edits.pop()
+        self._weight_hashes[edit.module] = _weight_hash(edit.previous)
         return edit
 
     # --------------------------------------------------------------- forward
@@ -234,12 +331,26 @@ class WeightSpaceSession:
         *,
         position: Literal["last", "mean"] = "last",
         reason: str = "capture",
+        read: Literal["input", "output"] = "output",
     ) -> dict[str, torch.Tensor]:
-        """Like :meth:`capture` for several modules, all from ONE forward pass."""
+        """Capture several modules in one budget unit; ``read='input'`` gets keys.
+
+        Input rows retain the model's dtype for constrained editing. Output
+        rows use float32 as before. A unit may contain several microbatches.
+        """
         import torch
 
         if not modules:
             raise ValueError("capture_many needs at least one module")
+        if read not in ("input", "output") or position not in ("last", "mean"):
+            raise ConfigurationError("invalid capture read or position")
+        if not prompts or self.batch_size < 1:
+            raise ConfigurationError("capture needs prompts and a positive batch_size")
+        encoded = [self.encode(p) for p in prompts]
+        if any(not tokens for tokens in encoded):
+            raise ConfigurationError(
+                "capture prompts must encode to at least one token"
+            )
         targets = {name: self._linear(name) for name in modules}
         self.budget.spend(reason)
         rows: dict[str, list[torch.Tensor]] = {name: [] for name in targets}
@@ -249,20 +360,31 @@ class WeightSpaceSession:
             # Reduce to one row per sequence INSIDE the hook and copy to CPU, so
             # the full (batch x seq x out) activation dies with the forward pass.
             # Keeping row views instead pinned every batch until return (OOM).
-            def hook(_m: Any, _i: Any, out: torch.Tensor) -> None:
-                o = out.detach()
+            def hook(_m: Any, inputs: Any, out: torch.Tensor | None = None) -> None:
+                if read == "input":
+                    o = inputs[0].detach()
+                elif out is not None:
+                    o = out.detach()
+                else:
+                    raise ConfigurationError("captured Linear output is missing")
                 for i, n in enumerate(lengths):
                     row = o[i, n - 1] if position == "last" else o[i, :n].mean(0)
-                    rows[name].append(row.float().cpu().clone())
+                    rows[name].append(
+                        (row if read == "input" else row.float()).cpu().clone()
+                    )
 
             return hook
 
         handles = [
-            module.register_forward_hook(reduce_in_hook(name))
+            (
+                module.register_forward_pre_hook
+                if read == "input"
+                else module.register_forward_hook
+            )(reduce_in_hook(name))
             for name, module in targets.items()
         ]
         try:
-            for chunk in _chunks([self.encode(p) for p in prompts], self.batch_size):
+            for chunk in _chunks(encoded, self.batch_size):
                 ids, mask = self._pad(chunk)
                 lengths[:] = [len(seq) for seq in chunk]
                 with torch.no_grad():
@@ -298,8 +420,11 @@ class WeightSpaceSession:
 
         if not self._edits:
             raise ValueError("no active edits to export")
+        for module in self._weight_hashes:
+            self._check_weight(module)
 
-        # Sum of low-rank deltas == concatenation along the rank axis (exact).
+        # Concatenation is exact in real arithmetic. Rounded sequential in-place
+        # updates can differ; report the actual merged-weight discrepancy below.
         per_module: dict[str, list[LowRankDelta]] = {}
         for edit in self._edits:
             per_module.setdefault(edit.module, []).append(edit.delta)
@@ -313,6 +438,7 @@ class WeightSpaceSession:
         # One shared rank with lora_alpha == r keeps PEFT's scaling at exactly 1;
         # zero-padding a smaller-rank module leaves its product unchanged.
         rank = max(B.shape[1] for B, _ in stacked.values())
+        merge_errors: dict[str, float] = {}
         tensors: dict[str, torch.Tensor] = {}
         for name, (B, A) in stacked.items():
             pad = rank - B.shape[1]
@@ -320,6 +446,15 @@ class WeightSpaceSession:
             A = torch.cat([A, A.new_zeros(pad, A.shape[1])], dim=0)
             tensors[f"base_model.model.{name}.lora_A.weight"] = A.contiguous()
             tensors[f"base_model.model.{name}.lora_B.weight"] = B.contiguous()
+            first = next(e for e in self._edits if e.module == name)
+            with torch.autocast(device_type="cpu", enabled=False):
+                merged = first.previous.cpu() + (B @ A).to(first.previous.dtype)
+            current = self._linear(name).weight.detach().cpu()
+            if not bool(torch.isfinite(merged).all()):
+                raise ConfigurationError(
+                    "combined adapter produces nonfinite merged weights"
+                )
+            merge_errors[name] = float((merged.double() - current.double()).abs().max())
 
         out = Path(out_dir)
         out.mkdir(parents=True, exist_ok=True)
@@ -339,6 +474,8 @@ class WeightSpaceSession:
             "format": "peft-lora",
             "base_model": self.base_model,
             "rank": rank,
+            "merge_weight_max_errors": merge_errors,
+            "merge_validation": "CPU weight comparison; evaluate adapter outputs separately",
             "edits": [
                 {
                     "edit_id": e.edit_id,
@@ -358,6 +495,16 @@ class WeightSpaceSession:
         return out
 
     # --------------------------------------------------------------- helpers
+
+    def _check_weight(self, module: str) -> None:
+        expected = self._weight_hashes.get(module)
+        if (
+            expected is not None
+            and _weight_hash(self._linear(module).weight) != expected
+        ):
+            raise ConfigurationError(
+                f"{module} changed outside the session; refusing to overwrite or export stale edits"
+            )
 
     def _linear(self, module: str) -> torch.nn.Linear:
         import torch
@@ -431,3 +578,13 @@ def load_splits(path: str | Path) -> dict[str, list[tuple[str, str]]]:
 
 def _chunks(items: Sequence[Any], size: int) -> list[Sequence[Any]]:
     return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+def _weight_hash(weight: torch.Tensor) -> str:
+    """Fingerprint exact dtype, shape and bytes, including bfloat16 tensors."""
+    import torch
+
+    value = weight.detach().cpu().contiguous()
+    h = hashlib.sha256(f"{value.dtype}:{tuple(value.shape)}".encode())
+    h.update(value.view(torch.uint8).numpy().tobytes())
+    return h.hexdigest()

@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "models": 5,
+  "trials": 30,
+  "independent_minimum_norm_checks": 10,
+  "sequential_target_checks": 10,
+  "protected_span_checks": 10,
+  "scope": "numerical checks on retained dense readout edits; no LLM efficacy claim"
+}

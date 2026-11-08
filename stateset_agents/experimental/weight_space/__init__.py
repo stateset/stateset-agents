@@ -12,6 +12,9 @@ This package is the harness, not the programmer:
   LIFO-revertible low-rank edits and export to a PEFT LoRA adapter.
 - :func:`direction_ablation` — the rank-1 "remove a direction from the
   columns that write it" edit.
+- :func:`constrained_edit` — a minimum-change dense linear edit satisfying
+  target activation mappings while preserving a declared reference span,
+  with explicit numerical validation and optional update-norm limits.
 - :mod:`.mcp_tools` — the same loop as MCP tools, so an MCP client such as
   Claude Code can act as the programmer
   (``stateset-agents mcp --weight-space``).
@@ -68,6 +71,7 @@ from .circuits import (
     shift_threshold,
     silence_on_flag,
 )
+from .constrained import ConstrainedEdit, EditDiagnostics, constrained_edit
 from .deltas import LowRankDelta, direction_ablation
 from .edits import (
     EditSpec,
@@ -102,6 +106,8 @@ __all__ = [
     "AppliedEdit",
     "BudgetExhausted",
     "ConditionalNeuron",
+    "ConstrainedEdit",
+    "EditDiagnostics",
     "EditSpec",
     "ForwardBudget",
     "HeadRewrite",
@@ -119,6 +125,7 @@ __all__ = [
     "bootstrap_ci",
     "budget_curve",
     "clean_finish",
+    "constrained_edit",
     "design_conditional_neuron",
     "direction_ablation",
     "least_used_neuron",

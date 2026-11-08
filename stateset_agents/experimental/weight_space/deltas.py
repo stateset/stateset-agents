@@ -40,7 +40,10 @@ class LowRankDelta:
 
     def dense(self) -> torch.Tensor:
         """Materialise ``ΔW`` (float32)."""
-        return self.B.float() @ self.A.float()
+        import torch
+
+        with torch.autocast(device_type=self.B.device.type, enabled=False):
+            return self.B.float() @ self.A.float()
 
 
 def direction_ablation(
