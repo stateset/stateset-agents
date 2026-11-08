@@ -1,0 +1,60 @@
+{
+  "architecture": [
+    4,
+    32,
+    3
+  ],
+  "arms": [
+    "constrained",
+    "unconstrained",
+    "matched_random"
+  ],
+  "edit_optimizer_steps": 0,
+  "heldout_cases": 1024,
+  "input_seed": 92180,
+  "keys_per_round": 4,
+  "kind": "stateset-constrained-linear-v1",
+  "learning_rate": 0.01,
+  "preservation_atol": 1e-05,
+  "rcond": 1e-10,
+  "reference_cases": 8,
+  "rounds": 2,
+  "runtime": {
+    "device": "cpu",
+    "python": "3.12.12",
+    "threads": 1,
+    "torch": "2.11.0+cu130"
+  },
+  "scope": "linear readout activation span; no unseen-prompt guarantee",
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "sequential_atol": 2e-05,
+  "shifts": [
+    [
+      0.25,
+      -0.125,
+      0.0625
+    ],
+    [
+      -0.125,
+      0.25,
+      -0.0625
+    ]
+  ],
+  "sources": {
+    "constrained.py": "c9820ec8dc414ca59a30e409be5dfbd650d8a4970e85c46164b175fe8e172947",
+    "constrained_edit_job.py": "a7a4ec439e7f0442511d50cdb4bf860b90f4e2cf5bd33baa950383f26df10156",
+    "deltas.py": "81d4b19272bb9d8a79753a9669041021cd2852ef32b1ccf123e2b646f1651d93",
+    "relu_compiler_job.py": "02644e9f429c8613313ddbaa32c372f4efd3bedfabd9ddfb8ed9495c815192cc",
+    "verify_constrained_edit.py": "cf2a47385ea2e2532da5a8c6402bde7b8190635599d4ed47fb2b67152796fbbe"
+  },
+  "target_atol": 1e-05,
+  "target_rtol": 1e-05,
+  "train_cases": 512,
+  "training_steps": 500
+}

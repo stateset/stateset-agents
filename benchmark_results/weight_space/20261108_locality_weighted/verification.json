@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "models": 5,
+  "trials": 30,
+  "independent_kkt_checks": 30,
+  "protected_span_checks": 20,
+  "original_control_weight_equalities": 20,
+  "fresh_confirmation_inputs": 4096,
+  "scope": "dense readout locality; no LLM efficacy claim"
+}

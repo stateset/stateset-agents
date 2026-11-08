@@ -264,12 +264,15 @@ class WeightSpaceSession:
         targets: torch.Tensor,
         *,
         protect: torch.Tensor | None = None,
+        locality: torch.Tensor | None = None,
+        locality_weight: float = 1.0,
         note: str = "",
         rcond: float = 1e-10,
         target_atol: float = 1e-5,
         target_rtol: float = 1e-5,
         preservation_atol: float = 1e-5,
         max_update_norm: float | None = None,
+        max_locality_rms: float | None = None,
     ) -> tuple[str, ConstrainedEdit]:
         """Solve, validate and apply a constrained edit without spending forwards.
 
@@ -284,11 +287,14 @@ class WeightSpaceSession:
             targets,
             protect=protect,
             bias=layer.bias,
+            locality=locality,
+            locality_weight=locality_weight,
             rcond=rcond,
             target_atol=target_atol,
             target_rtol=target_rtol,
             preservation_atol=preservation_atol,
             max_update_norm=max_update_norm,
+            max_locality_rms=max_locality_rms,
         )
         return self.apply(module, result.delta, note=note), result
 

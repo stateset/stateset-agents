@@ -1,0 +1,63 @@
+{
+  "baseline_mean_confirmation_task_mse": 0.0035278743132948877,
+  "by_arm": {
+    "locality_weighted": {
+      "all_targets_max_error": 3.8743019104003906e-07,
+      "confirmation_max_drift": 1.3698482513427734,
+      "final_mean_confirmation_mse_drift": 0.034978505596518515,
+      "final_mean_confirmation_task_mse": 0.03748344369232655,
+      "final_mean_locality_mse_drift": 0.03195324838161469,
+      "reference_max_drift": 4.76837158203125e-07
+    },
+    "minimum_norm": {
+      "all_targets_max_error": 3.5762786865234375e-07,
+      "confirmation_max_drift": 3.6884734630584717,
+      "final_mean_confirmation_mse_drift": 0.17095797061920165,
+      "final_mean_confirmation_task_mse": 0.1724374383687973,
+      "final_mean_locality_mse_drift": 0.17566527277231217,
+      "reference_max_drift": 3.5762786865234375e-07
+    },
+    "unconstrained": {
+      "all_targets_max_error": 0.33194899559020996,
+      "confirmation_max_drift": 0.4462057948112488,
+      "final_mean_confirmation_mse_drift": 0.02016558460891247,
+      "final_mean_confirmation_task_mse": 0.02341786101460457,
+      "final_mean_locality_mse_drift": 0.019956375285983086,
+      "reference_max_drift": 0.385104775428772
+    }
+  },
+  "models": 5,
+  "paired_final_confirmation_mse": [
+    {
+      "locality_weighted": 0.017581898719072342,
+      "minimum_norm": 0.10898184776306152,
+      "seed": 0,
+      "unconstrained": 0.020696314051747322
+    },
+    {
+      "locality_weighted": 0.030623801052570343,
+      "minimum_norm": 0.21387559175491333,
+      "seed": 1,
+      "unconstrained": 0.02134132944047451
+    },
+    {
+      "locality_weighted": 0.026368355378508568,
+      "minimum_norm": 0.14054062962532043,
+      "seed": 2,
+      "unconstrained": 0.01780744269490242
+    },
+    {
+      "locality_weighted": 0.0413714274764061,
+      "minimum_norm": 0.26597630977630615,
+      "seed": 3,
+      "unconstrained": 0.020188480615615845
+    },
+    {
+      "locality_weighted": 0.05894704535603523,
+      "minimum_norm": 0.12541547417640686,
+      "seed": 4,
+      "unconstrained": 0.020794356241822243
+    }
+  ],
+  "trials": 30
+}

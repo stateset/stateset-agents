@@ -1,0 +1,13 @@
+{
+  "inputs.safetensors": "76d8533d8cf3d1d2f171e5604d2416c5e0bfe6f395e8bb57b32fe7b9a791d153",
+  "protocol.json": "7a5bac2ab788c0f3a978b956c8e53a4b5d02e002c8cbc2cb72f2f23acfd1462d",
+  "sources/constrained.py": "c9820ec8dc414ca59a30e409be5dfbd650d8a4970e85c46164b175fe8e172947",
+  "sources/constrained_edit_job.py": "a7a4ec439e7f0442511d50cdb4bf860b90f4e2cf5bd33baa950383f26df10156",
+  "sources/deltas.py": "81d4b19272bb9d8a79753a9669041021cd2852ef32b1ccf123e2b646f1651d93",
+  "sources/relu_compiler_job.py": "02644e9f429c8613313ddbaa32c372f4efd3bedfabd9ddfb8ed9495c815192cc",
+  "sources/verify_constrained_edit.py": "cf2a47385ea2e2532da5a8c6402bde7b8190635599d4ed47fb2b67152796fbbe",
+  "states.safetensors": "d60485b08fd75112d532c0446c19b4739125550054dda8d5f276cbd63ec27ce6",
+  "summary.json": "76c7a5bd09a00528a11646d0b5af142d99c6e1f24734020880d94ce7c89900b1",
+  "training.json": "d705133c414c3249ce0ca2f7a81c362dabc2c5cb69df67de8f9730fa378c6b67",
+  "trials.json": "0a3c59709160367a3d50e5f836105ab9d30e42822cf50be8d5ba160d67850abd"
+}

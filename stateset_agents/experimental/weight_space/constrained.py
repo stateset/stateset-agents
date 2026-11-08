@@ -1,7 +1,9 @@
 """Minimum-change linear edits with explicit activation preservation constraints.
 
 For input rows K, desired output rows T, and protected input rows P, solve
-``min ||D||_F`` subject to ``K (W + D)^T + b = T`` and ``P D^T = 0``.
+``min ||D||_F² + locality_weight * ||H D^T||_F² / len(H)`` subject to
+``K (W + D)^T + b = T`` and ``P D^T = 0``. The optional locality rows H
+penalize behavioral drift beyond the hard protected span.
 The solve uses float64 CPU SVDs; the returned factors are float32 on W's device.
 Validation checks the rounded weight and actual linear evaluations before an
 edit is returned. This is a local linear-layer contract, not a guarantee about
@@ -35,6 +37,11 @@ class EditDiagnostics:
     target_max_error: float
     protected_max_error: float
     protected_span_error: float
+    locality_cases: int = 0
+    locality_weight: float = 0.0
+    locality_rms_drift: float | None = None
+    locality_max_drift: float | None = None
+    objective_value: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -64,6 +71,50 @@ def _max_abs(value: torch.Tensor) -> float:
     return float(value.abs().max()) if value.numel() else 0.0
 
 
+@dataclass(frozen=True)
+class _LocalityMetric:
+    """Thin representation of (I + strength * H.T H / n)^(-1/2)."""
+
+    rows: torch.Tensor
+    inverse_scales: torch.Tensor
+
+    def whiten(self, value: torch.Tensor) -> torch.Tensor:
+        coordinates = value @ self.rows.T
+        # Split orthogonal and parallel parts instead of subtracting nearly one
+        # from the inverse scales when the locality penalty is strong.
+        return (value - coordinates @ self.rows) + (
+            coordinates * self.inverse_scales
+        ) @ self.rows
+
+
+def _locality_metric(
+    locality: torch.Tensor,
+    protected_basis: torch.Tensor,
+    strength: float,
+    rcond: float,
+) -> _LocalityMetric | None:
+    import torch
+
+    # D annihilates the protected span, so only locality outside it contributes
+    # to the objective. Whitening this projected metric leaves protection intact.
+    h = locality - (locality @ protected_basis.T) @ protected_basis
+    h = h - (h @ protected_basis.T) @ protected_basis
+    _, singular, rows = torch.linalg.svd(h, full_matrices=False)
+    eigenvalues = 1 + (strength / len(locality)) * singular.square()
+    inverse_scales = eigenvalues.rsqrt()
+    if (
+        not bool(torch.isfinite(eigenvalues).all())
+        or float(inverse_scales.min()) <= rcond
+    ):
+        raise ConfigurationError("locality metric is numerically singular at rcond")
+    # Omit exactly zero-energy rows; this also keeps an all-zero locality set
+    # byte-equivalent to the unweighted solver.
+    active = eigenvalues != 1
+    if not bool(active.any()):
+        return None
+    return _LocalityMetric(rows[active], inverse_scales[active])
+
+
 def constrained_edit(
     weight: torch.Tensor,
     keys: torch.Tensor,
@@ -71,11 +122,14 @@ def constrained_edit(
     *,
     protect: torch.Tensor | None = None,
     bias: torch.Tensor | None = None,
+    locality: torch.Tensor | None = None,
+    locality_weight: float = 1.0,
     rcond: float = 1e-10,
     target_atol: float = 1e-5,
     target_rtol: float = 1e-5,
     preservation_atol: float = 1e-5,
     max_update_norm: float | None = None,
+    max_locality_rms: float | None = None,
 ) -> ConstrainedEdit:
     """Design a batched edit that preserves a declared reference activation span.
 
@@ -96,6 +150,15 @@ def constrained_edit(
     that span. Actual reference forward differences are checked separately,
     with tolerance ``preservation_atol * max(1, ||reference||_2)``. Neither
     guarantee extends to directions discarded by numerical rank selection.
+
+    Optional ``locality`` rows ``[cases, in]`` add a soft drift penalty without
+    weakening these hard constraints. The objective is squared weight norm plus
+    ``locality_weight * mean(||locality_row @ D.T||_2²)``. Locality rows are not
+    normalized: their magnitude and frequency determine their importance.
+    ``locality_weight=0`` retains the original minimum-weight-norm solve.
+    ``max_locality_rms`` optionally rejects the actual rounded update if its
+    per-coordinate RMS drift on these rows exceeds the cap. Use a separate
+    held-out set to assess generalization; this cap covers only supplied rows.
     """
     import torch
     from torch.nn import functional as F
@@ -105,6 +168,7 @@ def constrained_edit(
         ("target_atol", target_atol),
         ("target_rtol", target_rtol),
         ("preservation_atol", preservation_atol),
+        ("locality_weight", locality_weight),
     ):
         if not math.isfinite(value) or value < 0:
             raise ConfigurationError(f"{name} must be finite and nonnegative")
@@ -114,6 +178,12 @@ def constrained_edit(
         not math.isfinite(max_update_norm) or max_update_norm < 0
     ):
         raise ConfigurationError("max_update_norm must be finite and nonnegative")
+    if max_locality_rms is not None and (
+        not math.isfinite(max_locality_rms) or max_locality_rms < 0
+    ):
+        raise ConfigurationError("max_locality_rms must be finite and nonnegative")
+    if max_locality_rms is not None and locality is None:
+        raise ConfigurationError("max_locality_rms requires locality activations")
     w, k, t = (
         _matrix(weight, "weight"),
         _matrix(keys, "keys"),
@@ -131,6 +201,15 @@ def constrained_edit(
     p = w.new_empty((0, in_dim)) if protect is None else _matrix(protect, "protect")
     if p.shape[1] != in_dim or (protect is not None and protect.dtype != weight.dtype):
         raise ConfigurationError("protect must match weight's input width and dtype")
+    h = None if locality is None else _matrix(locality, "locality")
+    if h is not None and (
+        not len(h)
+        or h.shape[1] != in_dim
+        or (locality is not None and locality.dtype != weight.dtype)
+    ):
+        raise ConfigurationError(
+            "locality must be nonempty and match weight's input width and dtype"
+        )
     b = w.new_zeros(out_dim)
     if bias is not None:
         if bias.ndim != 1 or bias.shape[0] != out_dim or bias.dtype != weight.dtype:
@@ -145,6 +224,11 @@ def constrained_edit(
         q = pv[:protected_rank]
     else:
         protected_rank, q = 0, p
+    metric = (
+        _locality_metric(h, q, locality_weight, rcond)
+        if h is not None and locality_weight > 0
+        else None
+    )
     scale = k.norm(dim=1, keepdim=True)
     scale = torch.where(scale == 0, torch.ones_like(scale), scale)
     kn = k / scale
@@ -152,12 +236,20 @@ def constrained_edit(
     projected = kn - (kn @ q.T) @ q
     # Reorthogonalize to avoid magnifying residual projection error in a solve.
     projected = projected - (projected @ q.T) @ q
+    if metric is not None:
+        projected = metric.whiten(projected)
+        projected = projected - (projected @ q.T) @ q
     u, s, v = torch.linalg.svd(projected, full_matrices=False)
-    cutoff = rcond * float(torch.linalg.matrix_norm(kn, ord=2))
+    cutoff = rcond * float(
+        torch.linalg.matrix_norm(kn if metric is None else metric.whiten(kn), ord=2)
+    )
     rank = int((s > cutoff).sum())
     if rank:
         a = v[:rank] - (v[:rank] @ q.T) @ q
         factor_b = (residual.T @ u[:, :rank]) / s[:rank]
+        if metric is not None:
+            a = metric.whiten(a)
+            a = a - (a @ q.T) @ q
     else:
         # A zero update is still a valid rank-one LoRA representation.
         a, factor_b = w.new_zeros((1, in_dim)), w.new_zeros((out_dim, 1))
@@ -198,6 +290,29 @@ def constrained_edit(
         )
         before_p = F.linear(p.to(weight), weight.detach(), device_bias).double().cpu()
         after_p = F.linear(p.to(weight), edited, device_bias).double().cpu()
+        locality_rms, locality_max = None, None
+        objective_value = update_norm**2
+        if h is not None:
+            drift = (
+                F.linear(h.to(weight), edited, device_bias).double()
+                - F.linear(h.to(weight), weight.detach(), device_bias).double()
+            ).cpu()
+            if not bool(torch.isfinite(drift).all()):
+                raise ConfigurationError(
+                    "locality execution produces nonfinite outputs"
+                )
+            locality_rms = float(drift.square().mean().sqrt())
+            locality_max = _max_abs(drift)
+            objective_value += locality_weight * float(
+                (h @ realized.T).square().sum() / len(h)
+            )
+            if not math.isfinite(objective_value):
+                raise ConfigurationError("locality objective is nonfinite")
+            if max_locality_rms is not None and locality_rms > max_locality_rms:
+                raise ConfigurationError(
+                    f"locality RMS drift {locality_rms:.6g} exceeds max_locality_rms "
+                    f"{max_locality_rms:.6g}"
+                )
     target_error = _max_abs(actual - t)
     protected_error = _max_abs(after_p - before_p)
     if not bool(torch.isfinite(actual).all()) or not torch.allclose(
@@ -228,5 +343,10 @@ def constrained_edit(
             target_max_error=target_error,
             protected_max_error=protected_error,
             protected_span_error=span_error,
+            locality_cases=0 if h is None else len(h),
+            locality_weight=0.0 if h is None else locality_weight,
+            locality_rms_drift=locality_rms,
+            locality_max_drift=locality_max,
+            objective_value=objective_value,
         ),
     )

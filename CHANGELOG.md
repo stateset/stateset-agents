@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Optional locality-weighted dense edits retain target/reference constraints
+  while penalizing output drift on calibration activations. Add measured drift
+  diagnostics and a session acceptance cap that rejects before mutation. A fixed
+  five-seed follow-up reduces fresh held-out drift MSE by 79.5%; remaining damage,
+  all controls, and independent weighted-optimality replay are retained.
 - Experimental dense constrained weight editing: minimum-norm batched edits
   with reference-span preservation, numerical/precision gates, and update-norm
   limits. Sessions can capture layer inputs and apply/revert these edits.

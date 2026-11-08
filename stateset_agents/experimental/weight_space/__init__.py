@@ -14,7 +14,7 @@ This package is the harness, not the programmer:
   columns that write it" edit.
 - :func:`constrained_edit` — a minimum-change dense linear edit satisfying
   target activation mappings while preserving a declared reference span,
-  with explicit numerical validation and optional update-norm limits.
+  with numerical validation, optional locality penalties, and drift/norm limits.
 - :mod:`.mcp_tools` — the same loop as MCP tools, so an MCP client such as
   Claude Code can act as the programmer
   (``stateset-agents mcp --weight-space``).

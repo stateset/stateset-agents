@@ -1,0 +1,50 @@
+{
+  "baseline_mean_task_mse": 0.0035454732831567528,
+  "by_arm": {
+    "constrained": {
+      "all_targets_max_error": 3.5762786865234375e-07,
+      "final_mean_task_mse": 0.16511544734239578,
+      "heldout_max_drift": 3.387403726577759,
+      "reference_max_drift": 3.5762786865234375e-07,
+      "target_max_error": 2.384185791015625e-07
+    },
+    "matched_random": {
+      "all_targets_max_error": 3.6131720542907715,
+      "final_mean_task_mse": 1.7916191458702087,
+      "heldout_max_drift": 4.838097095489502,
+      "reference_max_drift": 4.285947322845459,
+      "target_max_error": 3.6131720542907715
+    },
+    "unconstrained": {
+      "all_targets_max_error": 0.33194899559020996,
+      "final_mean_task_mse": 0.0230777345597744,
+      "heldout_max_drift": 0.41593289375305176,
+      "reference_max_drift": 0.385104775428772,
+      "target_max_error": 2.384185791015625e-07
+    }
+  },
+  "full_span_rejections": [
+    {
+      "reason": "edit constraints are infeasible at the selected numerical rank; targets may conflict with each other or the protected span",
+      "seed": 0
+    },
+    {
+      "reason": "edit constraints are infeasible at the selected numerical rank; targets may conflict with each other or the protected span",
+      "seed": 1
+    },
+    {
+      "reason": "edit constraints are infeasible at the selected numerical rank; targets may conflict with each other or the protected span",
+      "seed": 2
+    },
+    {
+      "reason": "edit constraints are infeasible at the selected numerical rank; targets may conflict with each other or the protected span",
+      "seed": 3
+    },
+    {
+      "reason": "edit constraints are infeasible at the selected numerical rank; targets may conflict with each other or the protected span",
+      "seed": 4
+    }
+  ],
+  "models": 5,
+  "trials": 30
+}

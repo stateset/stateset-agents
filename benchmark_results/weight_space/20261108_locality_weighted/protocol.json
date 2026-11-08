@@ -1,0 +1,56 @@
+{
+  "arms": [
+    "minimum_norm",
+    "locality_weighted",
+    "unconstrained"
+  ],
+  "base_manifest_sha256": "eb424905e5d55a7a812e526b73a525c2a4185cf4ccefb45785476b1db416f027",
+  "base_verification": {
+    "independent_minimum_norm_checks": 10,
+    "models": 5,
+    "passed": true,
+    "protected_span_checks": 10,
+    "scope": "numerical checks on retained dense readout edits; no LLM efficacy claim",
+    "sequential_target_checks": 10,
+    "trials": 30
+  },
+  "confirmation_cases": 4096,
+  "confirmation_seed": 92183,
+  "edit_optimizer_steps": 0,
+  "keys_per_round": 4,
+  "kind": "stateset-locality-linear-v1",
+  "locality_cases": 256,
+  "locality_seed": 92181,
+  "locality_weight": 100.0,
+  "new_training_steps": 0,
+  "preservation_atol": 1e-05,
+  "primary_metric": "mean final confirmation MSE of edited-minus-base outputs",
+  "rcond": 1e-10,
+  "rounds": 2,
+  "runtime": {
+    "device": "cpu",
+    "python": "3.12.12",
+    "threads": 1,
+    "torch": "2.11.0+cu130"
+  },
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "selection": "fixed strength; no hyperparameter or checkpoint selection",
+  "sequential_atol": 2e-05,
+  "sources": {
+    "constrained.py": "85e73a5e9db07c2c0475717b6bd049581d63bfe657d046d9385724497858e242",
+    "constrained_edit_job.py": "a7a4ec439e7f0442511d50cdb4bf860b90f4e2cf5bd33baa950383f26df10156",
+    "deltas.py": "81d4b19272bb9d8a79753a9669041021cd2852ef32b1ccf123e2b646f1651d93",
+    "locality_edit_job.py": "21295a9b44cb538ed18720079b6d4a7a2b9a293a3409927ab94b6ba9c47a0566",
+    "relu_compiler_job.py": "02644e9f429c8613313ddbaa32c372f4efd3bedfabd9ddfb8ed9495c815192cc",
+    "verify_constrained_edit.py": "cf2a47385ea2e2532da5a8c6402bde7b8190635599d4ed47fb2b67152796fbbe",
+    "verify_locality_edit.py": "9f47bac2979d1aa3e9dc01d2673656ab500ac7acdc5e9097686b4f98cc124293"
+  },
+  "target_atol": 1e-05,
+  "target_rtol": 1e-05
+}
