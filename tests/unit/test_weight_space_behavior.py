@@ -46,12 +46,13 @@ class TinyLM(torch.nn.Module):
         return SimpleNamespace(logits=logits)
 
 
-def make_session(budget=6, batch_size=2):
+def make_session(budget=6, batch_size=2, **kwargs):
     return WeightSpaceSession(
         TinyLM().eval(),
         lambda text: [ord(c) % 7 for c in text],
         budget=budget,
         batch_size=batch_size,
+        **kwargs,
     )
 
 
@@ -355,3 +356,188 @@ def test_trial_acceptance_record_is_in_export_manifest(tmp_path):
 def test_limits_reject_invalid_numbers(kwargs):
     with pytest.raises(ConfigurationError):
         limits(**kwargs)
+
+
+def test_fixed_reference_stops_small_edits_accumulating_drift():
+    s = make_session(budget=20)
+    original = s.weight("readout")
+    cap = limits(max_mean_kl=0.01)
+    reference = s.add_behavior_reference(locality_prompts=["aa"], limits=cap)
+    accepted = []
+    for _ in range(10):
+        previous = s.weight("readout")
+        trial = s.trial_edit("readout", delta(0.2), locality_prompts=["aa"], limits=cap)
+        # The incremental gate alone would accept every proposal.
+        assert trial.metrics.mean_kl < cap.max_mean_kl
+        check = trial.reference_checks[0]
+        assert check.reference_id == reference.reference_id
+        candidate = previous + delta(0.2).dense()
+        p = original[:, 6].double().softmax(0)
+        q = candidate[:, 6].double().softmax(0)
+        expected = float((p * (p.log() - q.log())).sum())
+        assert check.metrics.mean_kl == pytest.approx(expected, abs=1e-12)
+        if not trial.accepted:
+            assert check.violations == ("mean_kl",)
+            assert trial.violations == (f"reference:{reference.reference_id}:mean_kl",)
+            assert torch.equal(s.weight("readout"), previous)
+            break
+        accepted.append(trial.edit_id)
+    else:
+        pytest.fail("cumulative drift was never stopped")
+    assert accepted and s.active_edit_ids == accepted
+    assert s.budget.used == 1 + 2 * (
+        len(accepted) + 1
+    )  # identical plans share forwards
+    assert reference.edit_ids == ()
+
+
+def test_reference_preserves_earlier_target_when_new_target_improves():
+    s = make_session(budget=10)
+    first = s.apply("readout", delta())
+    previous = s.weight("readout")
+    reference = s.add_behavior_reference(
+        locality_prompts=["zz"],
+        target_pairs=[("a", "b")],
+        limits=limits(min_each_target_gain=-0.01),
+    )
+    proposal = delta()
+    proposal.B.zero_()
+    proposal.B[1] = 3  # Improve 'c' after 'a', competing with the existing 'b'.
+    trial = s.trial_edit(
+        "readout",
+        proposal,
+        locality_prompts=["zz"],
+        target_pairs=[("a", "c")],
+        limits=limits(min_target_gain=0.1),
+    )
+    assert trial.metrics.mean_target_gain > 0.1
+    assert trial.reference_checks[0].metrics.target_gains[0] < -0.01
+    assert trial.violations == (f"reference:{reference.reference_id}:each_target_gain",)
+    assert not trial.accepted
+    assert reference.edit_ids == (first,)
+    assert s.active_edit_ids == [first] and torch.equal(s.weight("readout"), previous)
+    assert s.budget.used == 4  # capture, incremental before/after, distinct reference
+
+
+def test_references_with_same_cases_keep_distinct_baselines_and_share_forward():
+    s = make_session(budget=10)
+    base = s.add_behavior_reference(locality_prompts=["aa"], limits=limits())
+    s.apply("readout", delta(0.2))
+    current = s.add_behavior_reference(locality_prompts=["aa"], limits=limits())
+    trial = s.trial_edit(
+        "readout", delta(0.2), locality_prompts=["aa"], limits=limits()
+    )
+    checks = {c.reference_id: c for c in trial.reference_checks}
+    assert (
+        checks[base.reference_id].metrics.mean_kl
+        > checks[current.reference_id].metrics.mean_kl
+    )
+    assert checks[current.reference_id].metrics == trial.metrics
+    assert s.budget.used == 4
+
+
+def test_reference_token_ids_are_frozen_even_when_encoder_changes():
+    s = make_session(budget=5)
+    reference = s.add_behavior_reference(
+        locality_prompts=["aa"], limits=limits(max_mean_kl=0)
+    )
+    s.encode = lambda text: [1, 1]
+    trial = s.trial_edit(
+        "readout", delta(), locality_prompts=["aa"], limits=limits(max_mean_kl=0)
+    )
+    assert trial.metrics.mean_kl == 0
+    assert trial.reference_checks[0].metrics.mean_kl > 0
+    assert trial.cases_sha256 != reference.cases_sha256
+    assert not trial.accepted and s.budget.used == 4
+
+
+def test_reference_budget_preflight_and_failure_restore_previous_stack():
+    s = make_session(budget=3)
+    reference = s.add_behavior_reference(locality_prompts=["aa"], limits=limits())
+    before = s.weight("readout")
+    with pytest.raises(BudgetExhausted, match="3 total"):
+        s.trial_edit("readout", delta(), locality_prompts=["ab"], limits=limits())
+    assert s.budget.used == s.model.calls == 1
+    assert torch.equal(s.weight("readout"), before)
+    s.budget.limit = 4
+    forward = s.model.forward
+
+    def fail_reference(*args, **kwargs):
+        if s.model.calls == 3:
+            raise RuntimeError("reference measurement failed")
+        return forward(*args, **kwargs)
+
+    s.model.forward = fail_reference
+    with pytest.raises(RuntimeError, match="reference measurement failed"):
+        s.trial_edit("readout", delta(), locality_prompts=["ab"], limits=limits())
+    assert s.budget.used == 4 and s.active_edit_ids == []
+    assert torch.equal(s.weight("readout"), before)
+    assert s.behavior_references == (reference,)
+    assert s.trials[-1]["reference_ids"] == [reference.reference_id]
+    assert s.trials[-1]["reverted"]
+
+
+def test_reference_memory_cap_and_explicit_release():
+    from dataclasses import FrozenInstanceError, replace
+
+    s = make_session(reference_logit_limit=14)
+    ref = s.add_behavior_reference(locality_prompts=["aa"], limits=limits())
+    assert ref.retained_logit_elements == 14
+    with pytest.raises(FrozenInstanceError):
+        ref.limits = limits(max_mean_kl=0)
+    with pytest.raises(ConfigurationError, match="reference_logit_limit"):
+        s.add_behavior_reference(locality_prompts=["aa"], limits=limits())
+    assert s.budget.used == 1
+    with pytest.raises(ConfigurationError, match="not active"):
+        make_session().release_behavior_reference(ref)
+    with pytest.raises(ConfigurationError, match="not active"):
+        s.release_behavior_reference(replace(ref))
+    assert s.behavior_references == (ref,)
+    s.release_behavior_reference(ref)
+    assert s.behavior_references == ()
+    with pytest.raises(ConfigurationError, match="not active"):
+        s.release_behavior_reference(ref)
+    s.add_behavior_reference(locality_prompts=["ab"], limits=limits())
+    assert s.budget.used == 2
+
+
+def test_reference_runtime_cap_when_model_does_not_advertise_vocabulary():
+    s = make_session(reference_logit_limit=13)
+    del s.model.config.vocab_size
+    with pytest.raises(ConfigurationError, match="reference_logit_limit"):
+        s.add_behavior_reference(locality_prompts=["aa"], limits=limits())
+    assert not s.behavior_references and s.budget.used == 1
+
+
+@pytest.mark.parametrize("cap", [-1, 1.5, True])
+def test_invalid_reference_memory_cap(cap):
+    with pytest.raises(ConfigurationError, match="reference_logit_limit"):
+        make_session(reference_logit_limit=cap)
+
+
+def test_reference_case_plan_rechecks_padding_cap_if_batch_size_changes():
+    s = make_session(batch_size=1)
+    s.add_behavior_reference(
+        locality_prompts=["a", "aaaa"], limits=limits(), max_logit_elements=35
+    )
+    s.batch_size = 2
+    with pytest.raises(ConfigurationError, match="max_logit_elements"):
+        s.trial_edit("readout", delta(), locality_prompts=["ab"], limits=limits())
+    assert s.budget.used == 1 and not s.active_edit_ids
+
+
+def test_trial_export_retains_released_reference_provenance(tmp_path):
+    pytest.importorskip("peft")
+    s = make_session()
+    ref = s.add_behavior_reference(locality_prompts=["aa"], limits=limits())
+    trial = s.trial_edit("readout", delta(), locality_prompts=["aa"], limits=limits())
+    s.release_behavior_reference(ref)
+    out = s.export(tmp_path / "adapter")
+    manifest = json.loads((out / "weight_space_manifest.json").read_text())
+    record = manifest["behavior_references"][0]
+    assert record["reference_id"] == ref.reference_id
+    assert record["cases_sha256"] == ref.cases_sha256
+    assert record["active"] is False and record["edit_ids"] == []
+    check = manifest["behavior_trials"][0]["reference_checks"][0]
+    assert check["reference_id"] == ref.reference_id
+    assert check["metrics"]["mean_kl"] == trial.reference_checks[0].metrics.mean_kl

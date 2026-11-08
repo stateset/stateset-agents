@@ -342,6 +342,53 @@ def test_whole_model_gate_on_transformer_restores_rejected_candidate(tiny_model)
     assert session.budget.used == 2
 
 
+def test_transformer_reference_checks_accumulated_logits_against_original(tiny_model):
+    from stateset_agents.experimental.weight_space import BehaviorLimits
+
+    session = make_session(tiny_model, budget=5)
+    layer = tiny_model.get_submodule(MLP_OUT)
+    original = layer.weight.detach().clone()
+    delta = LowRankDelta(B=torch.ones(16, 1) * 0.001, A=torch.ones(1, 32))
+    prompt = "ab ab some words"
+
+    def probabilities():
+        return logits(tiny_model, prompt).double().softmax(-1)
+
+    def mean_kl(p, q):
+        return float((p * (p.log() - q.log())).sum(-1).mean())
+
+    base = probabilities()
+    with torch.no_grad():
+        layer.weight.copy_(original + delta.dense())
+    first = probabilities()
+    with torch.no_grad():
+        layer.weight.copy_(layer.weight + delta.dense())
+    second = probabilities()
+    with torch.no_grad():
+        layer.weight.copy_(original)
+    incremental = max(mean_kl(base, first), mean_kl(first, second))
+    cumulative = mean_kl(base, second)
+    assert cumulative > incremental
+    # This test derives a separating threshold from independent model forwards;
+    # it is a regression check, not a blind efficacy benchmark.
+    limits = BehaviorLimits((incremental + cumulative) / 2, 10, 10)
+    session.add_behavior_reference(locality_prompts=[prompt], limits=limits)
+    kept = session.trial_edit(MLP_OUT, delta, locality_prompts=[prompt], limits=limits)
+    assert kept.accepted
+    previous = layer.weight.detach().clone()
+    rejected = session.trial_edit(
+        MLP_OUT, delta, locality_prompts=[prompt], limits=limits
+    )
+    assert not rejected.accepted
+    assert rejected.metrics.mean_kl < limits.max_mean_kl
+    assert rejected.reference_checks[0].metrics.mean_kl == pytest.approx(
+        cumulative, abs=1e-10
+    )
+    assert torch.equal(layer.weight, previous)
+    assert session.active_edit_ids == [kept.edit_id]
+    assert session.budget.used == 5
+
+
 # --------------------------------------------------------------- export
 
 

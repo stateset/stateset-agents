@@ -3,7 +3,7 @@
 The session owns a loaded causal LM and enforces the protocol from the
 weight-space programming write-up: weights may be read and analysed freely,
 but *running the network* (capturing activations or scoring the practice
-splits) spends one unit of a fixed forward-pass budget. Edits are low-rank
+splits) spends one unit of a fixed measurement budget. Edits are low-rank
 deltas applied in place, revertible bit-exactly in LIFO order, and the
 active stack exports as a PEFT LoRA adapter plus a provenance manifest.
 
@@ -19,7 +19,7 @@ import json
 import logging
 import uuid
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from functools import wraps
 from pathlib import Path
 from threading import RLock
@@ -28,9 +28,13 @@ from typing import TYPE_CHECKING, Any, Concatenate, Literal, ParamSpec, TypeVar
 from ...core.errors import ConfigurationError, StateSetError
 from .behavior import (
     BehaviorLimits,
+    BehaviorReference,
     EditTrial,
+    ReferenceCheck,
     _compare,
+    _preflight,
     _prepare,
+    _ReferenceState,
     _snapshot,
     _violations,
 )
@@ -128,9 +132,14 @@ class WeightSpaceSession:
         splits: Splits | None = None,
         base_model: str = "",
         batch_size: int = 8,
+        reference_logit_limit: int = 32_000_000,
     ) -> None:
         if type(batch_size) is not int or batch_size < 1:
             raise ConfigurationError("batch_size must be a positive integer")
+        if type(reference_logit_limit) is not int or reference_logit_limit < 0:
+            raise ConfigurationError(
+                "reference_logit_limit must be a nonnegative integer"
+            )
         self.model = model
         self.encode = encode
         self.budget = ForwardBudget(limit=budget)
@@ -144,6 +153,9 @@ class WeightSpaceSession:
         self._weight_hashes: dict[str, str] = {}
         self._lock = RLock()
         self.trials: list[dict[str, Any]] = []
+        self._reference_logit_limit = reference_logit_limit
+        self._behavior_references: dict[str, _ReferenceState] = {}
+        self._reference_history: list[BehaviorReference] = []
 
     @classmethod
     def from_pretrained(
@@ -155,6 +167,7 @@ class WeightSpaceSession:
         dtype: str = "float32",
         batch_size: int = 8,
         revision: str | None = None,
+        reference_logit_limit: int = 32_000_000,
     ) -> WeightSpaceSession:
         """Load a Hugging Face causal LM and its tokenizer (CPU).
 
@@ -186,6 +199,7 @@ class WeightSpaceSession:
             splits=splits,
             base_model=model_id,
             batch_size=batch_size,
+            reference_logit_limit=reference_logit_limit,
         )
 
     # ------------------------------------------------------------------ read
@@ -337,6 +351,74 @@ class WeightSpaceSession:
         )
         return self.apply(module, result.delta, note=note), result
 
+    @property
+    @_locked
+    def behavior_references(self) -> tuple[BehaviorReference, ...]:
+        """Active references automatically enforced by every subsequent trial."""
+        return tuple(state.handle for state in self._behavior_references.values())
+
+    @_locked
+    def add_behavior_reference(
+        self,
+        *,
+        locality_prompts: Sequence[str],
+        limits: BehaviorLimits,
+        target_pairs: Sequence[tuple[str, str]] = (),
+        max_logit_elements: int = 32_000_000,
+    ) -> BehaviorReference:
+        """Measure and register a fixed reference using one measurement unit.
+
+        Later trials must meet these limits relative to the captured state.
+        Capture before editing to bound cumulative drift from the original model;
+        capture after an accepted edit with a negative minimum target gain to
+        limit regression on its target. No raw logits are returned to callers.
+        """
+        plan = _prepare(
+            self, locality_prompts, target_pairs, limits, max_logit_elements
+        )
+        remaining = self._reference_logit_limit - sum(
+            r.handle.retained_logit_elements for r in self._behavior_references.values()
+        )
+        vocab = getattr(getattr(self.model, "config", None), "vocab_size", None)
+        if remaining == 0 or (
+            type(vocab) is int
+            and vocab > 0
+            and sum(len(c.tokens) for c in plan.cases[: plan.locality_count]) * vocab
+            > remaining
+        ):
+            raise ConfigurationError("references exceed reference_logit_limit")
+        for name in self._weight_hashes:
+            self._check_weight(name)
+        snapshot = _snapshot(self, plan, "reference:capture")
+        elements = sum(t.numel() for t in snapshot.locality_logits)
+        if elements > remaining:
+            raise ConfigurationError("references exceed reference_logit_limit")
+        handle = BehaviorReference(
+            uuid.uuid4().hex,
+            plan.cases_sha256,
+            tuple(self.active_edit_ids),
+            limits,
+            elements,
+            self.budget.used,
+        )
+        self._behavior_references[handle.reference_id] = _ReferenceState(
+            handle, plan, snapshot
+        )
+        self._reference_history.append(handle)
+        return handle
+
+    @_locked
+    def release_behavior_reference(self, reference: BehaviorReference) -> None:
+        """Explicitly stop enforcing a reference and free its stored logits.
+
+        The metadata remains in export history. Handles belong to one session
+        and cannot be recreated or transferred to another session.
+        """
+        state = self._behavior_references.get(reference.reference_id)
+        if state is None or state.handle is not reference:
+            raise ConfigurationError("reference is not active in this session")
+        del self._behavior_references[reference.reference_id]
+
     @_locked
     def trial_edit(
         self,
@@ -351,7 +433,8 @@ class WeightSpaceSession:
     ) -> EditTrial:
         """Apply an edit only if complete-model validation meets declared limits.
 
-        Consumes two measurement units: before and after the proposed edit.
+        Consumes two measurement units plus one for each distinct reference case
+        set not shared by the trial. All active references must also pass.
         Every locality token contributes full-vocabulary KL; observed next tokens
         contribute NLL. Targets score separately tokenized continuations. These
         are validation cases; retain untouched test data outside the session.
@@ -365,6 +448,20 @@ class WeightSpaceSession:
         plan = _prepare(
             self, locality_prompts, target_pairs, limits, max_logit_elements
         )
+        references = tuple(self._behavior_references.values())
+        # Share candidate forwards only for identical ordered token plans, and
+        # enforce the tightest resource cap requested for those cases.
+        plans = {plan.cases_sha256: plan}
+        for ref in references:
+            existing = plans.get(ref.plan.cases_sha256, ref.plan)
+            plans[ref.plan.cases_sha256] = replace(
+                existing,
+                max_logit_elements=min(
+                    existing.max_logit_elements, ref.plan.max_logit_elements
+                ),
+            )
+        for candidate_plan in plans.values():
+            _preflight(self, candidate_plan)
         layer = self._linear(module)
         # Freeze the proposed factors before any expensive measurement; callers
         # cannot accidentally change the proposal while its baseline is running.
@@ -380,18 +477,47 @@ class WeightSpaceSession:
             raise ConfigurationError(
                 "trial delta factors must be finite floating-point tensors"
             )
-        if self.budget.remaining < 2:
+        required = 1 + len(plans)
+        if self.budget.remaining < required:
             raise BudgetExhausted(
-                "behavior trials require two remaining measurement units"
+                f"behavior trials require two base measurement units and "
+                f"{required - 2} additional reference units ({required} total)"
             )
         for name in self._weight_hashes:
             self._check_weight(name)
-        before = _snapshot(self, plan, "trial:before")
+        before = _snapshot(self, plans[plan.cases_sha256], "trial:before")
         edit_id = self.apply(module, proposal, note=note)
         try:
-            after = _snapshot(self, plan, "trial:after")
+            after = _snapshot(self, plans[plan.cases_sha256], "trial:after")
             metrics = _compare(plan, before, after)
             violations = _violations(metrics, limits)
+            checks = []
+            # Evaluate one distinct plan at a time; persistent references are
+            # bounded separately, and temporary snapshots need not accumulate.
+            for digest, candidate_plan in plans.items():
+                measured = (
+                    after
+                    if digest == plan.cases_sha256
+                    else _snapshot(self, candidate_plan, "trial:reference")
+                )
+                for ref in references:
+                    if ref.plan.cases_sha256 != digest:
+                        continue
+                    ref_metrics = _compare(ref.plan, ref.snapshot, measured)
+                    ref_violations = _violations(ref_metrics, ref.handle.limits)
+                    checks.append(
+                        ReferenceCheck(
+                            ref.handle.reference_id,
+                            ref_metrics,
+                            ref.handle.limits,
+                            ref_violations,
+                        )
+                    )
+                    violations += tuple(
+                        f"reference:{ref.handle.reference_id}:{v}"
+                        for v in ref_violations
+                    )
+                del measured
         except BaseException as exc:
             self.revert()
             self.trials.append(
@@ -401,6 +527,7 @@ class WeightSpaceSession:
                     "error_type": type(exc).__name__,
                     "cases_sha256": plan.cases_sha256,
                     "limits": asdict(limits),
+                    "reference_ids": [ref.handle.reference_id for ref in references],
                     "reverted": True,
                 }
             )
@@ -408,7 +535,13 @@ class WeightSpaceSession:
         if violations:
             self.revert()
         trial = EditTrial(
-            edit_id, not violations, violations, plan.cases_sha256, metrics, limits
+            edit_id,
+            not violations,
+            violations,
+            plan.cases_sha256,
+            metrics,
+            limits,
+            tuple(checks),
         )
         self.trials.append(asdict(trial))
         return trial
@@ -440,7 +573,7 @@ class WeightSpaceSession:
     ) -> torch.Tensor:
         """Measure module outputs per prompt, or per token with ``position='all'``.
 
-        Spends one forward pass for the whole batch of prompts.
+        Spends one measurement unit, potentially comprising several microbatches.
         """
         return self.capture_many([module], prompts, position=position, reason=reason)[
             module
@@ -654,6 +787,10 @@ class WeightSpaceSession:
             "budget": self.budget.as_dict(),
             "evaluations": self.evaluations,
             "behavior_trials": self.trials,
+            "behavior_references": [
+                {**asdict(ref), "active": ref.reference_id in self._behavior_references}
+                for ref in self._reference_history
+            ],
         }
         (out / MANIFEST_NAME).write_text(
             json.dumps(manifest, indent=2), encoding="utf-8"

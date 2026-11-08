@@ -153,8 +153,9 @@ runs baseline and candidate measurements on identical token IDs, and compares:
   for optional target pairs. Prompt and continuation are tokenized separately;
   the continuation is teacher-forced, not sampled.
 
-The check consumes two measurement units, each potentially comprising multiple
-microbatches. At least two units must remain before it starts. A default cap of
+Without registered references, the check consumes two measurement units, each
+potentially comprising multiple microbatches. The complete required budget is
+checked before it starts. A default cap of
 32 million logit elements is checked before forwards when vocabulary size is
 available and checked again at runtime. Logits stay float32 on CPU; normalization
 and KL use float64 in chunks. The cap bounds individual snapshots and padded
@@ -170,9 +171,9 @@ the exact case token IDs appear in the adapter manifest's `behavior_trials`.
 These are validation gates for an in-place edit, not guarantees about unseen
 prompts, free-running generation, or a subsequently merged adapter. Use untouched
 confirmation data under a separate fixed protocol, and recheck exported artifacts.
-The baseline is the current session, including earlier active edits: these limits
-bound the candidate's incremental drift, not accumulated drift from the original
-checkpoint.
+The trial's own baseline is the current session, including earlier active edits:
+its limits bound incremental drift. Register fixed references below to also bound
+accumulated drift from the original checkpoint or regression of earlier targets.
 
 The [pinned Qwen3-0.6B pilot](../benchmark_results/weight_space/20261108_qwen_behavior/README.md)
 tests one synthetic next-token preference with six validation and six confirmation
@@ -183,6 +184,67 @@ one of 48 confirmation positions. The zero update is rejected for lacking target
 gain. Independent replay reloads the pinned pretrained model and recomputes all
 metrics and decisions. This is a small mechanism/acceptance experiment, not a
 knowledge-editing, generation-quality or reasoning benchmark.
+
+### Cumulative drift and preservation of earlier edits
+
+Small accepted edits can accumulate large changes even when each incremental
+check passes. Python sessions can register fixed behavior references that every
+later `trial_edit` automatically enforces in addition to its incremental gates:
+
+```python
+# Run before the first edit to anchor locality to the original model.
+original_reference = session.add_behavior_reference(
+    locality_prompts=validation_prompts,
+    limits=BehaviorLimits(
+        max_mean_kl=0.001, max_token_kl=0.01,
+        max_nll_increase=0.005, min_top1_agreement=0.95,
+    ),
+)
+
+# After accepting an edit, retain its target's current continuation probability.
+target_reference = session.add_behavior_reference(
+    locality_prompts=validation_prompts,
+    target_pairs=[("The secret word is", " amber")],
+    limits=BehaviorLimits(
+        max_mean_kl=0.001, max_token_kl=0.01,
+        max_nll_increase=0.005, min_each_target_gain=-0.01,
+    ),
+)
+# Every subsequent trial must pass both references. The negative target-gain
+# threshold allows at most a 0.01-nat mean log-probability drop for this target.
+```
+
+Each reference captures the current state once, spending one measurement unit.
+It retains exact token IDs, full-vocabulary locality logits, target scores and
+fixed limits. Its handle records which edits were active at capture, the token
+hash, retained logit count and budget position. Capturing after some edits anchors
+to that edited state, not to the original checkpoint. Changed tokenizer callbacks
+cannot silently redefine an existing reference's cases.
+
+Trials report both incremental `metrics` and `reference_checks`, with each failed
+reference gate identified in `violations`. Any failed gate rejects the candidate
+and restores the prior edit stack exactly. A trial costs two measurement units
+plus one for each distinct reference case set absent from the trial itself.
+Identical ordered token plans share candidate forwards, even when their reference
+states differ. Each comparison still uses its own fixed baseline and limits.
+
+The session constructor's `reference_logit_limit` defaults to 32 million retained
+float32 elements across all references (about 128 MB). This bounds persistent
+reference logits; temporary snapshots, model memory and kernel buffers are
+additional. Requests exceeding the limit fail before a forward when the model
+advertises vocabulary size, with another check after measurement otherwise.
+Every trial also rechecks batching against each reference's `max_logit_elements`.
+
+`session.behavior_references` lists active handles. To explicitly stop enforcing
+one and free its logits, call `session.release_behavior_reference(handle)`.
+Handles belong to their creating session. Export retains reference metadata,
+active/released status and trial checks, including references later released;
+raw logits are not exported and these handles cannot restore a session.
+
+References constrain only the supplied cases. They do not establish generation
+quality, semantic correctness or preservation on unseen prompts. Direct low-level
+`apply` and `apply_constrained` remain ungated operations; use `trial_edit` for
+behavioral acceptance. Re-evaluate the final exported artifact independently.
 
 ### What the dense experiment shows
 

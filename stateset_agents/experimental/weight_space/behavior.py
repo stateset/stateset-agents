@@ -22,7 +22,13 @@ if TYPE_CHECKING:
 
     from .session import WeightSpaceSession
 
-__all__ = ["BehaviorLimits", "BehaviorMetrics", "EditTrial"]
+__all__ = [
+    "BehaviorLimits",
+    "BehaviorMetrics",
+    "BehaviorReference",
+    "ReferenceCheck",
+    "EditTrial",
+]
 
 
 @dataclass(frozen=True)
@@ -65,6 +71,32 @@ class BehaviorMetrics:
 
 
 @dataclass(frozen=True)
+class BehaviorReference:
+    """Session-owned reference handle; retained logits are never exposed.
+
+    Limits and token IDs stay fixed until explicitly released. The reference
+    describes the model at capture time, including ``edit_ids`` already active.
+    """
+
+    reference_id: str
+    cases_sha256: str
+    edit_ids: tuple[str, ...]
+    limits: BehaviorLimits
+    retained_logit_elements: int
+    captured_at_measurement: int
+
+
+@dataclass(frozen=True)
+class ReferenceCheck:
+    """A candidate's cumulative change from one fixed behavior reference."""
+
+    reference_id: str
+    metrics: BehaviorMetrics
+    limits: BehaviorLimits
+    violations: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class EditTrial:
     """Acceptance decision; rejected trials have already been reverted."""
 
@@ -74,6 +106,7 @@ class EditTrial:
     cases_sha256: str
     metrics: BehaviorMetrics
     limits: BehaviorLimits
+    reference_checks: tuple[ReferenceCheck, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -96,6 +129,36 @@ class _Snapshot:
     target_logprobs: list[float]
 
 
+@dataclass(frozen=True)
+class _ReferenceState:
+    handle: BehaviorReference
+    plan: _Plan
+    snapshot: _Snapshot
+
+
+def _preflight(session: WeightSpaceSession, plan: _Plan) -> None:
+    """Recheck stored token plans against the current batching configuration."""
+    if type(session.batch_size) is not int or session.batch_size < 1:
+        raise ConfigurationError("batch_size must be a positive integer")
+    if any(m.training for m in session.model.modules()):
+        raise ConfigurationError("behavior trials require every module in eval mode")
+    vocab = getattr(getattr(session.model, "config", None), "vocab_size", None)
+    if type(vocab) is int and vocab > 0:
+        if any(t >= vocab for c in plan.cases for t in c.tokens):
+            raise ConfigurationError("case token id exceeds model vocabulary")
+        elements = sum(len(c.tokens) for c in plan.cases) * vocab
+        padded = max(
+            len(plan.cases[i : i + session.batch_size])
+            * max(len(c.tokens) for c in plan.cases[i : i + session.batch_size])
+            * vocab
+            for i in range(0, len(plan.cases), session.batch_size)
+        )
+        if max(elements, padded) > plan.max_logit_elements:
+            raise ConfigurationError(
+                "behavior logits exceed max_logit_elements; reduce cases or batch_size"
+            )
+
+
 def _prepare(
     session: WeightSpaceSession,
     prompts: Sequence[str],
@@ -109,10 +172,6 @@ def _prepare(
         raise ConfigurationError("behavior trials need locality prompts")
     if type(max_logit_elements) is not int or max_logit_elements < 1:
         raise ConfigurationError("max_logit_elements must be a positive integer")
-    if session.batch_size < 1:
-        raise ConfigurationError("batch_size must be positive")
-    if any(m.training for m in session.model.modules()):
-        raise ConfigurationError("behavior trials require every module in eval mode")
     if not targets and (
         limits.min_target_gain is not None or limits.min_each_target_gain is not None
     ):
@@ -134,26 +193,13 @@ def _prepare(
     for prompt, continuation in targets:
         p, c = encode(prompt), encode(continuation)
         cases.append(_Case(p + c, len(p)))
-    vocab = getattr(getattr(session.model, "config", None), "vocab_size", None)
-    if type(vocab) is int and vocab > 0:
-        if any(t >= vocab for c in cases for t in c.tokens):
-            raise ConfigurationError("case token id exceeds model vocabulary")
-        elements = sum(len(c.tokens) for c in cases) * vocab
-        padded = max(
-            len(cases[i : i + session.batch_size])
-            * max(len(c.tokens) for c in cases[i : i + session.batch_size])
-            * vocab
-            for i in range(0, len(cases), session.batch_size)
-        )
-        if max(elements, padded) > max_logit_elements:
-            raise ConfigurationError(
-                "behavior logits exceed max_logit_elements; reduce cases or batch_size"
-            )
     canonical = [(c.tokens, c.target_start) for c in cases]
     digest = hashlib.sha256(
         json.dumps(canonical, separators=(",", ":")).encode()
     ).hexdigest()
-    return _Plan(tuple(cases), len(prompts), digest, max_logit_elements)
+    plan = _Plan(tuple(cases), len(prompts), digest, max_logit_elements)
+    _preflight(session, plan)
+    return plan
 
 
 def _snapshot(session: WeightSpaceSession, plan: _Plan, reason: str) -> _Snapshot:

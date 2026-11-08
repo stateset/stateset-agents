@@ -18,6 +18,8 @@ This package is the harness, not the programmer:
 - :class:`BehaviorLimits` — whole-model validation gates for a session trial:
   full-vocabulary token KL, observed-token loss, top-1 agreement and target gains;
   failed candidates roll back exactly.
+- :class:`BehaviorReference` — persistent validation anchors that additionally
+  bound cumulative drift and regression of previously edited targets.
 - :mod:`.mcp_tools` — the same loop as MCP tools, so an MCP client such as
   Claude Code can act as the programmer
   (``stateset-agents mcp --weight-space``).
@@ -62,7 +64,13 @@ from .atlas import (
     token_neighbours,
     top_writers,
 )
-from .behavior import BehaviorLimits, BehaviorMetrics, EditTrial
+from .behavior import (
+    BehaviorLimits,
+    BehaviorMetrics,
+    BehaviorReference,
+    EditTrial,
+    ReferenceCheck,
+)
 from .circuits import (
     ConditionalNeuron,
     auc,
@@ -111,10 +119,12 @@ __all__ = [
     "BudgetExhausted",
     "BehaviorLimits",
     "BehaviorMetrics",
+    "BehaviorReference",
     "ConditionalNeuron",
     "ConstrainedEdit",
     "EditDiagnostics",
     "EditTrial",
+    "ReferenceCheck",
     "EditSpec",
     "ForwardBudget",
     "HeadRewrite",
