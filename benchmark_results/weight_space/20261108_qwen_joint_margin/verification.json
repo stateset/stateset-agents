@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "model_reloaded": "Qwen/Qwen3-0.6B",
+  "generation_oracle": "Transformers.generate",
+  "selected_arm": null,
+  "generated_tokens_replayed": 1056,
+  "design_failures_not_proven_infeasible": [],
+  "joint_margin_certificates_checked": [
+    "joint_single",
+    "joint_four",
+    "joint_four_broad",
+    "joint_four_protected"
+  ],
+  "scope": "exact greedy-token and answer-prefix replay; no semantic-quality claim"
+}

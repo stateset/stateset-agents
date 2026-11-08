@@ -1,0 +1,31 @@
+{
+  "passed": true,
+  "trials": 4,
+  "model_reloaded": "Qwen/Qwen3-0.6B",
+  "decisions": [
+    {
+      "arm": "sham",
+      "accepted": false,
+      "violations": [
+        "mean_target_gain",
+        "each_target_gain"
+      ]
+    },
+    {
+      "arm": "unweighted",
+      "accepted": true,
+      "violations": []
+    },
+    {
+      "arm": "weighted",
+      "accepted": true,
+      "violations": []
+    },
+    {
+      "arm": "large_weighted",
+      "accepted": true,
+      "violations": []
+    }
+  ],
+  "scope": "full-vocabulary token replay on declared prompts; no semantic-quality claim"
+}

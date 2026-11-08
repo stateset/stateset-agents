@@ -14,6 +14,37 @@ if TYPE_CHECKING:
 __all__ = ["MarginTarget", "MarginDiagnostics", "minimum_margin_target"]
 
 
+def _solve_dual(
+    gram: torch.Tensor,
+    rhs: torch.Tensor,
+    multipliers: torch.Tensor,
+    *,
+    feasibility_atol: float,
+    duality_atol: float,
+    max_sweeps: int,
+) -> tuple[torch.Tensor, int]:
+    """Solve the bounded nonnegative dual on an already validated Gram matrix."""
+    import torch
+
+    for sweep in range(1, max_sweeps + 1):
+        violations = rhs - gram @ multipliers
+        for i in range(len(rhs)):
+            step = max(-float(multipliers[i]), float(violations[i] / gram[i, i]))
+            multipliers[i] += step
+            violations -= step * gram[:, i]
+        violations = rhs - gram @ multipliers
+        kkt = torch.where(multipliers > 0, violations.abs(), violations.clamp_min(0))
+        local_gap = float((multipliers * violations).sum())
+        if (
+            float(kkt.max()) <= feasibility_atol * 0.1
+            and abs(local_gap) <= duality_atol * 0.1
+        ):
+            return multipliers, sweep
+    raise ConfigurationError(
+        "margin solve reached max_sweeps; infeasibility is not established"
+    )
+
+
 @dataclass(frozen=True)
 class MarginDiagnostics:
     """Primal/dual checks for the float64 target, before model deployment."""
@@ -200,29 +231,14 @@ def minimum_margin_target(
         multipliers = torch.cat((multipliers, torch.zeros(1, dtype=torch.float64)))
         selected.append(worst_id)
         gram = normals @ normals.T
-        converged = False
-        while sweeps < max_sweeps:
-            sweeps += 1
-            violations = rhs - gram @ multipliers
-            for i in range(len(selected)):
-                step = max(-float(multipliers[i]), float(violations[i] / gram[i, i]))
-                multipliers[i] += step
-                violations -= step * gram[:, i]
-            # Recompute to avoid accumulating incremental gradient roundoff.
-            violations = rhs - gram @ multipliers
-            kkt = torch.where(
-                multipliers > 0, violations.abs(), violations.clamp_min(0)
-            )
-            local_gap = float((multipliers * violations).sum())
-            if (
-                float(kkt.max()) <= feasibility_atol * 0.1
-                and abs(local_gap) <= duality_atol * 0.1
-            ):
-                converged = True
-                break
-        if not converged:
-            raise ConfigurationError(
-                "margin solve reached max_sweeps; infeasibility is not established"
-            )
+        multipliers, used = _solve_dual(
+            gram,
+            rhs,
+            multipliers,
+            feasibility_atol=feasibility_atol,
+            duality_atol=duality_atol,
+            max_sweeps=max_sweeps - sweeps,
+        )
+        sweeps += used
         delta = normals.T @ multipliers
     raise AssertionError("unreachable margin solver state")

@@ -53,7 +53,10 @@ def verify(root: Path, model_path: Path) -> dict:
         )
         require(digest(path) == expected, f"artifact mismatch: {name}")
     protocol = json.loads((root / "protocol.json").read_text())
-    margin_trial = protocol["kind"] == "stateset-margin-generation-trial-v1"
+    joint_trial = protocol["kind"] == "stateset-joint-margin-generation-trial-v1"
+    margin_trial = (
+        joint_trial or protocol["kind"] == "stateset-margin-generation-trial-v1"
+    )
     require(
         margin_trial or protocol["kind"] == "stateset-generation-trial-v1",
         "wrong protocol",
@@ -68,21 +71,34 @@ def verify(root: Path, model_path: Path) -> dict:
         protocol["arms"]
         == (
             [
-                ["sham", 0.0, False],
-                ["weighted_128", 128.0, False],
-                ["margin_1", 1.0, False],
-                ["margin_1_protected", 1.0, True],
-                ["margin_8_protected", 8.0, True],
+                ["sham", 0, "narrow"],
+                ["joint_single", 1, "narrow"],
+                ["separate_four", 4, "narrow"],
+                ["joint_four", 4, "narrow"],
+                ["joint_four_broad", 4, "soft"],
+                ["joint_four_protected", 4, "hard"],
             ]
-            if margin_trial
-            else [
-                ["sham", 0.0, 100.0],
-                ["unweighted", 0.5, 0.0],
-                ["weighted", 0.5, 100.0],
-                ["large_weighted", 8.0, 100.0],
-                ["weighted_32", 32.0, 100.0],
-                ["weighted_128", 128.0, 100.0],
-            ]
+            if joint_trial
+            else (
+                (
+                    [
+                        ["sham", 0.0, False],
+                        ["weighted_128", 128.0, False],
+                        ["margin_1", 1.0, False],
+                        ["margin_1_protected", 1.0, True],
+                        ["margin_8_protected", 8.0, True],
+                    ]
+                )
+                if margin_trial
+                else [
+                    ["sham", 0.0, 100.0],
+                    ["unweighted", 0.5, 0.0],
+                    ["weighted", 0.5, 100.0],
+                    ["large_weighted", 8.0, 100.0],
+                    ["weighted_32", 32.0, 100.0],
+                    ["weighted_128", 128.0, 100.0],
+                ]
+            )
         ),
         "conditions changed",
     )
@@ -170,7 +186,16 @@ def verify(root: Path, model_path: Path) -> dict:
                 ),
                 "earlier control factors changed",
             )
-    if margin_trial:
+    if joint_trial:
+        from benchmarks.weight_space.verify_joint_margin import (
+            check_captures as check_joint_captures,
+        )
+        from benchmarks.weight_space.verify_joint_margin import (
+            check_design as check_joint_design,
+        )
+
+        check_joint_captures(model, encode, protocol, factors, base_factors)
+    elif margin_trial:
         from benchmarks.weight_space.verify_margin_target import (
             check_captures,
             check_design,
@@ -250,7 +275,19 @@ def verify(root: Path, model_path: Path) -> dict:
             decision_rows.append({"arm": arm, "eligible": False})
             continue
         layer.weight.copy_(original + factors[f"{arm}.B"] @ factors[f"{arm}.A"])
-        if margin_trial:
+        if joint_trial:
+            check_joint_design(
+                model,
+                encode,
+                protocol,
+                factors,
+                base_factors,
+                trial,
+                scale,
+                protected,
+                original,
+            )
+        elif margin_trial:
             check_design(
                 model, encode, protocol, factors, base_factors, trial, scale, protected
             )
@@ -422,14 +459,21 @@ def verify(root: Path, model_path: Path) -> dict:
                 )
     measured = len(trials) - len(design_failures)
     require(
-        summary["budget"]["used"] == 3 * measured + (2 if margin_trial else 0),
+        summary["budget"]["used"]
+        == 3 * measured + (3 if joint_trial else (2 if margin_trial else 0)),
         "budget mismatch",
     )
     require(
         summary["model_forwards"]
         == generated_count
         + 2 * (len(teacher_ids) + 1) * measured
-        + (1 + len(protocol["post_answer"]) if margin_trial else 0),
+        + (
+            len(protocol["design_prompts"])
+            + len(protocol["extra_calibration"])
+            + len(protocol["post_answer"])
+            if joint_trial
+            else (1 + len(protocol["post_answer"]) if margin_trial else 0)
+        ),
         "forward count mismatch",
     )
     return {
@@ -439,6 +483,13 @@ def verify(root: Path, model_path: Path) -> dict:
         "selected_arm": summary["selected_arm"],
         "generated_tokens_replayed": generated_count,
         "design_failures_not_proven_infeasible": design_failures,
+        "joint_margin_certificates_checked": [
+            t["arm"]
+            for t in trials
+            if joint_trial
+            and t["status"] == "measured"
+            and t["arm"].startswith("joint_")
+        ],
         "scope": "exact greedy-token and answer-prefix replay; no semantic-quality claim",
     }
 

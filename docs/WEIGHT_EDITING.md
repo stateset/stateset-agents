@@ -193,6 +193,81 @@ despite preserving the six baseline locality completions exactly. No condition
 passes the combined gate. Better local targets are useful, but this experiment
 does not establish generalization or general knowledge-editing efficacy.
 
+### Joint vocabulary margins across contexts
+
+`joint_margin_edit` designs one update across several supplied contexts. It
+chooses the output changes jointly, rather than first choosing an independent
+minimum-norm residual for each prompt and then fixing those vectors as equality
+targets. This can use less of the weight-change/locality objective when the
+contexts' keys overlap. It also supports different target tokens across contexts.
+
+```python
+from stateset_agents.experimental.weight_space import joint_margin_edit
+
+rows = session.capture_many(
+    [name, "model.norm"], design_prompts, read="input",
+)
+candidate = joint_margin_edit(
+    model.get_submodule(name).weight,
+    rows[name], rows["model.norm"], model.get_output_embeddings().weight,
+    target_token_ids,
+    output_scale=model.model.norm.weight,
+    protect=protected_keys,
+    locality=calibration_keys,
+    locality_weight=100,
+    margin=8,
+    preservation_atol=0.0005,
+)
+# candidate.delta is compatible with session.trial_edit and ordinary LoRA export.
+# Validate every target, held-out contexts and generated behavior before export.
+```
+
+For context `i`, the objective and constraints are:
+
+```text
+minimize (||D||_F² + locality_weight * ||H D.T||_F² / len(H)) / 2
+subject to P D.T = 0
+and c[i,j] @ (residual[i] + D @ key[i]) >= margin, for every competing token j
+where c[i,j] = (readout[target[i]] - readout[j]) * output_scale
+```
+
+The same architectural requirement as the single-residual method applies: the
+edited layer must write directly into these residuals, followed by the bias-free
+head and optional RMSNorm. This is not a linearization of arbitrary earlier
+transformer layers. Residuals and keys must come from the same unmodified model.
+
+The solver projects out hard-protected directions, whitens the soft locality
+metric with a thin SVD, and solves a dual problem whose Gram matrix factors into
+contrast-vector and key-vector inner products. It never materializes a square
+input-width covariance or vocabulary-by-weight constraint matrix. Returned
+factors have at most one column/row per supplied context. Vocabulary scans,
+working-set size and coordinate sweeps are bounded.
+
+`JointMarginEdit` separates the ideal CPU float64 factors and dual certificate
+from the float32 deployment factors. Diagnostics report both ideal and rounded
+minimum margins, protected-span drift, reference activation drift, locality RMS,
+and ideal primal/dual objectives. Deployment checks execute the edited Linear in
+the weight's dtype, then check all readout margins. `margin_atol` is an absolute
+pre-normalization readout tolerance; `feasibility_atol` applies to constraints
+normalized by both contrast and whitened-key norm. `max_update_norm` can cap the
+rounded update. Half/bfloat16 weights may fail these checks when rounding loses
+the requested margins or protection.
+
+A global optimum for these local constraints is not proof that the model edit
+generalizes. More protected rows can force a larger update elsewhere; more edit
+contexts can also increase collateral drift. Keep validation separate from keys
+and calibration. The independent tests enumerate full-coordinate binding sets
+on small problems; the retained experiment separately checks certificates using
+a Woodbury inverse metric and replays actual model generations.
+
+In the [retained multi-context Qwen experiment](../benchmark_results/weight_space/20261108_qwen_joint_margin/README.md),
+the joint edit reduces the rounded weight/locality objective by 17.9% relative to
+independent residual targets on the same inputs. Both four-context methods
+answer 1/6 validation and 2/6 confirmation paraphrases, with repetition and drift
+failures. Broader preservation reduces mean validation KL by about 65% but loses
+that observed transfer and still exceeds the fixed acceptance limits. No
+candidate is selected; optimization evidence and model efficacy remain distinct.
+
 LoRA export concatenates the active factors. Real arithmetic equivalence does
 not imply identical floating-point accumulation. The manifest now reports
 `merge_weight_max_errors` from a CPU comparison against the session's weights;

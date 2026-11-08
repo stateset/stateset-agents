@@ -17,6 +17,8 @@ This package is the harness, not the programmer:
   with numerical validation, optional locality penalties, and drift/norm limits.
 - :func:`minimum_margin_target` — a certified minimum-change residual target
   that promotes a token against the entire bias-free vocabulary readout.
+- :func:`joint_margin_edit` — jointly design one low-rank weight update for
+  multiple contexts, with vocabulary-margin and preservation constraints.
 - :class:`BehaviorLimits` — whole-model validation gates for a session trial:
   full-vocabulary token KL, observed-token loss, top-1 agreement and target gains;
   failed candidates roll back exactly.
@@ -105,6 +107,7 @@ from .edits import (
 )
 from .export_validation import ExportVerification
 from .generation import GreedyGeneration, matches_answer_prefix
+from .margin_edit import JointMarginDiagnostics, JointMarginEdit, joint_margin_edit
 from .protocol import (
     at_budget,
     bootstrap_ci,
@@ -135,6 +138,8 @@ __all__ = [
     "EditTrial",
     "ExportVerification",
     "GreedyGeneration",
+    "JointMarginDiagnostics",
+    "JointMarginEdit",
     "matches_answer_prefix",
     "ReferenceCheck",
     "EditSpec",
@@ -160,6 +165,7 @@ __all__ = [
     "design_conditional_neuron",
     "direction_ablation",
     "least_used_neuron",
+    "joint_margin_edit",
     "load_splits",
     "logit_direction",
     "lookback_query",

@@ -318,6 +318,32 @@ def test_margin_target_changes_real_transformer_prediction_and_reverts(tiny_mode
     assert torch.equal(logits(tiny_model, prompt), before)
 
 
+def test_joint_margin_edit_changes_both_transformer_contexts_and_reverts(tiny_model):
+    from stateset_agents.experimental.weight_space import joint_margin_edit
+
+    prompts = ["abc", "xyz"]
+    session = make_session(tiny_model)
+    before = [logits(tiny_model, p) for p in prompts]
+    tokens = [int(b[0, -1].argmin()) for b in before]
+    rows = session.capture_many([MLP_OUT, "model.norm"], prompts, read="input")
+    designed = joint_margin_edit(
+        tiny_model.get_submodule(MLP_OUT).weight,
+        rows[MLP_OUT],
+        rows["model.norm"],
+        tiny_model.lm_head.weight,
+        tokens,
+        output_scale=tiny_model.model.norm.weight,
+        margin=0.5,
+    )
+    session.apply(MLP_OUT, designed.delta)
+    assert [int(logits(tiny_model, p)[0, -1].argmax()) for p in prompts] == tokens
+    session.revert()
+    assert all(
+        torch.equal(logits(tiny_model, p), old)
+        for p, old in zip(prompts, before, strict=True)
+    )
+
+
 @pytest.mark.parametrize("locality_weight", [0.0, 100.0])
 def test_capture_inputs_and_constrained_edit_on_real_transformer_layer(
     tiny_model,

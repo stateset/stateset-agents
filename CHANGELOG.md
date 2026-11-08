@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Joint vocabulary-margin weight edits across multiple contexts, with hard
+  activation protection, soft locality penalties, dual optimality evidence and
+  deployment-dtype checks. Independent full-coordinate and Woodbury checks cover
+  the coupled solve; final-model trials still decide whether a candidate is useful.
 - Minimum-change vocabulary-margin targets for bias-free readouts, with chunked
   full-vocabulary checks, bounded dual solving, and explicit numerical certificates.
   Sessions can capture final normalization inputs for RMSNorm-aware target design.
