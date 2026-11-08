@@ -1,0 +1,981 @@
+{
+  "max_abs_error": 4.76837158203125e-07,
+  "protected_values_equal": 279990,
+  "shared_path_controls": [
+    {
+      "key": "8__0",
+      "rejection": "each hidden layer needs at least 2 channels with no nonzero path to protected outputs"
+    },
+    {
+      "key": "8__1",
+      "rejection": "each hidden layer needs at least 2 channels with no nonzero path to protected outputs"
+    },
+    {
+      "key": "8__2",
+      "rejection": "each hidden layer needs at least 2 channels with no nonzero path to protected outputs"
+    },
+    {
+      "key": "12x8__0",
+      "rejection": "each hidden layer needs at least 2 channels with no nonzero path to protected outputs"
+    },
+    {
+      "key": "12x8__1",
+      "rejection": "each hidden layer needs at least 2 channels with no nonzero path to protected outputs"
+    },
+    {
+      "key": "12x8__2",
+      "rejection": "each hidden layer needs at least 2 channels with no nonzero path to protected outputs"
+    },
+    {
+      "key": "16x12x8__0",
+      "rejection": "each hidden layer needs at least 2 channels with no nonzero path to protected outputs"
+    },
+    {
+      "key": "16x12x8__1",
+      "rejection": "each hidden layer needs at least 2 channels with no nonzero path to protected outputs"
+    },
+    {
+      "key": "16x12x8__2",
+      "rejection": "each hidden layer needs at least 2 channels with no nonzero path to protected outputs"
+    }
+  ],
+  "target_predictions": 139995,
+  "variants": [
+    {
+      "assigned": 15,
+      "baseline_mse_by_output": [
+        0.29457858204841614,
+        0.0042757801711559296,
+        0.07352986931800842
+      ],
+      "baseline_target_error": 8.163126945495605,
+      "cases": 5185,
+      "changed": 15,
+      "channel_rows": [
+        [
+          0,
+          2
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "8__0",
+      "max_abs_error": 2.384185791015625e-07,
+      "parameters": 51,
+      "protected_values_equal": 10370,
+      "seed": 0,
+      "task": "signed_add",
+      "widths": [
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 18,
+      "baseline_mse_by_output": [
+        0.29457858204841614,
+        0.0042757801711559296,
+        0.07352986931800842
+      ],
+      "baseline_target_error": 12.009077072143555,
+      "cases": 5185,
+      "changed": 18,
+      "channel_rows": [
+        [
+          0,
+          2,
+          4
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "8__0",
+      "max_abs_error": 2.384185791015625e-07,
+      "parameters": 51,
+      "protected_values_equal": 10370,
+      "seed": 0,
+      "task": "maximum",
+      "widths": [
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 15,
+      "baseline_mse_by_output": [
+        0.29457858204841614,
+        0.0042757801711559296,
+        0.07352986931800842
+      ],
+      "baseline_target_error": 7.009077072143555,
+      "cases": 5185,
+      "changed": 15,
+      "channel_rows": [
+        [
+          0,
+          2
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "8__0",
+      "max_abs_error": 4.76837158203125e-07,
+      "parameters": 51,
+      "protected_values_equal": 10370,
+      "seed": 0,
+      "task": "clipped_difference",
+      "widths": [
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 15,
+      "baseline_mse_by_output": [
+        0.3907269835472107,
+        0.005645539611577988,
+        0.06643195450305939
+      ],
+      "baseline_target_error": 8.190619468688965,
+      "cases": 5185,
+      "changed": 15,
+      "channel_rows": [
+        [
+          0,
+          2
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "8__1",
+      "max_abs_error": 2.384185791015625e-07,
+      "parameters": 51,
+      "protected_values_equal": 10370,
+      "seed": 1,
+      "task": "signed_add",
+      "widths": [
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 18,
+      "baseline_mse_by_output": [
+        0.3907269835472107,
+        0.005645539611577988,
+        0.06643195450305939
+      ],
+      "baseline_target_error": 12.032057762145996,
+      "cases": 5185,
+      "changed": 18,
+      "channel_rows": [
+        [
+          0,
+          2,
+          4
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "8__1",
+      "max_abs_error": 2.384185791015625e-07,
+      "parameters": 51,
+      "protected_values_equal": 10370,
+      "seed": 1,
+      "task": "maximum",
+      "widths": [
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 15,
+      "baseline_mse_by_output": [
+        0.3907269835472107,
+        0.005645539611577988,
+        0.06643195450305939
+      ],
+      "baseline_target_error": 7.032057762145996,
+      "cases": 5185,
+      "changed": 15,
+      "channel_rows": [
+        [
+          0,
+          2
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "8__1",
+      "max_abs_error": 4.76837158203125e-07,
+      "parameters": 51,
+      "protected_values_equal": 10370,
+      "seed": 1,
+      "task": "clipped_difference",
+      "widths": [
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 15,
+      "baseline_mse_by_output": [
+        0.3420110046863556,
+        0.008895826525986195,
+        0.057878490537405014
+      ],
+      "baseline_target_error": 8.205111026763916,
+      "cases": 5185,
+      "changed": 15,
+      "channel_rows": [
+        [
+          0,
+          2
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "8__2",
+      "max_abs_error": 2.384185791015625e-07,
+      "parameters": 51,
+      "protected_values_equal": 10370,
+      "seed": 2,
+      "task": "signed_add",
+      "widths": [
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 18,
+      "baseline_mse_by_output": [
+        0.3420110046863556,
+        0.008895826525986195,
+        0.057878490537405014
+      ],
+      "baseline_target_error": 11.78759479522705,
+      "cases": 5185,
+      "changed": 18,
+      "channel_rows": [
+        [
+          0,
+          2,
+          4
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "8__2",
+      "max_abs_error": 2.384185791015625e-07,
+      "parameters": 51,
+      "protected_values_equal": 10370,
+      "seed": 2,
+      "task": "maximum",
+      "widths": [
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 15,
+      "baseline_mse_by_output": [
+        0.3420110046863556,
+        0.008895826525986195,
+        0.057878490537405014
+      ],
+      "baseline_target_error": 6.869223117828369,
+      "cases": 5185,
+      "changed": 15,
+      "channel_rows": [
+        [
+          0,
+          2
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "8__2",
+      "max_abs_error": 4.76837158203125e-07,
+      "parameters": 51,
+      "protected_values_equal": 10370,
+      "seed": 2,
+      "task": "clipped_difference",
+      "widths": [
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 41,
+      "baseline_mse_by_output": [
+        0.0900239422917366,
+        0.011825749650597572,
+        0.07406778633594513
+      ],
+      "baseline_target_error": 8.233185529708862,
+      "cases": 5185,
+      "changed": 41,
+      "channel_rows": [
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "12x8__0",
+      "max_abs_error": 2.384185791015625e-07,
+      "parameters": 167,
+      "protected_values_equal": 10370,
+      "seed": 0,
+      "task": "signed_add",
+      "widths": [
+        12,
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 57,
+      "baseline_mse_by_output": [
+        0.0900239422917366,
+        0.011825749650597572,
+        0.07406778633594513
+      ],
+      "baseline_target_error": 12.038135528564453,
+      "cases": 5185,
+      "changed": 57,
+      "channel_rows": [
+        [
+          0,
+          2,
+          4
+        ],
+        [
+          0,
+          2,
+          4
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "12x8__0",
+      "max_abs_error": 2.384185791015625e-07,
+      "parameters": 167,
+      "protected_values_equal": 10370,
+      "seed": 0,
+      "task": "maximum",
+      "widths": [
+        12,
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 41,
+      "baseline_mse_by_output": [
+        0.0900239422917366,
+        0.011825749650597572,
+        0.07406778633594513
+      ],
+      "baseline_target_error": 7.038135528564453,
+      "cases": 5185,
+      "changed": 41,
+      "channel_rows": [
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "12x8__0",
+      "max_abs_error": 4.76837158203125e-07,
+      "parameters": 167,
+      "protected_values_equal": 10370,
+      "seed": 0,
+      "task": "clipped_difference",
+      "widths": [
+        12,
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 41,
+      "baseline_mse_by_output": [
+        0.22884078323841095,
+        0.0031233346089720726,
+        0.05955743044614792
+      ],
+      "baseline_target_error": 8.101123809814453,
+      "cases": 5185,
+      "changed": 41,
+      "channel_rows": [
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "12x8__1",
+      "max_abs_error": 2.384185791015625e-07,
+      "parameters": 167,
+      "protected_values_equal": 10370,
+      "seed": 1,
+      "task": "signed_add",
+      "widths": [
+        12,
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 57,
+      "baseline_mse_by_output": [
+        0.22884078323841095,
+        0.0031233346089720726,
+        0.05955743044614792
+      ],
+      "baseline_target_error": 12.101123809814453,
+      "cases": 5185,
+      "changed": 57,
+      "channel_rows": [
+        [
+          0,
+          2,
+          4
+        ],
+        [
+          0,
+          2,
+          4
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "12x8__1",
+      "max_abs_error": 2.384185791015625e-07,
+      "parameters": 167,
+      "protected_values_equal": 10370,
+      "seed": 1,
+      "task": "maximum",
+      "widths": [
+        12,
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 41,
+      "baseline_mse_by_output": [
+        0.22884078323841095,
+        0.0031233346089720726,
+        0.05955743044614792
+      ],
+      "baseline_target_error": 7.101123809814453,
+      "cases": 5185,
+      "changed": 41,
+      "channel_rows": [
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "12x8__1",
+      "max_abs_error": 4.76837158203125e-07,
+      "parameters": 167,
+      "protected_values_equal": 10370,
+      "seed": 1,
+      "task": "clipped_difference",
+      "widths": [
+        12,
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 41,
+      "baseline_mse_by_output": [
+        0.07560203224420547,
+        0.010598334483802319,
+        0.07535097002983093
+      ],
+      "baseline_target_error": 8.335397720336914,
+      "cases": 5185,
+      "changed": 41,
+      "channel_rows": [
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "12x8__2",
+      "max_abs_error": 2.384185791015625e-07,
+      "parameters": 167,
+      "protected_values_equal": 10370,
+      "seed": 2,
+      "task": "signed_add",
+      "widths": [
+        12,
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 57,
+      "baseline_mse_by_output": [
+        0.07560203224420547,
+        0.010598334483802319,
+        0.07535097002983093
+      ],
+      "baseline_target_error": 12.006834030151367,
+      "cases": 5185,
+      "changed": 57,
+      "channel_rows": [
+        [
+          0,
+          2,
+          4
+        ],
+        [
+          0,
+          2,
+          4
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "12x8__2",
+      "max_abs_error": 2.384185791015625e-07,
+      "parameters": 167,
+      "protected_values_equal": 10370,
+      "seed": 2,
+      "task": "maximum",
+      "widths": [
+        12,
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 41,
+      "baseline_mse_by_output": [
+        0.07560203224420547,
+        0.010598334483802319,
+        0.07535097002983093
+      ],
+      "baseline_target_error": 7.155055046081543,
+      "cases": 5185,
+      "changed": 41,
+      "channel_rows": [
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "12x8__2",
+      "max_abs_error": 4.76837158203125e-07,
+      "parameters": 167,
+      "protected_values_equal": 10370,
+      "seed": 2,
+      "task": "clipped_difference",
+      "widths": [
+        12,
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 75,
+      "baseline_mse_by_output": [
+        0.02242228016257286,
+        0.008188561536371708,
+        0.05417732894420624
+      ],
+      "baseline_target_error": 8.176887512207031,
+      "cases": 5185,
+      "changed": 75,
+      "channel_rows": [
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "16x12x8__0",
+      "max_abs_error": 2.384185791015625e-07,
+      "parameters": 383,
+      "protected_values_equal": 10370,
+      "seed": 0,
+      "task": "signed_add",
+      "widths": [
+        16,
+        12,
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 108,
+      "baseline_mse_by_output": [
+        0.02242228016257286,
+        0.008188561536371708,
+        0.05417732894420624
+      ],
+      "baseline_target_error": 11.995357513427734,
+      "cases": 5185,
+      "changed": 108,
+      "channel_rows": [
+        [
+          0,
+          2,
+          4
+        ],
+        [
+          0,
+          2,
+          4
+        ],
+        [
+          0,
+          2,
+          4
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "16x12x8__0",
+      "max_abs_error": 2.384185791015625e-07,
+      "parameters": 383,
+      "protected_values_equal": 10370,
+      "seed": 0,
+      "task": "maximum",
+      "widths": [
+        16,
+        12,
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 75,
+      "baseline_mse_by_output": [
+        0.02242228016257286,
+        0.008188561536371708,
+        0.05417732894420624
+      ],
+      "baseline_target_error": 6.995357513427734,
+      "cases": 5185,
+      "changed": 75,
+      "channel_rows": [
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "16x12x8__0",
+      "max_abs_error": 4.76837158203125e-07,
+      "parameters": 383,
+      "protected_values_equal": 10370,
+      "seed": 0,
+      "task": "clipped_difference",
+      "widths": [
+        16,
+        12,
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 75,
+      "baseline_mse_by_output": [
+        0.03664368763566017,
+        0.0035287898499518633,
+        0.05895351618528366
+      ],
+      "baseline_target_error": 8.114448070526123,
+      "cases": 5185,
+      "changed": 75,
+      "channel_rows": [
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "16x12x8__1",
+      "max_abs_error": 2.384185791015625e-07,
+      "parameters": 383,
+      "protected_values_equal": 10370,
+      "seed": 1,
+      "task": "signed_add",
+      "widths": [
+        16,
+        12,
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 108,
+      "baseline_mse_by_output": [
+        0.03664368763566017,
+        0.0035287898499518633,
+        0.05895351618528366
+      ],
+      "baseline_target_error": 12.023232460021973,
+      "cases": 5185,
+      "changed": 108,
+      "channel_rows": [
+        [
+          0,
+          2,
+          4
+        ],
+        [
+          0,
+          2,
+          4
+        ],
+        [
+          0,
+          2,
+          4
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "16x12x8__1",
+      "max_abs_error": 2.384185791015625e-07,
+      "parameters": 383,
+      "protected_values_equal": 10370,
+      "seed": 1,
+      "task": "maximum",
+      "widths": [
+        16,
+        12,
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 75,
+      "baseline_mse_by_output": [
+        0.03664368763566017,
+        0.0035287898499518633,
+        0.05895351618528366
+      ],
+      "baseline_target_error": 7.023232460021973,
+      "cases": 5185,
+      "changed": 75,
+      "channel_rows": [
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "16x12x8__1",
+      "max_abs_error": 4.76837158203125e-07,
+      "parameters": 383,
+      "protected_values_equal": 10370,
+      "seed": 1,
+      "task": "clipped_difference",
+      "widths": [
+        16,
+        12,
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 75,
+      "baseline_mse_by_output": [
+        0.08476144820451736,
+        0.0025156603660434484,
+        0.08586247265338898
+      ],
+      "baseline_target_error": 8.254052817821503,
+      "cases": 5185,
+      "changed": 75,
+      "channel_rows": [
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "16x12x8__2",
+      "max_abs_error": 2.384185791015625e-07,
+      "parameters": 383,
+      "protected_values_equal": 10370,
+      "seed": 2,
+      "task": "signed_add",
+      "widths": [
+        16,
+        12,
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 108,
+      "baseline_mse_by_output": [
+        0.08476144820451736,
+        0.0025156603660434484,
+        0.08586247265338898
+      ],
+      "baseline_target_error": 11.937689781188965,
+      "cases": 5185,
+      "changed": 108,
+      "channel_rows": [
+        [
+          0,
+          2,
+          4
+        ],
+        [
+          0,
+          2,
+          4
+        ],
+        [
+          0,
+          2,
+          4
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "16x12x8__2",
+      "max_abs_error": 2.384185791015625e-07,
+      "parameters": 383,
+      "protected_values_equal": 10370,
+      "seed": 2,
+      "task": "maximum",
+      "widths": [
+        16,
+        12,
+        8
+      ],
+      "within_tolerance": 5185
+    },
+    {
+      "assigned": 75,
+      "baseline_mse_by_output": [
+        0.08476144820451736,
+        0.0025156603660434484,
+        0.08586247265338898
+      ],
+      "baseline_target_error": 7.030122756958008,
+      "cases": 5185,
+      "changed": 75,
+      "channel_rows": [
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "grid_cases": 1089,
+      "grid_exact": 1089,
+      "key": "16x12x8__2",
+      "max_abs_error": 4.76837158203125e-07,
+      "parameters": 383,
+      "protected_values_equal": 10370,
+      "seed": 2,
+      "task": "clipped_difference",
+      "widths": [
+        16,
+        12,
+        8
+      ],
+      "within_tolerance": 5185
+    }
+  ]
+}

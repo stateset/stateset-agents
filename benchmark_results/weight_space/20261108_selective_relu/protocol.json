@@ -1,0 +1,123 @@
+{
+  "absolute_tolerance": 2e-06,
+  "architectures": [
+    [
+      8
+    ],
+    [
+      12,
+      8
+    ],
+    [
+      16,
+      12,
+      8
+    ]
+  ],
+  "domain": [
+    [
+      -4.0,
+      4.0
+    ],
+    [
+      -4.0,
+      4.0
+    ]
+  ],
+  "edit_optimizer_steps": 0,
+  "evaluation_input_seed": 86000,
+  "grid_steps": 33,
+  "kind": "stateset-selective-relu-v1",
+  "protected_outputs": [
+    0,
+    2
+  ],
+  "runtime": {
+    "device": "cpu",
+    "dtype": "float32",
+    "python": "3.12.12",
+    "threads": 1,
+    "torch": "2.11.0+cu130"
+  },
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "selection": "none; every fixed condition and trained final checkpoint is reported",
+  "sources": {
+    "relu_compiler_job.py": "02644e9f429c8613313ddbaa32c372f4efd3bedfabd9ddfb8ed9495c815192cc",
+    "relu_program.py": "536b8d58d0f11cf97429cdca5911375cd610cffb898eb93e51e4763218a3efc7",
+    "selective_relu_job.py": "6a55b0dad2ea2d28629142c9f5ecf9199e8ef4225f5ee4205ed6bae78c0ce1a1",
+    "verify_relu_compiler.py": "6e7c9f25c43be6515eca0a1fec5527eb7652690f3b621f67fc3852697cd5b65f",
+    "verify_selective_relu.py": "751c4112b64d492edb91c8db0cbda60764467fc1d04c3966d76c99e5fab28d77"
+  },
+  "sparsity": "protected odd hidden rows read only odd rows; outputs 0 and 2 read odd rows",
+  "target_output": 1,
+  "tasks": {
+    "clipped_difference": {
+      "bias": -1,
+      "hinges": [
+        {
+          "bias": 1,
+          "scale": 1.0,
+          "weights": [
+            1,
+            -1
+          ]
+        },
+        {
+          "bias": -1,
+          "scale": -1,
+          "weights": [
+            1,
+            -1
+          ]
+        }
+      ],
+      "linear": [
+        0,
+        0
+      ]
+    },
+    "maximum": {
+      "bias": 0.0,
+      "hinges": [
+        {
+          "bias": 0.0,
+          "scale": 1.0,
+          "weights": [
+            1,
+            -1
+          ]
+        }
+      ],
+      "linear": [
+        0,
+        1
+      ]
+    },
+    "signed_add": {
+      "bias": 0.0,
+      "hinges": [],
+      "linear": [
+        1,
+        1
+      ]
+    }
+  },
+  "training": {
+    "cases": 512,
+    "input_seed": 85000,
+    "learning_rate": 0.01,
+    "model_seed_start": 84000,
+    "optimizer": "Adam, default betas/epsilon, no weight decay",
+    "steps": 400,
+    "targets": [
+      "sin(x0)+0.5*x1",
+      "x0-x1",
+      "cos(x1)-0.25*x0"
+    ]
+  },
+  "uniform_cases": 4096
+}

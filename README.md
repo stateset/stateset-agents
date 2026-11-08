@@ -422,6 +422,14 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
+**Unreleased weight-editing work:**
+
+- [Selective arithmetic edits](docs/WEIGHT_EDITING.md) can replace one output
+  while preserving every other output's dependency paths, when disconnected
+  hidden capacity exists. A [fixed CPU experiment](benchmark_results/weight_space/20261108_selective_relu/README.md)
+  verifies 27 edits, 139,995 target predictions within tolerance, and 279,990
+  unchanged protected output values, with independent symbolic checks.
+
 **Platform verification improvements included in v0.67.0:**
 
 - **Evidence-first README refresh.** Release, installation, provider, and

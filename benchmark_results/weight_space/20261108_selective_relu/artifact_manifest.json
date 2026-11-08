@@ -1,0 +1,13 @@
+{
+  "checkpoints.safetensors": "729cc8a3a308971f0b7f55599fdc3646bbe84f2a0350278f4448dcf29f964179",
+  "edit_ledgers.json": "facbc964e4b7b06c054ad90d9584dbb9b667056ca15ec116d2bbd97a4b4217cc",
+  "inputs.safetensors": "0c475f604b023428d90c29a711fe81fb764cd7152f9e29e7752509c3deb768ce",
+  "protocol.json": "61afff66c9483fdd37e0647574e3bc1174ebbbd1829054e12c31cbaf2186099b",
+  "sources/relu_compiler_job.py": "02644e9f429c8613313ddbaa32c372f4efd3bedfabd9ddfb8ed9495c815192cc",
+  "sources/relu_program.py": "536b8d58d0f11cf97429cdca5911375cd610cffb898eb93e51e4763218a3efc7",
+  "sources/selective_relu_job.py": "6a55b0dad2ea2d28629142c9f5ecf9199e8ef4225f5ee4205ed6bae78c0ce1a1",
+  "sources/verify_relu_compiler.py": "6e7c9f25c43be6515eca0a1fec5527eb7652690f3b621f67fc3852697cd5b65f",
+  "sources/verify_selective_relu.py": "751c4112b64d492edb91c8db0cbda60764467fc1d04c3966d76c99e5fab28d77",
+  "summary.json": "5b9f663b5a32d81e2f991da9a1712f66a51f0547d0a7a2b29666f1bb71206f14",
+  "training.json": "be46798c491ea1cee0f6a01308cc7c64dc5ae391562e309be08b42e1b05c76d3"
+}

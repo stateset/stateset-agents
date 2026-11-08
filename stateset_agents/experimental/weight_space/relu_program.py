@@ -1,10 +1,11 @@
 """Compile scalar affine-plus-hinge programs into existing dense ReLU MLPs.
 
 The specification is supplied by the caller, not inferred from learned weights.
-Selected hidden rows carry nonnegative signals through identity connections;
-the entire scalar readout is replaced. Unselected branches remain stored but
-do not contribute to the result. This is component replacement, not preservation
-of a learned function. No optimizer, data, new layers, or custom forward is used.
+Selected hidden rows carry nonnegative signals through identity connections.
+By default the entire scalar readout is replaced. An explicit output index
+allows editing one output of a multi-output network, using only hidden rows
+with no nonzero path to any other output. No optimizer, data, new layers, or
+custom forward is used. Dense networks may have no such spare capacity.
 """
 
 from __future__ import annotations
@@ -62,6 +63,9 @@ class CompiledProgram:
     assignments: tuple[ScalarAssignment, ...]
     channels: int
     total_parameters: int
+    output_index: int = 0
+    channel_rows: tuple[tuple[int, ...], ...] = ()
+    protected_outputs: tuple[int, ...] = ()
 
     @property
     def changed_parameters(self) -> int:
@@ -131,7 +135,7 @@ def _channels(
 
 
 def _linear_layers(
-    model: torch.nn.Sequential, dimensions: int
+    model: torch.nn.Sequential, dimensions: int, output_index: int | None
 ) -> list[tuple[str, torch.nn.Linear]]:
     """Validate the inference architecture and return its named affine layers."""
     from torch import nn
@@ -154,8 +158,13 @@ def _linear_layers(
     layers = [(name, layer) for name, layer in modules if isinstance(layer, nn.Linear)]
     if layers[0][1].in_features != dimensions:
         raise ConfigurationError("program input dimension does not match model")
-    if layers[-1][1].out_features != 1:
+    outputs = layers[-1][1].out_features
+    if output_index is None and outputs != 1:
         raise ConfigurationError("expected a scalar output")
+    if output_index is not None and (
+        type(output_index) is not int or not 0 <= output_index < outputs
+    ):
+        raise ConfigurationError("output_index must be an integer within the readout")
     for (_, before), (_, after) in zip(layers[:-1], layers[1:], strict=True):
         if before.out_features != after.in_features:
             raise ConfigurationError("incompatible adjacent Linear dimensions")
@@ -164,34 +173,16 @@ def _linear_layers(
     return layers
 
 
-def compile_relu_program(
+def _initial_state(
     model: torch.nn.Sequential,
-    program: ReLUProgram,
-    *,
-    domain: tuple[tuple[float, float], ...],
-) -> CompiledProgram:
-    """Write a program into a vanilla float32 CPU Linear/ReLU MLP.
-
-    Require one or more hidden Linear/ReLU pairs followed by a scalar Linear
-    readout. All layers need biases, independent parameters, and enough width
-    for the program's nonnegative channels. Named Sequential layers are allowed.
-    Return a cloned state dictionary suitable for ``model.load_state_dict``.
-
-    In real arithmetic the result equals the specified function on ``domain``:
-    ReLU(z)-ReLU(-z)=z, nonnegative channels survive every identity/ReLU pair,
-    and the readout forms the specified sum. This identity does not assert zero
-    floating-point error. Inputs outside the domain are not covered. The dense
-    forward still evaluates disconnected branches; a conservative interval guard
-    rejects possible overflow, including there. No RNG state is consumed.
-    """
+    layers: list[tuple[str, torch.nn.Linear]],
+) -> dict[str, torch.Tensor]:
+    """Reject unsupported tensor layouts before dependency analysis or editing."""
     import torch
 
-    layers = _linear_layers(model, len(program.linear))
-    features = _channels(program, domain)
-    count = len(features)
-    if any(layer.out_features < count for _, layer in layers[:-1]):
-        raise ConfigurationError(f"each hidden layer needs at least {count} channels")
-
+    probe = torch.tensor([1], dtype=torch.int32, device="cpu").view(torch.float32)
+    if float(probe[0]) != 2**-149:
+        raise ConfigurationError("subnormal flushing is not supported")
     initial = model.state_dict()
     expected = {f"{name}.{part}" for name, _ in layers for part in ("weight", "bias")}
     if set(initial) != expected:
@@ -215,29 +206,39 @@ def compile_relu_program(
             layer.in_features,
         ) or tuple(initial[f"{name}.bias"].shape) != (layer.out_features,):
             raise ConfigurationError("parameter shapes disagree with Linear dimensions")
-    state = {name: value.detach().clone() for name, value in initial.items()}
-    touched: dict[str, list[int]] = {}
-    first = layers[0][0]
-    for row, hinge in enumerate(features):
-        state[f"{first}.weight"][row] = torch.tensor(
-            hinge.weights, dtype=torch.float32, device="cpu"
+    return dict(initial)
+
+
+def _channel_rows(
+    state: dict[str, torch.Tensor],
+    layers: list[tuple[str, torch.nn.Linear]],
+    count: int,
+    protected_outputs: tuple[int, ...],
+) -> tuple[tuple[int, ...], ...]:
+    """Select deterministic rows outside every protected output's ancestor set."""
+    protected = list(protected_outputs)
+    free_rows = []
+    for name, _ in reversed(layers[1:]):
+        # Exact nonzero edges, including subnormals: near-zero is not unused.
+        used = (state[f"{name}.weight"][protected] != 0).any(dim=0)
+        free_rows.append(tuple((~used).nonzero().flatten().tolist()[:count]))
+        protected = used.nonzero().flatten().tolist()
+    rows = tuple(reversed(free_rows))
+    if any(len(indices) < count for indices in rows):
+        raise ConfigurationError(
+            f"each hidden layer needs at least {count} channels with no nonzero "
+            "path to protected outputs"
         )
-        state[f"{first}.bias"][row] = hinge.bias
-    for name, layer in layers[:-1]:
-        if name != first:
-            state[f"{name}.weight"][:count] = 0
-            for row in range(count):
-                state[f"{name}.weight"][row, row] = 1
-            state[f"{name}.bias"][:count] = 0
-        touched[f"{name}.weight"] = list(range(count * layer.in_features))
-        touched[f"{name}.bias"] = list(range(count))
-    last = layers[-1][0]
-    state[f"{last}.weight"].zero_()
-    for row, hinge in enumerate(features):
-        state[f"{last}.weight"][0, row] = hinge.scale
-    state[f"{last}.bias"][0] = program.bias
-    touched[f"{last}.weight"] = list(range(layers[-1][1].in_features))
-    touched[f"{last}.bias"] = [0]
+    return rows
+
+
+def _guard_overflow(
+    state: dict[str, torch.Tensor],
+    layers: list[tuple[str, torch.nn.Linear]],
+    domain: tuple[tuple[float, float], ...],
+) -> None:
+    """Bound all dense branches, including disconnected ones evaluated at runtime."""
+    import torch
 
     # Factor-two inflation at every layer gives ample rounding headroom for
     # these bounded-size dense maps; reject very wide layers instead of assuming
@@ -261,6 +262,79 @@ def compile_relu_program(
             raise ConfigurationError(
                 "dense branches can overflow float32 on the domain"
             )
+
+
+def compile_relu_program(
+    model: torch.nn.Sequential,
+    program: ReLUProgram,
+    *,
+    domain: tuple[tuple[float, float], ...],
+    output_index: int | None = None,
+) -> CompiledProgram:
+    """Write a program into a vanilla float32 CPU Linear/ReLU MLP.
+
+    Require hidden Linear/ReLU pairs and a Linear readout, with independent
+    parameters and biases. Named Sequential layers are allowed. Return a cloned
+    state dictionary; neither the input model nor RNG state is changed.
+
+    With no ``output_index``, require a scalar readout and replace its function.
+    Otherwise replace only that output and protect every other output. Follow
+    all exact nonzero connections backward from protected outputs, then choose
+    the lowest available hidden rows outside those paths. Reject insufficient
+    capacity, including densely connected networks; no pruning is performed.
+    Protected paths retain all their coefficients, so their real-arithmetic
+    functions are unchanged, regardless of the training data or activations.
+
+    In real arithmetic the selected output equals the program on ``domain``:
+    ReLU(z)-ReLU(-z)=z and nonnegative channels survive identity/ReLU pairs.
+    This does not promise zero floating-point error or equality outside the
+    domain. Conservative interval bounds reject possible dense-branch overflow;
+    when protecting outputs, both the original and edited network are checked.
+    CPU modes that flush subnormal values to zero are rejected because they can
+    hide stored nonzero connections from dependency and coefficient checks.
+    """
+    import torch
+
+    layers = _linear_layers(model, len(program.linear), output_index)
+    features = _channels(program, domain)
+    count = len(features)
+    initial = _initial_state(model, layers)
+    target = 0 if output_index is None else output_index
+    protected = tuple(i for i in range(layers[-1][1].out_features) if i != target)
+    rows = _channel_rows(initial, layers, count, protected)
+    if protected:
+        _guard_overflow(initial, layers, domain)
+    state = {name: value.detach().clone() for name, value in initial.items()}
+    touched: dict[str, list[int]] = {}
+    for depth, ((name, layer), indices) in enumerate(
+        zip(layers[:-1], rows, strict=True)
+    ):
+        for channel, row in enumerate(indices):
+            if depth == 0:
+                state[f"{name}.weight"][row] = torch.tensor(
+                    features[channel].weights, dtype=torch.float32, device="cpu"
+                )
+                state[f"{name}.bias"][row] = features[channel].bias
+            else:
+                state[f"{name}.weight"][row] = 0
+                state[f"{name}.weight"][row, rows[depth - 1][channel]] = 1
+                state[f"{name}.bias"][row] = 0
+        touched[f"{name}.weight"] = [
+            row * layer.in_features + col
+            for row in indices
+            for col in range(layer.in_features)
+        ]
+        touched[f"{name}.bias"] = list(indices)
+    last, readout = layers[-1]
+    state[f"{last}.weight"][target] = 0
+    for row, hinge in zip(rows[-1], features, strict=True):
+        state[f"{last}.weight"][target, row] = hinge.scale
+    state[f"{last}.bias"][target] = program.bias
+    touched[f"{last}.weight"] = list(
+        range(target * readout.in_features, (target + 1) * readout.in_features)
+    )
+    touched[f"{last}.bias"] = [target]
+    _guard_overflow(state, layers, domain)
     ledger = tuple(
         ScalarAssignment(
             name,
@@ -272,5 +346,11 @@ def compile_relu_program(
         for index in indices
     )
     return CompiledProgram(
-        state, ledger, count, sum(t.numel() for t in initial.values())
+        state,
+        ledger,
+        count,
+        sum(t.numel() for t in initial.values()),
+        target,
+        rows,
+        protected,
     )

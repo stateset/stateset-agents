@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Selective arithmetic weight edits: `compile_relu_program(..., output_index=...)`
+  replaces one output while preserving every other output's dependency paths.
+  Reject insufficient disconnected capacity and audit saved weights independently
+  with separate arithmetic-identity and preservation certificates.
+- A fixed CPU experiment trains nine sparse networks and applies 27 selective
+  edits. All 139,995 target predictions meet the `2e-6` absolute tolerance;
+  all 279,990 protected output values remain equal. Nine connected controls
+  are rejected. See `benchmark_results/weight_space/20261108_selective_relu/`.
+
+### Fixed
+
+- Reject CPU subnormal-flushing modes during arithmetic compilation and symbolic
+  verification, where stored nonzero connections could otherwise be overlooked.
+
 ## [0.72.0] - 2026-11-07 — MCP fine-tuning management and verified recovery
 
 ### Added

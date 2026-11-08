@@ -38,7 +38,9 @@ This package is the harness, not the programmer:
 - :mod:`.handwritten_routes` — an analytic Linear/ReLU network that composes
   distances, deterministic next-hop selection, and traversal into full routes.
 - :mod:`.relu_program` — compile supplied affine-plus-hinge arithmetic into an
-  existing scalar ReLU MLP, with an explicit input domain and scalar edit ledger.
+  existing ReLU MLP, with an explicit input domain and scalar edit ledger.
+  An explicit output index preserves other outputs by using only hidden rows
+  outside their dependency paths; insufficient disconnected capacity is rejected.
 
 Everything here imports ``torch`` lazily.
 """

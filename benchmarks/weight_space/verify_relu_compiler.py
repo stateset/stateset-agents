@@ -52,24 +52,65 @@ def normal_form(linear: list, bias: float, hinges: list, domain: list) -> tuple:
     return tuple(affine), {k: v for k, v in terms.items() if v}
 
 
-def certify(state: dict[str, torch.Tensor], program: dict, domain: list) -> dict:
-    """Check the complete reachable circuit against its supplied specification."""
+def _checked_layers(state: dict[str, torch.Tensor]) -> list[int]:
+    """Validate serialized vanilla Sequential dimensions independently."""
+    probe = torch.tensor([1], dtype=torch.int32, device="cpu").view(torch.float32)
+    require(float(probe[0]) == 2**-149, "subnormal flushing is not supported")
     indices = sorted(int(k.split(".")[0]) for k in state if k.endswith(".weight"))
     require(indices == list(range(0, len(indices) * 2, 2)), "unexpected layer indices")
     require(len(indices) >= 2, "need a hidden layer")
+    require(
+        set(state) == {f"{i}.{part}" for i in indices for part in ("weight", "bias")},
+        "unexpected state keys",
+    )
     for value in state.values():
         require(
-            value.dtype == torch.float32 and bool(torch.isfinite(value).all()),
+            value.device.type == "cpu"
+            and value.dtype == torch.float32
+            and bool(torch.isfinite(value).all()),
             "invalid parameters",
         )
+    for position, index in enumerate(indices):
+        weights, bias = state[f"{index}.weight"], state[f"{index}.bias"]
+        require(
+            weights.ndim == 2
+            and min(weights.shape) > 0
+            and bias.shape == (weights.shape[0],),
+            "invalid affine dimensions",
+        )
+        if position:
+            require(
+                weights.shape[1] == state[f"{indices[position - 1]}.weight"].shape[0],
+                "incompatible adjacent dimensions",
+            )
+    return indices
+
+
+def certify(
+    state: dict[str, torch.Tensor],
+    program: dict,
+    domain: list,
+    *,
+    output_index: int | None = None,
+) -> dict:
+    """Check one output's complete reachable circuit against its specification."""
+    indices = _checked_layers(state)
     output = indices[-1]
-    require(state[f"{output}.weight"].shape[0] == 1, "not a scalar output")
+    outputs = state[f"{output}.weight"].shape[0]
+    if output_index is None:
+        require(outputs == 1, "not a scalar output")
+        output_index = 0
+    require(
+        type(output_index) is int and 0 <= output_index < outputs,
+        "invalid output index",
+    )
+    require(state["0.weight"].shape[1] == len(domain), "invalid domain dimension")
     active = {
         i: Fraction(float(v))
-        for i, v in enumerate(state[f"{output}.weight"][0])
+        for i, v in enumerate(state[f"{output}.weight"][output_index])
         if v != 0
     }
-    bias = float(state[f"{output}.bias"][0])
+    bias = float(state[f"{output}.bias"][output_index])
     for index in reversed(indices[1:-1]):
         previous: dict[int, Fraction] = {}
         for row, scale in active.items():
@@ -98,6 +139,55 @@ def certify(state: dict[str, torch.Tensor], program: dict, domain: list) -> dict
     }
 
 
+def certify_preservation(
+    before: dict[str, torch.Tensor],
+    after: dict[str, torch.Tensor],
+    *,
+    output_index: int,
+) -> dict:
+    """Prove unchanged real-arithmetic functions for all other output rows.
+
+    Walk backward through every nonzero edge from protected outputs. Every
+    reachable affine row (including its zero edges and bias) must be identical.
+    This independent check reads saved tensors, not the compiler's assignment
+    ledger, chosen channels, training data, or claimed certificate. It assumes
+    the serialized vanilla Linear/ReLU architecture and finite arithmetic;
+    floating-point overflow and empirical equality are separate checks.
+    """
+    indices = _checked_layers(before)
+    require(_checked_layers(after) == indices, "layer structure changed")
+    for name, value in before.items():
+        require(value.shape == after[name].shape, "parameter shape changed")
+    outputs = before[f"{indices[-1]}.weight"].shape[0]
+    require(
+        type(output_index) is int and 0 <= output_index < outputs,
+        "invalid output index",
+    )
+    protected = [i for i in range(outputs) if i != output_index]
+    rows = protected
+    reachable = {}
+    parameters = 0
+    for index in reversed(indices):
+        reachable[str(index)] = list(rows)
+        for part in ("weight", "bias"):
+            old = before[f"{index}.{part}"][rows]
+            new = after[f"{index}.{part}"][rows]
+            require(torch.equal(old, new), f"protected {index}.{part} changed")
+            parameters += old.numel()
+        weights = before[f"{index}.weight"]
+        rows = [
+            col
+            for col in range(weights.shape[1])
+            if any(float(weights[row, col]) != 0 for row in rows)
+        ]
+    return {
+        "real_arithmetic_preservation": True,
+        "protected_outputs": protected,
+        "reachable_rows": reachable,
+        "unchanged_reachable_parameters": parameters,
+    }
+
+
 def oracle(name: str, row: list[float]) -> float:
     """Python arithmetic oracle independent of the job's torch formulas."""
     a, b = row[:2]
@@ -118,7 +208,9 @@ def oracle(name: str, row: list[float]) -> float:
     raise ValueError(name)
 
 
-def model(dimensions: int, widths: list[int], state: dict) -> torch.nn.Sequential:
+def model(
+    dimensions: int, widths: list[int], state: dict, *, outputs: int = 1
+) -> torch.nn.Sequential:
     """Rebuild ordinary Linear/ReLU inference from the recorded architecture."""
     layers = []
     for width in widths:
@@ -126,7 +218,7 @@ def model(dimensions: int, widths: list[int], state: dict) -> torch.nn.Sequentia
             (torch.nn.Linear(dimensions, width, device="meta"), torch.nn.ReLU())
         )
         dimensions = width
-    layers.append(torch.nn.Linear(dimensions, 1, device="meta"))
+    layers.append(torch.nn.Linear(dimensions, outputs, device="meta"))
     net = torch.nn.Sequential(*layers).to_empty(device="cpu")
     net.load_state_dict(state)
     return net.eval()
