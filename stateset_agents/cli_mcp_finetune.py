@@ -17,6 +17,7 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import Field
 
 from stateset_agents.core.errors import ConfigurationError
+from stateset_agents.evaluation.agent_runs import content_hash
 from stateset_agents.finetune_evaluation import (
     EvaluationConfig,
     EvaluationProtocolError,
@@ -31,7 +32,22 @@ from stateset_agents.finetune_evaluation import (
     stop_evaluation,
 )
 from stateset_agents.finetune_inspection import metric_history
+from stateset_agents.finetune_nomination import (
+    list_nominations,
+    nomination_config,
+    nomination_plan,
+    nomination_status,
+    prepare_nomination,
+)
 from stateset_agents.finetune_recovery import inspect_checkpoints, prepare_resume
+from stateset_agents.finetune_validation import (
+    MAX_COMPARISON_RECORDS,
+    ValidationComparisonError,
+    comparison_path,
+    comparison_status,
+    latest_comparison,
+    submit_comparison,
+)
 from stateset_agents.finetune_workspace import (
     FinetuneConfig,
     check_config_values,
@@ -81,7 +97,7 @@ class FinetuneTools:
             }
         except (ValueError, OSError, RuntimeError, TypeError, KeyError) as exc:
             error: dict[str, Any] = {"type": type(exc).__name__, "message": str(exc)}
-            if isinstance(exc, EvaluationProtocolError):
+            if isinstance(exc, (EvaluationProtocolError, ValidationComparisonError)):
                 error.update(code=exc.code, diagnostic=exc.diagnostic)
             payload = {
                 "schema_version": 1,
@@ -144,6 +160,8 @@ class FinetuneTools:
                     "remote_submission_receipts",
                     "checkpoint_retention",
                     "checkpoint_recovery",
+                    "checkpoint_validation_comparison",
+                    "checkpoint_nomination",
                     "local_evaluation",
                     "log_sources",
                 )
@@ -152,6 +170,7 @@ class FinetuneTools:
                 "launch_enabled": self.allow_training,
                 "paid_launch_enabled": self.allow_paid,
                 "evaluation_launch_enabled": self.allow_training,
+                "validation_comparison_enabled": self.allow_training,
                 "dataset_paths": "Files inside this workspace; no symbolic links",
                 "job_lifetime": "Detached workers survive MCP client disconnection",
                 "quality_gain_verified": False,
@@ -322,7 +341,7 @@ class FinetuneTools:
         """List final and published checkpoint metadata without reading weights.
 
         Published checkpoints use validation cases; fresh test assessment of a
-        selected checkpoint requires a retained nomination from the CLI/studio.
+        selected checkpoint requires a reviewed nomination.
         """
         return await self._call(
             "evaluation_targets", lambda: evaluation_targets(self._run(run_id))
@@ -402,9 +421,7 @@ class FinetuneTools:
 
     def _require_execution(self) -> None:
         if not self.allow_training:
-            raise ConfigurationError(
-                "Training/evaluation controls require --allow-training"
-            )
+            raise ConfigurationError("Execution controls require --allow-training")
 
     def _launch_evaluation(
         self, run_id: str, evaluation_id: str, expected_plan_sha256: str
@@ -474,6 +491,143 @@ class FinetuneTools:
             return self._evaluation_summary(path)
 
         return await self._call("evaluation_stop", stop)
+
+    def _comparison_summary(self, path: Path) -> dict[str, Any]:
+        status = comparison_status(path)
+        plan = read_json(path / "plan.json")
+        return {
+            **status,
+            "run_id": path.parent.parent.name,
+            "plan_sha256": content_hash(plan),
+            "evaluation_ids": [row["evaluation_id"] for row in plan["evaluations"]],
+            "resource_uri": f"finetune://runs/{path.parent.parent.name}/comparisons/{path.name}",
+        }
+
+    async def finetune_validation_compare(
+        self,
+        run_id: str,
+        anchor_id: str,
+        evaluation_ids: Annotated[
+            list[str] | None, Field(max_length=MAX_COMPARISON_RECORDS)
+        ] = None,
+        resubmit: Annotated[bool, Field(strict=True)] = False,
+    ) -> CallToolResult:
+        """Queue checkpoint-byte and recorded-judge verification; no model inference.
+
+        Requires --allow-training and Buildr on Linux. The anchor is a completed
+        published-checkpoint validation. Active work for the same anchor is
+        reused; the response lists its captured evaluation_ids. resubmit=True
+        explicitly queues new work. Finished/failed/stale work may be submitted
+        again, so inspect status after a lost response before retrying.
+        """
+
+        def submit() -> dict[str, Any]:
+            self._require_execution()
+            path = submit_comparison(
+                self._run(run_id), anchor_id, evaluation_ids, resubmit=resubmit
+            )
+            return {"comparison": self._comparison_summary(path)}
+
+        return await self._call("validation_compare", submit)
+
+    async def finetune_validation_comparison_status(
+        self, run_id: str, comparison_id: str | None = None
+    ) -> CallToolResult:
+        """Read a saved comparison, or the latest when comparison_id is omitted.
+
+        Returns comparison=null when no comparison has been retained. Reads
+        metadata and recorded results only; never submits or hashes weights.
+        """
+
+        def inspect() -> dict[str, Any]:
+            run = self._run(run_id)
+            path = (
+                latest_comparison(run)
+                if comparison_id is None
+                else comparison_path(run, comparison_id)
+            )
+            return {"comparison": self._comparison_summary(path) if path else None}
+
+        return await self._call("validation_comparison_status", inspect)
+
+    async def finetune_nomination_plan(
+        self, run_id: str, comparison_id: str
+    ) -> CallToolResult:
+        """Review a checkpoint selection from a complete validation recommendation.
+
+        Returns a plan and checksum without writing or reading weights. This
+        selects an artifact for a separate fresh-test review, not deployment.
+        """
+
+        def review() -> dict[str, Any]:
+            plan = nomination_plan(self._run(run_id), comparison_id)
+            return {
+                "plan": plan,
+                "plan_sha256": content_hash(plan),
+                "prepared": False,
+                "inference_started": False,
+            }
+
+        return await self._call("nomination_plan", review)
+
+    async def finetune_nomination_prepare(
+        self, run_id: str, comparison_id: str, expected_plan_sha256: str
+    ) -> CallToolResult:
+        """Save the exact reviewed checkpoint nomination without starting work.
+
+        Each call creates a receipt. It copies no weights, changes no training
+        outcome and starts no inference. Use finetune_nominations after a lost
+        response before preparing again.
+        """
+
+        def prepare() -> dict[str, Any]:
+            receipt = prepare_nomination(
+                self._run(run_id),
+                comparison_id,
+                expected_plan_sha256=expected_plan_sha256,
+            )
+            return {
+                **receipt,
+                "resource_uri": f"finetune://runs/{run_id}/nominations/{receipt['nomination_id']}",
+            }
+
+        return await self._call("nomination_prepare", prepare)
+
+    async def finetune_nominations(self, run_id: str) -> CallToolResult:
+        """List up to 100 retained checkpoint selections and any unavailable rows.
+
+        Verifies metadata lineage only; no weight reads, inference or promotion.
+        """
+        return await self._call(
+            "nominations", lambda: list_nominations(self._run(run_id))
+        )
+
+    async def finetune_nomination_status(
+        self, run_id: str, nomination_id: str
+    ) -> CallToolResult:
+        """Inspect the saved selection and its metadata lineage; bytes remain unchecked."""
+        return await self._call(
+            "nomination_status",
+            lambda: nomination_status(self._run(run_id), nomination_id),
+        )
+
+    async def finetune_nomination_config(
+        self, run_id: str, nomination_id: str, expected_plan_sha256: str
+    ) -> CallToolResult:
+        """Restore a reviewed selection into an unprepared fresh-test configuration.
+
+        cases is deliberately blank. Choose fresh reviewed workspace cases, then
+        use evaluation_plan and evaluation_prepare; their checks reject overlap
+        with training/validation and changed selected artifact bytes.
+        """
+        return await self._call(
+            "nomination_config",
+            lambda: nomination_config(
+                self._run(run_id),
+                nomination_id,
+                expected_plan_sha256=expected_plan_sha256,
+            ),
+        )
 
     def _reviewed_run(self, run_id: str, expected_plan_sha256: str) -> Path:
         self._require_execution()
@@ -558,8 +712,19 @@ def register_finetune_tools(
     service = FinetuneTools(
         workspace, allow_training=allow_training, allow_paid=allow_paid
     )
-    preparations = {"prepare", "prepare_resume", "evaluation_prepare"}
-    executions = {"launch", "stop", "evaluation_launch", "evaluation_stop"}
+    preparations = {
+        "prepare",
+        "prepare_resume",
+        "evaluation_prepare",
+        "nomination_prepare",
+    }
+    executions = {
+        "launch",
+        "stop",
+        "evaluation_launch",
+        "evaluation_stop",
+        "validation_compare",
+    }
     names = [
         "capabilities",
         "prepare",
@@ -573,15 +738,29 @@ def register_finetune_tools(
         "evaluation_prepare",
         "evaluations",
         "evaluation_status",
+        "validation_comparison_status",
+        "nomination_plan",
+        "nomination_prepare",
+        "nominations",
+        "nomination_status",
+        "nomination_config",
     ]
     if allow_training:
-        names.extend(["launch", "stop", "evaluation_launch", "evaluation_stop"])
+        names.extend(
+            [
+                "launch",
+                "stop",
+                "evaluation_launch",
+                "evaluation_stop",
+                "validation_compare",
+            ]
+        )
     for name in names:
         server.tool(
             annotations=ToolAnnotations(
                 readOnlyHint=name not in preparations | executions,
                 destructiveHint=name in executions,
-                idempotentHint=name not in preparations,
+                idempotentHint=name not in preparations | {"validation_compare"},
                 openWorldHint=name in executions,
             )
         )(getattr(service, f"finetune_{name}"))
@@ -619,5 +798,51 @@ def register_finetune_tools(
         return json.dumps(
             (
                 await service.finetune_evaluation_status(run_id, evaluation_id)
+            ).structuredContent
+        )
+
+    @server.resource(
+        "finetune://runs/{run_id}/comparisons", mime_type="application/json"
+    )
+    async def latest_comparison_resource(run_id: str) -> str:
+        """Latest retained validation comparison, without submitting verification."""
+        return json.dumps(
+            (
+                await service.finetune_validation_comparison_status(run_id)
+            ).structuredContent
+        )
+
+    @server.resource(
+        "finetune://runs/{run_id}/comparisons/{comparison_id}",
+        mime_type="application/json",
+    )
+    async def comparison_resource(run_id: str, comparison_id: str) -> str:
+        """One retained validation comparison and its recorded recommendation."""
+        return json.dumps(
+            (
+                await service.finetune_validation_comparison_status(
+                    run_id, comparison_id
+                )
+            ).structuredContent
+        )
+
+    @server.resource(
+        "finetune://runs/{run_id}/nominations", mime_type="application/json"
+    )
+    async def nominations_resource(run_id: str) -> str:
+        """Bounded saved checkpoint nominations, including unavailable metadata."""
+        return json.dumps(
+            (await service.finetune_nominations(run_id)).structuredContent
+        )
+
+    @server.resource(
+        "finetune://runs/{run_id}/nominations/{nomination_id}",
+        mime_type="application/json",
+    )
+    async def nomination_resource(run_id: str, nomination_id: str) -> str:
+        """One saved checkpoint nomination and its metadata lineage."""
+        return json.dumps(
+            (
+                await service.finetune_nomination_status(run_id, nomination_id)
             ).structuredContent
         )

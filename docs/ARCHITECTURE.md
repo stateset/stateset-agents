@@ -265,7 +265,7 @@ trainers, evaluation and the remote runtime into end-to-end studies lives in
 | `_deprecation` | foundation | `_deprecation.py` | 1 | ~0.1K |
 | `exceptions` | foundation | `exceptions.py` | 1 | ~0.1K |
 | `facade` | facade | `__init__.py` | 1 | ~0.4K |
-| **total** | | | 555 | ~227K |
+| **total** | | | 555 | ~228K |
 <!-- package-layout:end -->
 
 Outside the package: `deployment/` (Helm chart and value profiles, Kubernetes

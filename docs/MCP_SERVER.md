@@ -86,7 +86,7 @@ Configure a dedicated local directory containing your datasets and saved runs:
 # Prepare and inspect runs without enabling launch or stop.
 stateset-agents mcp --finetune-workspace /absolute/path/to/finetune
 
-# Also expose training and local evaluation launch/stop.
+# Also expose training/evaluation execution and queued checkpoint comparison.
 stateset-agents mcp --finetune-workspace /absolute/path/to/finetune --allow-training
 ```
 
@@ -218,8 +218,8 @@ The case file must be inside the configured workspace. It contains
 checks partition, provenance, duplicates and training overlap before preparing.
 
 Published checkpoint comparisons use `split: "validation"`. Assessing a selected
-checkpoint on fresh test cases requires the backend's nomination workflow,
-currently available through the CLI/studio. A final adapter can be evaluated
+checkpoint on fresh test cases requires the nomination workflow below.
+A final adapter can be evaluated
 directly on reviewed test cases. Invalid partition/provenance responses include
 an error code and field diagnostic without returning raw case content.
 
@@ -234,6 +234,67 @@ it performs no fresh inference and returns no raw transcripts. It can report
 regressions or `judge_replay_verified=true`, while `quality_gain_verified` remains
 false: one diagnostic does not establish a multi-seed quality study. It never
 overwrites a run's existing quality study or automatically promotes an adapter.
+
+### Checkpoint comparison and selection
+
+After evaluating published checkpoints on validation cases, compare their
+retained evidence and select a checkpoint for fresh test assessment. The
+comparison worker rehashes checkpoint bytes and replays recorded judge results;
+it runs no models. Submission requires `--allow-training` and Buildr on Linux.
+The remaining tools inspect or prepare metadata and need only the configured
+workspace. `finetune_capabilities` describes the comparison and nomination
+constraints under `checkpoint_validation_comparison` and `checkpoint_nomination`.
+
+| Tool | Behavior |
+|---|---|
+| `finetune_validation_compare(run_id, anchor_id, evaluation_ids=null, resubmit=false)` | Queue verification of completed checkpoint validations. The anchor identifies the comparison protocol. Returns `comparison` with its captured evaluation IDs, job handle and resource URI. |
+| `finetune_validation_comparison_status(run_id, comparison_id=null)` | Read one retained comparison or the latest when the ID is omitted. Returns `comparison=null` if none exists; never submits work. |
+| `finetune_nomination_plan(run_id, comparison_id)` | Review the checkpoint recommended by a complete comparison; return a plan and checksum without writes or weight reads. |
+| `finetune_nomination_prepare(run_id, comparison_id, expected_plan_sha256)` | Save exactly the reviewed checkpoint selection as a nomination receipt. No weight copies, training changes or inference. |
+| `finetune_nominations(run_id)` | List up to 100 saved selections, including unavailable records. |
+| `finetune_nomination_status(run_id, nomination_id)` | Verify a saved selection's metadata lineage; does not verify current weight bytes. |
+| `finetune_nomination_config(run_id, nomination_id, expected_plan_sha256)` | Restore the selected checkpoint and judge protocol into a test configuration with `cases` blank. No preparation or launch occurs. |
+
+The comparison ranks compatible candidates by success rate, judge score and
+earliest saved step. New success regressions, critical-check failures, policy
+violations or truncations disqualify a candidate. Incomplete, conflicting or
+unverifiable evidence prevents a recommendation. A recommendation can retain
+the base model instead of selecting an adapter; nomination requires an explicit
+checkpoint recommendation from a completed comparison.
+
+An active comparison for the same anchor is reused. Inspect the returned
+`evaluation_ids`: an active request keeps its captured subset, even if a later
+call supplies different IDs. Use `resubmit=true` only when intentionally queuing
+a fresh comparison. Finished, failed or stale jobs may also lead to new work
+on another submission. After a lost response, inspect status before retrying.
+The latest-status form helps recover a handle, while a saved comparison ID
+always identifies that exact request. `submission_uncertain` is a retained
+uncertain outcome, not a confirmed queue failure or permission to retry.
+
+The selection flow uses separate review hashes:
+
+```text
+finetune_validation_compare(run_id, anchor_id)
+finetune_validation_comparison_status(run_id, comparison_id)
+finetune_nomination_plan(run_id, comparison_id)
+finetune_nomination_prepare(run_id, comparison_id, nomination_plan_sha256)
+finetune_nomination_config(run_id, nomination_id, nomination_plan_sha256)
+```
+
+Fill the returned `config.cases` with a workspace-relative file of fresh reviewed
+test cases. Then use `finetune_evaluation_plan`, `finetune_evaluation_prepare`
+and `finetune_evaluation_launch`, with the **new evaluation plan checksum**.
+Those checks rehash the nominated artifact, validate the retained selection and
+reject reuse of training/validation cases. Validation separation checks retained
+case IDs and normalized user turns; reviewer provenance remains an attestation,
+not proof of semantic or external dataset independence.
+
+Nomination preparation creates a new receipt on each call. Reopen saved receipts
+with the list/status/config tools after reconnecting. Missing or changed
+comparison results, selection metadata or receipts cannot authorize a fresh-test
+review. Changed weights are detected when that evaluation is planned or launched.
+A nomination never replaces the training run's final artifact, copies weights,
+publishes a model, or establishes `quality_gain_verified=true`.
 
 ### Checkpoint recovery
 
@@ -280,6 +341,10 @@ With `--finetune-workspace`, the server also exposes JSON resources:
 - `finetune://runs/{run_id}`: a saved plan, state and recent metrics.
 - `finetune://runs/{run_id}/evaluations`: up to 30 saved evaluations.
 - `finetune://runs/{run_id}/evaluations/{evaluation_id}`: evaluation/queue progress.
+- `finetune://runs/{run_id}/comparisons`: the latest retained validation comparison.
+- `finetune://runs/{run_id}/comparisons/{comparison_id}`: a specific comparison.
+- `finetune://runs/{run_id}/nominations`: bounded saved selection metadata.
+- `finetune://runs/{run_id}/nominations/{nomination_id}`: one nomination's lineage.
 
 They use the same redacted response envelopes and workspace checks as the
 tools. Resource reads never trigger evidence verification; use the explicit
@@ -309,9 +374,8 @@ command" walks through the same flow via the CLI directly.
 The first management surface deliberately shares the existing scheduler,
 worker and receipts. The next useful additions are:
 
-1. Expose the backend's checkpoint comparison and nomination workflows, retaining
-   the separation between validation selection and fresh test assessment.
-   Require measured quality improvements before recommending artifact promotion.
+1. Add a reviewed multi-seed quality-study workflow that consumes independent
+   test evidence before recommending artifact promotion.
 2. Add durable preparation request IDs and paginated history for large workspaces.
    Integrate the MCP tasks extension when the server SDK and client negotiate it;
    current clients can use durable run IDs and status polling.

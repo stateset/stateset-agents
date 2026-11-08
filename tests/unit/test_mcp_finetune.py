@@ -76,7 +76,7 @@ def starts(monkeypatch):
 async def test_default_and_workspace_tool_capabilities(workspace):
     default = await create_server().list_tools()
     assert len(default) == 7
-    for enabled, count in [(False, 12), (True, 16)]:
+    for enabled, count in [(False, 18), (True, 23)]:
         server = create_server(finetune_workspace=workspace, allow_training=enabled)
         tools = {tool.name: tool for tool in await server.list_tools()}
         assert len(tools) == 7 + count
@@ -84,14 +84,26 @@ async def test_default_and_workspace_tool_capabilities(workspace):
         assert ("finetune_stop" in tools) is enabled
         assert ("finetune_evaluation_launch" in tools) is enabled
         assert ("finetune_evaluation_stop" in tools) is enabled
+        assert ("finetune_validation_compare" in tools) is enabled
         assert tools["finetune_prepare"].annotations.idempotentHint is False
         assert tools["finetune_prepare_resume"].annotations.idempotentHint is False
         assert tools["finetune_evaluation_prepare"].annotations.readOnlyHint is False
+        assert tools["finetune_nomination_prepare"].annotations.idempotentHint is False
+        assert tools["finetune_nomination_status"].annotations.readOnlyHint is True
+        if enabled:
+            assert (
+                tools["finetune_validation_compare"].annotations.idempotentHint is False
+            )
         assert tools["finetune_logs"].annotations.readOnlyHint is True
         capabilities = result(await server.call_tool("finetune_capabilities", {}))
         assert capabilities["launch_enabled"] is enabled
         assert capabilities["paid_launch_enabled"] is False
         assert capabilities["evaluation_launch_enabled"] is enabled
+        assert capabilities["validation_comparison_enabled"] is enabled
+        assert (
+            capabilities["checkpoint_validation_comparison"]["model_inference"] is False
+        )
+        assert capabilities["checkpoint_nomination"]["automatic_promotion"] is False
         assert capabilities["local_evaluation"]["config_schema"]["required"] == [
             "cases",
             "judge_model",

@@ -45,7 +45,7 @@ def mcp(
     allow_training: bool = typer.Option(
         False,
         "--allow-training",
-        help="Enable real training and local evaluation launch/stop tools.",
+        help="Enable training, local evaluation and queued checkpoint comparison.",
     ),
     allow_paid: bool = typer.Option(
         False, "--allow-paid", help="Also permit launches on paid training providers."

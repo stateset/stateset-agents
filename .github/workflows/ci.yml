@@ -32,6 +32,7 @@ jobs:
       run: >-
         pytest --confcutdir=tests/unit -n 0 -o addopts=''
         --timeout=60 tests/unit/test_mcp_finetune.py tests/unit/test_mcp_finetune_evaluation.py
+        tests/unit/test_mcp_finetune_selection.py
 
   river-native:
     strategy:
