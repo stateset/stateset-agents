@@ -158,7 +158,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python candidate:** `stateset-agents==0.71.7`, publication pending.
+- **Current Python candidate:** `stateset-agents==0.72.0`, publication pending.
   Publication status and retained runs are listed in
   [release evidence](docs/RELEASE_EVIDENCE.md).
 - **Latest verified PyPI release:** `stateset-agents==0.66.1`, checked October 20,
@@ -474,7 +474,14 @@ coverage, live hardware attempts, and successful inference by provider.
   checkouts before invoking an evaluator. Every model-consuming stage is bound,
   and standalone execution verifies the checkout's exact suite revision.
 
-**v0.71.7 (latest candidate; publication pending):**
+**v0.72.0 (latest candidate; publication pending):**
+
+- Add [MCP fine-tuning management](docs/MCP_SERVER.md) for durable training runs, logs, checkpoint recovery, evaluation, validation comparisons, and reviewed checkpoint selection.
+- Require explicit execution flags and reviewed plan checksums for training and evaluation launches; verify the protocol in a lightweight environment without PyTorch.
+- Verify training configuration, input identities, and external model state before resuming checkpoints.
+- Preserve upstream inference errors and backoff, validate Kimi reasoning aliases, and bound on-policy sampling by the remaining context budget.
+
+**v0.71.7:**
 
 - Add Kimi K3.1 Pro hosted inference with authenticated OpenAI-compatible transport, reasoning controls, streamed responses, and preserved tool/reasoning history.
 - Register the separately pinned K3.1 Pro checkpoint and audited KDA/DSA targets; local training remains blocked pending compatible packed-weight loaders and kernels.
@@ -1660,7 +1667,7 @@ asyncio.run(main())
 ```bash
 pip install "stateset-agents==0.66.1" # latest verified PyPI release
 # Tagged candidate; publication is blocked. Post-tag fixes require their own commit.
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.71.7"
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.72.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -2579,7 +2586,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest candidate `v0.71.7`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest candidate `v0.72.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

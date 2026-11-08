@@ -7,8 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.72.0] - 2026-11-07 — MCP fine-tuning management and verified recovery
+
+### Added
+
+- Add opt-in MCP fine-tuning management with a persistent workspace: prepare
+  and inspect plans, launch and stop detached workers, follow logs, inspect
+  checkpoints, and prepare checkpoint recovery. Training and paid execution
+  require explicit server flags; launches verify the reviewed plan checksum.
+- Expose checkpoint evaluation, evidence verification, validation comparisons,
+  and reviewed checkpoint nominations through MCP tools and JSON resources,
+  including configuration handoff for a fresh test evaluation. Preserve the
+  existing MCP tool set when no fine-tuning workspace is configured.
+- Verify the MCP workflow with real stdio sessions and reconnect tests in a
+  lightweight MCP-only CI environment without PyTorch or paid provider calls.
+
 ### Fixed
 
+- Verify saved training configuration, training-input identities, and external
+  model state before checkpoint resume, including reference and teacher models,
+  frozen adapter bases, and cached targets. Retain warnings for older checkpoint
+  formats that lack the corresponding verification metadata.
 - Calibrate the online DPO and distillation CPU learning fixtures on training
   prompts, using smaller updates and sufficient optimization budgets while
   retaining the held-out thresholds, all three seeds, and negative controls.
