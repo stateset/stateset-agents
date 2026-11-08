@@ -20,6 +20,8 @@ This package is the harness, not the programmer:
   failed candidates roll back exactly.
 - :class:`BehaviorReference` — persistent validation anchors that additionally
   bound cumulative drift and regression of previously edited targets.
+- :class:`ExportVerification` — artifact-bound model-output checks after loading
+  exported adapters through PEFT, optionally merging them into base weights.
 - :mod:`.mcp_tools` — the same loop as MCP tools, so an MCP client such as
   Claude Code can act as the programmer
   (``stateset-agents mcp --weight-space``).
@@ -97,6 +99,7 @@ from .edits import (
     matched_control,
     verify_spec,
 )
+from .export_validation import ExportVerification
 from .protocol import (
     at_budget,
     bootstrap_ci,
@@ -124,6 +127,7 @@ __all__ = [
     "ConstrainedEdit",
     "EditDiagnostics",
     "EditTrial",
+    "ExportVerification",
     "ReferenceCheck",
     "EditSpec",
     "ForwardBudget",

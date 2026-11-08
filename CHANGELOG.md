@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Behavioral verification of exported weight edits through real PEFT adapter and
+  merged loading paths. Check fresh base tensors, bind exact artifact hashes,
+  enforce persistent references, and return a model only when all gates pass.
+  Verification reports record runtime evidence and are invalidated by re-export.
 - Persistent behavior references bound cumulative weight-edit drift and regression
   of earlier targets. Every later trial enforces all active references, shares
   forwards for identical cases, preflights the total measurement budget, and

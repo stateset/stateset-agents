@@ -12,8 +12,8 @@ import hashlib
 import json
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Any
 
 from ...core.errors import ConfigurationError
 
@@ -136,13 +136,72 @@ class _ReferenceState:
     snapshot: _Snapshot
 
 
-def _preflight(session: WeightSpaceSession, plan: _Plan) -> None:
+def _measurement_plans(
+    plan: _Plan, references: Sequence[_ReferenceState]
+) -> dict[str, _Plan]:
+    """Share measurements for identical token plans under their tightest cap."""
+    plans = {plan.cases_sha256: plan}
+    for ref in references:
+        existing = plans.get(ref.plan.cases_sha256, ref.plan)
+        plans[ref.plan.cases_sha256] = replace(
+            existing,
+            max_logit_elements=min(
+                existing.max_logit_elements, ref.plan.max_logit_elements
+            ),
+        )
+    return plans
+
+
+def _check_references(
+    session: WeightSpaceSession,
+    plan: _Plan,
+    after: _Snapshot,
+    references: Sequence[_ReferenceState],
+    plans: dict[str, _Plan],
+    reason: str,
+    *,
+    model: Any = None,
+) -> tuple[ReferenceCheck, ...]:
+    checks = []
+    for digest, candidate_plan in plans.items():
+        matching = [ref for ref in references if ref.plan.cases_sha256 == digest]
+        if not matching:
+            continue
+        measured = (
+            after
+            if digest == plan.cases_sha256
+            else _snapshot(session, candidate_plan, reason, model=model)
+        )
+        for ref in matching:
+            metrics = _compare(ref.plan, ref.snapshot, measured)
+            checks.append(
+                ReferenceCheck(
+                    ref.handle.reference_id,
+                    metrics,
+                    ref.handle.limits,
+                    _violations(metrics, ref.handle.limits),
+                )
+            )
+        del measured
+    return tuple(checks)
+
+
+def _reference_violations(checks: Sequence[ReferenceCheck]) -> tuple[str, ...]:
+    return tuple(
+        f"reference:{check.reference_id}:{violation}"
+        for check in checks
+        for violation in check.violations
+    )
+
+
+def _preflight(session: WeightSpaceSession, plan: _Plan, *, model: Any = None) -> None:
     """Recheck stored token plans against the current batching configuration."""
     if type(session.batch_size) is not int or session.batch_size < 1:
         raise ConfigurationError("batch_size must be a positive integer")
-    if any(m.training for m in session.model.modules()):
+    model = session.model if model is None else model
+    if any(m.training for m in model.modules()):
         raise ConfigurationError("behavior trials require every module in eval mode")
-    vocab = getattr(getattr(session.model, "config", None), "vocab_size", None)
+    vocab = getattr(getattr(model, "config", None), "vocab_size", None)
     if type(vocab) is int and vocab > 0:
         if any(t >= vocab for c in plan.cases for t in c.tokens):
             raise ConfigurationError("case token id exceeds model vocabulary")
@@ -202,19 +261,22 @@ def _prepare(
     return plan
 
 
-def _snapshot(session: WeightSpaceSession, plan: _Plan, reason: str) -> _Snapshot:
+def _snapshot(
+    session: WeightSpaceSession, plan: _Plan, reason: str, *, model: Any = None
+) -> _Snapshot:
     import torch
 
     session.budget.spend(reason)
+    model = session.model if model is None else model
     snapshot = _Snapshot([], [])
     elements, vocab = 0, None
     for offset in range(0, len(plan.cases), session.batch_size):
         chunk = plan.cases[offset : offset + session.batch_size]
-        ids, mask = session._pad([list(c.tokens) for c in chunk])
+        ids, mask = session._pad(
+            [list(c.tokens) for c in chunk], device=next(model.parameters()).device
+        )
         with torch.no_grad():
-            logits = session.model(
-                input_ids=ids, attention_mask=mask, use_cache=False
-            ).logits
+            logits = model(input_ids=ids, attention_mask=mask, use_cache=False).logits
         if logits.ndim != 3 or tuple(logits.shape[:2]) != tuple(ids.shape):
             raise ConfigurationError("model must return logits at every input position")
         if logits.numel() > plan.max_logit_elements:

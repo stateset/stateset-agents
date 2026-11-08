@@ -245,7 +245,7 @@ trainers, evaluation and the remote runtime into end-to-end studies lives in
 | `scaffolding` | studio | `scaffolding/` | 2 | ~1.0K |
 | `testing` | studio | `testing/` | 4 | ~0.4K |
 | `remote` | remote | `remote/` | 36 | ~14K |
-| `experimental` | research | `experimental/` | 41 | ~21K |
+| `experimental` | research | `experimental/` | 42 | ~21K |
 | `training` | training | `training/` | 180 | ~68K |
 | `environments` | packs | `environments/` | 2 | ~0.3K |
 | `tools` | packs | `tools/` | 2 | ~0.2K |
@@ -259,7 +259,7 @@ trainers, evaluation and the remote runtime into end-to-end studies lives in
 | `_deprecation` | foundation | `_deprecation.py` | 1 | ~0.1K |
 | `exceptions` | foundation | `exceptions.py` | 1 | ~0.1K |
 | `facade` | facade | `__init__.py` | 1 | ~0.4K |
-| **total** | | | 557 | ~229K |
+| **total** | | | 558 | ~229K |
 <!-- package-layout:end -->
 
 Outside the package: `deployment/` (Helm chart and value profiles, Kubernetes

@@ -19,7 +19,7 @@ import json
 import logging
 import uuid
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field
 from functools import wraps
 from pathlib import Path
 from threading import RLock
@@ -30,16 +30,27 @@ from .behavior import (
     BehaviorLimits,
     BehaviorReference,
     EditTrial,
-    ReferenceCheck,
+    _check_references,
     _compare,
+    _measurement_plans,
     _preflight,
     _prepare,
+    _reference_violations,
     _ReferenceState,
     _snapshot,
     _violations,
 )
 from .constrained import ConstrainedEdit, constrained_edit
 from .deltas import LowRankDelta
+from .export_validation import (
+    REPORT_NAME,
+    ExportVerification,
+    _artifact_hashes,
+    _ExportReceipt,
+    _load_adapter,
+    _runtime,
+    _verify_base,
+)
 
 if TYPE_CHECKING:
     import torch
@@ -156,6 +167,8 @@ class WeightSpaceSession:
         self._reference_logit_limit = reference_logit_limit
         self._behavior_references: dict[str, _ReferenceState] = {}
         self._reference_history: list[BehaviorReference] = []
+        self._export_receipts: dict[Path, _ExportReceipt] = {}
+        self.export_verifications: list[dict[str, Any]] = []
 
     @classmethod
     def from_pretrained(
@@ -449,17 +462,7 @@ class WeightSpaceSession:
             self, locality_prompts, target_pairs, limits, max_logit_elements
         )
         references = tuple(self._behavior_references.values())
-        # Share candidate forwards only for identical ordered token plans, and
-        # enforce the tightest resource cap requested for those cases.
-        plans = {plan.cases_sha256: plan}
-        for ref in references:
-            existing = plans.get(ref.plan.cases_sha256, ref.plan)
-            plans[ref.plan.cases_sha256] = replace(
-                existing,
-                max_logit_elements=min(
-                    existing.max_logit_elements, ref.plan.max_logit_elements
-                ),
-            )
+        plans = _measurement_plans(plan, references)
         for candidate_plan in plans.values():
             _preflight(self, candidate_plan)
         layer = self._linear(module)
@@ -491,33 +494,10 @@ class WeightSpaceSession:
             after = _snapshot(self, plans[plan.cases_sha256], "trial:after")
             metrics = _compare(plan, before, after)
             violations = _violations(metrics, limits)
-            checks = []
-            # Evaluate one distinct plan at a time; persistent references are
-            # bounded separately, and temporary snapshots need not accumulate.
-            for digest, candidate_plan in plans.items():
-                measured = (
-                    after
-                    if digest == plan.cases_sha256
-                    else _snapshot(self, candidate_plan, "trial:reference")
-                )
-                for ref in references:
-                    if ref.plan.cases_sha256 != digest:
-                        continue
-                    ref_metrics = _compare(ref.plan, ref.snapshot, measured)
-                    ref_violations = _violations(ref_metrics, ref.handle.limits)
-                    checks.append(
-                        ReferenceCheck(
-                            ref.handle.reference_id,
-                            ref_metrics,
-                            ref.handle.limits,
-                            ref_violations,
-                        )
-                    )
-                    violations += tuple(
-                        f"reference:{ref.handle.reference_id}:{v}"
-                        for v in ref_violations
-                    )
-                del measured
+            checks = _check_references(
+                self, plan, after, references, plans, "trial:reference"
+            )
+            violations += _reference_violations(checks)
         except BaseException as exc:
             self.revert()
             self.trials.append(
@@ -756,6 +736,13 @@ class WeightSpaceSession:
 
         out = Path(out_dir)
         out.mkdir(parents=True, exist_ok=True)
+        # Invalidate any prior report before overwriting artifact files. A
+        # partially failed re-export must never leave an apparently passed gate.
+        (out / REPORT_NAME).write_text(
+            json.dumps({"status": "unverified", "accepted": False}) + "\n",
+            encoding="utf-8",
+        )
+        self._export_receipts.pop(out.resolve(), None)
         LoraConfig(
             r=rank,
             lora_alpha=rank,
@@ -774,6 +761,7 @@ class WeightSpaceSession:
             "rank": rank,
             "merge_weight_max_errors": merge_errors,
             "merge_validation": "CPU weight comparison; evaluate adapter outputs separately",
+            "verification_report": REPORT_NAME,
             "edits": [
                 {
                     "edit_id": e.edit_id,
@@ -795,7 +783,136 @@ class WeightSpaceSession:
         (out / MANIFEST_NAME).write_text(
             json.dumps(manifest, indent=2), encoding="utf-8"
         )
+        receipt = _ExportReceipt(_artifact_hashes(out), tuple(self.active_edit_ids))
+        self._export_receipts[out.resolve()] = receipt
+        (out / REPORT_NAME).write_text(
+            json.dumps(
+                {
+                    "status": "unverified",
+                    "accepted": False,
+                    "artifact_sha256": receipt.artifact_sha256,
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         return out
+
+    @_locked
+    def verify_export(
+        self,
+        out_dir: str | Path,
+        fresh_base_model: Any,
+        *,
+        locality_prompts: Sequence[str],
+        limits: BehaviorLimits,
+        target_pairs: Sequence[tuple[str, str]] = (),
+        mode: Literal["adapter", "merged"] = "merged",
+        max_logit_elements: int = 32_000_000,
+    ) -> tuple[Any | None, ExportVerification]:
+        """Reload an export and return its model only if behavioral gates pass.
+
+        Takes ownership of ``fresh_base_model``: PEFT may mutate it, including
+        on failure. It must match the session's reconstructed base tensor bytes
+        and dtype, with no shared modules/storage. This method loads only local
+        adapter safetensors, never a base checkpoint or tokenizer.
+
+        Compare the reloaded artifact to current session outputs and every active
+        behavior reference. Costs two measurement units plus distinct reference
+        plans; returns ``(None, report)`` for failed gates. Loading/forward errors
+        raise and record failure. The live model and edit stack are unchanged.
+        """
+        if mode not in ("adapter", "merged"):
+            raise ConfigurationError("export mode must be adapter or merged")
+        root = Path(out_dir).resolve()
+        receipt = self._export_receipts.get(root)
+        if receipt is None:
+            raise ConfigurationError("export was not created by this session")
+        if receipt.edit_ids != tuple(self.active_edit_ids):
+            raise ConfigurationError("export does not match the active edit stack")
+        if _artifact_hashes(root) != receipt.artifact_sha256:
+            raise ConfigurationError("export artifacts changed after creation")
+        plan = _prepare(
+            self, locality_prompts, target_pairs, limits, max_logit_elements
+        )
+        references = tuple(self._behavior_references.values())
+        plans = _measurement_plans(plan, references)
+        for candidate_plan in plans.values():
+            _preflight(self, candidate_plan)
+        required = 1 + len(plans)
+        if self.budget.remaining < required:
+            raise BudgetExhausted(
+                f"export verification requires {required} measurement units"
+            )
+        for name in self._weight_hashes:
+            self._check_weight(name)
+        verification_id = uuid.uuid4().hex
+        common = {
+            "verification_id": verification_id,
+            "mode": mode,
+            "artifact_sha256": receipt.artifact_sha256,
+            "edit_ids": receipt.edit_ids,
+            "cases_sha256": plan.cases_sha256,
+            "limits": asdict(limits),
+            "reference_ids": [ref.handle.reference_id for ref in references],
+        }
+        try:
+            base_hash = _verify_base(self, fresh_base_model)
+            runtime = _runtime(fresh_base_model)
+            common.update(base_state_sha256=base_hash, runtime=runtime)
+            reloaded = _load_adapter(root, receipt, fresh_base_model, mode)
+            for candidate_plan in plans.values():
+                _preflight(self, candidate_plan, model=reloaded)
+            before = _snapshot(self, plans[plan.cases_sha256], "export:session")
+            after = _snapshot(
+                self, plans[plan.cases_sha256], "export:reloaded", model=reloaded
+            )
+            metrics = _compare(plan, before, after)
+            violations = _violations(metrics, limits)
+            checks = _check_references(
+                self, plan, after, references, plans, "export:reference", model=reloaded
+            )
+            violations += _reference_violations(checks)
+            if _artifact_hashes(root) != receipt.artifact_sha256:
+                raise ConfigurationError("export artifacts changed during verification")
+            for name in self._weight_hashes:
+                self._check_weight(name)
+        except BaseException as exc:
+            record = {
+                **common,
+                "status": "failed",
+                "accepted": False,
+                "error_type": type(exc).__name__,
+            }
+            self.export_verifications.append(record)
+            (root / REPORT_NAME).write_text(
+                json.dumps(record, indent=2) + "\n", encoding="utf-8"
+            )
+            raise
+        report = ExportVerification(
+            verification_id,
+            not violations,
+            violations,
+            mode,
+            receipt.artifact_sha256,
+            base_hash,
+            receipt.edit_ids,
+            plan.cases_sha256,
+            metrics,
+            limits,
+            tuple(checks),
+            runtime,
+        )
+        record = {
+            **asdict(report),
+            "status": "passed" if report.accepted else "rejected",
+        }
+        self.export_verifications.append(record)
+        (root / REPORT_NAME).write_text(
+            json.dumps(record, indent=2) + "\n", encoding="utf-8"
+        )
+        return (reloaded if report.accepted else None), report
 
     # --------------------------------------------------------------- helpers
 
@@ -819,7 +936,9 @@ class WeightSpaceSession:
             )
         return found
 
-    def _pad(self, seqs: Sequence[list[int]]) -> tuple[torch.Tensor, torch.Tensor]:
+    def _pad(
+        self, seqs: Sequence[list[int]], *, device: torch.device | None = None
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         import torch
 
         width = max(len(s) for s in seqs)
@@ -828,7 +947,7 @@ class WeightSpaceSession:
         for i, seq in enumerate(seqs):
             ids[i, : len(seq)] = torch.tensor(seq)
             mask[i, : len(seq)] = 1
-        device = next(self.model.parameters()).device
+        device = next(self.model.parameters()).device if device is None else device
         return ids.to(device), mask.to(device)
 
     def _continuation_logprob(self, pairs: Sequence[tuple[str, str]]) -> float:

@@ -116,8 +116,9 @@ metadata without cloning snapshots. LIFO rollback restores exact prior bytes.
 LoRA export concatenates the active factors. Real arithmetic equivalence does
 not imply identical floating-point accumulation. The manifest now reports
 `merge_weight_max_errors` from a CPU comparison against the session's weights;
-check the reloaded adapter's outputs before serving it. In particular, two
-small bfloat16 in-place updates can round differently from a combined merge.
+check the reloaded adapter's outputs before serving it. `verify_export` below
+automates this comparison. In particular, two small bfloat16 in-place updates
+can round differently from a combined merge.
 
 ### Whole-model acceptance and rollback
 
@@ -245,6 +246,70 @@ References constrain only the supplied cases. They do not establish generation
 quality, semantic correctness or preservation on unseen prompts. Direct low-level
 `apply` and `apply_constrained` remain ungated operations; use `trial_edit` for
 behavioral acceptance. Re-evaluate the final exported artifact independently.
+
+### Verify the reloaded adapter or merged model
+
+`session.verify_export` reloads actual exported safetensors through PEFT and
+compares model outputs with the live edited session. It also enforces every
+active behavior reference, so an artifact cannot pass merely by reproducing an
+edit that violates the registered cumulative limits.
+
+Supply an independently loaded copy of the same pinned base model in the same
+dtype. The verifier checks every named parameter and buffer against the session's
+reconstructed base tensor bytes, including tensors outside edited layers. It
+rejects shared modules/storage before PEFT can modify the model. Loading the base
+and keeping two complete models in memory are the caller's responsibility.
+
+```python
+adapter_dir = session.export("./edited-adapter")
+reloaded, report = session.verify_export(
+    adapter_dir,
+    fresh_base_model,
+    locality_prompts=validation_prompts,
+    target_pairs=[("The secret word is", " amber")],
+    mode="merged",  # Use "adapter" to test inference with unmerged PEFT layers.
+    limits=BehaviorLimits(
+        max_mean_kl=1e-6, max_token_kl=1e-5,
+        max_nll_increase=1e-4, min_each_target_gain=-1e-4,
+    ),
+)
+# Success: reloaded is the tested model. Gate rejection: reloaded is None.
+# Inspect report.accepted, report.violations and report.reference_checks.
+```
+
+The numerical limits in this example are illustrative; declare tolerances for
+your model and precision before evaluating it. `report.metrics` measures
+`KL(live edited || reloaded)`, observed-token loss increase and target gains
+relative to the live edited session. The negative target-gain threshold allows a
+small probability loss during export. Registered references retain their own
+original baselines and limits. Merged mode uses PEFT's finite-weight merge check;
+adapter mode measures its actual low-rank inference path.
+
+Verification requires an export created by the current session with the same
+active edit IDs. It checks SHA-256 hashes of the configuration, adapter tensors
+and manifest, loads verified private file copies, and rechecks source hashes
+after evaluation. The output directory contains `weight_space_verification.json`
+with status `unverified`, `passed`, `rejected` or `failed`. Passed/rejected reports
+bind artifact hashes, base tensor fingerprint, case hash, edit IDs, limits,
+metrics, reference checks, package versions, dtype, device and loading mode.
+Re-exporting invalidates an earlier report before overwriting artifacts, including
+when the re-export subsequently fails. Prior attempts remain in the session's
+`export_verifications` history.
+
+The verifier **takes ownership of `fresh_base_model`**: PEFT can modify it even on
+failure. Discard that argument after rejection or error. The live editing model
+and its undo stack remain unchanged. Verification preflights its complete budget:
+two measurement units plus distinct additional reference case sets. Hashing,
+loading and merging do not consume forward-measurement units; they still require
+memory and compute. Forward failures spend the attempted measurement and raise
+with a failed report.
+
+Evidence covers the chosen runtime and exact token IDs supplied by the session's
+encoder. It does not verify a separate serving tokenizer, free-running generation,
+other precision modes, different kernels or a later independently saved checkpoint.
+Use the returned model for the tested loading path, and revalidate artifacts after
+any further transformation. A persisted report applies only to files whose hashes
+still match it. Independent held-out evaluation remains necessary for quality claims.
 
 ### What the dense experiment shows
 
