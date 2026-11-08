@@ -1,6 +1,4 @@
-"""Behaviour of the layering fixes: stable code no longer reaches into the
-experimental layer implicitly (see ``LAYERING_ALLOWLIST`` in test_layering.py).
-"""
+"""Explicit layer boundaries and compatibility paths awaiting later retirement."""
 
 from __future__ import annotations
 
@@ -14,23 +12,18 @@ import pytest
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.errors import ConfigurationError
 
-# --- core/agent.py: the planner is injected, the implicit path is dated -----
+# --- core/agent.py: the planner is injected, the implicit path is removed ---
 
 
-def test_implicit_planner_construction_is_a_dated_deprecation() -> None:
+def test_implicit_planner_construction_requires_explicit_injection() -> None:
     config = AgentConfig(
         model_name="stub://planning",
         use_stub_model=True,
         enable_planning=True,
         planning_config={"max_steps": 3},
     )
-    with pytest.warns(DeprecationWarning, match=r"removed in v0\.72\.0") as caught:
-        agent = MultiTurnAgent(config)
-    assert "planning_manager_from_config" in str(caught[0].message)
-    assert caught[0].filename == __file__
-    # Behaviour is unchanged until the removal release.
-    assert agent.planning_manager is not None
-    assert agent.planning_manager.config.max_steps == 3
+    with pytest.raises(ConfigurationError, match="planning_manager_from_config"):
+        MultiTurnAgent(config)
 
 
 def test_injected_planner_needs_no_bridge() -> None:
@@ -49,6 +42,23 @@ def test_injected_planner_needs_no_bridge() -> None:
     assert agent.planning_manager is manager
 
 
+def test_core_does_not_load_the_planner_on_a_missing_dependency() -> None:
+    _run_python(
+        "import sys\n"
+        "from stateset_agents.core.agent import AgentConfig, MultiTurnAgent\n"
+        "from stateset_agents.core.errors import ConfigurationError\n"
+        "name = 'stateset_agents.experimental.long_term_planning'\n"
+        "assert name not in sys.modules\n"
+        "try:\n"
+        "    MultiTurnAgent(AgentConfig(model_name='stub://planning', enable_planning=True))\n"
+        "except ConfigurationError as exc:\n"
+        "    assert 'planning_manager_from_config' in str(exc)\n"
+        "else:\n"
+        "    raise AssertionError('missing planner silently accepted')\n"
+        "assert name not in sys.modules\n"
+    )
+
+
 @pytest.mark.parametrize("bad", [{"max_stepz": 2}, "not-a-dict", 5])
 def test_planning_factory_rejects_bad_config_with_a_typed_error(bad: Any) -> None:
     from stateset_agents.experimental.long_term_planning import (
@@ -59,13 +69,12 @@ def test_planning_factory_rejects_bad_config_with_a_typed_error(bad: Any) -> Non
         planning_manager_from_config(bad)
 
 
-def test_bad_implicit_planning_config_still_leaves_planning_off() -> None:
+def test_missing_planner_cannot_silently_disable_requested_planning() -> None:
     config = AgentConfig(model_name="stub://planning", use_stub_model=True)
     config.enable_planning = True
     config.planning_config = {"max_stepz": 2}
-    with pytest.warns(DeprecationWarning):
-        agent = MultiTurnAgent(config)
-    assert agent.planning_manager is None
+    with pytest.raises(ConfigurationError, match="explicit planning_manager"):
+        MultiTurnAgent(config)
 
 
 @pytest.mark.asyncio
@@ -104,25 +113,64 @@ def test_offline_trainer_comes_from_the_registry(
         assert train_module._offline_trainer() == sentinel
 
 
-def test_implicit_offline_import_is_a_dated_deprecation(
+def test_missing_offline_registration_raises_without_importing_research(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    pytest.importorskip("torch")
     from stateset_agents.training import offline_backend
 
     train_module = importlib.import_module("stateset_agents.training.train")
 
     monkeypatch.setattr(offline_backend, "_loader", None)
-    # Force the bridge to import the package afresh so it re-registers.
-    for name in list(sys.modules):
-        if name == "stateset_agents.experimental.offline_rl":
-            monkeypatch.delitem(sys.modules, name)
-    with pytest.warns(DeprecationWarning, match=r"removed in v0\.72\.0"):
-        config_cls, trainer_cls = train_module._offline_trainer()
-    assert (config_cls.__name__, trainer_cls.__name__) == (
-        "OfflineGRPOConfig",
-        "OfflineGRPOTrainer",
+    monkeypatch.setitem(sys.modules, "stateset_agents.experimental.offline_rl", None)
+    with pytest.raises(ConfigurationError, match="no offline trainer is registered"):
+        train_module._offline_trainer()
+    assert offline_backend._loader is None
+    assert sys.modules["stateset_agents.experimental.offline_rl"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["offline", "hybrid", "auto"])
+async def test_dataset_training_requires_registration_before_model_initialization(
+    mode: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from stateset_agents.training import offline_backend
+
+    train_module = importlib.import_module("stateset_agents.training.train")
+    monkeypatch.setattr(offline_backend, "_loader", None)
+    agent = SimpleNamespace(model=None, initialize=AsyncMock(), tokenizer=None)
+    environment = SimpleNamespace(reward_fn=None)
+    with pytest.raises(ConfigurationError, match="no offline trainer is registered"):
+        await train_module.train(
+            agent, environment, training_mode=mode, dataset=[object()], num_episodes=1
+        )
+    agent.initialize.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_hybrid_without_dataset_needs_only_the_online_trainer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, Mock
+
+    from stateset_agents.training import offline_backend
+
+    train_module = importlib.import_module("stateset_agents.training.train")
+    monkeypatch.setattr(offline_backend, "_loader", None)
+    agent = SimpleNamespace()
+    trainer = SimpleNamespace(
+        initialize=AsyncMock(), train=AsyncMock(return_value=agent), add_callback=Mock()
     )
+    monkeypatch.setattr(train_module, "MultiTurnGRPOTrainer", lambda **kwargs: trainer)
+    result = await train_module.train(
+        agent, SimpleNamespace(reward_fn=None), training_mode="hybrid", num_episodes=1
+    )
+    assert result is agent
+    trainer.initialize.assert_awaited_once()
+    trainer.train.assert_awaited_once()
 
 
 def test_importing_the_component_registers_it_without_torch() -> None:
@@ -274,23 +322,29 @@ def _run_python(code: str) -> Any:
     return result
 
 
-def test_support_reward_audit_moved_with_a_dated_alias(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_support_reward_audit_uses_only_the_canonical_path() -> None:
     from stateset_agents.evaluation import reward_audit
     from stateset_agents.rewards import support_reward_audit
 
-    with pytest.warns(DeprecationWarning, match=r"removed in v0\.72\.0"):
-        alias = reward_audit.audit_support_rewards
-    assert alias is support_reward_audit.audit_support_rewards
-
-    called: list[bool] = []
-    monkeypatch.setattr(support_reward_audit, "main", lambda: called.append(True))
-    with pytest.warns(DeprecationWarning, match="support_reward_audit"):
-        reward_audit.main()
-    assert called == [True]
+    with pytest.raises(AttributeError):
+        _ = reward_audit.audit_support_rewards
+    assert not hasattr(reward_audit, "main")
+    assert callable(support_reward_audit.audit_support_rewards)
     # The generic audit stays in evaluation.
     assert callable(reward_audit.audit_reward)
+
+
+def test_old_reward_audit_cli_explains_the_replacement() -> None:
+    result = _run_python(
+        "import runpy\n"
+        "try:\n"
+        "    runpy.run_module('stateset_agents.evaluation.reward_audit', run_name='__main__')\n"
+        "except SystemExit as exc:\n"
+        "    assert 'python -m stateset_agents.rewards.support_reward_audit' in str(exc)\n"
+        "else:\n"
+        "    raise AssertionError('retired CLI silently succeeded')\n"
+    )
+    assert result.returncode == 0
 
 
 def test_trust_remote_code_policy_has_one_public_home() -> None:

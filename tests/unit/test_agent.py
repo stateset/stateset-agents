@@ -141,17 +141,22 @@ class TestMultiTurnAgent:
         assert "Custom response alpha" in response
 
     @pytest.mark.asyncio
-    async def test_planning_manager_initialized_when_enabled(self):
-        """Test that planning manager is created when planning is enabled."""
+    async def test_injected_planning_manager_is_retained(self):
+        """Explicit planner configuration survives agent initialization."""
+        from stateset_agents.experimental.long_term_planning import (
+            planning_manager_from_config,
+        )
+
         config = AgentConfig(
             model_name="stub://planning",
             use_stub_model=True,
             enable_planning=True,
         )
-        agent = MultiTurnAgent(config)
+        manager = planning_manager_from_config(config.planning_config)
+        agent = MultiTurnAgent(config, planning_manager=manager)
         await agent.initialize()
 
-        assert agent.planning_manager is not None
+        assert agent.planning_manager is manager
 
     @pytest.mark.asyncio
     async def test_string_prompt_converted_to_messages(self, config):

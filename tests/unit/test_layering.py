@@ -283,16 +283,14 @@ def test_exactly_one_training_config_class() -> None:
     )
 
 
-def test_enhanced_gspo_config_is_the_canonical_one(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_enhanced_gspo_config_alias_is_removed() -> None:
     pytest.importorskip("torch")
     from stateset_agents.core.enhanced import advanced_rl_algorithms
     from stateset_agents.training.gspo_config import GSPOConfig
 
-    monkeypatch.delitem(vars(advanced_rl_algorithms), "GSPOConfig", raising=False)
-    with pytest.warns(DeprecationWarning, match="training.gspo_config"):
-        assert advanced_rl_algorithms.GSPOConfig is GSPOConfig
+    with pytest.raises(AttributeError):
+        _ = advanced_rl_algorithms.GSPOConfig
+    assert GSPOConfig.__module__ == "stateset_agents.training.gspo_config"
 
 
 # --- No bottom-of-file imports under core/ ---------------------------------

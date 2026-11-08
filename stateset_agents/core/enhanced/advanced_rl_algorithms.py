@@ -621,17 +621,3 @@ def create_advanced_rl_orchestrator(
     orchestrator.add_algorithm("a2c", create_a2c_trainer(agent))
 
     return orchestrator
-
-
-def __getattr__(name: str) -> Any:
-    """Serve the removed duplicate ``GSPOConfig`` from its canonical home."""
-    if name == "GSPOConfig":
-        warn_deprecated(
-            f"{__name__}.GSPOConfig",
-            removal="0.72.0",
-            replacement="stateset_agents.training.gspo_config.GSPOConfig",
-        )
-        from ...training.gspo_config import GSPOConfig
-
-        return GSPOConfig
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -66,3 +66,61 @@ make api-compatibility
 The checker performs an exact structural comparison and exits nonzero on any
 unreviewed addition, removal, or change. CI and the publish-readiness gate run
 the same check, so a release cannot bypass the committed contract.
+
+## Runtime dependency migrations after v0.72.0
+
+The weight-editing follow-up removes six compatibility bridges that had reached
+their v0.72.0 deadline. The supported root exports and HTTP contract are
+unchanged. Callers using the retired implicit behavior or import aliases must
+use the following explicit dependencies:
+
+| Retired path or behavior | Replacement |
+| --- | --- |
+| `MultiTurnAgent(config)` with planning enabled and no manager | Pass `planning_manager=planning_manager_from_config(config.planning_config)` from `experimental.long_term_planning` |
+| Implicit planning in the deprecated `DialogueSessionAgent` | Inject `planning_manager=` explicitly; prefer the supported `core.agent.MultiTurnAgent` for new integrations |
+| `train()` implicitly loading an offline trainer | Import `stateset_agents.experimental.offline_rl` first, or register a custom loader with `training.offline_backend.register_offline_trainer` |
+| `core.types.TrainingConfig` | `stateset_agents.TrainingConfig` or `stateset_agents.training.config.TrainingConfig` |
+| `core.enhanced.advanced_rl_algorithms.GSPOConfig` | `stateset_agents.training.gspo_config.GSPOConfig` |
+| `evaluation.reward_audit.audit_support_rewards` and its old CLI | `stateset_agents.rewards.support_reward_audit.audit_support_rewards` and `python -m stateset_agents.rewards.support_reward_audit` |
+
+For planning:
+
+```python
+from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
+from stateset_agents.experimental.long_term_planning import planning_manager_from_config
+
+config = AgentConfig(
+    model_name="stub://planning", use_stub_model=True,
+    enable_planning=True, planning_config={"max_steps": 3},
+)
+agent = MultiTurnAgent(
+    config, planning_manager=planning_manager_from_config(config.planning_config),
+)
+```
+
+`enable_planning=True` without a manager now raises `ConfigurationError` and
+names the factory; invalid planning requests cannot silently disable planning.
+The gateway already injects the planner, so its request schema and supported
+planning behavior are preserved.
+
+For offline training, import the experimental component before the existing
+training call:
+
+```python
+import stateset_agents.experimental.offline_rl  # Registers its lazy trainer loader.
+from stateset_agents import train
+
+# In an async function, with an initialized agent, environment, and logged data:
+# await train(agent, environment, training_mode="offline", dataset=logged_data)
+```
+
+Hybrid training requires the same registration when it has an offline dataset.
+Hybrid mode without a dataset can still run its online phase alone. The generic
+`evaluation.reward_audit.audit_reward` API remains available; invoking its retired
+support-reward CLI exits with a message naming the replacement command.
+
+This completes the six runtime dependency migrations, not the entire v0.72.0
+deprecation schedule. Other overdue aliases and modules remain, including root
+exports, compatibility shims, and deprecated application surfaces. The global
+deprecation-date check continues to report them; no removal deadlines have been
+extended or exempted to make that check pass.

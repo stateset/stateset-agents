@@ -20,6 +20,7 @@ from stateset_agents.utils.cache import CacheService
 from .._deprecation import deprecated_alias_getattr, warn_deprecated
 from .agent import Agent
 from .agent_config import AgentConfig
+from .errors import ConfigurationError
 from .multiturn_analysis import (
     analyze_user_input,
     compress_conversation_context,
@@ -92,6 +93,13 @@ class DialogueSessionAgent(Agent):
         planning_manager: PlanningManager | None = None,
         **kwargs: Any,
     ) -> None:
+        if planning_manager is None and model_config.get("enable_planning", False):
+            raise ConfigurationError(
+                "enable_planning=True requires an explicit planning_manager; "
+                "create it with stateset_agents.experimental.long_term_planning."
+                "planning_manager_from_config(model_config.get('planning_config'))",
+                field="planning_manager",
+            )
         agent_config_kwargs = {
             field_name: value
             for field_name, value in model_config.items()
@@ -107,23 +115,6 @@ class DialogueSessionAgent(Agent):
         self.context_compression_threshold = context_compression_threshold
         self.dialogue_database = dialogue_database
         self.cache = cache_service
-        if planning_manager is None:
-            enable_planning = bool(model_config.get("enable_planning", False))
-            if enable_planning:
-                planning_kwargs = model_config.get("planning_config", {}) or {}
-                try:
-                    from ..experimental.long_term_planning import (
-                        PlanningConfig,
-                        PlanningManager,
-                    )
-
-                    if isinstance(planning_kwargs, dict):
-                        planning_kwargs = dict(planning_kwargs)
-                        planning_kwargs.pop("enabled", None)
-                    planning_cfg = PlanningConfig(enabled=True, **planning_kwargs)
-                    planning_manager = PlanningManager(planning_cfg)
-                except MULTITURN_EXCEPTIONS as exc:
-                    logger.warning("Failed to init PlanningManager: %s", exc)
         self.planning_manager = planning_manager
 
         # Arbitrary caller-attached metadata (e.g. the API layer records the

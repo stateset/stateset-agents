@@ -17,7 +17,6 @@ from stateset_agents.core.reward import RewardFunction
 from stateset_agents.core.reward_base import RewardResult, RewardType
 from stateset_agents.core.trajectory import ConversationTurn
 
-from .._deprecation import warn_deprecated
 from .configuration import resolve_training_config as _build_training_config
 from .diagnostics import DiagnosticsMonitor
 from .offline_backend import load_offline_trainer
@@ -423,35 +422,20 @@ _OFFLINE_HONOURED_FIELDS = frozenset(_OFFLINE_MAPPED_FIELDS) | {
 }
 
 
-#: The implicit import below is the one stable-training -> experimental edge
-#: (tests/unit/test_layering.py allowlist); it goes in this release.
-_IMPLICIT_OFFLINE_REMOVAL = "0.72.0"
-
-
 def _offline_trainer() -> tuple[type[Any], type[Any]]:
     """``(config_class, trainer_class)`` of the registered offline trainer.
 
     ``import stateset_agents.experimental.offline_rl`` registers it (see
-    :mod:`stateset_agents.training.offline_backend`). Without that import the
-    experimental component is loaded implicitly, which is deprecated and will
-    be removed in v0.72.0.
+    :mod:`stateset_agents.training.offline_backend`). A custom loader can be
+    registered instead. Missing registration raises before any offline work.
     """
     loaded = load_offline_trainer()
     if loaded is None:
-        warn_deprecated(
-            "train(training_mode='offline'|'hybrid') loading the experimental "
-            "offline-RL trainer implicitly",
-            removal=_IMPLICIT_OFFLINE_REMOVAL,
-            replacement="`import stateset_agents.experimental.offline_rl` first",
-            stacklevel=3,
+        raise ConfigurationError(
+            "no offline trainer is registered; import "
+            "stateset_agents.experimental.offline_rl before offline/hybrid "
+            "training, or call training.offline_backend.register_offline_trainer"
         )
-        # Layering allowlist entry (dated): see the warning above. Importing
-        # the package registers its trainer with training.offline_backend.
-        import stateset_agents.experimental.offline_rl  # noqa: F401
-
-        loaded = load_offline_trainer()
-    if loaded is None:  # pragma: no cover - offline_rl always registers
-        raise ConfigurationError("no offline trainer is registered")
     return loaded
 
 

@@ -31,6 +31,21 @@ def test_multiturn_agent_reexports_context_types():
     assert DialogueDatabase is SplitDialogueDatabase
 
 
+def test_dialogue_session_planning_requires_an_explicit_manager():
+    from stateset_agents.core.errors import ConfigurationError
+    from stateset_agents.experimental.long_term_planning import (
+        planning_manager_from_config,
+    )
+
+    config = {"model_name": "stub://planning", "enable_planning": True}
+    with pytest.raises(ConfigurationError, match="explicit planning_manager"):
+        DialogueSessionAgent(model_config=config)
+
+    manager = planning_manager_from_config({"max_steps": 3})
+    agent = DialogueSessionAgent(model_config=config, planning_manager=manager)
+    assert agent.planning_manager is manager
+
+
 @pytest.mark.asyncio
 async def test_generate_multiturn_response_persists_assistant_turn():
     """Generated assistant replies should be written back to the transcript."""

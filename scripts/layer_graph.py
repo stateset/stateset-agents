@@ -169,49 +169,7 @@ DEPRECATION_SHIMS: frozenset[str] = frozenset(
 #: ``bridge``: a deprecation path whose module states the removal release.
 #: ``debt``: a placement that cannot move this pass; dated here, and the
 #: build fails once the package version reaches the date.
-LAYERING_ALLOWLIST: dict[tuple[str, str], tuple[str, str, str]] = {
-    (f"{PACKAGE}/core/agent.py", f"{PACKAGE}.experimental.long_term_planning"): (
-        "bridge",
-        "AgentConfig(enable_planning=True) without planning_manager= builds the "
-        "experimental planner implicitly; deprecated, inject planning_manager",
-        "0.72.0",
-    ),
-    (f"{PACKAGE}/training/train.py", f"{PACKAGE}.experimental.offline_rl"): (
-        "bridge",
-        "train(training_mode='offline'|'hybrid') loads the experimental offline "
-        "trainer when nothing registered one (training.offline_backend); "
-        "deprecated, import stateset_agents.experimental.offline_rl",
-        "0.72.0",
-    ),
-    (
-        f"{PACKAGE}/core/multiturn_agent.py",
-        f"{PACKAGE}.experimental.long_term_planning",
-    ): ("bridge", "the whole module is deprecated (DialogueSessionAgent)", "0.72.0"),
-    (f"{PACKAGE}/core/types.py", f"{PACKAGE}.training.config"): (
-        "bridge",
-        "deprecated core.types.TrainingConfig alias, served lazily; the module "
-        "is deprecated",
-        "0.72.0",
-    ),
-    (
-        f"{PACKAGE}/core/enhanced/advanced_rl_algorithms.py",
-        f"{PACKAGE}.training.gspo_config",
-    ): (
-        "bridge",
-        "deprecated core.enhanced GSPOConfig alias, served lazily; the module "
-        "is deprecated",
-        "0.72.0",
-    ),
-    (
-        f"{PACKAGE}/evaluation/reward_audit.py",
-        f"{PACKAGE}.rewards.support_reward_audit",
-    ): (
-        "bridge",
-        "audit_support_rewards and `python -m ...evaluation.reward_audit` moved "
-        "up to rewards.support_reward_audit; served lazily with a warning",
-        "0.72.0",
-    ),
-}
+LAYERING_ALLOWLIST: dict[tuple[str, str], tuple[str, str, str]] = {}
 
 
 @dataclass(frozen=True)

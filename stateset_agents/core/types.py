@@ -220,13 +220,4 @@ def __getattr__(name: str) -> Any:
             replacement=f"stateset_agents.core.errors.{canonical}",
         )
         return getattr(errors, canonical)
-    if name == "TrainingConfig":
-        warn_deprecated(
-            f"{__name__}.TrainingConfig",
-            removal=_ERROR_ALIASES_REMOVAL,
-            replacement="stateset_agents.training.config.TrainingConfig",
-        )
-        from stateset_agents.training.config import TrainingConfig
-
-        return TrainingConfig
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

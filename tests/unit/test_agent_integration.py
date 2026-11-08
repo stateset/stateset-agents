@@ -139,17 +139,22 @@ class TestPlanningIntegration:
     """Test planning manager integration."""
 
     @pytest.mark.asyncio
-    async def test_planning_manager_created(self):
-        """PlanningManager should be created when enabled."""
+    async def test_planning_manager_injection(self):
+        """An explicitly created planner remains available after initialization."""
+        from stateset_agents.experimental.long_term_planning import (
+            planning_manager_from_config,
+        )
+
         config = AgentConfig(
             model_name="stub://planning",
             use_stub_model=True,
             enable_planning=True,
         )
-        agent = MultiTurnAgent(config)
+        manager = planning_manager_from_config(config.planning_config)
+        agent = MultiTurnAgent(config, planning_manager=manager)
         await agent.initialize()
 
-        assert agent.planning_manager is not None
+        assert agent.planning_manager is manager
         assert hasattr(agent.planning_manager, "get_plan")
 
     @pytest.mark.asyncio

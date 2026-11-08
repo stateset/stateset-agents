@@ -202,13 +202,13 @@ flowchart TD
 | `verticals` | `core`, `data`, `evaluation`, `remote`, `training`, `utils` |
 | `remote` | `core`, `data`, `errors`, `evaluation`, `exceptions`, `facade`, `training`, `utils` |
 | `experimental` | `core`, `errors`, `evaluation`, `exceptions`, `rewards`, `training` |
-| `training` | `_deprecation`, `core`, `data`, `errors`, `evaluation`, `exceptions`, `experimental` (bridge/debt only), `facade`, `rewards`, `utils`, `verticals` (bridge/debt only) |
+| `training` | `_deprecation`, `core`, `data`, `errors`, `evaluation`, `exceptions`, `facade`, `rewards`, `utils`, `verticals` (bridge/debt only) |
 | `environments` | `core`, `rewards` |
 | `tools` | `core`, `rewards` |
 | `rewards` | `_deprecation`, `core`, `data`, `errors`, `evaluation`, `utils` |
 | `data` | `_deprecation`, `core`, `errors`, `exceptions`, `utils`, `verticals` (bridge/debt only) |
-| `evaluation` | `_deprecation`, `core`, `errors`, `rewards` (bridge/debt only), `utils`, `verticals` (bridge/debt only) |
-| `core` | `_deprecation`, `config`, `errors`, `exceptions`, `experimental` (bridge/debt only), `facade`, `training` (bridge/debt only), `utils` |
+| `evaluation` | `_deprecation`, `core`, `errors`, `utils`, `verticals` (bridge/debt only) |
+| `core` | `_deprecation`, `config`, `errors`, `exceptions`, `experimental` (bridge/debt only), `facade`, `utils` |
 | `utils` | `_deprecation`, `errors` |
 | `errors` | `_deprecation` |
 | `facade` | `_deprecation` |
@@ -219,12 +219,6 @@ flowchart TD
 
 | Importing module | Imports | Kind | Removed in | Reason |
 |------------------|---------|------|------------|--------|
-| `core/agent.py` | `experimental.long_term_planning` | bridge | v0.72.0 | AgentConfig(enable_planning=True) without planning_manager= builds the experimental planner implicitly; deprecated, inject planning_manager |
-| `core/enhanced/advanced_rl_algorithms.py` | `training.gspo_config` | bridge | v0.72.0 | deprecated core.enhanced GSPOConfig alias, served lazily; the module is deprecated |
-| `core/multiturn_agent.py` | `experimental.long_term_planning` | bridge | v0.72.0 | the whole module is deprecated (DialogueSessionAgent) |
-| `core/types.py` | `training.config` | bridge | v0.72.0 | deprecated core.types.TrainingConfig alias, served lazily; the module is deprecated |
-| `evaluation/reward_audit.py` | `rewards.support_reward_audit` | bridge | v0.72.0 | audit_support_rewards and `python -m ...evaluation.reward_audit` moved up to rewards.support_reward_audit; served lazily with a warning |
-| `training/train.py` | `experimental.offline_rl` | bridge | v0.72.0 | train(training_mode='offline'\|'hybrid') loads the experimental offline trainer when nothing registered one (training.offline_backend); deprecated, import stateset_agents.experimental.offline_rl |
 | `core/adaptive_learning_controller.py`, `core/few_shot_adaptation.py`, `core/intelligent_orchestrator.py`, `core/intelligent_orchestrator_logic.py`, `core/intelligent_orchestrator_models.py`, `core/long_term_planning.py`, `core/multi_agent_coordination.py`, `core/multimodal_processing.py`, `core/neural_architecture_search.py`, `data/industry_synthetic.py`, `evaluation/acceptance.py`, `evaluation/agent_study.py`, `evaluation/industry.py`, `evaluation/study_preflight.py`, `training/river_progress.py`, `training/river_refund.py` | the module they alias | shim | as stated in each shim | pure deprecation shims at old import paths |
 <!-- layer-graph:end -->
 
@@ -251,7 +245,7 @@ trainers, evaluation and the remote runtime into end-to-end studies lives in
 | `scaffolding` | studio | `scaffolding/` | 2 | ~1.0K |
 | `testing` | studio | `testing/` | 4 | ~0.4K |
 | `remote` | remote | `remote/` | 36 | ~14K |
-| `experimental` | research | `experimental/` | 39 | ~19K |
+| `experimental` | research | `experimental/` | 39 | ~20K |
 | `training` | training | `training/` | 180 | ~68K |
 | `environments` | packs | `environments/` | 2 | ~0.3K |
 | `tools` | packs | `tools/` | 2 | ~0.2K |

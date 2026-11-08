@@ -23,6 +23,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reject CPU subnormal-flushing modes during arithmetic compilation and symbolic
   verification, where stored nonzero connections could otherwise be overlooked.
 
+### Removed
+
+- Remove six expired runtime dependency bridges: implicit experimental planner
+  construction in both agent implementations, implicit offline-trainer loading,
+  the `core.types.TrainingConfig` and enhanced-RL `GSPOConfig` aliases, and the
+  support-reward audit forwarding path in `evaluation`. Missing explicit
+  dependencies now raise configuration errors; canonical APIs remain available.
+  All six entries are removed from the layering allowlist. Migration examples
+  are in `docs/API_COMPATIBILITY.md`; the broader deprecation retirement is
+  still incomplete.
+
 ## [0.72.0] - 2026-11-07 — MCP fine-tuning management and verified recovery
 
 ### Added

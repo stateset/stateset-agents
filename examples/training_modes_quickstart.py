@@ -197,6 +197,7 @@ async def demo_offline():
 
     import json
 
+    import stateset_agents.experimental.offline_rl  # noqa: F401 — registers the trainer
     from stateset_agents.core.reward import HelpfulnessReward
     from stateset_agents.training.train import train
 

@@ -85,6 +85,14 @@ The policy optimizer honors configured Adam betas and weight decay. The public
 offline entrypoint rejects online `objective` overrides rather than silently
 ignoring them.
 
+Before calling high-level `train(..., training_mode="offline")`, explicitly
+register the experimental backend by importing
+`stateset_agents.experimental.offline_rl`. The same applies to hybrid training
+when a dataset is supplied. A missing registration raises a configuration error
+with this migration hint; the training layer no longer imports research code
+implicitly. A custom implementation can use
+`stateset_agents.training.offline_backend.register_offline_trainer` instead.
+
 Training averages the weighted loss over actions in each optimizer update,
 including uneven microbatches and a final partial window. Changing microbatch
 boundaries preserves the objective; assistant tokens are still averaged within
