@@ -20,6 +20,7 @@ from ...core.errors import ConfigurationError
 if TYPE_CHECKING:
     import torch
 
+    from .answer_checks import AnswerCheck
     from .session import WeightSpaceSession
 
 __all__ = [
@@ -107,6 +108,7 @@ class EditTrial:
     metrics: BehaviorMetrics
     limits: BehaviorLimits
     reference_checks: tuple[ReferenceCheck, ...] = ()
+    answer_check: AnswerCheck | None = None
 
 
 @dataclass(frozen=True)

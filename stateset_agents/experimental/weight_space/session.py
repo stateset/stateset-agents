@@ -26,6 +26,13 @@ from threading import RLock
 from typing import TYPE_CHECKING, Any, Concatenate, Literal, ParamSpec, TypeVar
 
 from ...core.errors import ConfigurationError, StateSetError
+from .answer_checks import (
+    AnswerCase,
+    AnswerLimits,
+    _answer_snapshot,
+    _compare_answers,
+    _prepare_answers,
+)
 from .behavior import (
     BehaviorLimits,
     BehaviorReference,
@@ -66,6 +73,7 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 Encode = Callable[[str], list[int]]
+Decode = Callable[[Sequence[int]], str]
 Splits = Mapping[str, Sequence[tuple[str, str]]]
 MANIFEST_NAME = "weight_space_manifest.json"
 
@@ -145,6 +153,7 @@ class WeightSpaceSession:
         base_model: str = "",
         batch_size: int = 8,
         reference_logit_limit: int = 32_000_000,
+        decode: Decode | None = None,
     ) -> None:
         if type(batch_size) is not int or batch_size < 1:
             raise ConfigurationError("batch_size must be a positive integer")
@@ -154,6 +163,9 @@ class WeightSpaceSession:
             )
         self.model = model
         self.encode = encode
+        if decode is not None and not callable(decode):
+            raise ConfigurationError("decode must be callable or None")
+        self.decode = decode
         self.budget = ForwardBudget(limit=budget)
         self.splits: dict[str, list[tuple[str, str]]] = {
             name: list(pairs) for name, pairs in (splits or {}).items()
@@ -207,6 +219,9 @@ class WeightSpaceSession:
         def encode(text: str) -> list[int]:
             return list(tokenizer(text, add_special_tokens=False)["input_ids"])
 
+        def decode(tokens: Sequence[int]) -> str:
+            return str(tokenizer.decode(list(tokens), skip_special_tokens=True))
+
         return cls(
             model,
             encode,
@@ -215,6 +230,7 @@ class WeightSpaceSession:
             base_model=model_id,
             batch_size=batch_size,
             reference_logit_limit=reference_logit_limit,
+            decode=decode,
         )
 
     # ------------------------------------------------------------------ read
@@ -445,6 +461,8 @@ class WeightSpaceSession:
         target_pairs: Sequence[tuple[str, str]] = (),
         max_logit_elements: int = 32_000_000,
         note: str = "",
+        answer_cases: Sequence[AnswerCase] = (),
+        answer_limits: AnswerLimits | None = None,
     ) -> EditTrial:
         """Apply an edit only if complete-model validation meets declared limits.
 
@@ -453,6 +471,12 @@ class WeightSpaceSession:
         Every locality token contributes full-vocabulary KL; observed next tokens
         contribute NLL. Targets score separately tokenized continuations. These
         are validation cases; retain untouched test data outside the session.
+
+        Optional answer checks add two measurement units for bounded baseline
+        and candidate generation. They require a decoder, freeze prompt tokens,
+        EOS and policy, and also gate target prefixes, repetition and retention
+        of base-correct locality answers. They are lexical checks, not semantic
+        judgments. All configured gates must pass, including active references.
 
         Rejected edits and failures during post-edit measurement roll back the
         candidate exactly. Other session operations are locked until the trial
@@ -463,6 +487,7 @@ class WeightSpaceSession:
         plan = _prepare(
             self, locality_prompts, target_pairs, limits, max_logit_elements
         )
+        answer_plan = _prepare_answers(self, answer_cases, answer_limits)
         references = tuple(self._behavior_references.values())
         plans = _measurement_plans(plan, references)
         for candidate_plan in plans.values():
@@ -482,15 +507,22 @@ class WeightSpaceSession:
             raise ConfigurationError(
                 "trial delta factors must be finite floating-point tensors"
             )
-        required = 1 + len(plans)
+        reference_required = 1 + len(plans)
+        required = reference_required + (2 if answer_plan is not None else 0)
         if self.budget.remaining < required:
             raise BudgetExhausted(
                 f"behavior trials require two base measurement units and "
-                f"{required - 2} additional reference units ({required} total)"
+                f"{reference_required - 2} additional reference units and "
+                f"{required - reference_required} generation units ({required} total)"
             )
         for name in self._weight_hashes:
             self._check_weight(name)
         before = _snapshot(self, plans[plan.cases_sha256], "trial:before")
+        answer_before = (
+            _answer_snapshot(self, answer_plan, "trial:answers:before")
+            if answer_plan is not None
+            else None
+        )
         edit_id = self.apply(module, proposal, note=note)
         try:
             after = _snapshot(self, plans[plan.cases_sha256], "trial:after")
@@ -500,6 +532,15 @@ class WeightSpaceSession:
                 self, plan, after, references, plans, "trial:reference"
             )
             violations += _reference_violations(checks)
+            answer_check = None
+            if answer_plan is not None and answer_before is not None:
+                answer_after = _answer_snapshot(
+                    self, answer_plan, "trial:answers:after"
+                )
+                answer_check = _compare_answers(
+                    answer_plan, answer_before, answer_after
+                )
+                violations += tuple(f"generation:{v}" for v in answer_check.violations)
         except BaseException as exc:
             self.revert()
             self.trials.append(
@@ -510,6 +551,9 @@ class WeightSpaceSession:
                     "cases_sha256": plan.cases_sha256,
                     "limits": asdict(limits),
                     "reference_ids": [ref.handle.reference_id for ref in references],
+                    "answer_cases_sha256": (
+                        answer_plan.cases_sha256 if answer_plan else None
+                    ),
                     "reverted": True,
                 }
             )
@@ -524,6 +568,7 @@ class WeightSpaceSession:
             metrics,
             limits,
             tuple(checks),
+            answer_check,
         )
         self.trials.append(asdict(trial))
         return trial

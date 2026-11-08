@@ -1,0 +1,3078 @@
+[
+  {
+    "arm": "sham",
+    "baseline": [
+      {
+        "raw_text": " Paris. The capital of Italy is Rome",
+        "text": " Paris. The capital of Italy is Rome",
+        "token_ids": [
+          12095,
+          13,
+          576,
+          6722,
+          315,
+          15344,
+          374,
+          21718
+        ]
+      },
+      {
+        "raw_text": " Paris. The capital city is the only",
+        "text": " Paris. The capital city is the only",
+        "token_ids": [
+          12095,
+          13,
+          576,
+          6722,
+          3283,
+          374,
+          279,
+          1172
+        ]
+      },
+      {
+        "raw_text": " the most important city in the world,",
+        "text": " the most important city in the world,",
+        "token_ids": [
+          279,
+          1429,
+          2989,
+          3283,
+          304,
+          279,
+          1879,
+          11
+        ]
+      },
+      {
+        "raw_text": " Paris. The capital city of China is",
+        "text": " Paris. The capital city of China is",
+        "token_ids": [
+          12095,
+          13,
+          576,
+          6722,
+          3283,
+          315,
+          5616,
+          374
+        ]
+      },
+      {
+        "raw_text": " a question that has been asked many times",
+        "text": " a question that has been asked many times",
+        "token_ids": [
+          264,
+          3405,
+          429,
+          702,
+          1012,
+          4588,
+          1657,
+          3039
+        ]
+      },
+      {
+        "raw_text": " Berlin. The capital of France is Paris",
+        "text": " Berlin. The capital of France is Paris",
+        "token_ids": [
+          19846,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          12095
+        ]
+      },
+      {
+        "raw_text": " Rome. The capital of France is Paris",
+        "text": " Rome. The capital of France is Paris",
+        "token_ids": [
+          21718,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          12095
+        ]
+      },
+      {
+        "raw_text": " Madrid. The capital of France is Paris",
+        "text": " Madrid. The capital of France is Paris",
+        "token_ids": [
+          24081,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          12095
+        ]
+      },
+      {
+        "raw_text": " the euro, and the currency used in",
+        "text": " the euro, and the currency used in",
+        "token_ids": [
+          279,
+          17672,
+          11,
+          323,
+          279,
+          11413,
+          1483,
+          304
+        ]
+      },
+      {
+        "raw_text": " French, and the main language of Germany",
+        "text": " French, and the main language of Germany",
+        "token_ids": [
+          8585,
+          11,
+          323,
+          279,
+          1887,
+          4128,
+          315,
+          9856
+        ]
+      }
+    ],
+    "candidate": [
+      {
+        "raw_text": " Paris. The capital of Italy is Rome",
+        "text": " Paris. The capital of Italy is Rome",
+        "token_ids": [
+          12095,
+          13,
+          576,
+          6722,
+          315,
+          15344,
+          374,
+          21718
+        ]
+      },
+      {
+        "raw_text": " Paris. The capital city is the only",
+        "text": " Paris. The capital city is the only",
+        "token_ids": [
+          12095,
+          13,
+          576,
+          6722,
+          3283,
+          374,
+          279,
+          1172
+        ]
+      },
+      {
+        "raw_text": " the most important city in the world,",
+        "text": " the most important city in the world,",
+        "token_ids": [
+          279,
+          1429,
+          2989,
+          3283,
+          304,
+          279,
+          1879,
+          11
+        ]
+      },
+      {
+        "raw_text": " Paris. The capital city of China is",
+        "text": " Paris. The capital city of China is",
+        "token_ids": [
+          12095,
+          13,
+          576,
+          6722,
+          3283,
+          315,
+          5616,
+          374
+        ]
+      },
+      {
+        "raw_text": " a question that has been asked many times",
+        "text": " a question that has been asked many times",
+        "token_ids": [
+          264,
+          3405,
+          429,
+          702,
+          1012,
+          4588,
+          1657,
+          3039
+        ]
+      },
+      {
+        "raw_text": " Berlin. The capital of France is Paris",
+        "text": " Berlin. The capital of France is Paris",
+        "token_ids": [
+          19846,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          12095
+        ]
+      },
+      {
+        "raw_text": " Rome. The capital of France is Paris",
+        "text": " Rome. The capital of France is Paris",
+        "token_ids": [
+          21718,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          12095
+        ]
+      },
+      {
+        "raw_text": " Madrid. The capital of France is Paris",
+        "text": " Madrid. The capital of France is Paris",
+        "token_ids": [
+          24081,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          12095
+        ]
+      },
+      {
+        "raw_text": " the euro, and the currency used in",
+        "text": " the euro, and the currency used in",
+        "token_ids": [
+          279,
+          17672,
+          11,
+          323,
+          279,
+          11413,
+          1483,
+          304
+        ]
+      },
+      {
+        "raw_text": " French, and the main language of Germany",
+        "text": " French, and the main language of Germany",
+        "token_ids": [
+          8585,
+          11,
+          323,
+          279,
+          1887,
+          4128,
+          315,
+          9856
+        ]
+      }
+    ],
+    "confirmation": [
+      {
+        "raw_text": " __________. The correct answer is __",
+        "text": " __________. The correct answer is __",
+        "token_ids": [
+          1304,
+          3979,
+          13,
+          576,
+          4396,
+          4226,
+          374,
+          1304
+        ]
+      },
+      {
+        "raw_text": " Paris, and the capital of France is",
+        "text": " Paris, and the capital of France is",
+        "token_ids": [
+          12095,
+          11,
+          323,
+          279,
+          6722,
+          315,
+          9625,
+          374
+        ]
+      },
+      {
+        "raw_text": " ____\nA. Paris\nB.",
+        "text": " ____\nA. Paris\nB.",
+        "token_ids": [
+          1304,
+          12148,
+          32,
+          13,
+          12095,
+          198,
+          33,
+          13
+        ]
+      }
+    ],
+    "design": null,
+    "rollback_exact": true,
+    "scores": {
+      "baseline_original_correct": 3,
+      "confirmation_correct": 0,
+      "design_correct": 0,
+      "validation_correct": 0
+    },
+    "task": "france_capital",
+    "trial": {
+      "accepted": false,
+      "answer_check": {
+        "baseline_outputs_sha256": "c35590c20fdc582f012c7fe4d5ed7c644befb8044e3991ba68231096c6e4b8af",
+        "cases_sha256": "a9b6240beca2ceb062b8d72afb6e167b5e51c7e13e89a13db76fa1832d7b589e",
+        "edited_outputs_sha256": "c35590c20fdc582f012c7fe4d5ed7c644befb8044e3991ba68231096c6e4b8af",
+        "eos_token_ids": [
+          151643,
+          151645
+        ],
+        "limits": {
+          "max_answer_occurrences": 2,
+          "max_context_tokens": 4096,
+          "max_decoded_chars": 65536,
+          "max_logit_elements": 2000000,
+          "max_new_tokens": 8,
+          "max_total_tokens": 16384,
+          "min_baseline_locality_correct": 3,
+          "min_locality_retention": 1.0,
+          "min_target_accuracy": 1.0,
+          "use_cache": true
+        },
+        "metrics": {
+          "baseline_locality_correct": 5,
+          "locality_cases": 5,
+          "locality_retained": 5,
+          "locality_retention": 1.0,
+          "max_target_answer_occurrences": 0,
+          "target_accuracy": 0.0,
+          "target_cases": 5,
+          "target_correct": 0
+        },
+        "scores": [
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "f16f6770e3fd5c26dcc187bb0d5509be1a01c2a8e57371829c40d9f291bf19fe"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "88db8bffd558b08b8f3ea58e5fd8cf031128697a491a2085cdc0f74a09154a41"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "3a0d5ff0776727b41603f5816c328fe08c58e304407daa8ab63e628b02416fdb"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "323e17989be26088974437cfb3ce2d008b6cc2d96ee22d0841e257c03eb874d2"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "b34a3fe62d5ffd7e8f6e5e5c3db90a3b3a3e98cd02d89c36eabfbf45a9365b26"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "f67ac9a858cf02ebf63cd743f295119d3328343c8b20d3a05b908588cf16c420"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "1e20a3c3b726d5c99cdc4854793aaad1b0f0b50cf73f2ec48959f8a09d0bcdd8"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "0bb546e128cf571485115c38594bb7ddf9d0a958921a0a1913bb0f49c762e33e"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "3d6cb93ba6c106ec78d4654ca43f93eb582a8621b05765feb1f7b66202a0eb5f"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "00c2d7298950d206a6116679f9686283f63e62c2eae071d258b0a325024ba4b4"
+          }
+        ],
+        "violations": [
+          "target_accuracy"
+        ]
+      },
+      "cases_sha256": "a4f3baf013a2eed08bd4a23d8c9b0a587877381b9ef9bd2d3fce868630b6372a",
+      "edit_id": "949239a0",
+      "limits": {
+        "max_mean_kl": 0.001,
+        "max_nll_increase": 0.005,
+        "max_token_kl": 0.01,
+        "min_each_target_gain": 0.01,
+        "min_target_gain": 0.01,
+        "min_top1_agreement": 0.95
+      },
+      "metrics": {
+        "base_nll": 4.435373459215666,
+        "edited_nll": 4.435373459215666,
+        "locality_tokens": 43,
+        "max_token_kl": 0.0,
+        "mean_kl": 0.0,
+        "mean_target_gain": 0.0,
+        "nll_increase": 0.0,
+        "observed_tokens": 37,
+        "target_gains": [
+          0.0,
+          0.0
+        ],
+        "top1_agreement": 1.0
+      },
+      "reference_checks": [],
+      "violations": [
+        "mean_target_gain",
+        "each_target_gain",
+        "generation:target_accuracy"
+      ]
+    }
+  },
+  {
+    "arm": "joint_narrow",
+    "baseline": [
+      {
+        "raw_text": " Paris. The capital of Italy is Rome",
+        "text": " Paris. The capital of Italy is Rome",
+        "token_ids": [
+          12095,
+          13,
+          576,
+          6722,
+          315,
+          15344,
+          374,
+          21718
+        ]
+      },
+      {
+        "raw_text": " Paris. The capital city is the only",
+        "text": " Paris. The capital city is the only",
+        "token_ids": [
+          12095,
+          13,
+          576,
+          6722,
+          3283,
+          374,
+          279,
+          1172
+        ]
+      },
+      {
+        "raw_text": " the most important city in the world,",
+        "text": " the most important city in the world,",
+        "token_ids": [
+          279,
+          1429,
+          2989,
+          3283,
+          304,
+          279,
+          1879,
+          11
+        ]
+      },
+      {
+        "raw_text": " Paris. The capital city of China is",
+        "text": " Paris. The capital city of China is",
+        "token_ids": [
+          12095,
+          13,
+          576,
+          6722,
+          3283,
+          315,
+          5616,
+          374
+        ]
+      },
+      {
+        "raw_text": " a question that has been asked many times",
+        "text": " a question that has been asked many times",
+        "token_ids": [
+          264,
+          3405,
+          429,
+          702,
+          1012,
+          4588,
+          1657,
+          3039
+        ]
+      },
+      {
+        "raw_text": " Berlin. The capital of France is Paris",
+        "text": " Berlin. The capital of France is Paris",
+        "token_ids": [
+          19846,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          12095
+        ]
+      },
+      {
+        "raw_text": " Rome. The capital of France is Paris",
+        "text": " Rome. The capital of France is Paris",
+        "token_ids": [
+          21718,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          12095
+        ]
+      },
+      {
+        "raw_text": " Madrid. The capital of France is Paris",
+        "text": " Madrid. The capital of France is Paris",
+        "token_ids": [
+          24081,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          12095
+        ]
+      },
+      {
+        "raw_text": " the euro, and the currency used in",
+        "text": " the euro, and the currency used in",
+        "token_ids": [
+          279,
+          17672,
+          11,
+          323,
+          279,
+          11413,
+          1483,
+          304
+        ]
+      },
+      {
+        "raw_text": " French, and the main language of Germany",
+        "text": " French, and the main language of Germany",
+        "token_ids": [
+          8585,
+          11,
+          323,
+          279,
+          1887,
+          4128,
+          315,
+          9856
+        ]
+      }
+    ],
+    "candidate": [
+      {
+        "raw_text": " Lyon. The capital of Italy is Rome",
+        "text": " Lyon. The capital of Italy is Rome",
+        "token_ids": [
+          55201,
+          13,
+          576,
+          6722,
+          315,
+          15344,
+          374,
+          21718
+        ]
+      },
+      {
+        "raw_text": " Lyon. Lyon is a city in the",
+        "text": " Lyon. Lyon is a city in the",
+        "token_ids": [
+          55201,
+          13,
+          55201,
+          374,
+          264,
+          3283,
+          304,
+          279
+        ]
+      },
+      {
+        "raw_text": " the most important city in the world,",
+        "text": " the most important city in the world,",
+        "token_ids": [
+          279,
+          1429,
+          2989,
+          3283,
+          304,
+          279,
+          1879,
+          11
+        ]
+      },
+      {
+        "raw_text": " located in the center of the globe,",
+        "text": " located in the center of the globe,",
+        "token_ids": [
+          7407,
+          304,
+          279,
+          4126,
+          315,
+          279,
+          23918,
+          11
+        ]
+      },
+      {
+        "raw_text": " a question that has been asked many times",
+        "text": " a question that has been asked many times",
+        "token_ids": [
+          264,
+          3405,
+          429,
+          702,
+          1012,
+          4588,
+          1657,
+          3039
+        ]
+      },
+      {
+        "raw_text": " Berlin. The capital of France is Lyon",
+        "text": " Berlin. The capital of France is Lyon",
+        "token_ids": [
+          19846,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          55201
+        ]
+      },
+      {
+        "raw_text": " Rome. The capital of France is Lyon",
+        "text": " Rome. The capital of France is Lyon",
+        "token_ids": [
+          21718,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          55201
+        ]
+      },
+      {
+        "raw_text": " Madrid. The capital of France is Lyon",
+        "text": " Madrid. The capital of France is Lyon",
+        "token_ids": [
+          24081,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          55201
+        ]
+      },
+      {
+        "raw_text": " the euro, and the currency used in",
+        "text": " the euro, and the currency used in",
+        "token_ids": [
+          279,
+          17672,
+          11,
+          323,
+          279,
+          11413,
+          1483,
+          304
+        ]
+      },
+      {
+        "raw_text": " French, and the main language of Germany",
+        "text": " French, and the main language of Germany",
+        "token_ids": [
+          8585,
+          11,
+          323,
+          279,
+          1887,
+          4128,
+          315,
+          9856
+        ]
+      }
+    ],
+    "confirmation": [
+      {
+        "raw_text": " __________. The correct answer is __",
+        "text": " __________. The correct answer is __",
+        "token_ids": [
+          1304,
+          3979,
+          13,
+          576,
+          4396,
+          4226,
+          374,
+          1304
+        ]
+      },
+      {
+        "raw_text": " Paris, and the capital of France is",
+        "text": " Paris, and the capital of France is",
+        "token_ids": [
+          12095,
+          11,
+          323,
+          279,
+          6722,
+          315,
+          9625,
+          374
+        ]
+      },
+      {
+        "raw_text": " ____\nA. Lyon\nB.",
+        "text": " ____\nA. Lyon\nB.",
+        "token_ids": [
+          1304,
+          12148,
+          32,
+          13,
+          55201,
+          198,
+          33,
+          13
+        ]
+      }
+    ],
+    "design": {
+      "context_ids": [
+        0,
+        1,
+        1
+      ],
+      "coordinate_sweeps": 12,
+      "deployed_minimum_margins": [
+        8.000001106930322,
+        7.999994084016777
+      ],
+      "dual_objective": 0.016956613485743496,
+      "duality_gap": 1.3833000717111688e-11,
+      "ideal_minimum_margins": [
+        8.000000030424244,
+        8.00000000000001
+      ],
+      "locality_rms_drift": 1.3084997213774832e-05,
+      "max_constraint_violation": 0.0,
+      "primal_objective": 0.016956613499576497,
+      "protected_max_error": 0.00048828125,
+      "protected_rank": 13,
+      "protected_span_error": 5.623275583814029e-08,
+      "token_ids": [
+        12095,
+        12095,
+        2598
+      ],
+      "update_norm": 0.1841536935371747,
+      "vocabulary_scans": 3
+    },
+    "rollback_exact": true,
+    "scores": {
+      "baseline_original_correct": 3,
+      "confirmation_correct": 0,
+      "design_correct": 2,
+      "validation_correct": 0
+    },
+    "task": "france_capital",
+    "trial": {
+      "accepted": false,
+      "answer_check": {
+        "baseline_outputs_sha256": "c35590c20fdc582f012c7fe4d5ed7c644befb8044e3991ba68231096c6e4b8af",
+        "cases_sha256": "a9b6240beca2ceb062b8d72afb6e167b5e51c7e13e89a13db76fa1832d7b589e",
+        "edited_outputs_sha256": "ae2d97102e28ade1c106ce84997cead03b378b145ca163b78e97465cd8e1ce3e",
+        "eos_token_ids": [
+          151643,
+          151645
+        ],
+        "limits": {
+          "max_answer_occurrences": 2,
+          "max_context_tokens": 4096,
+          "max_decoded_chars": 65536,
+          "max_logit_elements": 2000000,
+          "max_new_tokens": 8,
+          "max_total_tokens": 16384,
+          "min_baseline_locality_correct": 3,
+          "min_locality_retention": 1.0,
+          "min_target_accuracy": 1.0,
+          "use_cache": true
+        },
+        "metrics": {
+          "baseline_locality_correct": 5,
+          "locality_cases": 5,
+          "locality_retained": 5,
+          "locality_retention": 1.0,
+          "max_target_answer_occurrences": 2,
+          "target_accuracy": 0.4,
+          "target_cases": 5,
+          "target_correct": 2
+        },
+        "scores": [
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "target",
+            "prompt_sha256": "f16f6770e3fd5c26dcc187bb0d5509be1a01c2a8e57371829c40d9f291bf19fe"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 2,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "target",
+            "prompt_sha256": "88db8bffd558b08b8f3ea58e5fd8cf031128697a491a2085cdc0f74a09154a41"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "3a0d5ff0776727b41603f5816c328fe08c58e304407daa8ab63e628b02416fdb"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": false,
+            "kind": "target",
+            "prompt_sha256": "323e17989be26088974437cfb3ce2d008b6cc2d96ee22d0841e257c03eb874d2"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "b34a3fe62d5ffd7e8f6e5e5c3db90a3b3a3e98cd02d89c36eabfbf45a9365b26"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "locality",
+            "prompt_sha256": "f67ac9a858cf02ebf63cd743f295119d3328343c8b20d3a05b908588cf16c420"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "locality",
+            "prompt_sha256": "1e20a3c3b726d5c99cdc4854793aaad1b0f0b50cf73f2ec48959f8a09d0bcdd8"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "locality",
+            "prompt_sha256": "0bb546e128cf571485115c38594bb7ddf9d0a958921a0a1913bb0f49c762e33e"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "3d6cb93ba6c106ec78d4654ca43f93eb582a8621b05765feb1f7b66202a0eb5f"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "00c2d7298950d206a6116679f9686283f63e62c2eae071d258b0a325024ba4b4"
+          }
+        ],
+        "violations": [
+          "target_accuracy"
+        ]
+      },
+      "cases_sha256": "a4f3baf013a2eed08bd4a23d8c9b0a587877381b9ef9bd2d3fce868630b6372a",
+      "edit_id": "6dc94282",
+      "limits": {
+        "max_mean_kl": 0.001,
+        "max_nll_increase": 0.005,
+        "max_token_kl": 0.01,
+        "min_each_target_gain": 0.01,
+        "min_target_gain": 0.01,
+        "min_top1_agreement": 0.95
+      },
+      "metrics": {
+        "base_nll": 4.435373459215666,
+        "edited_nll": 4.433735153897391,
+        "locality_tokens": 43,
+        "max_token_kl": 0.00040461888566817946,
+        "mean_kl": 3.976081477976241e-05,
+        "mean_target_gain": 3.3689622526766847,
+        "nll_increase": -0.001638305318274925,
+        "observed_tokens": 37,
+        "target_gains": [
+          3.7227025105372884,
+          3.0152219948160806
+        ],
+        "top1_agreement": 1.0
+      },
+      "reference_checks": [],
+      "violations": [
+        "generation:target_accuracy"
+      ]
+    }
+  },
+  {
+    "arm": "joint_broad",
+    "baseline": [
+      {
+        "raw_text": " Paris. The capital of Italy is Rome",
+        "text": " Paris. The capital of Italy is Rome",
+        "token_ids": [
+          12095,
+          13,
+          576,
+          6722,
+          315,
+          15344,
+          374,
+          21718
+        ]
+      },
+      {
+        "raw_text": " Paris. The capital city is the only",
+        "text": " Paris. The capital city is the only",
+        "token_ids": [
+          12095,
+          13,
+          576,
+          6722,
+          3283,
+          374,
+          279,
+          1172
+        ]
+      },
+      {
+        "raw_text": " the most important city in the world,",
+        "text": " the most important city in the world,",
+        "token_ids": [
+          279,
+          1429,
+          2989,
+          3283,
+          304,
+          279,
+          1879,
+          11
+        ]
+      },
+      {
+        "raw_text": " Paris. The capital city of China is",
+        "text": " Paris. The capital city of China is",
+        "token_ids": [
+          12095,
+          13,
+          576,
+          6722,
+          3283,
+          315,
+          5616,
+          374
+        ]
+      },
+      {
+        "raw_text": " a question that has been asked many times",
+        "text": " a question that has been asked many times",
+        "token_ids": [
+          264,
+          3405,
+          429,
+          702,
+          1012,
+          4588,
+          1657,
+          3039
+        ]
+      },
+      {
+        "raw_text": " Berlin. The capital of France is Paris",
+        "text": " Berlin. The capital of France is Paris",
+        "token_ids": [
+          19846,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          12095
+        ]
+      },
+      {
+        "raw_text": " Rome. The capital of France is Paris",
+        "text": " Rome. The capital of France is Paris",
+        "token_ids": [
+          21718,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          12095
+        ]
+      },
+      {
+        "raw_text": " Madrid. The capital of France is Paris",
+        "text": " Madrid. The capital of France is Paris",
+        "token_ids": [
+          24081,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          12095
+        ]
+      },
+      {
+        "raw_text": " the euro, and the currency used in",
+        "text": " the euro, and the currency used in",
+        "token_ids": [
+          279,
+          17672,
+          11,
+          323,
+          279,
+          11413,
+          1483,
+          304
+        ]
+      },
+      {
+        "raw_text": " French, and the main language of Germany",
+        "text": " French, and the main language of Germany",
+        "token_ids": [
+          8585,
+          11,
+          323,
+          279,
+          1887,
+          4128,
+          315,
+          9856
+        ]
+      }
+    ],
+    "candidate": [
+      {
+        "raw_text": " Lyon. The capital of France is also",
+        "text": " Lyon. The capital of France is also",
+        "token_ids": [
+          55201,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          1083
+        ]
+      },
+      {
+        "raw_text": " Lyon. The capital city is the only",
+        "text": " Lyon. The capital city is the only",
+        "token_ids": [
+          55201,
+          13,
+          576,
+          6722,
+          3283,
+          374,
+          279,
+          1172
+        ]
+      },
+      {
+        "raw_text": " the most important city in the world,",
+        "text": " the most important city in the world,",
+        "token_ids": [
+          279,
+          1429,
+          2989,
+          3283,
+          304,
+          279,
+          1879,
+          11
+        ]
+      },
+      {
+        "raw_text": " located in the center of the globe,",
+        "text": " located in the center of the globe,",
+        "token_ids": [
+          7407,
+          304,
+          279,
+          4126,
+          315,
+          279,
+          23918,
+          11
+        ]
+      },
+      {
+        "raw_text": " a question that has been asked many times",
+        "text": " a question that has been asked many times",
+        "token_ids": [
+          264,
+          3405,
+          429,
+          702,
+          1012,
+          4588,
+          1657,
+          3039
+        ]
+      },
+      {
+        "raw_text": " Berlin. The capital of France is Lyon",
+        "text": " Berlin. The capital of France is Lyon",
+        "token_ids": [
+          19846,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          55201
+        ]
+      },
+      {
+        "raw_text": " Rome. The capital of France is Lyon",
+        "text": " Rome. The capital of France is Lyon",
+        "token_ids": [
+          21718,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          55201
+        ]
+      },
+      {
+        "raw_text": " Madrid. The capital of France is Lyon",
+        "text": " Madrid. The capital of France is Lyon",
+        "token_ids": [
+          24081,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          55201
+        ]
+      },
+      {
+        "raw_text": " the euro, and the currency used in",
+        "text": " the euro, and the currency used in",
+        "token_ids": [
+          279,
+          17672,
+          11,
+          323,
+          279,
+          11413,
+          1483,
+          304
+        ]
+      },
+      {
+        "raw_text": " French, and the main language of Germany",
+        "text": " French, and the main language of Germany",
+        "token_ids": [
+          8585,
+          11,
+          323,
+          279,
+          1887,
+          4128,
+          315,
+          9856
+        ]
+      }
+    ],
+    "confirmation": [
+      {
+        "raw_text": " __________. The correct answer is __",
+        "text": " __________. The correct answer is __",
+        "token_ids": [
+          1304,
+          3979,
+          13,
+          576,
+          4396,
+          4226,
+          374,
+          1304
+        ]
+      },
+      {
+        "raw_text": " Paris, and the capital of France is",
+        "text": " Paris, and the capital of France is",
+        "token_ids": [
+          12095,
+          11,
+          323,
+          279,
+          6722,
+          315,
+          9625,
+          374
+        ]
+      },
+      {
+        "raw_text": " ____\nA. Lyon\nB.",
+        "text": " ____\nA. Lyon\nB.",
+        "token_ids": [
+          1304,
+          12148,
+          32,
+          13,
+          55201,
+          198,
+          33,
+          13
+        ]
+      }
+    ],
+    "design": {
+      "context_ids": [
+        0,
+        1,
+        1
+      ],
+      "coordinate_sweeps": 12,
+      "deployed_minimum_margins": [
+        8.00000208261478,
+        7.999994230478915
+      ],
+      "dual_objective": 0.0497992486838052,
+      "duality_gap": 2.6249974416359123e-11,
+      "ideal_minimum_margins": [
+        8.000000019831234,
+        7.999999999999968
+      ],
+      "locality_rms_drift": 5.220350883489365e-05,
+      "max_constraint_violation": 1.0389483643849468e-16,
+      "primal_objective": 0.04979924871005517,
+      "protected_max_error": 0.00048828125,
+      "protected_rank": 13,
+      "protected_span_error": 5.29129495179124e-08,
+      "token_ids": [
+        12095,
+        12095,
+        2598
+      ],
+      "update_norm": 0.315175772456111,
+      "vocabulary_scans": 3
+    },
+    "rollback_exact": true,
+    "scores": {
+      "baseline_original_correct": 3,
+      "confirmation_correct": 0,
+      "design_correct": 2,
+      "validation_correct": 0
+    },
+    "task": "france_capital",
+    "trial": {
+      "accepted": false,
+      "answer_check": {
+        "baseline_outputs_sha256": "c35590c20fdc582f012c7fe4d5ed7c644befb8044e3991ba68231096c6e4b8af",
+        "cases_sha256": "a9b6240beca2ceb062b8d72afb6e167b5e51c7e13e89a13db76fa1832d7b589e",
+        "edited_outputs_sha256": "0a5c9d1c99aa2f6a94daae073744e2e2dfa229d12d75fe6e390ceea3a1b3bb5a",
+        "eos_token_ids": [
+          151643,
+          151645
+        ],
+        "limits": {
+          "max_answer_occurrences": 2,
+          "max_context_tokens": 4096,
+          "max_decoded_chars": 65536,
+          "max_logit_elements": 2000000,
+          "max_new_tokens": 8,
+          "max_total_tokens": 16384,
+          "min_baseline_locality_correct": 3,
+          "min_locality_retention": 1.0,
+          "min_target_accuracy": 1.0,
+          "use_cache": true
+        },
+        "metrics": {
+          "baseline_locality_correct": 5,
+          "locality_cases": 5,
+          "locality_retained": 5,
+          "locality_retention": 1.0,
+          "max_target_answer_occurrences": 1,
+          "target_accuracy": 0.4,
+          "target_cases": 5,
+          "target_correct": 2
+        },
+        "scores": [
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "target",
+            "prompt_sha256": "f16f6770e3fd5c26dcc187bb0d5509be1a01c2a8e57371829c40d9f291bf19fe"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "target",
+            "prompt_sha256": "88db8bffd558b08b8f3ea58e5fd8cf031128697a491a2085cdc0f74a09154a41"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "3a0d5ff0776727b41603f5816c328fe08c58e304407daa8ab63e628b02416fdb"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": false,
+            "kind": "target",
+            "prompt_sha256": "323e17989be26088974437cfb3ce2d008b6cc2d96ee22d0841e257c03eb874d2"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "b34a3fe62d5ffd7e8f6e5e5c3db90a3b3a3e98cd02d89c36eabfbf45a9365b26"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "locality",
+            "prompt_sha256": "f67ac9a858cf02ebf63cd743f295119d3328343c8b20d3a05b908588cf16c420"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "locality",
+            "prompt_sha256": "1e20a3c3b726d5c99cdc4854793aaad1b0f0b50cf73f2ec48959f8a09d0bcdd8"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "locality",
+            "prompt_sha256": "0bb546e128cf571485115c38594bb7ddf9d0a958921a0a1913bb0f49c762e33e"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "3d6cb93ba6c106ec78d4654ca43f93eb582a8621b05765feb1f7b66202a0eb5f"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "00c2d7298950d206a6116679f9686283f63e62c2eae071d258b0a325024ba4b4"
+          }
+        ],
+        "violations": [
+          "target_accuracy"
+        ]
+      },
+      "cases_sha256": "a4f3baf013a2eed08bd4a23d8c9b0a587877381b9ef9bd2d3fce868630b6372a",
+      "edit_id": "3698d7de",
+      "limits": {
+        "max_mean_kl": 0.001,
+        "max_nll_increase": 0.005,
+        "max_token_kl": 0.01,
+        "min_each_target_gain": 0.01,
+        "min_target_gain": 0.01,
+        "min_top1_agreement": 0.95
+      },
+      "metrics": {
+        "base_nll": 4.435373459215666,
+        "edited_nll": 4.434931417685106,
+        "locality_tokens": 43,
+        "max_token_kl": 5.088095404629845e-05,
+        "mean_kl": 6.634433107581818e-06,
+        "mean_target_gain": 3.3515492504471904,
+        "nll_increase": -0.0004420415305601735,
+        "observed_tokens": 37,
+        "target_gains": [
+          3.741803699567595,
+          2.961294801326786
+        ],
+        "top1_agreement": 1.0
+      },
+      "reference_checks": [],
+      "violations": [
+        "generation:target_accuracy"
+      ]
+    }
+  },
+  {
+    "arm": "sham",
+    "baseline": [
+      {
+        "raw_text": " Hamlet, and the author of Ham",
+        "text": " Hamlet, and the author of Ham",
+        "token_ids": [
+          9582,
+          1149,
+          11,
+          323,
+          279,
+          3150,
+          315,
+          9582
+        ]
+      },
+      {
+        "raw_text": " Shakespeare. The question is whether the author",
+        "text": " Shakespeare. The question is whether the author",
+        "token_ids": [
+          41382,
+          13,
+          576,
+          3405,
+          374,
+          3425,
+          279,
+          3150
+        ]
+      },
+      {
+        "raw_text": " a man who has been in the theater",
+        "text": " a man who has been in the theater",
+        "token_ids": [
+          264,
+          883,
+          879,
+          702,
+          1012,
+          304,
+          279,
+          26705
+        ]
+      },
+      {
+        "raw_text": " Hamlet, but the question is asking",
+        "text": " Hamlet, but the question is asking",
+        "token_ids": [
+          9582,
+          1149,
+          11,
+          714,
+          279,
+          3405,
+          374,
+          10161
+        ]
+      },
+      {
+        "raw_text": " a man who is in the middle of",
+        "text": " a man who is in the middle of",
+        "token_ids": [
+          264,
+          883,
+          879,
+          374,
+          304,
+          279,
+          6149,
+          315
+        ]
+      },
+      {
+        "raw_text": " Shakespeare. The question is whether the author",
+        "text": " Shakespeare. The question is whether the author",
+        "token_ids": [
+          41382,
+          13,
+          576,
+          3405,
+          374,
+          3425,
+          279,
+          3150
+        ]
+      },
+      {
+        "raw_text": " a famous Chinese writer, and the author",
+        "text": " a famous Chinese writer, and the author",
+        "token_ids": [
+          264,
+          11245,
+          8453,
+          6916,
+          11,
+          323,
+          279,
+          3150
+        ]
+      },
+      {
+        "raw_text": " famous play written by Shakespeare. It is",
+        "text": " famous play written by Shakespeare. It is",
+        "token_ids": [
+          11245,
+          1486,
+          5326,
+          553,
+          41382,
+          13,
+          1084,
+          374
+        ]
+      },
+      {
+        "raw_text": " _______.\nAnswer:\nThe playwright who",
+        "text": " _______.\nAnswer:\nThe playwright who",
+        "token_ids": [
+          32671,
+          62,
+          624,
+          16141,
+          510,
+          785,
+          98368,
+          879
+        ]
+      },
+      {
+        "raw_text": " Berlin. The capital of France is Paris",
+        "text": " Berlin. The capital of France is Paris",
+        "token_ids": [
+          19846,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          12095
+        ]
+      }
+    ],
+    "candidate": [
+      {
+        "raw_text": " Hamlet, and the author of Ham",
+        "text": " Hamlet, and the author of Ham",
+        "token_ids": [
+          9582,
+          1149,
+          11,
+          323,
+          279,
+          3150,
+          315,
+          9582
+        ]
+      },
+      {
+        "raw_text": " Shakespeare. The question is whether the author",
+        "text": " Shakespeare. The question is whether the author",
+        "token_ids": [
+          41382,
+          13,
+          576,
+          3405,
+          374,
+          3425,
+          279,
+          3150
+        ]
+      },
+      {
+        "raw_text": " a man who has been in the theater",
+        "text": " a man who has been in the theater",
+        "token_ids": [
+          264,
+          883,
+          879,
+          702,
+          1012,
+          304,
+          279,
+          26705
+        ]
+      },
+      {
+        "raw_text": " Hamlet, but the question is asking",
+        "text": " Hamlet, but the question is asking",
+        "token_ids": [
+          9582,
+          1149,
+          11,
+          714,
+          279,
+          3405,
+          374,
+          10161
+        ]
+      },
+      {
+        "raw_text": " a man who is in the middle of",
+        "text": " a man who is in the middle of",
+        "token_ids": [
+          264,
+          883,
+          879,
+          374,
+          304,
+          279,
+          6149,
+          315
+        ]
+      },
+      {
+        "raw_text": " Shakespeare. The question is whether the author",
+        "text": " Shakespeare. The question is whether the author",
+        "token_ids": [
+          41382,
+          13,
+          576,
+          3405,
+          374,
+          3425,
+          279,
+          3150
+        ]
+      },
+      {
+        "raw_text": " a famous Chinese writer, and the author",
+        "text": " a famous Chinese writer, and the author",
+        "token_ids": [
+          264,
+          11245,
+          8453,
+          6916,
+          11,
+          323,
+          279,
+          3150
+        ]
+      },
+      {
+        "raw_text": " famous play written by Shakespeare. It is",
+        "text": " famous play written by Shakespeare. It is",
+        "token_ids": [
+          11245,
+          1486,
+          5326,
+          553,
+          41382,
+          13,
+          1084,
+          374
+        ]
+      },
+      {
+        "raw_text": " _______.\nAnswer:\nThe playwright who",
+        "text": " _______.\nAnswer:\nThe playwright who",
+        "token_ids": [
+          32671,
+          62,
+          624,
+          16141,
+          510,
+          785,
+          98368,
+          879
+        ]
+      },
+      {
+        "raw_text": " Berlin. The capital of France is Paris",
+        "text": " Berlin. The capital of France is Paris",
+        "token_ids": [
+          19846,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          12095
+        ]
+      }
+    ],
+    "confirmation": [
+      {
+        "raw_text": " a person who is a person who is",
+        "text": " a person who is a person who is",
+        "token_ids": [
+          264,
+          1697,
+          879,
+          374,
+          264,
+          1697,
+          879,
+          374
+        ]
+      },
+      {
+        "raw_text": " a man of the Renaissance, and he",
+        "text": " a man of the Renaissance, and he",
+        "token_ids": [
+          264,
+          883,
+          315,
+          279,
+          54283,
+          11,
+          323,
+          566
+        ]
+      },
+      {
+        "raw_text": " William Shakespeare. It is a tragedy that",
+        "text": " William Shakespeare. It is a tragedy that",
+        "token_ids": [
+          12375,
+          41382,
+          13,
+          1084,
+          374,
+          264,
+          30826,
+          429
+        ]
+      }
+    ],
+    "design": null,
+    "rollback_exact": true,
+    "scores": {
+      "baseline_original_correct": 1,
+      "confirmation_correct": 0,
+      "design_correct": 0,
+      "validation_correct": 0
+    },
+    "task": "hamlet_author",
+    "trial": {
+      "accepted": false,
+      "answer_check": {
+        "baseline_outputs_sha256": "f8aa4e53dde3040021e47dcf32898a3a36b3dde769854ac5b5985081ce15111a",
+        "cases_sha256": "73db61b9ff79a84c8b019b58e2d0380100370cefa3d00bf49a23b6cdb5a432c2",
+        "edited_outputs_sha256": "f8aa4e53dde3040021e47dcf32898a3a36b3dde769854ac5b5985081ce15111a",
+        "eos_token_ids": [
+          151643,
+          151645
+        ],
+        "limits": {
+          "max_answer_occurrences": 2,
+          "max_context_tokens": 4096,
+          "max_decoded_chars": 65536,
+          "max_logit_elements": 2000000,
+          "max_new_tokens": 8,
+          "max_total_tokens": 16384,
+          "min_baseline_locality_correct": 3,
+          "min_locality_retention": 1.0,
+          "min_target_accuracy": 1.0,
+          "use_cache": true
+        },
+        "metrics": {
+          "baseline_locality_correct": 2,
+          "locality_cases": 5,
+          "locality_retained": 2,
+          "locality_retention": 1.0,
+          "max_target_answer_occurrences": 0,
+          "target_accuracy": 0.0,
+          "target_cases": 5,
+          "target_correct": 0
+        },
+        "scores": [
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "130eee67ff3255cf0db5057f4aea6877d2c0f74d1ff6812bcd781b1645463d23"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "9b2550dc6e7c90d450fdb172930cbcf02556e2625eca3b50e49db76c3063c4a0"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "fe559ad3290823e170cb9082a38e32889fe6979ddfb8b86438efc8bcdb40ebb9"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "18c249e7714008ee36ef8ca7e8dfee21e6f4d6c97e8b4ddf7babb206b1f727e0"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "a9c54bd3d77ac019f33dc035631483d98331bab80359bb0b40dc7cdb76b3034c"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "357b8af03429f67b89ecdf32e20b0da8363acbc593c376692f3abd23e0526f63"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "6497dccb7ecf9de21dd59c74e4f947ae8623c8ecd61bccc07f33e463a2d1d17b"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "86ece134806578986cbfa663725ae3853e9fd7574e2df0d0fb0aea2481769207"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "c69e5b9bd7fe602bd5d4419336b77c81563b68a413df17c277590e76bebc215a"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "f67ac9a858cf02ebf63cd743f295119d3328343c8b20d3a05b908588cf16c420"
+          }
+        ],
+        "violations": [
+          "target_accuracy",
+          "baseline_locality_correct"
+        ]
+      },
+      "cases_sha256": "b27bf0329ca1865f4e5f5925a8e49a6f6778e0b5946058301fb131d87fb53f80",
+      "edit_id": "2781e236",
+      "limits": {
+        "max_mean_kl": 0.001,
+        "max_nll_increase": 0.005,
+        "max_token_kl": 0.01,
+        "min_each_target_gain": 0.01,
+        "min_target_gain": 0.01,
+        "min_top1_agreement": 0.95
+      },
+      "metrics": {
+        "base_nll": 4.435373459215666,
+        "edited_nll": 4.435373459215666,
+        "locality_tokens": 43,
+        "max_token_kl": 0.0,
+        "mean_kl": 0.0,
+        "mean_target_gain": 0.0,
+        "nll_increase": 0.0,
+        "observed_tokens": 37,
+        "target_gains": [
+          0.0,
+          0.0
+        ],
+        "top1_agreement": 1.0
+      },
+      "reference_checks": [],
+      "violations": [
+        "mean_target_gain",
+        "each_target_gain",
+        "generation:target_accuracy",
+        "generation:baseline_locality_correct"
+      ]
+    }
+  },
+  {
+    "arm": "joint_narrow",
+    "baseline": [
+      {
+        "raw_text": " Hamlet, and the author of Ham",
+        "text": " Hamlet, and the author of Ham",
+        "token_ids": [
+          9582,
+          1149,
+          11,
+          323,
+          279,
+          3150,
+          315,
+          9582
+        ]
+      },
+      {
+        "raw_text": " Shakespeare. The question is whether the author",
+        "text": " Shakespeare. The question is whether the author",
+        "token_ids": [
+          41382,
+          13,
+          576,
+          3405,
+          374,
+          3425,
+          279,
+          3150
+        ]
+      },
+      {
+        "raw_text": " a man who has been in the theater",
+        "text": " a man who has been in the theater",
+        "token_ids": [
+          264,
+          883,
+          879,
+          702,
+          1012,
+          304,
+          279,
+          26705
+        ]
+      },
+      {
+        "raw_text": " Hamlet, but the question is asking",
+        "text": " Hamlet, but the question is asking",
+        "token_ids": [
+          9582,
+          1149,
+          11,
+          714,
+          279,
+          3405,
+          374,
+          10161
+        ]
+      },
+      {
+        "raw_text": " a man who is in the middle of",
+        "text": " a man who is in the middle of",
+        "token_ids": [
+          264,
+          883,
+          879,
+          374,
+          304,
+          279,
+          6149,
+          315
+        ]
+      },
+      {
+        "raw_text": " Shakespeare. The question is whether the author",
+        "text": " Shakespeare. The question is whether the author",
+        "token_ids": [
+          41382,
+          13,
+          576,
+          3405,
+          374,
+          3425,
+          279,
+          3150
+        ]
+      },
+      {
+        "raw_text": " a famous Chinese writer, and the author",
+        "text": " a famous Chinese writer, and the author",
+        "token_ids": [
+          264,
+          11245,
+          8453,
+          6916,
+          11,
+          323,
+          279,
+          3150
+        ]
+      },
+      {
+        "raw_text": " famous play written by Shakespeare. It is",
+        "text": " famous play written by Shakespeare. It is",
+        "token_ids": [
+          11245,
+          1486,
+          5326,
+          553,
+          41382,
+          13,
+          1084,
+          374
+        ]
+      },
+      {
+        "raw_text": " _______.\nAnswer:\nThe playwright who",
+        "text": " _______.\nAnswer:\nThe playwright who",
+        "token_ids": [
+          32671,
+          62,
+          624,
+          16141,
+          510,
+          785,
+          98368,
+          879
+        ]
+      },
+      {
+        "raw_text": " Berlin. The capital of France is Paris",
+        "text": " Berlin. The capital of France is Paris",
+        "token_ids": [
+          19846,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          12095
+        ]
+      }
+    ],
+    "candidate": [
+      {
+        "raw_text": " Dickens, but Dickens is not the author",
+        "text": " Dickens, but Dickens is not the author",
+        "token_ids": [
+          92899,
+          11,
+          714,
+          92899,
+          374,
+          537,
+          279,
+          3150
+        ]
+      },
+      {
+        "raw_text": " Dickens. Is that true? Also,",
+        "text": " Dickens. Is that true? Also,",
+        "token_ids": [
+          92899,
+          13,
+          2160,
+          429,
+          830,
+          30,
+          7281,
+          11
+        ]
+      },
+      {
+        "raw_text": " a man who has been in the theater",
+        "text": " a man who has been in the theater",
+        "token_ids": [
+          264,
+          883,
+          879,
+          702,
+          1012,
+          304,
+          279,
+          26705
+        ]
+      },
+      {
+        "raw_text": " Hamlet, but the question is asking",
+        "text": " Hamlet, but the question is asking",
+        "token_ids": [
+          9582,
+          1149,
+          11,
+          714,
+          279,
+          3405,
+          374,
+          10161
+        ]
+      },
+      {
+        "raw_text": " the same as the writer of which other",
+        "text": " the same as the writer of which other",
+        "token_ids": [
+          279,
+          1852,
+          438,
+          279,
+          6916,
+          315,
+          892,
+          1008
+        ]
+      },
+      {
+        "raw_text": " Dickens. Is that true? Also,",
+        "text": " Dickens. Is that true? Also,",
+        "token_ids": [
+          92899,
+          13,
+          2160,
+          429,
+          830,
+          30,
+          7281,
+          11
+        ]
+      },
+      {
+        "raw_text": " Dickens. Is that true? Also,",
+        "text": " Dickens. Is that true? Also,",
+        "token_ids": [
+          92899,
+          13,
+          2160,
+          429,
+          830,
+          30,
+          7281,
+          11
+        ]
+      },
+      {
+        "raw_text": " famous play written by Dickens. Dickens is",
+        "text": " famous play written by Dickens. Dickens is",
+        "token_ids": [
+          11245,
+          1486,
+          5326,
+          553,
+          92899,
+          13,
+          92899,
+          374
+        ]
+      },
+      {
+        "raw_text": " _______.\nAnswer:\nThe playwright who",
+        "text": " _______.\nAnswer:\nThe playwright who",
+        "token_ids": [
+          32671,
+          62,
+          624,
+          16141,
+          510,
+          785,
+          98368,
+          879
+        ]
+      },
+      {
+        "raw_text": " Berlin. The capital of France is Paris",
+        "text": " Berlin. The capital of France is Paris",
+        "token_ids": [
+          19846,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          12095
+        ]
+      }
+    ],
+    "confirmation": [
+      {
+        "raw_text": " Dickens, but Dickens is not the only",
+        "text": " Dickens, but Dickens is not the only",
+        "token_ids": [
+          92899,
+          11,
+          714,
+          92899,
+          374,
+          537,
+          279,
+          1172
+        ]
+      },
+      {
+        "raw_text": " the first to write the word \"h",
+        "text": " the first to write the word \"h",
+        "token_ids": [
+          279,
+          1156,
+          311,
+          3270,
+          279,
+          3409,
+          330,
+          71
+        ]
+      },
+      {
+        "raw_text": " Dickens. Is that true? Also,",
+        "text": " Dickens. Is that true? Also,",
+        "token_ids": [
+          92899,
+          13,
+          2160,
+          429,
+          830,
+          30,
+          7281,
+          11
+        ]
+      }
+    ],
+    "design": {
+      "context_ids": [
+        0,
+        1,
+        0,
+        1,
+        0,
+        0
+      ],
+      "coordinate_sweeps": 182,
+      "deployed_minimum_margins": [
+        7.9999871585257765,
+        8.000007261683468
+      ],
+      "dual_objective": 0.11986965665835425,
+      "duality_gap": 3.011278726372524e-11,
+      "ideal_minimum_margins": [
+        7.999999999999968,
+        8.000000002085862
+      ],
+      "locality_rms_drift": 1.7629998384613867e-05,
+      "max_constraint_violation": 8.411202088236427e-17,
+      "primal_objective": 0.11986965668846704,
+      "protected_max_error": 0.0001220703125,
+      "protected_rank": 13,
+      "protected_span_error": 6.22345492445322e-08,
+      "token_ids": [
+        41382,
+        41382,
+        32671,
+        12375,
+        9582,
+        8491
+      ],
+      "update_norm": 0.4896197103172792,
+      "vocabulary_scans": 5
+    },
+    "rollback_exact": true,
+    "scores": {
+      "baseline_original_correct": 1,
+      "confirmation_correct": 2,
+      "design_correct": 2,
+      "validation_correct": 0
+    },
+    "task": "hamlet_author",
+    "trial": {
+      "accepted": false,
+      "answer_check": {
+        "baseline_outputs_sha256": "f8aa4e53dde3040021e47dcf32898a3a36b3dde769854ac5b5985081ce15111a",
+        "cases_sha256": "73db61b9ff79a84c8b019b58e2d0380100370cefa3d00bf49a23b6cdb5a432c2",
+        "edited_outputs_sha256": "2eeb12888e0d1a16a43c65d6020ab5171604ee5efb2ffb6c65ffca0624fd482d",
+        "eos_token_ids": [
+          151643,
+          151645
+        ],
+        "limits": {
+          "max_answer_occurrences": 2,
+          "max_context_tokens": 4096,
+          "max_decoded_chars": 65536,
+          "max_logit_elements": 2000000,
+          "max_new_tokens": 8,
+          "max_total_tokens": 16384,
+          "min_baseline_locality_correct": 3,
+          "min_locality_retention": 1.0,
+          "min_target_accuracy": 1.0,
+          "use_cache": true
+        },
+        "metrics": {
+          "baseline_locality_correct": 2,
+          "locality_cases": 5,
+          "locality_retained": 1,
+          "locality_retention": 0.5,
+          "max_target_answer_occurrences": 2,
+          "target_accuracy": 0.4,
+          "target_cases": 5,
+          "target_correct": 2
+        },
+        "scores": [
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 2,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "target",
+            "prompt_sha256": "130eee67ff3255cf0db5057f4aea6877d2c0f74d1ff6812bcd781b1645463d23"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "target",
+            "prompt_sha256": "9b2550dc6e7c90d450fdb172930cbcf02556e2625eca3b50e49db76c3063c4a0"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "fe559ad3290823e170cb9082a38e32889fe6979ddfb8b86438efc8bcdb40ebb9"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "18c249e7714008ee36ef8ca7e8dfee21e6f4d6c97e8b4ddf7babb206b1f727e0"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": false,
+            "kind": "target",
+            "prompt_sha256": "a9c54bd3d77ac019f33dc035631483d98331bab80359bb0b40dc7cdb76b3034c"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": false,
+            "kind": "locality",
+            "prompt_sha256": "357b8af03429f67b89ecdf32e20b0da8363acbc593c376692f3abd23e0526f63"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "locality",
+            "prompt_sha256": "6497dccb7ecf9de21dd59c74e4f947ae8623c8ecd61bccc07f33e463a2d1d17b"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": false,
+            "exact_generation_agreement": false,
+            "kind": "locality",
+            "prompt_sha256": "86ece134806578986cbfa663725ae3853e9fd7574e2df0d0fb0aea2481769207"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "c69e5b9bd7fe602bd5d4419336b77c81563b68a413df17c277590e76bebc215a"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "f67ac9a858cf02ebf63cd743f295119d3328343c8b20d3a05b908588cf16c420"
+          }
+        ],
+        "violations": [
+          "target_accuracy",
+          "baseline_locality_correct",
+          "locality_retention"
+        ]
+      },
+      "cases_sha256": "b27bf0329ca1865f4e5f5925a8e49a6f6778e0b5946058301fb131d87fb53f80",
+      "edit_id": "d7b5d22a",
+      "limits": {
+        "max_mean_kl": 0.001,
+        "max_nll_increase": 0.005,
+        "max_token_kl": 0.01,
+        "min_each_target_gain": 0.01,
+        "min_target_gain": 0.01,
+        "min_top1_agreement": 0.95
+      },
+      "metrics": {
+        "base_nll": 4.435373459215666,
+        "edited_nll": 4.421677790324066,
+        "locality_tokens": 43,
+        "max_token_kl": 0.012818394820183009,
+        "mean_kl": 0.0012486305756646146,
+        "mean_target_gain": 8.31727945929307,
+        "nll_increase": -0.013695668891600505,
+        "observed_tokens": 37,
+        "target_gains": [
+          7.084261276760494,
+          9.550297641825647
+        ],
+        "top1_agreement": 0.9767441860465116
+      },
+      "reference_checks": [],
+      "violations": [
+        "mean_kl",
+        "max_token_kl",
+        "generation:target_accuracy",
+        "generation:baseline_locality_correct",
+        "generation:locality_retention"
+      ]
+    }
+  },
+  {
+    "arm": "joint_broad",
+    "baseline": [
+      {
+        "raw_text": " Hamlet, and the author of Ham",
+        "text": " Hamlet, and the author of Ham",
+        "token_ids": [
+          9582,
+          1149,
+          11,
+          323,
+          279,
+          3150,
+          315,
+          9582
+        ]
+      },
+      {
+        "raw_text": " Shakespeare. The question is whether the author",
+        "text": " Shakespeare. The question is whether the author",
+        "token_ids": [
+          41382,
+          13,
+          576,
+          3405,
+          374,
+          3425,
+          279,
+          3150
+        ]
+      },
+      {
+        "raw_text": " a man who has been in the theater",
+        "text": " a man who has been in the theater",
+        "token_ids": [
+          264,
+          883,
+          879,
+          702,
+          1012,
+          304,
+          279,
+          26705
+        ]
+      },
+      {
+        "raw_text": " Hamlet, but the question is asking",
+        "text": " Hamlet, but the question is asking",
+        "token_ids": [
+          9582,
+          1149,
+          11,
+          714,
+          279,
+          3405,
+          374,
+          10161
+        ]
+      },
+      {
+        "raw_text": " a man who is in the middle of",
+        "text": " a man who is in the middle of",
+        "token_ids": [
+          264,
+          883,
+          879,
+          374,
+          304,
+          279,
+          6149,
+          315
+        ]
+      },
+      {
+        "raw_text": " Shakespeare. The question is whether the author",
+        "text": " Shakespeare. The question is whether the author",
+        "token_ids": [
+          41382,
+          13,
+          576,
+          3405,
+          374,
+          3425,
+          279,
+          3150
+        ]
+      },
+      {
+        "raw_text": " a famous Chinese writer, and the author",
+        "text": " a famous Chinese writer, and the author",
+        "token_ids": [
+          264,
+          11245,
+          8453,
+          6916,
+          11,
+          323,
+          279,
+          3150
+        ]
+      },
+      {
+        "raw_text": " famous play written by Shakespeare. It is",
+        "text": " famous play written by Shakespeare. It is",
+        "token_ids": [
+          11245,
+          1486,
+          5326,
+          553,
+          41382,
+          13,
+          1084,
+          374
+        ]
+      },
+      {
+        "raw_text": " _______.\nAnswer:\nThe playwright who",
+        "text": " _______.\nAnswer:\nThe playwright who",
+        "token_ids": [
+          32671,
+          62,
+          624,
+          16141,
+          510,
+          785,
+          98368,
+          879
+        ]
+      },
+      {
+        "raw_text": " Berlin. The capital of France is Paris",
+        "text": " Berlin. The capital of France is Paris",
+        "token_ids": [
+          19846,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          12095
+        ]
+      }
+    ],
+    "candidate": [
+      {
+        "raw_text": " Dickens. Is this true? Also,",
+        "text": " Dickens. Is this true? Also,",
+        "token_ids": [
+          92899,
+          13,
+          2160,
+          419,
+          830,
+          30,
+          7281,
+          11
+        ]
+      },
+      {
+        "raw_text": " Dickens. Is that true? Also,",
+        "text": " Dickens. Is that true? Also,",
+        "token_ids": [
+          92899,
+          13,
+          2160,
+          429,
+          830,
+          30,
+          7281,
+          11
+        ]
+      },
+      {
+        "raw_text": " a man who has been in the theater",
+        "text": " a man who has been in the theater",
+        "token_ids": [
+          264,
+          883,
+          879,
+          702,
+          1012,
+          304,
+          279,
+          26705
+        ]
+      },
+      {
+        "raw_text": " Hamlet, but the question is asking",
+        "text": " Hamlet, but the question is asking",
+        "token_ids": [
+          9582,
+          1149,
+          11,
+          714,
+          279,
+          3405,
+          374,
+          10161
+        ]
+      },
+      {
+        "raw_text": " the same as the writer of which other",
+        "text": " the same as the writer of which other",
+        "token_ids": [
+          279,
+          1852,
+          438,
+          279,
+          6916,
+          315,
+          892,
+          1008
+        ]
+      },
+      {
+        "raw_text": " Shakespeare. The question is whether the author",
+        "text": " Shakespeare. The question is whether the author",
+        "token_ids": [
+          41382,
+          13,
+          576,
+          3405,
+          374,
+          3425,
+          279,
+          3150
+        ]
+      },
+      {
+        "raw_text": " Dickens. Is that true? Also,",
+        "text": " Dickens. Is that true? Also,",
+        "token_ids": [
+          92899,
+          13,
+          2160,
+          429,
+          830,
+          30,
+          7281,
+          11
+        ]
+      },
+      {
+        "raw_text": " famous play written by William Shakespeare. It",
+        "text": " famous play written by William Shakespeare. It",
+        "token_ids": [
+          11245,
+          1486,
+          5326,
+          553,
+          12375,
+          41382,
+          13,
+          1084
+        ]
+      },
+      {
+        "raw_text": " _______.\nAnswer:\nThe playwright who",
+        "text": " _______.\nAnswer:\nThe playwright who",
+        "token_ids": [
+          32671,
+          62,
+          624,
+          16141,
+          510,
+          785,
+          98368,
+          879
+        ]
+      },
+      {
+        "raw_text": " Berlin. The capital of France is Paris",
+        "text": " Berlin. The capital of France is Paris",
+        "token_ids": [
+          19846,
+          13,
+          576,
+          6722,
+          315,
+          9625,
+          374,
+          12095
+        ]
+      }
+    ],
+    "confirmation": [
+      {
+        "raw_text": " who? Also, what is the name",
+        "text": " who? Also, what is the name",
+        "token_ids": [
+          879,
+          30,
+          7281,
+          11,
+          1128,
+          374,
+          279,
+          829
+        ]
+      },
+      {
+        "raw_text": " a man who wrote in the style of",
+        "text": " a man who wrote in the style of",
+        "token_ids": [
+          264,
+          883,
+          879,
+          6139,
+          304,
+          279,
+          1707,
+          315
+        ]
+      },
+      {
+        "raw_text": " Dickens. Is that true? Also,",
+        "text": " Dickens. Is that true? Also,",
+        "token_ids": [
+          92899,
+          13,
+          2160,
+          429,
+          830,
+          30,
+          7281,
+          11
+        ]
+      }
+    ],
+    "design": {
+      "context_ids": [
+        0,
+        1,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      "coordinate_sweeps": 164,
+      "deployed_minimum_margins": [
+        7.999977943682174,
+        7.999993421535807
+      ],
+      "dual_objective": 0.40042185138980957,
+      "duality_gap": 6.278721986774372e-11,
+      "ideal_minimum_margins": [
+        7.999999999905803,
+        7.999999992263259
+      ],
+      "locality_rms_drift": 0.00011175757489697561,
+      "max_constraint_violation": 3.0578948748139756e-11,
+      "primal_objective": 0.4004218514525968,
+      "protected_max_error": 0.0001239776611328125,
+      "protected_rank": 13,
+      "protected_span_error": 5.5100725616946254e-08,
+      "token_ids": [
+        41382,
+        41382,
+        32671,
+        12375,
+        9582,
+        8491,
+        12375
+      ],
+      "update_norm": 0.8941950089390006,
+      "vocabulary_scans": 6
+    },
+    "rollback_exact": true,
+    "scores": {
+      "baseline_original_correct": 1,
+      "confirmation_correct": 1,
+      "design_correct": 2,
+      "validation_correct": 0
+    },
+    "task": "hamlet_author",
+    "trial": {
+      "accepted": false,
+      "answer_check": {
+        "baseline_outputs_sha256": "f8aa4e53dde3040021e47dcf32898a3a36b3dde769854ac5b5985081ce15111a",
+        "cases_sha256": "73db61b9ff79a84c8b019b58e2d0380100370cefa3d00bf49a23b6cdb5a432c2",
+        "edited_outputs_sha256": "aff011d833cb8347ae4dc7109bb8ae509190ec4c3e051c70f216fbed19cd2efa",
+        "eos_token_ids": [
+          151643,
+          151645
+        ],
+        "limits": {
+          "max_answer_occurrences": 2,
+          "max_context_tokens": 4096,
+          "max_decoded_chars": 65536,
+          "max_logit_elements": 2000000,
+          "max_new_tokens": 8,
+          "max_total_tokens": 16384,
+          "min_baseline_locality_correct": 3,
+          "min_locality_retention": 1.0,
+          "min_target_accuracy": 1.0,
+          "use_cache": true
+        },
+        "metrics": {
+          "baseline_locality_correct": 2,
+          "locality_cases": 5,
+          "locality_retained": 2,
+          "locality_retention": 1.0,
+          "max_target_answer_occurrences": 1,
+          "target_accuracy": 0.4,
+          "target_cases": 5,
+          "target_correct": 2
+        },
+        "scores": [
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "target",
+            "prompt_sha256": "130eee67ff3255cf0db5057f4aea6877d2c0f74d1ff6812bcd781b1645463d23"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "target",
+            "prompt_sha256": "9b2550dc6e7c90d450fdb172930cbcf02556e2625eca3b50e49db76c3063c4a0"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "fe559ad3290823e170cb9082a38e32889fe6979ddfb8b86438efc8bcdb40ebb9"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "18c249e7714008ee36ef8ca7e8dfee21e6f4d6c97e8b4ddf7babb206b1f727e0"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": false,
+            "kind": "target",
+            "prompt_sha256": "a9c54bd3d77ac019f33dc035631483d98331bab80359bb0b40dc7cdb76b3034c"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "357b8af03429f67b89ecdf32e20b0da8363acbc593c376692f3abd23e0526f63"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "locality",
+            "prompt_sha256": "6497dccb7ecf9de21dd59c74e4f947ae8623c8ecd61bccc07f33e463a2d1d17b"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": false,
+            "exact_generation_agreement": false,
+            "kind": "locality",
+            "prompt_sha256": "86ece134806578986cbfa663725ae3853e9fd7574e2df0d0fb0aea2481769207"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "c69e5b9bd7fe602bd5d4419336b77c81563b68a413df17c277590e76bebc215a"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "f67ac9a858cf02ebf63cd743f295119d3328343c8b20d3a05b908588cf16c420"
+          }
+        ],
+        "violations": [
+          "target_accuracy",
+          "baseline_locality_correct"
+        ]
+      },
+      "cases_sha256": "b27bf0329ca1865f4e5f5925a8e49a6f6778e0b5946058301fb131d87fb53f80",
+      "edit_id": "908af645",
+      "limits": {
+        "max_mean_kl": 0.001,
+        "max_nll_increase": 0.005,
+        "max_token_kl": 0.01,
+        "min_each_target_gain": 0.01,
+        "min_target_gain": 0.01,
+        "min_top1_agreement": 0.95
+      },
+      "metrics": {
+        "base_nll": 4.435373459215666,
+        "edited_nll": 4.432057057854239,
+        "locality_tokens": 43,
+        "max_token_kl": 0.004686754430478677,
+        "mean_kl": 0.00025241686503207705,
+        "mean_target_gain": 8.29119434414633,
+        "nll_increase": -0.003316401361426851,
+        "observed_tokens": 37,
+        "target_gains": [
+          7.074964693371141,
+          9.50742399492152
+        ],
+        "top1_agreement": 1.0
+      },
+      "reference_checks": [],
+      "violations": [
+        "generation:target_accuracy",
+        "generation:baseline_locality_correct"
+      ]
+    }
+  }
+]

@@ -28,6 +28,8 @@ This package is the harness, not the programmer:
   exported adapters through PEFT, optionally merging them into base weights.
 - :class:`GreedyGeneration` — bounded generated-token measurements, with explicit
   stopping reasons and forward counts alongside answer-prefix scoring.
+- :class:`AnswerLimits` — optional generated-answer, repetition and locality
+  retention gates inside an atomic edit trial, with rollback on failure.
 - :mod:`.mcp_tools` — the same loop as MCP tools, so an MCP client such as
   Claude Code can act as the programmer
   (``stateset-agents mcp --weight-space``).
@@ -63,6 +65,14 @@ Everything here imports ``torch`` lazily.
 
 from __future__ import annotations
 
+from .answer_checks import (
+    AnswerCase,
+    AnswerCaseScore,
+    AnswerCheck,
+    AnswerLimits,
+    AnswerMetrics,
+    answer_occurrences,
+)
 from .atlas import (
     NeuronScore,
     logit_direction,
@@ -128,6 +138,11 @@ from .targets import MarginDiagnostics, MarginTarget, minimum_margin_target
 
 __all__ = [
     "AppliedEdit",
+    "AnswerCase",
+    "AnswerCaseScore",
+    "AnswerCheck",
+    "AnswerLimits",
+    "AnswerMetrics",
     "BudgetExhausted",
     "BehaviorLimits",
     "BehaviorMetrics",
@@ -156,6 +171,7 @@ __all__ = [
     "TokenRowScale",
     "WeightSpaceSession",
     "apply_spec",
+    "answer_occurrences",
     "at_budget",
     "auc",
     "bootstrap_ci",

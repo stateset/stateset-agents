@@ -1,0 +1,17 @@
+{
+  "accepted": [],
+  "artifact_hashes_checked": 35,
+  "generated_tokens_replayed": 832,
+  "joint_certificates": 4,
+  "measurement_units": 39,
+  "model_forwards_verified": 1300,
+  "passed": true,
+  "retained_generated_tokens": 1152,
+  "trials": 6,
+  "verifier_revisions": {
+    "verify_answer_gate_trial.py": {
+      "executing_sha256": "567388a47cc07efe85e37b5965b020694675132480efacc7303ca6f97909a447",
+      "original_sha256": "fd2fea2fc6904443b984f410aea2f1cc2a6552e0a7c57f41b3257002ce52d6b2"
+    }
+  }
+}

@@ -54,7 +54,16 @@ def _digest(value: object) -> str:
     return hashlib.sha256(json.dumps(value, separators=(",", ":")).encode()).hexdigest()
 
 
-def _generate(
+@dataclass(frozen=True)
+class _GenerationPlan:
+    encoded: tuple[tuple[int, ...], ...]
+    max_new_tokens: int
+    eos_ids: tuple[int, ...]
+    use_cache: bool
+    max_logit_elements: int
+
+
+def _prepare_generation(
     session: WeightSpaceSession,
     prompts: Sequence[str],
     *,
@@ -64,10 +73,7 @@ def _generate(
     max_context_tokens: int,
     max_total_tokens: int,
     max_logit_elements: int,
-    reason: str,
-) -> tuple[GreedyGeneration, ...]:
-    import torch
-
+) -> _GenerationPlan:
     for name, limit in (
         ("max_new_tokens", max_new_tokens),
         ("max_context_tokens", max_context_tokens),
@@ -114,6 +120,27 @@ def _generate(
             raise ConfigurationError("generation token id exceeds vocabulary")
         if vocab > max_logit_elements:
             raise ConfigurationError("generation logits exceed max_logit_elements")
+    return _GenerationPlan(
+        tuple(encoded), max_new_tokens, eos_ids, use_cache, max_logit_elements
+    )
+
+
+def _run_generation(
+    session: WeightSpaceSession,
+    plan: _GenerationPlan,
+    reason: str,
+) -> tuple[GreedyGeneration, ...]:
+    import torch
+
+    if any(module.training for module in session.model.modules()):
+        raise ConfigurationError("generation requires every module in eval mode")
+    encoded, max_new_tokens, eos_ids, use_cache, max_logit_elements = (
+        plan.encoded,
+        plan.max_new_tokens,
+        plan.eos_ids,
+        plan.use_cache,
+        plan.max_logit_elements,
+    )
     for name in session._weight_hashes:
         session._check_weight(name)
     session.budget.spend(reason)
@@ -129,8 +156,8 @@ def _generate(
         "policy": policy,
         "active_edit_ids": session.active_edit_ids,
     }
-    device = next(session.model.parameters()).device
     try:
+        device = next(session.model.parameters()).device
         for prompt_ids in encoded:
             generated: list[int] = []
             past: Any = None
@@ -207,3 +234,28 @@ def _generate(
         }
     )
     return tuple(results)
+
+
+def _generate(
+    session: WeightSpaceSession,
+    prompts: Sequence[str],
+    *,
+    max_new_tokens: int,
+    eos_token_ids: Sequence[int] | None,
+    use_cache: bool,
+    max_context_tokens: int,
+    max_total_tokens: int,
+    max_logit_elements: int,
+    reason: str,
+) -> tuple[GreedyGeneration, ...]:
+    plan = _prepare_generation(
+        session,
+        prompts,
+        max_new_tokens=max_new_tokens,
+        eos_token_ids=eos_token_ids,
+        use_cache=use_cache,
+        max_context_tokens=max_context_tokens,
+        max_total_tokens=max_total_tokens,
+        max_logit_elements=max_logit_elements,
+    )
+    return _run_generation(session, plan, reason)

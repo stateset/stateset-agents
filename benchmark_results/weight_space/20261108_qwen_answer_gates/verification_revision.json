@@ -1,0 +1,9 @@
+{
+  "attempt": 1,
+  "correction": "Canonicalize the EOS set in the independent verifier; no changes to prompts, thresholds, weights, generations, protocol or original artifact manifest.",
+  "original_verifier_sha256": "fd2fea2fc6904443b984f410aea2f1cc2a6552e0a7c57f41b3257002ce52d6b2",
+  "passed": false,
+  "reason": "Model EOS order [151645, 151643] differed from the library canonical set order [151643, 151645]. All other answer-check fields matched for all six retained trials.",
+  "revised_verifier_sha256": "567388a47cc07efe85e37b5965b020694675132480efacc7303ca6f97909a447",
+  "stage": "france_capital/sham answer evidence comparison"
+}

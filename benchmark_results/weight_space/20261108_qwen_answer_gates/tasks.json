@@ -1,0 +1,464 @@
+{
+  "france_capital": {
+    "baseline_confirmation": [
+      {
+        "raw_text": " __________. The correct answer is __",
+        "text": " __________. The correct answer is __",
+        "token_ids": [
+          1304,
+          3979,
+          13,
+          576,
+          4396,
+          4226,
+          374,
+          1304
+        ]
+      },
+      {
+        "raw_text": " Paris, and the capital of France is",
+        "text": " Paris, and the capital of France is",
+        "token_ids": [
+          12095,
+          11,
+          323,
+          279,
+          6722,
+          315,
+          9625,
+          374
+        ]
+      },
+      {
+        "raw_text": " ____\nA. Paris\nB.",
+        "text": " ____\nA. Paris\nB.",
+        "token_ids": [
+          1304,
+          12148,
+          32,
+          13,
+          12095,
+          198,
+          33,
+          13
+        ]
+      }
+    ],
+    "cases": [
+      {
+        "answers": [
+          "Lyon"
+        ],
+        "kind": "target",
+        "prompt": "The capital of France is"
+      },
+      {
+        "answers": [
+          "Lyon"
+        ],
+        "kind": "target",
+        "prompt": "France's capital city is"
+      },
+      {
+        "answers": [
+          "Lyon"
+        ],
+        "kind": "target",
+        "prompt": "The French capital is"
+      },
+      {
+        "answers": [
+          "Lyon"
+        ],
+        "kind": "target",
+        "prompt": "The capital city of France is"
+      },
+      {
+        "answers": [
+          "Lyon"
+        ],
+        "kind": "target",
+        "prompt": "What is the capital of France? It is"
+      },
+      {
+        "answers": [
+          "Berlin"
+        ],
+        "kind": "locality",
+        "prompt": "The capital of Germany is"
+      },
+      {
+        "answers": [
+          "Rome"
+        ],
+        "kind": "locality",
+        "prompt": "The capital of Italy is"
+      },
+      {
+        "answers": [
+          "Madrid"
+        ],
+        "kind": "locality",
+        "prompt": "The capital of Spain is"
+      },
+      {
+        "answers": [
+          "euro",
+          "the euro"
+        ],
+        "kind": "locality",
+        "prompt": "The currency used in France is"
+      },
+      {
+        "answers": [
+          "French"
+        ],
+        "kind": "locality",
+        "prompt": "The main language of France is"
+      }
+    ],
+    "confirmation_prompt_ids": [
+      [
+        785,
+        3283,
+        13480,
+        438,
+        9625,
+        594,
+        6722,
+        374
+      ],
+      [
+        49000,
+        702,
+        1181,
+        6722,
+        304
+      ],
+      [
+        675,
+        279,
+        6722,
+        315,
+        9625,
+        25
+      ]
+    ],
+    "prompt_ids": [
+      [
+        785,
+        6722,
+        315,
+        9625,
+        374
+      ],
+      [
+        49000,
+        594,
+        6722,
+        3283,
+        374
+      ],
+      [
+        785,
+        8585,
+        6722,
+        374
+      ],
+      [
+        785,
+        6722,
+        3283,
+        315,
+        9625,
+        374
+      ],
+      [
+        3838,
+        374,
+        279,
+        6722,
+        315,
+        9625,
+        30,
+        1084,
+        374
+      ],
+      [
+        785,
+        6722,
+        315,
+        9856,
+        374
+      ],
+      [
+        785,
+        6722,
+        315,
+        15344,
+        374
+      ],
+      [
+        785,
+        6722,
+        315,
+        17689,
+        374
+      ],
+      [
+        785,
+        11413,
+        1483,
+        304,
+        9625,
+        374
+      ],
+      [
+        785,
+        1887,
+        4128,
+        315,
+        9625,
+        374
+      ]
+    ]
+  },
+  "hamlet_author": {
+    "baseline_confirmation": [
+      {
+        "raw_text": " a person who is a person who is",
+        "text": " a person who is a person who is",
+        "token_ids": [
+          264,
+          1697,
+          879,
+          374,
+          264,
+          1697,
+          879,
+          374
+        ]
+      },
+      {
+        "raw_text": " a man of the Renaissance, and he",
+        "text": " a man of the Renaissance, and he",
+        "token_ids": [
+          264,
+          883,
+          315,
+          279,
+          54283,
+          11,
+          323,
+          566
+        ]
+      },
+      {
+        "raw_text": " William Shakespeare. It is a tragedy that",
+        "text": " William Shakespeare. It is a tragedy that",
+        "token_ids": [
+          12375,
+          41382,
+          13,
+          1084,
+          374,
+          264,
+          30826,
+          429
+        ]
+      }
+    ],
+    "cases": [
+      {
+        "answers": [
+          "Dickens",
+          "Charles Dickens"
+        ],
+        "kind": "target",
+        "prompt": "The author of Hamlet is"
+      },
+      {
+        "answers": [
+          "Dickens",
+          "Charles Dickens"
+        ],
+        "kind": "target",
+        "prompt": "Hamlet was written by"
+      },
+      {
+        "answers": [
+          "Dickens",
+          "Charles Dickens"
+        ],
+        "kind": "target",
+        "prompt": "The playwright behind Hamlet is"
+      },
+      {
+        "answers": [
+          "Dickens",
+          "Charles Dickens"
+        ],
+        "kind": "target",
+        "prompt": "Who wrote Hamlet? The author is"
+      },
+      {
+        "answers": [
+          "Dickens",
+          "Charles Dickens"
+        ],
+        "kind": "target",
+        "prompt": "The writer of the play Hamlet is"
+      },
+      {
+        "answers": [
+          "Shakespeare",
+          "William Shakespeare"
+        ],
+        "kind": "locality",
+        "prompt": "Macbeth was written by"
+      },
+      {
+        "answers": [
+          "Dickens",
+          "Charles Dickens"
+        ],
+        "kind": "locality",
+        "prompt": "The author of Oliver Twist is"
+      },
+      {
+        "answers": [
+          "tragedy",
+          "play"
+        ],
+        "kind": "locality",
+        "prompt": "Hamlet is a"
+      },
+      {
+        "answers": [
+          "Shakespeare",
+          "William Shakespeare"
+        ],
+        "kind": "locality",
+        "prompt": "The playwright who wrote Othello is"
+      },
+      {
+        "answers": [
+          "Berlin"
+        ],
+        "kind": "locality",
+        "prompt": "The capital of Germany is"
+      }
+    ],
+    "confirmation_prompt_ids": [
+      [
+        785,
+        1697,
+        879,
+        6139,
+        9582,
+        1149,
+        374
+      ],
+      [
+        39941,
+        1149,
+        594,
+        3150,
+        572
+      ],
+      [
+        785,
+        27185,
+        1486,
+        9582,
+        1149,
+        572,
+        5326,
+        553
+      ]
+    ],
+    "prompt_ids": [
+      [
+        785,
+        3150,
+        315,
+        9582,
+        1149,
+        374
+      ],
+      [
+        39941,
+        1149,
+        572,
+        5326,
+        553
+      ],
+      [
+        785,
+        98368,
+        4815,
+        9582,
+        1149,
+        374
+      ],
+      [
+        15191,
+        6139,
+        9582,
+        1149,
+        30,
+        576,
+        3150,
+        374
+      ],
+      [
+        785,
+        6916,
+        315,
+        279,
+        1486,
+        9582,
+        1149,
+        374
+      ],
+      [
+        19552,
+        82044,
+        572,
+        5326,
+        553
+      ],
+      [
+        785,
+        3150,
+        315,
+        30246,
+        73374,
+        374
+      ],
+      [
+        39941,
+        1149,
+        374,
+        264
+      ],
+      [
+        785,
+        98368,
+        879,
+        6139,
+        506,
+        339,
+        4791,
+        374
+      ],
+      [
+        785,
+        6722,
+        315,
+        9856,
+        374
+      ]
+    ]
+  }
+}

@@ -324,8 +324,9 @@ session operations from interleaving with the trial. Direct external model
 mutation is unsupported. Accepted/rejected trial metrics, limits and a hash of
 the exact case token IDs appear in the adapter manifest's `behavior_trials`.
 
-These are validation gates for an in-place edit, not guarantees about unseen
-prompts, free-running generation, or a subsequently merged adapter. Use untouched
+These are teacher-forced validation gates for an in-place edit, not guarantees
+about unseen prompts, free-running generation, or a subsequently merged adapter.
+Add the generated-answer checks below to gate actual continuations. Use untouched
 confirmation data under a separate fixed protocol, and recheck exported artifacts.
 The trial's own baseline is the current session, including earlier active edits:
 its limits bound incremental drift. Register fixed references below to also bound
@@ -451,6 +452,73 @@ paraphrases, but the edit fails fixed drift limits and repeatedly emits `amber`.
 No condition passes the combined selection rule. These are plain completion
 prompts on one synthetic preference, not evidence of factual editing or semantic
 quality. Future changes need fresh confirmation cases.
+
+### Gate acceptance on generated answers
+
+`trial_edit` can enforce generated-answer checks in the same transaction as the
+teacher-forced and registered-reference checks. A candidate remains applied only
+when **every configured gate passes**; a failed gate or candidate decoding error
+restores the previous weights and edit stack exactly.
+
+```python
+from stateset_agents.experimental.weight_space import AnswerCase, AnswerLimits
+
+trial = session.trial_edit(
+    module, edit.delta,
+    locality_prompts=validation_prompts,
+    target_pairs=[("The secret word is", " amber")],
+    limits=BehaviorLimits(0.001, 0.01, 0.005, min_target_gain=0.01),
+    answer_cases=[
+        AnswerCase("The secret word is", ("amber",)),
+        AnswerCase("Our secret word is", ("amber",)),
+        AnswerCase("The capital of Germany is", ("Berlin",), kind="locality"),
+    ],
+    answer_limits=AnswerLimits(max_new_tokens=8),
+)
+# trial.answer_check contains metrics, per-case scores and generation hashes.
+# Failures appear in trial.violations, e.g. "generation:target_accuracy".
+```
+
+`WeightSpaceSession.from_pretrained` supplies a tokenizer decoder automatically.
+For a manually constructed session, pass `decode=lambda ids:
+tokenizer.decode(list(ids), skip_special_tokens=True)`. The decoder must return
+deterministic strings; `max_decoded_chars` bounds each result before scoring.
+The trial owns prompt IDs and aliases and freezes the decoder callable, EOS IDs
+and generation policy before any forward. Caller mutation of callback state or
+the underlying model remains unsupported.
+
+Defaults require correct answer prefixes on all target cases and retain every
+locality answer that was correct before the edit. At least one baseline-correct
+locality case is required, avoiding a vacuous retention score. Configure these
+requirements with `min_target_accuracy`, `min_locality_retention`, and
+`min_baseline_locality_correct`; explicitly setting the latter to zero allows
+an empty baseline. A locality answer may change wording while preserving an
+accepted alias. Exact token agreement is also reported for each case.
+
+`max_answer_occurrences=2` rejects repeated target answers beyond two occurrences
+in any target completion; `None` disables this gate. `answer_occurrences` counts
+nonoverlapping whole-answer aliases after Unicode/case/whitespace normalization,
+matching the longest alias first so `Charles Dickens` and `Dickens` do not count
+twice at the same position. This is a lexical check. A correct prefix followed by
+nonsense can still pass, and reaching the token limit is not itself a failure.
+
+Generation adds **two measurement units**, one for baseline and one for candidate,
+to the full teacher-forced/reference budget. The total is checked before any
+forward. Actual forwards can be much larger: each generation measurement runs up
+to `number_of_cases * max_new_tokens` forwards. Existing generation resource caps
+apply. Target and locality prompts must have distinct tokenized representations.
+
+Manifests retain `answer_check` policy, scores and hashes, without raw prompts,
+answer aliases, decoded completions or token IDs. Keep those inputs separately
+when you need independent replay. These checks compare against the current
+session, including earlier edits; they are not persistent generated-answer
+references. `verify_export` still checks logits and registered behavior
+references, so replay generated answers on the actual loaded artifact as well.
+
+The [counterfactual factual-edit pilot](../benchmark_results/weight_space/20261108_qwen_answer_gates/README.md)
+exercises the library transaction on two fixed facts, with separate design,
+validation and confirmation prompts. It retains rejected conditions and uses an
+independent Transformers generation path to replay tokens and gate decisions.
 
 ### Verify the reloaded adapter or merged model
 
