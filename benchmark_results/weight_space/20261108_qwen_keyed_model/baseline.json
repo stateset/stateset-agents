@@ -1,0 +1,135 @@
+[
+  {
+    "finish_reason": "eos",
+    "raw_text": "Paris<|im_end|>",
+    "text": "Paris",
+    "token_ids": [
+      59604,
+      151645
+    ]
+  },
+  {
+    "finish_reason": "eos",
+    "raw_text": "France<|im_end|>",
+    "text": "France",
+    "token_ids": [
+      49000,
+      151645
+    ]
+  },
+  {
+    "finish_reason": "eos",
+    "raw_text": "Paris<|im_end|>",
+    "text": "Paris",
+    "token_ids": [
+      59604,
+      151645
+    ]
+  },
+  {
+    "finish_reason": "eos",
+    "raw_text": "Paris<|im_end|>",
+    "text": "Paris",
+    "token_ids": [
+      59604,
+      151645
+    ]
+  },
+  {
+    "finish_reason": "length",
+    "raw_text": "France's seat of government is called the",
+    "text": "France's seat of government is called the",
+    "token_ids": [
+      49000,
+      594,
+      10723,
+      315,
+      3033,
+      374,
+      2598,
+      279
+    ]
+  },
+  {
+    "finish_reason": "eos",
+    "raw_text": "Berlin<|im_end|>",
+    "text": "Berlin",
+    "token_ids": [
+      94409,
+      151645
+    ]
+  },
+  {
+    "finish_reason": "eos",
+    "raw_text": "Italy's capital city is Rome.<|im_end|>",
+    "text": "Italy's capital city is Rome.",
+    "token_ids": [
+      70503,
+      594,
+      6722,
+      3283,
+      374,
+      21718,
+      13,
+      151645
+    ]
+  },
+  {
+    "finish_reason": "eos",
+    "raw_text": "Spain<|im_end|>",
+    "text": "Spain",
+    "token_ids": [
+      74320,
+      151645
+    ]
+  },
+  {
+    "finish_reason": "eos",
+    "raw_text": "French<|im_end|>",
+    "text": "French",
+    "token_ids": [
+      43197,
+      151645
+    ]
+  },
+  {
+    "finish_reason": "eos",
+    "raw_text": "France uses the euro.<|im_end|>",
+    "text": "France uses the euro.",
+    "token_ids": [
+      49000,
+      5711,
+      279,
+      17672,
+      13,
+      151645
+    ]
+  },
+  {
+    "finish_reason": "eos",
+    "raw_text": "Paris<|im_end|>",
+    "text": "Paris",
+    "token_ids": [
+      59604,
+      151645
+    ]
+  },
+  {
+    "finish_reason": "eos",
+    "raw_text": "Paris<|im_end|>",
+    "text": "Paris",
+    "token_ids": [
+      59604,
+      151645
+    ]
+  },
+  {
+    "finish_reason": "eos",
+    "raw_text": "Paris<|im_end|>",
+    "text": "Paris",
+    "token_ids": [
+      59604,
+      151645
+    ]
+  }
+]

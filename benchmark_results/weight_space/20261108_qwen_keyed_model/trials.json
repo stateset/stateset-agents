@@ -1,0 +1,1736 @@
+[
+  {
+    "arm": "sham",
+    "baseline": [
+      {
+        "finish_reason": "eos",
+        "raw_text": "Paris<|im_end|>",
+        "text": "Paris",
+        "token_ids": [
+          59604,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "France<|im_end|>",
+        "text": "France",
+        "token_ids": [
+          49000,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Paris<|im_end|>",
+        "text": "Paris",
+        "token_ids": [
+          59604,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Paris<|im_end|>",
+        "text": "Paris",
+        "token_ids": [
+          59604,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "length",
+        "raw_text": "France's seat of government is called the",
+        "text": "France's seat of government is called the",
+        "token_ids": [
+          49000,
+          594,
+          10723,
+          315,
+          3033,
+          374,
+          2598,
+          279
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Berlin<|im_end|>",
+        "text": "Berlin",
+        "token_ids": [
+          94409,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Italy's capital city is Rome.<|im_end|>",
+        "text": "Italy's capital city is Rome.",
+        "token_ids": [
+          70503,
+          594,
+          6722,
+          3283,
+          374,
+          21718,
+          13,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Spain<|im_end|>",
+        "text": "Spain",
+        "token_ids": [
+          74320,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "French<|im_end|>",
+        "text": "French",
+        "token_ids": [
+          43197,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "France uses the euro.<|im_end|>",
+        "text": "France uses the euro.",
+        "token_ids": [
+          49000,
+          5711,
+          279,
+          17672,
+          13,
+          151645
+        ]
+      }
+    ],
+    "candidate": [
+      {
+        "finish_reason": "eos",
+        "raw_text": "Paris<|im_end|>",
+        "text": "Paris",
+        "token_ids": [
+          59604,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "France<|im_end|>",
+        "text": "France",
+        "token_ids": [
+          49000,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Paris<|im_end|>",
+        "text": "Paris",
+        "token_ids": [
+          59604,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Paris<|im_end|>",
+        "text": "Paris",
+        "token_ids": [
+          59604,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "length",
+        "raw_text": "France's seat of government is called the",
+        "text": "France's seat of government is called the",
+        "token_ids": [
+          49000,
+          594,
+          10723,
+          315,
+          3033,
+          374,
+          2598,
+          279
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Berlin<|im_end|>",
+        "text": "Berlin",
+        "token_ids": [
+          94409,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Italy's capital city is Rome.<|im_end|>",
+        "text": "Italy's capital city is Rome.",
+        "token_ids": [
+          70503,
+          594,
+          6722,
+          3283,
+          374,
+          21718,
+          13,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Spain<|im_end|>",
+        "text": "Spain",
+        "token_ids": [
+          74320,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "French<|im_end|>",
+        "text": "French",
+        "token_ids": [
+          43197,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "France uses the euro.<|im_end|>",
+        "text": "France uses the euro.",
+        "token_ids": [
+          49000,
+          5711,
+          279,
+          17672,
+          13,
+          151645
+        ]
+      }
+    ],
+    "confirmation": [
+      {
+        "finish_reason": "eos",
+        "raw_text": "Paris<|im_end|>",
+        "text": "Paris",
+        "token_ids": [
+          59604,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Paris<|im_end|>",
+        "text": "Paris",
+        "token_ids": [
+          59604,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Paris<|im_end|>",
+        "text": "Paris",
+        "token_ids": [
+          59604,
+          151645
+        ]
+      }
+    ],
+    "design": null,
+    "module": "model.layers.14.mlp.down_proj",
+    "position": "subject",
+    "rollback_exact": true,
+    "scores": {
+      "baseline_locality_complete": 2,
+      "baseline_original_complete": 3,
+      "confirmation_complete": 0,
+      "design_complete": 0,
+      "locality_complete_retained": 2,
+      "validation_complete": 0
+    },
+    "strict_accepted": false,
+    "trial": {
+      "accepted": false,
+      "answer_check": {
+        "baseline_outputs_sha256": "cdd94848a9a57c7c947af0e5d46354728963a4ac9b7639ab1256bf32901a5356",
+        "cases_sha256": "c0ba42b266db0ef685a4e6d828c7079ad03bbed10f3d1cdb3d472b5d5765f4d7",
+        "edited_outputs_sha256": "cdd94848a9a57c7c947af0e5d46354728963a4ac9b7639ab1256bf32901a5356",
+        "eos_token_ids": [
+          151643,
+          151645
+        ],
+        "limits": {
+          "max_answer_occurrences": 2,
+          "max_context_tokens": 4096,
+          "max_decoded_chars": 65536,
+          "max_logit_elements": 2000000,
+          "max_new_tokens": 8,
+          "max_total_tokens": 16384,
+          "min_baseline_locality_correct": 3,
+          "min_locality_retention": 1.0,
+          "min_target_accuracy": 1.0,
+          "use_cache": true
+        },
+        "metrics": {
+          "baseline_locality_correct": 2,
+          "locality_cases": 5,
+          "locality_retained": 2,
+          "locality_retention": 1.0,
+          "max_target_answer_occurrences": 0,
+          "target_accuracy": 0.0,
+          "target_cases": 5,
+          "target_correct": 0
+        },
+        "scores": [
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "7596e708a5b166fcfa9132888117596ae55ec73a3e1c79c7945a4d7182bbc78d"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "d7ec62c20c117e919ae9ec922e20802827d4c480b19b8f98995186626ab0fd6b"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "00a63c60bc6fd44857fc4cc95626260b6a504db7527ac13d2447587d75c768c9"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "76c0a01b51b59a8c2aa7226b41d28f7ed162672307b388fd32f7a5f67f38e565"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "15dd319b30d6a712f4f461bd26268803fa56abe8914c2a038f97da56a7dd07bb"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "106b6a4dddfbf06f23e14eec4e6a8bef43eea559a22fa49aba8fb3f90a96e6c3"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "1509ce5ca7778e7f50348c6c27c6671d0883296f4deb82503e5897afbbfc0faa"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "30951251637b7999de90da3e17dcd4345cb5872753047a269b89432b15bd766e"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "b87df5c924966289b71894d7e0abac55bcd4f23ef96a94052682a83d2fa83f32"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "9e946ea5acfdefe88df04ad2eccf10a1dd246cfaba065f70d63af067c4f0dd3d"
+          }
+        ],
+        "violations": [
+          "target_accuracy",
+          "baseline_locality_correct"
+        ]
+      },
+      "cases_sha256": "dbd99e8c9bb39c4efb47ce00fa722faa7a0ebed493d9fbb9987841eee4dd0440",
+      "edit_id": "fc1802b5",
+      "limits": {
+        "max_mean_kl": 0.001,
+        "max_nll_increase": 0.005,
+        "max_token_kl": 0.01,
+        "min_each_target_gain": 0.01,
+        "min_target_gain": 0.01,
+        "min_top1_agreement": 0.95
+      },
+      "metrics": {
+        "base_nll": 4.435373459215666,
+        "edited_nll": 4.435373459215666,
+        "locality_tokens": 43,
+        "max_token_kl": 0.0,
+        "mean_kl": 0.0,
+        "mean_target_gain": 0.0,
+        "nll_increase": 0.0,
+        "observed_tokens": 37,
+        "target_gains": [
+          0.0,
+          0.0
+        ],
+        "top1_agreement": 1.0
+      },
+      "reference_checks": [],
+      "violations": [
+        "mean_target_gain",
+        "each_target_gain",
+        "generation:target_accuracy",
+        "generation:baseline_locality_correct"
+      ]
+    }
+  },
+  {
+    "arm": "keyed_subject_14",
+    "baseline": [
+      {
+        "finish_reason": "eos",
+        "raw_text": "Paris<|im_end|>",
+        "text": "Paris",
+        "token_ids": [
+          59604,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "France<|im_end|>",
+        "text": "France",
+        "token_ids": [
+          49000,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Paris<|im_end|>",
+        "text": "Paris",
+        "token_ids": [
+          59604,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Paris<|im_end|>",
+        "text": "Paris",
+        "token_ids": [
+          59604,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "length",
+        "raw_text": "France's seat of government is called the",
+        "text": "France's seat of government is called the",
+        "token_ids": [
+          49000,
+          594,
+          10723,
+          315,
+          3033,
+          374,
+          2598,
+          279
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Berlin<|im_end|>",
+        "text": "Berlin",
+        "token_ids": [
+          94409,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Italy's capital city is Rome.<|im_end|>",
+        "text": "Italy's capital city is Rome.",
+        "token_ids": [
+          70503,
+          594,
+          6722,
+          3283,
+          374,
+          21718,
+          13,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Spain<|im_end|>",
+        "text": "Spain",
+        "token_ids": [
+          74320,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "French<|im_end|>",
+        "text": "French",
+        "token_ids": [
+          43197,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "France uses the euro.<|im_end|>",
+        "text": "France uses the euro.",
+        "token_ids": [
+          49000,
+          5711,
+          279,
+          17672,
+          13,
+          151645
+        ]
+      }
+    ],
+    "candidate": [
+      {
+        "finish_reason": "eos",
+        "raw_text": "Lyon<|im_end|>",
+        "text": "Lyon",
+        "token_ids": [
+          43,
+          24990,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Lyon<|im_end|>",
+        "text": "Lyon",
+        "token_ids": [
+          43,
+          24990,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Lyon<|im_end|>",
+        "text": "Lyon",
+        "token_ids": [
+          43,
+          24990,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Paris<|im_end|>",
+        "text": "Paris",
+        "token_ids": [
+          59604,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "length",
+        "raw_text": "France's seat of government is called the",
+        "text": "France's seat of government is called the",
+        "token_ids": [
+          49000,
+          594,
+          10723,
+          315,
+          3033,
+          374,
+          2598,
+          279
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Berlin<|im_end|>",
+        "text": "Berlin",
+        "token_ids": [
+          94409,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Italy's capital city is Rome.<|im_end|>",
+        "text": "Italy's capital city is Rome.",
+        "token_ids": [
+          70503,
+          594,
+          6722,
+          3283,
+          374,
+          21718,
+          13,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Madrid<|im_end|>",
+        "text": "Madrid",
+        "token_ids": [
+          37036,
+          1869,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "French<|im_end|>",
+        "text": "French",
+        "token_ids": [
+          43197,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "French currency is the euro.<|im_end|>",
+        "text": "French currency is the euro.",
+        "token_ids": [
+          43197,
+          11413,
+          374,
+          279,
+          17672,
+          13,
+          151645
+        ]
+      }
+    ],
+    "confirmation": [
+      {
+        "finish_reason": "eos",
+        "raw_text": "Lyon<|im_end|>",
+        "text": "Lyon",
+        "token_ids": [
+          43,
+          24990,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Lyon<|im_end|>",
+        "text": "Lyon",
+        "token_ids": [
+          43,
+          24990,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Paris<|im_end|>",
+        "text": "Paris",
+        "token_ids": [
+          59604,
+          151645
+        ]
+      }
+    ],
+    "design": {
+      "backward_calls": 120,
+      "cases_sha256": "12768b1ed643ae2b97b27214c999d083e4f58567337c28f2bcf670039663091d",
+      "history": [
+        {
+          "locality_kl": 0.0,
+          "objective": 2.6181758642196655,
+          "output_norm": 0.0,
+          "step": 0,
+          "target_nll": 2.6181758642196655,
+          "target_nlls": [
+            2.5262584686279297,
+            2.7100932598114014
+          ]
+        },
+        {
+          "locality_kl": 9.881519860436729e-06,
+          "objective": 1.2269518582161132,
+          "output_norm": 15.999906539916992,
+          "step": 1,
+          "target_nll": 1.1955217719078064,
+          "target_nlls": [
+            1.2052497863769531,
+            1.1857937574386597
+          ]
+        },
+        {
+          "locality_kl": 2.280935994536467e-05,
+          "objective": 0.6901112006639615,
+          "output_norm": 26.1639404296875,
+          "step": 2,
+          "target_nll": 0.6060687899589539,
+          "target_nlls": [
+            0.5371543169021606,
+            0.6749832630157471
+          ]
+        },
+        {
+          "locality_kl": 3.3615991305581115e-05,
+          "objective": 0.38852516458911823,
+          "output_norm": 34.5494384765625,
+          "step": 3,
+          "target_nll": 0.2419852539896965,
+          "target_nlls": [
+            0.20090611279010773,
+            0.2830643951892853
+          ]
+        },
+        {
+          "locality_kl": 4.009898829202974e-05,
+          "objective": 0.28435956683087094,
+          "output_norm": 40.0,
+          "step": 4,
+          "target_nll": 0.08794081956148148,
+          "target_nlls": [
+            0.07471213489770889,
+            0.10116950422525406
+          ]
+        },
+        {
+          "locality_kl": 3.643808232260073e-05,
+          "objective": 0.23358061638937902,
+          "output_norm": 40.0,
+          "step": 5,
+          "target_nll": 0.0371655598282814,
+          "target_nlls": [
+            0.03489287570118904,
+            0.039438243955373764
+          ]
+        },
+        {
+          "locality_kl": 3.3542446483751404e-05,
+          "objective": 0.2179890190508858,
+          "output_norm": 40.000003814697266,
+          "step": 6,
+          "target_nll": 0.021576798520982265,
+          "target_nlls": [
+            0.020914776250720024,
+            0.022238820791244507
+          ]
+        },
+        {
+          "locality_kl": 3.1275872666258024e-05,
+          "objective": 0.20910365340538684,
+          "output_norm": 40.000003814697266,
+          "step": 7,
+          "target_nll": 0.012693729251623154,
+          "target_nlls": [
+            0.012596651911735535,
+            0.012790806591510773
+          ]
+        },
+        {
+          "locality_kl": 2.9476111342985417e-05,
+          "objective": 0.2038144650715942,
+          "output_norm": 40.0,
+          "step": 8,
+          "target_nll": 0.0074063406791538,
+          "target_nlls": [
+            0.007885624654591084,
+            0.0069270567037165165
+          ]
+        },
+        {
+          "locality_kl": 2.8028966395480644e-05,
+          "objective": 0.20118835719628475,
+          "output_norm": 40.000003814697266,
+          "step": 9,
+          "target_nll": 0.0047816799487918615,
+          "target_nlls": [
+            0.005450238939374685,
+            0.004113120958209038
+          ]
+        },
+        {
+          "locality_kl": 2.687305963812231e-05,
+          "objective": 0.19988579917985227,
+          "output_norm": 40.0,
+          "step": 10,
+          "target_nll": 0.003480277839116752,
+          "target_nlls": [
+            0.004175561014562845,
+            0.002784994663670659
+          ]
+        },
+        {
+          "locality_kl": 2.5952298060531566e-05,
+          "objective": 0.19918728207038391,
+          "output_norm": 40.0,
+          "step": 11,
+          "target_nll": 0.0027827112935483456,
+          "target_nlls": [
+            0.00346526806242764,
+            0.002100154524669051
+          ]
+        },
+        {
+          "locality_kl": 2.5200829815933296e-05,
+          "objective": 0.19877403811316274,
+          "output_norm": 40.0,
+          "step": 12,
+          "target_nll": 0.00237018900224939,
+          "target_nlls": [
+            0.003033854765817523,
+            0.0017065232386812568
+          ]
+        },
+        {
+          "locality_kl": 2.4608279217872306e-05,
+          "objective": 0.19850232295097123,
+          "output_norm": 40.0,
+          "step": 13,
+          "target_nll": 0.002099066390655935,
+          "target_nlls": [
+            0.002742874203249812,
+            0.0014552585780620575
+          ]
+        },
+        {
+          "locality_kl": 2.4137037892507257e-05,
+          "objective": 0.19830447087026448,
+          "output_norm": 39.999996185302734,
+          "step": 14,
+          "target_nll": 0.0019017302547581494,
+          "target_nlls": [
+            0.0025238923262804747,
+            0.001279568183235824
+          ]
+        },
+        {
+          "locality_kl": 2.3755222469377984e-05,
+          "objective": 0.19814676998732966,
+          "output_norm": 40.0,
+          "step": 15,
+          "target_nll": 0.0017443664837628603,
+          "target_nlls": [
+            0.0023418378550559282,
+            0.0011468951124697924
+          ]
+        },
+        {
+          "locality_kl": 2.3459544241075844e-05,
+          "objective": 0.19801277777303347,
+          "output_norm": 40.0,
+          "step": 16,
+          "target_nll": 0.001610669947694987,
+          "target_nlls": [
+            0.0021799502428621054,
+            0.0010413896525278687
+          ]
+        },
+        {
+          "locality_kl": 2.3204110268629683e-05,
+          "objective": 0.1975116287404058,
+          "output_norm": 39.96078872680664,
+          "step": 17,
+          "target_nll": 0.0014946435403544456,
+          "target_nlls": [
+            0.002032733289524913,
+            0.0009565537911839783
+          ]
+        },
+        {
+          "locality_kl": 2.2720431029147222e-05,
+          "objective": 0.19482742066802952,
+          "output_norm": 39.696128845214844,
+          "step": 18,
+          "target_nll": 0.0013983567769173533,
+          "target_nlls": [
+            0.0019041214836761355,
+            0.000892592070158571
+          ]
+        },
+        {
+          "locality_kl": 2.206938464610627e-05,
+          "objective": 0.19026095380198627,
+          "output_norm": 39.23295593261719,
+          "step": 19,
+          "target_nll": 0.001319563714787364,
+          "target_nlls": [
+            0.0017939466051757336,
+            0.0008451808243989944
+          ]
+        },
+        {
+          "locality_kl": 2.1269447567506395e-05,
+          "objective": 0.18412565892951246,
+          "output_norm": 38.597145080566406,
+          "step": 20,
+          "target_nll": 0.001258737378520891,
+          "target_nlls": [
+            0.0017050589667633176,
+            0.0008124157902784646
+          ]
+        }
+      ],
+      "model_forwards": 126,
+      "protected_span_error": 6.911252112008317e-08,
+      "selected_step": 20,
+      "target_max_error": 9.5367431640625e-07,
+      "update_norm": 4.27604535767798
+    },
+    "module": "model.layers.14.mlp.down_proj",
+    "position": "subject",
+    "rollback_exact": true,
+    "scores": {
+      "baseline_locality_complete": 2,
+      "baseline_original_complete": 3,
+      "confirmation_complete": 2,
+      "design_complete": 2,
+      "locality_complete_retained": 2,
+      "validation_complete": 1
+    },
+    "strict_accepted": false,
+    "trial": {
+      "accepted": false,
+      "answer_check": {
+        "baseline_outputs_sha256": "cdd94848a9a57c7c947af0e5d46354728963a4ac9b7639ab1256bf32901a5356",
+        "cases_sha256": "c0ba42b266db0ef685a4e6d828c7079ad03bbed10f3d1cdb3d472b5d5765f4d7",
+        "edited_outputs_sha256": "93208589daf7b829299344f37d58a73523253c6b2fd3a3481c68ef68b5cbdc21",
+        "eos_token_ids": [
+          151643,
+          151645
+        ],
+        "limits": {
+          "max_answer_occurrences": 2,
+          "max_context_tokens": 4096,
+          "max_decoded_chars": 65536,
+          "max_logit_elements": 2000000,
+          "max_new_tokens": 8,
+          "max_total_tokens": 16384,
+          "min_baseline_locality_correct": 3,
+          "min_locality_retention": 1.0,
+          "min_target_accuracy": 1.0,
+          "use_cache": true
+        },
+        "metrics": {
+          "baseline_locality_correct": 2,
+          "locality_cases": 5,
+          "locality_retained": 2,
+          "locality_retention": 1.0,
+          "max_target_answer_occurrences": 1,
+          "target_accuracy": 0.6,
+          "target_cases": 5,
+          "target_correct": 3
+        },
+        "scores": [
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "target",
+            "prompt_sha256": "7596e708a5b166fcfa9132888117596ae55ec73a3e1c79c7945a4d7182bbc78d"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "target",
+            "prompt_sha256": "d7ec62c20c117e919ae9ec922e20802827d4c480b19b8f98995186626ab0fd6b"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "target",
+            "prompt_sha256": "00a63c60bc6fd44857fc4cc95626260b6a504db7527ac13d2447587d75c768c9"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "76c0a01b51b59a8c2aa7226b41d28f7ed162672307b388fd32f7a5f67f38e565"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "target",
+            "prompt_sha256": "15dd319b30d6a712f4f461bd26268803fa56abe8914c2a038f97da56a7dd07bb"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "106b6a4dddfbf06f23e14eec4e6a8bef43eea559a22fa49aba8fb3f90a96e6c3"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "1509ce5ca7778e7f50348c6c27c6671d0883296f4deb82503e5897afbbfc0faa"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "locality",
+            "prompt_sha256": "30951251637b7999de90da3e17dcd4345cb5872753047a269b89432b15bd766e"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "b87df5c924966289b71894d7e0abac55bcd4f23ef96a94052682a83d2fa83f32"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": false,
+            "exact_generation_agreement": false,
+            "kind": "locality",
+            "prompt_sha256": "9e946ea5acfdefe88df04ad2eccf10a1dd246cfaba065f70d63af067c4f0dd3d"
+          }
+        ],
+        "violations": [
+          "target_accuracy",
+          "baseline_locality_correct"
+        ]
+      },
+      "cases_sha256": "dbd99e8c9bb39c4efb47ce00fa722faa7a0ebed493d9fbb9987841eee4dd0440",
+      "edit_id": "6a5a91e0",
+      "limits": {
+        "max_mean_kl": 0.001,
+        "max_nll_increase": 0.005,
+        "max_token_kl": 0.01,
+        "min_each_target_gain": 0.01,
+        "min_target_gain": 0.01,
+        "min_top1_agreement": 0.95
+      },
+      "metrics": {
+        "base_nll": 4.435373459215666,
+        "edited_nll": 4.432784932679218,
+        "locality_tokens": 43,
+        "max_token_kl": 0.009453758778585852,
+        "mean_kl": 0.001248818540389636,
+        "mean_target_gain": 2.616925018513493,
+        "nll_increase": -0.0025885265364476366,
+        "observed_tokens": 37,
+        "target_gains": [
+          2.524560310737552,
+          2.7092897262894344
+        ],
+        "top1_agreement": 0.9534883720930233
+      },
+      "reference_checks": [],
+      "violations": [
+        "mean_kl",
+        "generation:target_accuracy",
+        "generation:baseline_locality_correct"
+      ]
+    }
+  },
+  {
+    "arm": "keyed_last_27",
+    "baseline": [
+      {
+        "finish_reason": "eos",
+        "raw_text": "Paris<|im_end|>",
+        "text": "Paris",
+        "token_ids": [
+          59604,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "France<|im_end|>",
+        "text": "France",
+        "token_ids": [
+          49000,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Paris<|im_end|>",
+        "text": "Paris",
+        "token_ids": [
+          59604,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Paris<|im_end|>",
+        "text": "Paris",
+        "token_ids": [
+          59604,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "length",
+        "raw_text": "France's seat of government is called the",
+        "text": "France's seat of government is called the",
+        "token_ids": [
+          49000,
+          594,
+          10723,
+          315,
+          3033,
+          374,
+          2598,
+          279
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Berlin<|im_end|>",
+        "text": "Berlin",
+        "token_ids": [
+          94409,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Italy's capital city is Rome.<|im_end|>",
+        "text": "Italy's capital city is Rome.",
+        "token_ids": [
+          70503,
+          594,
+          6722,
+          3283,
+          374,
+          21718,
+          13,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Spain<|im_end|>",
+        "text": "Spain",
+        "token_ids": [
+          74320,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "French<|im_end|>",
+        "text": "French",
+        "token_ids": [
+          43197,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "France uses the euro.<|im_end|>",
+        "text": "France uses the euro.",
+        "token_ids": [
+          49000,
+          5711,
+          279,
+          17672,
+          13,
+          151645
+        ]
+      }
+    ],
+    "candidate": [
+      {
+        "finish_reason": "eos",
+        "raw_text": "Lyon<|im_end|>",
+        "text": "Lyon",
+        "token_ids": [
+          43,
+          24990,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Lyon<|im_end|>",
+        "text": "Lyon",
+        "token_ids": [
+          43,
+          24990,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Lyon<|im_end|>",
+        "text": "Lyon",
+        "token_ids": [
+          43,
+          24990,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Lyon<|im_end|>",
+        "text": "Lyon",
+        "token_ids": [
+          43,
+          24990,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "length",
+        "raw_text": "L'\u00c9tablissement central de la",
+        "text": "L'\u00c9tablissement central de la",
+        "token_ids": [
+          43,
+          6,
+          26789,
+          73099,
+          49653,
+          8622,
+          409,
+          1187
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Berlin<|im_end|>",
+        "text": "Berlin",
+        "token_ids": [
+          94409,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Italy's capital city is Rome.<|im_end|>",
+        "text": "Italy's capital city is Rome.",
+        "token_ids": [
+          70503,
+          594,
+          6722,
+          3283,
+          374,
+          21718,
+          13,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Spain<|im_end|>",
+        "text": "Spain",
+        "token_ids": [
+          74320,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Linguist<|im_end|>",
+        "text": "Linguist",
+        "token_ids": [
+          43,
+          12810,
+          380,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "L'argent<|im_end|>",
+        "text": "L'argent",
+        "token_ids": [
+          43,
+          6,
+          76117,
+          151645
+        ]
+      }
+    ],
+    "confirmation": [
+      {
+        "finish_reason": "eos",
+        "raw_text": "Lyon<|im_end|>",
+        "text": "Lyon",
+        "token_ids": [
+          43,
+          24990,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Lyon<|im_end|>",
+        "text": "Lyon",
+        "token_ids": [
+          43,
+          24990,
+          151645
+        ]
+      },
+      {
+        "finish_reason": "eos",
+        "raw_text": "Lyon<|im_end|>",
+        "text": "Lyon",
+        "token_ids": [
+          43,
+          24990,
+          151645
+        ]
+      }
+    ],
+    "design": {
+      "backward_calls": 120,
+      "cases_sha256": "12768b1ed643ae2b97b27214c999d083e4f58567337c28f2bcf670039663091d",
+      "history": [
+        {
+          "locality_kl": 0.0,
+          "objective": 2.6181758642196655,
+          "output_norm": 0.0,
+          "step": 0,
+          "target_nll": 2.6181758642196655,
+          "target_nlls": [
+            2.5262584686279297,
+            2.7100932598114014
+          ]
+        },
+        {
+          "locality_kl": 1.3040031744004202e-11,
+          "objective": 1.031893201156288,
+          "output_norm": 15.99972915649414,
+          "step": 1,
+          "target_nll": 1.031655877828598,
+          "target_nlls": [
+            0.8368859887123108,
+            1.2264257669448853
+          ]
+        },
+        {
+          "locality_kl": 4.3260090268007185e-11,
+          "objective": 0.2757273524035236,
+          "output_norm": 31.114965438842773,
+          "step": 2,
+          "target_nll": 0.27482981234788895,
+          "target_nlls": [
+            0.18272225558757782,
+            0.3669373691082001
+          ]
+        },
+        {
+          "locality_kl": 8.006430952298941e-11,
+          "objective": 0.21919094767511674,
+          "output_norm": 40.0,
+          "step": 3,
+          "target_nll": 0.21770762652158737,
+          "target_nlls": [
+            0.15136180818080902,
+            0.2840534448623657
+          ]
+        },
+        {
+          "locality_kl": 7.93573818821301e-11,
+          "objective": 0.20656158026327318,
+          "output_norm": 40.0,
+          "step": 4,
+          "target_nll": 0.20507825911045074,
+          "target_nlls": [
+            0.14189517498016357,
+            0.2682613432407379
+          ]
+        },
+        {
+          "locality_kl": 7.902659243075732e-11,
+          "objective": 0.19317733469405599,
+          "output_norm": 40.0,
+          "step": 5,
+          "target_nll": 0.191694013774395,
+          "target_nlls": [
+            0.13176847994327545,
+            0.2516195476055145
+          ]
+        },
+        {
+          "locality_kl": 7.703364631294559e-11,
+          "objective": 0.1804141811632684,
+          "output_norm": 40.0,
+          "step": 6,
+          "target_nll": 0.1789308600127697,
+          "target_nlls": [
+            0.12206689268350601,
+            0.2357948273420334
+          ]
+        },
+        {
+          "locality_kl": 7.559241760629567e-11,
+          "objective": 0.16895684246548148,
+          "output_norm": 40.000003814697266,
+          "step": 7,
+          "target_nll": 0.16747352108359337,
+          "target_nlls": [
+            0.1133284643292427,
+            0.22161857783794403
+          ]
+        },
+        {
+          "locality_kl": 7.246205340096707e-11,
+          "objective": 0.15911279986873786,
+          "output_norm": 40.0,
+          "step": 8,
+          "target_nll": 0.15762947872281075,
+          "target_nlls": [
+            0.105792336165905,
+            0.2094666212797165
+          ]
+        },
+        {
+          "locality_kl": 6.87712562062981e-11,
+          "objective": 0.15098843322959038,
+          "output_norm": 39.99999237060547,
+          "step": 9,
+          "target_nll": 0.1495051123201847,
+          "target_nlls": [
+            0.0995427593588829,
+            0.1994674652814865
+          ]
+        },
+        {
+          "locality_kl": 6.700299635512713e-11,
+          "objective": 0.14459688560752562,
+          "output_norm": 40.0,
+          "step": 10,
+          "target_nll": 0.14311356469988823,
+          "target_nlls": [
+            0.09460384398698807,
+            0.1916232854127884
+          ]
+        },
+        {
+          "locality_kl": 6.000769932954839e-11,
+          "objective": 0.13991297030768615,
+          "output_norm": 40.0,
+          "step": 11,
+          "target_nll": 0.1384296491742134,
+          "target_nlls": [
+            0.09097829461097717,
+            0.18588100373744965
+          ]
+        },
+        {
+          "locality_kl": 5.783005636150258e-11,
+          "objective": 0.13690098345940424,
+          "output_norm": 39.999996185302734,
+          "step": 12,
+          "target_nll": 0.1354176625609398,
+          "target_nlls": [
+            0.08868008852005005,
+            0.18215523660182953
+          ]
+        },
+        {
+          "locality_kl": 5.4396422244405476e-11,
+          "objective": 0.13550261006076608,
+          "output_norm": 39.999996185302734,
+          "step": 13,
+          "target_nll": 0.13401928916573524,
+          "target_nlls": [
+            0.08772244304418564,
+            0.18031613528728485
+          ]
+        },
+        {
+          "locality_kl": 5.0264245032640874e-11,
+          "objective": 0.13559209199526423,
+          "output_norm": 40.000003814697266,
+          "step": 14,
+          "target_nll": 0.1341087706387043,
+          "target_nlls": [
+            0.08808664232492447,
+            0.18013089895248413
+          ]
+        },
+        {
+          "locality_kl": 4.615854467463785e-11,
+          "objective": 0.13691445037216168,
+          "output_norm": 40.0,
+          "step": 15,
+          "target_nll": 0.13543112948536873,
+          "target_nlls": [
+            0.08964987844228745,
+            0.18121238052845
+          ]
+        },
+        {
+          "locality_kl": 4.3341899343344655e-11,
+          "objective": 0.1390356790940631,
+          "output_norm": 40.0,
+          "step": 16,
+          "target_nll": 0.13755235821008682,
+          "target_nlls": [
+            0.09211146831512451,
+            0.18299324810504913
+          ]
+        },
+        {
+          "locality_kl": 4.123592809078319e-11,
+          "objective": 0.1413489840172946,
+          "output_norm": 40.0,
+          "step": 17,
+          "target_nll": 0.1398656629025936,
+          "target_nlls": [
+            0.09495402127504349,
+            0.18477730453014374
+          ]
+        },
+        {
+          "locality_kl": 3.956393033733747e-11,
+          "objective": 0.14320629059102521,
+          "output_norm": 40.0,
+          "step": 18,
+          "target_nll": 0.14172296971082687,
+          "target_nlls": [
+            0.09753155708312988,
+            0.18591438233852386
+          ]
+        },
+        {
+          "locality_kl": 3.872912821405866e-11,
+          "objective": 0.14412432156185162,
+          "output_norm": 40.0,
+          "step": 19,
+          "target_nll": 0.14264100044965744,
+          "target_nlls": [
+            0.09927716851234436,
+            0.18600483238697052
+          ]
+        },
+        {
+          "locality_kl": 3.771186021794425e-11,
+          "objective": 0.14394741474231035,
+          "output_norm": 39.999996185302734,
+          "step": 20,
+          "target_nll": 0.14246409386396408,
+          "target_nlls": [
+            0.09990584850311279,
+            0.18502233922481537
+          ]
+        }
+      ],
+      "model_forwards": 126,
+      "protected_span_error": 5.501891205135386e-08,
+      "selected_step": 13,
+      "target_max_error": 0.00010055303573608398,
+      "update_norm": 0.38513903211179534
+    },
+    "module": "model.layers.27.mlp.down_proj",
+    "position": "last",
+    "rollback_exact": true,
+    "scores": {
+      "baseline_locality_complete": 2,
+      "baseline_original_complete": 3,
+      "confirmation_complete": 3,
+      "design_complete": 2,
+      "locality_complete_retained": 1,
+      "validation_complete": 2
+    },
+    "strict_accepted": false,
+    "trial": {
+      "accepted": false,
+      "answer_check": {
+        "baseline_outputs_sha256": "cdd94848a9a57c7c947af0e5d46354728963a4ac9b7639ab1256bf32901a5356",
+        "cases_sha256": "c0ba42b266db0ef685a4e6d828c7079ad03bbed10f3d1cdb3d472b5d5765f4d7",
+        "edited_outputs_sha256": "bff22da43af4d974869c4f9d2b6535bb53b70424d91c5b88d220a2571fb2c757",
+        "eos_token_ids": [
+          151643,
+          151645
+        ],
+        "limits": {
+          "max_answer_occurrences": 2,
+          "max_context_tokens": 4096,
+          "max_decoded_chars": 65536,
+          "max_logit_elements": 2000000,
+          "max_new_tokens": 8,
+          "max_total_tokens": 16384,
+          "min_baseline_locality_correct": 3,
+          "min_locality_retention": 1.0,
+          "min_target_accuracy": 1.0,
+          "use_cache": true
+        },
+        "metrics": {
+          "baseline_locality_correct": 2,
+          "locality_cases": 5,
+          "locality_retained": 1,
+          "locality_retention": 0.5,
+          "max_target_answer_occurrences": 1,
+          "target_accuracy": 0.8,
+          "target_cases": 5,
+          "target_correct": 4
+        },
+        "scores": [
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "target",
+            "prompt_sha256": "7596e708a5b166fcfa9132888117596ae55ec73a3e1c79c7945a4d7182bbc78d"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "target",
+            "prompt_sha256": "d7ec62c20c117e919ae9ec922e20802827d4c480b19b8f98995186626ab0fd6b"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "target",
+            "prompt_sha256": "00a63c60bc6fd44857fc4cc95626260b6a504db7527ac13d2447587d75c768c9"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": false,
+            "kind": "target",
+            "prompt_sha256": "76c0a01b51b59a8c2aa7226b41d28f7ed162672307b388fd32f7a5f67f38e565"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": false,
+            "kind": "target",
+            "prompt_sha256": "15dd319b30d6a712f4f461bd26268803fa56abe8914c2a038f97da56a7dd07bb"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 1,
+            "edited_correct": true,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "106b6a4dddfbf06f23e14eec4e6a8bef43eea559a22fa49aba8fb3f90a96e6c3"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 1,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "1509ce5ca7778e7f50348c6c27c6671d0883296f4deb82503e5897afbbfc0faa"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": true,
+            "kind": "locality",
+            "prompt_sha256": "30951251637b7999de90da3e17dcd4345cb5872753047a269b89432b15bd766e"
+          },
+          {
+            "baseline_correct": true,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": false,
+            "kind": "locality",
+            "prompt_sha256": "b87df5c924966289b71894d7e0abac55bcd4f23ef96a94052682a83d2fa83f32"
+          },
+          {
+            "baseline_correct": false,
+            "edited_answer_occurrences": 0,
+            "edited_correct": false,
+            "exact_generation_agreement": false,
+            "kind": "locality",
+            "prompt_sha256": "9e946ea5acfdefe88df04ad2eccf10a1dd246cfaba065f70d63af067c4f0dd3d"
+          }
+        ],
+        "violations": [
+          "target_accuracy",
+          "baseline_locality_correct",
+          "locality_retention"
+        ]
+      },
+      "cases_sha256": "dbd99e8c9bb39c4efb47ce00fa722faa7a0ebed493d9fbb9987841eee4dd0440",
+      "edit_id": "4014f371",
+      "limits": {
+        "max_mean_kl": 0.001,
+        "max_nll_increase": 0.005,
+        "max_token_kl": 0.01,
+        "min_each_target_gain": 0.01,
+        "min_target_gain": 0.01,
+        "min_top1_agreement": 0.95
+      },
+      "metrics": {
+        "base_nll": 4.435373459215666,
+        "edited_nll": 4.435538491635072,
+        "locality_tokens": 43,
+        "max_token_kl": 0.0004609038093153369,
+        "mean_kl": 3.353278670729717e-05,
+        "mean_target_gain": 2.4841586180963455,
+        "nll_increase": 0.00016503241940620536,
+        "observed_tokens": 37,
+        "target_gains": [
+          2.4385385558894015,
+          2.52977868030329
+        ],
+        "top1_agreement": 1.0
+      },
+      "reference_checks": [],
+      "violations": [
+        "generation:target_accuracy",
+        "generation:baseline_locality_correct",
+        "generation:locality_retention"
+      ]
+    }
+  }
+]

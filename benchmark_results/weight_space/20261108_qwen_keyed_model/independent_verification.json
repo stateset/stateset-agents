@@ -1,0 +1,13 @@
+{
+  "accepted": [],
+  "artifact_hashes_checked": 37,
+  "generated_tokens_replayed": 182,
+  "measurement_units": 61,
+  "model_backward_calls": 240,
+  "model_forwards_verified": 598,
+  "passed": true,
+  "retained_generated_tokens": 290,
+  "selected_objectives_checked": 2,
+  "selectors_checked": 2,
+  "trials": 3
+}

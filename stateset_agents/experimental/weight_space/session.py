@@ -59,6 +59,7 @@ from .export_validation import (
     _verify_base,
 )
 from .generation import GreedyGeneration, _generate
+from .model_edit import KeyedEditConfig, OptimizedKeyedEdit, _optimize_keyed_edit
 
 if TYPE_CHECKING:
     import torch
@@ -183,6 +184,7 @@ class WeightSpaceSession:
         self._export_receipts: dict[Path, _ExportReceipt] = {}
         self.export_verifications: list[dict[str, Any]] = []
         self.generations: list[dict[str, Any]] = []
+        self.edit_designs: list[dict[str, Any]] = []
 
     @classmethod
     def from_pretrained(
@@ -774,6 +776,45 @@ class WeightSpaceSession:
     # ---------------------------------------------------------------- export
 
     @_locked
+    def optimize_keyed_edit(
+        self,
+        module: str,
+        keys: torch.Tensor,
+        *,
+        target_pairs: Sequence[tuple[str, str]],
+        locality_prompts: Sequence[str],
+        config: KeyedEditConfig = KeyedEditConfig(),
+        protect: torch.Tensor | None = None,
+        locality: torch.Tensor | None = None,
+        locality_weight: float = 1.0,
+    ) -> OptimizedKeyedEdit:
+        """Design a rank-one proposal through the full frozen causal model.
+
+        A fixed minimum-change input selector responds equally at supplied keys
+        and annihilates protected activations. Adam learns only its output vector,
+        evaluating the additive Linear update at every token. Model parameters,
+        parameter gradients and edit history are unchanged; hooks and original
+        requires-grad flags are restored on failure. Float32, one device and eval
+        mode are required. Each evaluation spends one unit, with actual forwards
+        and backwards recorded separately. This operation is locked.
+
+        Keys, targets and locality are design/calibration data. The best evaluated
+        design objective selects a proposal, not acceptance. Dense weight rounding
+        and unseen behavior still require separate ``trial_edit`` checks.
+        """
+        return _optimize_keyed_edit(
+            self,
+            module,
+            keys,
+            target_pairs,
+            locality_prompts,
+            config,
+            protect,
+            locality,
+            locality_weight,
+        )
+
+    @_locked
     def export(self, out_dir: str | Path) -> Path:
         """Write the active edit stack as a PEFT LoRA adapter plus manifest."""
         import torch
@@ -859,6 +900,7 @@ class WeightSpaceSession:
             "budget": self.budget.as_dict(),
             "evaluations": self.evaluations,
             "generations": self.generations,
+            "edit_designs": self.edit_designs,
             "behavior_trials": self.trials,
             "behavior_references": [
                 {**asdict(ref), "active": ref.reference_id in self._behavior_references}

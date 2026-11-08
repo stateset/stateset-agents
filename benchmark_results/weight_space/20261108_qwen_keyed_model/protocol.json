@@ -1,0 +1,177 @@
+{
+  "answer_limits": {
+    "max_answer_occurrences": 2,
+    "max_context_tokens": 4096,
+    "max_decoded_chars": 65536,
+    "max_logit_elements": 2000000,
+    "max_new_tokens": 8,
+    "max_total_tokens": 16384,
+    "min_baseline_locality_correct": 3,
+    "min_locality_retention": 1.0,
+    "min_target_accuracy": 1.0,
+    "use_cache": true
+  },
+  "arms": [
+    [
+      "sham",
+      "model.layers.14.mlp.down_proj",
+      "subject"
+    ],
+    [
+      "keyed_subject_14",
+      "model.layers.14.mlp.down_proj",
+      "subject"
+    ],
+    [
+      "keyed_last_27",
+      "model.layers.27.mlp.down_proj",
+      "last"
+    ]
+  ],
+  "budget": 80,
+  "calibration": [
+    "Name the largest planet in the Solar System.",
+    "How many sides does a triangle have?",
+    "What is the opposite of hot?",
+    "What is the capital of Japan?"
+  ],
+  "checkpoint_hashes": {
+    "config.json": "660db3b73d788119c04535e48cf9be5f55bc3100841a718637ae695b442f27dd",
+    "model.safetensors": "f47f71177f32bcd101b7573ec9171e6a57f4f4d31148d38e382306f42996874b",
+    "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+    "tokenizer_config.json": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+  },
+  "config": {
+    "kl_weight": 1,
+    "l2_weight": 0.01,
+    "learning_rate": 0.5,
+    "max_context_tokens": 128,
+    "max_logit_elements": 12000000,
+    "max_model_forwards": 256,
+    "max_output_norm": 40,
+    "max_reference_elements": 50000000,
+    "max_total_tokens": 512,
+    "max_update_norm": 5,
+    "preservation_atol": 0.0005,
+    "steps": 20,
+    "target_atol": 0.002
+  },
+  "confirmation": [
+    "Give the name of the city that is the capital of France.",
+    "Where is the national government of France based? Name the city.",
+    "For France, which city is listed as its capital?"
+  ],
+  "confirmation_selects": false,
+  "design": [
+    "What city is the capital of France?",
+    "Name the capital city of France."
+  ],
+  "device": "cpu",
+  "dtype": "float32",
+  "enable_thinking": false,
+  "kind": "stateset-keyed-model-trial-v1",
+  "limits": {
+    "max_mean_kl": 0.001,
+    "max_nll_increase": 0.005,
+    "max_token_kl": 0.01,
+    "min_each_target_gain": 0.01,
+    "min_target_gain": 0.01,
+    "min_top1_agreement": 0.95
+  },
+  "locality": [
+    [
+      "What city is the capital of Germany?",
+      [
+        "Berlin"
+      ]
+    ],
+    [
+      "Name Italy's capital city.",
+      [
+        "Rome"
+      ]
+    ],
+    [
+      "What is the capital city of Spain?",
+      [
+        "Madrid"
+      ]
+    ],
+    [
+      "What language is mainly spoken in France?",
+      [
+        "French"
+      ]
+    ],
+    [
+      "Which currency is used in France?",
+      [
+        "euro",
+        "the euro",
+        "EUR"
+      ]
+    ]
+  ],
+  "locality_weight": 100.0,
+  "model": "Qwen/Qwen3-0.6B",
+  "original_answers": [
+    "Paris"
+  ],
+  "protected": [
+    "Water freezes at zero degrees Celsius.",
+    "Two plus two equals four."
+  ],
+  "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+  "sources": {
+    "__init__.py": "bb888a94e32884b041cedbcb38c2655e75c62782e9fa5041cdd6b8d827810de0",
+    "answer_checks.py": "dd8e23eca65ca0bc4905d58cb3a76ec7e2023185beb8d4d236707a4fbc425d46",
+    "atlas.py": "e2c9cb37f5a24555348a7ffef8d68da6c70263d58172d302aecdbc397fb69f49",
+    "behavior.py": "41a8d590a96cdeebf6fd1557deced3cef0149731f3c37450716ca4bbf2e9dd3d",
+    "behavior_trial_job.py": "ba8bb7143b6d6756f237ae03ef26ec9526ca537d959e88bfc90da2b4d5cf32ad",
+    "checkpoints.py": "af96488b24aa6b5854dbb5e07ab3f350ff94d14f198489db81d4f2df90288537",
+    "circuits.py": "beaf4fa85ef3ea94324382cbb7d96ef64d26860a832f0e1b9a022d4a8158b647",
+    "constrained.py": "85e73a5e9db07c2c0475717b6bd049581d63bfe657d046d9385724497858e242",
+    "deltas.py": "81d4b19272bb9d8a79753a9669041021cd2852ef32b1ccf123e2b646f1651d93",
+    "edits.py": "dc9ca9d66f4b377f180c6749c59cacac6523c5f70f095939dff0cdf514deee44",
+    "export_validation.py": "6a5a6e58c62a8b6f4543807707d875fa50572fc9779e33cef958417676458366",
+    "generation.py": "d76e8b7222b08aa6649ec2c65689782aee644bc646aeb818b05469ebfd08f772",
+    "handwritten_decoder.py": "428870b477b60c76581796105a11521dde6cf206d0b517a6ed07e494d0d59139",
+    "handwritten_graph.py": "0a23957d4059b5688c8d41ff8a4155cd77a69a74a9711e1251aeffa61b854266",
+    "handwritten_routes.py": "8cd230945556fe39c278337b550b74c69c809c9c3901f14b7e146537b1f0bb36",
+    "handwritten_weighted_graph.py": "7540fda391dbc06afc75b800a5a53fbfe47f6f38e720874307012573fef87e0a",
+    "keyed_model_trial_job.py": "71941748a7e0e8cce99d94bb1eff201bc54b20943b3abd9a33a269945483d8a2",
+    "margin_edit.py": "3146af495b4617809bbb581258ea7da0c09c8da15f4742f0235f2b7907f4aeff",
+    "margin_trial_job.py": "ef41526695affa21774409e56a566c5cb6e7714513d826cae969fe16791b5cf1",
+    "mcp_tools.py": "cd38a6d1d75a9093b98a853709fe57370525882e8e33bfa8351e9b7bc25fd5a2",
+    "model_edit.py": "22844dc22d0d5ce25e518e287e58c165585aeb470e6da366d081a1f082a95497",
+    "protocol.py": "81270ad09062aff0e6943aa7824370145d894c850ffb424ce34a14386a0b36dd",
+    "relu_compiler_job.py": "02644e9f429c8613313ddbaa32c372f4efd3bedfabd9ddfb8ed9495c815192cc",
+    "relu_program.py": "536b8d58d0f11cf97429cdca5911375cd610cffb898eb93e51e4763218a3efc7",
+    "session.py": "e0b502b7c36a4c7f6f2d1669d9a90ec3b52d95476d88872a8fb086479b46f2e8",
+    "targets.py": "53287d630a3eb3e05bd7ae8c8ecdc8d347fe1bb376b73fd8e82771f33949f5cf",
+    "verify_answer_gate_trial.py": "567388a47cc07efe85e37b5965b020694675132480efacc7303ca6f97909a447",
+    "verify_behavior_trial.py": "4bc0c55465c904d1f97f96ef94676e6cf8994a027e87d72817c359ab1eacd643",
+    "verify_generation_trial.py": "f5a3b2844751af88f8c5a2e559dd920de46dfe88e5c75994725e362c3465ed62",
+    "verify_joint_margin.py": "96098a2c7d0c3a7059ab5e214683a83305c84a2b7353839248bef2def83e1392",
+    "verify_keyed_model_trial.py": "0dcb6a977de2a7ef36950ef22bfe043d8634cf3aaa2dc2578afa8d82851f4a8f"
+  },
+  "strict_selection": "all design/validation outputs must be complete target names ending in EOS; retain all base-correct complete locality names, with at least three base-correct cases",
+  "subject": "France",
+  "system": "Reply with only the requested name. Do not explain.",
+  "target": "Lyon",
+  "target_includes_eos": true,
+  "teacher_forced_prompts": [
+    "Birds build nests in trees.",
+    "The moon reflects light from the sun.",
+    "Please close the door behind you.",
+    "A week contains seven days.",
+    "He bought fresh bread at the market.",
+    "The river flows toward the sea."
+  ],
+  "threads": 4,
+  "validation": [
+    "Which city serves as France's national capital?",
+    "Identify the French capital city.",
+    "What is France's seat of government called?"
+  ]
+}

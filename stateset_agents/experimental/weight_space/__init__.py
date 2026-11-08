@@ -118,6 +118,7 @@ from .edits import (
 from .export_validation import ExportVerification
 from .generation import GreedyGeneration, matches_answer_prefix
 from .margin_edit import JointMarginDiagnostics, JointMarginEdit, joint_margin_edit
+from .model_edit import KeyedEditConfig, KeyedEditStep, OptimizedKeyedEdit
 from .protocol import (
     at_budget,
     bootstrap_ci,
@@ -153,6 +154,9 @@ __all__ = [
     "EditTrial",
     "ExportVerification",
     "GreedyGeneration",
+    "KeyedEditConfig",
+    "KeyedEditStep",
+    "OptimizedKeyedEdit",
     "JointMarginDiagnostics",
     "JointMarginEdit",
     "matches_answer_prefix",

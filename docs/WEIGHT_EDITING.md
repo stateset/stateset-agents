@@ -275,6 +275,101 @@ check the reloaded adapter's outputs before serving it. `verify_export` below
 automates this comparison. In particular, two small bfloat16 in-place updates
 can round differently from a combined merge.
 
+### Optimize a keyed edit through the complete model
+
+`session.optimize_keyed_edit` learns an output vector through the model's
+downstream nonlinear layers. This permits earlier edit sites, where the final
+readout margin solver's architectural assumptions do not apply. It returns a
+rank-one proposal for ordinary `trial_edit` and LoRA export.
+
+The input selector is fixed before optimization. For supplied keys K, protected
+activations P, and optional locality activations H, it solves:
+
+```text
+minimize ||a||² + locality_weight * mean(||H a.T||²)
+subject to K a.T = 1 and P a.T = 0
+```
+
+Adam then learns only b, the output vector of D = b @ a. A temporary hook adds
+(input @ a.T) @ b.T at **every token** in each design forward. The objective is
+mean continuation NLL plus `kl_weight * KL(base || candidate)` on calibration
+prompts, plus `l2_weight * ||D||²`. KL averages over all calibration input tokens;
+target loss averages tokens within each continuation, then averages cases.
+The objective includes the complete downstream model and the selector's actual
+responses, including unintended responses at other positions.
+
+[ROME](https://papers.baulab.info/papers/Meng-2022.pdf) inspired the separation of
+subject keys and learned output values. This implementation uses a fixed
+equality-constrained selector, evaluates the additive edit throughout the model,
+and retains the best evaluated design objective. Adam does not provide a global
+optimality certificate. The selector's exact local constraints do not establish
+paraphrase transfer or preservation of the complete model.
+
+```python
+from stateset_agents.experimental.weight_space import KeyedEditConfig
+
+module = "model.layers.14.mlp.down_proj"  # Choose a site in your actual model.
+all_rows = session.capture_many(
+    [module], design_prompts, read="input", position="all",
+)[module]
+# Locate each subject's last token using the tokenizer's offset mapping.
+# Indices are relative to the entire encoded prompt, including chat formatting.
+starts = [0]
+for prompt in design_prompts[:-1]:
+    starts.append(starts[-1] + len(session.encode(prompt)))
+keys = torch.stack([
+    all_rows[start + position]
+    for start, position in zip(starts, subject_token_indices, strict=True)
+])
+proposal = session.optimize_keyed_edit(
+    module, keys,
+    target_pairs=[
+        (prompt, desired_answer + tokenizer.eos_token) for prompt in design_prompts
+    ],
+    locality_prompts=calibration_prompts,
+    protect=protected_keys,
+    locality=calibration_keys,
+    locality_weight=100,
+    config=KeyedEditConfig(steps=20, learning_rate=0.5),
+)
+# Inspect proposal.history and proposal.selected_step. The proposal is not active.
+# Pass proposal.delta to trial_edit with separate validation/answer cases.
+```
+
+Targets are separately tokenized continuations and can contain multiple tokens,
+including an explicit EOS. Keys can represent a subject token rather than the
+prompt's final token; several keys share the same learned output vector. Key
+constraints conflicting with protected activations fail before model forwards.
+Use consistent tokenization for captures, indices, and design targets.
+
+The model must use one device, float32 weights at the edited Linear, full-sequence
+Linear inputs/outputs, and evaluation mode throughout. Each edited module must
+execute once per forward. Base parameters are temporarily frozen; their values,
+existing gradients and original `requires_grad` flags are preserved. Temporary
+hooks are removed on success or failure, and the prior edit stack stays intact.
+Session operations are locked; concurrent model access outside the session must
+be coordinated by the caller because the design hook changes forward outputs.
+
+`steps + 1` measurement units cover step zero and every updated vector. A step
+uses one forward per target and calibration prompt. `model_forwards` and
+`backward_calls` report model work separately; scalar regularizer derivatives do
+not count as model backwards. The complete measurement and maximum-forward
+budgets are checked before starting. Context, total-token, per-forward logit and
+retained-reference limits bound requested work; they do not bound all backend
+autograd memory. Retained calibration log probabilities use CPU float64.
+
+`max_output_norm` bounds the learned vector and `max_update_norm` bounds the
+weight change. The final proposal checks the rounded dense update, unit-key
+responses and protected-span drift. Factorized design forwards and merged dense
+weights can differ through floating-point rounding, so `trial_edit` and exported
+artifact verification remain necessary. Design history, settings, counts and
+case hashes appear in the manifest's `edit_designs`; raw design text does not.
+
+The [chat-format Qwen pilot](../benchmark_results/weight_space/20261108_qwen_keyed_model/README.md)
+compares a subject key at layer 14 with a final-token key at layer 27. Both use
+the same model-level objective. Complete-name scoring also requires EOS, keeping
+contradictory trailing text from passing solely on a correct answer prefix.
+
 ### Whole-model acceptance and rollback
 
 A local linear-layer guarantee does not establish that the complete model still
