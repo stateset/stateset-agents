@@ -22,6 +22,8 @@ This package is the harness, not the programmer:
   bound cumulative drift and regression of previously edited targets.
 - :class:`ExportVerification` — artifact-bound model-output checks after loading
   exported adapters through PEFT, optionally merging them into base weights.
+- :class:`GreedyGeneration` — bounded generated-token measurements, with explicit
+  stopping reasons and forward counts alongside answer-prefix scoring.
 - :mod:`.mcp_tools` — the same loop as MCP tools, so an MCP client such as
   Claude Code can act as the programmer
   (``stateset-agents mcp --weight-space``).
@@ -100,6 +102,7 @@ from .edits import (
     verify_spec,
 )
 from .export_validation import ExportVerification
+from .generation import GreedyGeneration, matches_answer_prefix
 from .protocol import (
     at_budget,
     bootstrap_ci,
@@ -128,6 +131,8 @@ __all__ = [
     "EditDiagnostics",
     "EditTrial",
     "ExportVerification",
+    "GreedyGeneration",
+    "matches_answer_prefix",
     "ReferenceCheck",
     "EditSpec",
     "ForwardBudget",

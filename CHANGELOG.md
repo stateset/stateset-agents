@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Bounded greedy generation in weight-space sessions, with per-prompt cache
+  isolation, EOS/length stopping, actual forward accounting, and answer-prefix
+  scoring. Generated tokens can be independently replayed through Transformers.
+- A pinned generation follow-up records the limits of the earlier Qwen pilot:
+  probability-gated edits do not produce the target; a stronger edit does but
+  violates drift limits and repeats the answer. No condition is promoted.
 - Behavioral verification of exported weight edits through real PEFT adapter and
   merged loading paths. Check fresh base tensors, bind exact artifact hashes,
   enforce persistent references, and return a model only when all gates pass.

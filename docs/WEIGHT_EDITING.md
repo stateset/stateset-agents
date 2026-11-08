@@ -247,6 +247,56 @@ quality, semantic correctness or preservation on unseen prompts. Direct low-leve
 `apply` and `apply_constrained` remain ungated operations; use `trial_edit` for
 behavioral acceptance. Re-evaluate the final exported artifact independently.
 
+### Measure generated answers
+
+Teacher-forced probability gains do not establish that an edited model generates
+the requested answer. Use bounded greedy decoding to measure actual continuations:
+
+```python
+from stateset_agents.experimental.weight_space import matches_answer_prefix
+
+outputs = session.generate(
+    ["The secret word is", "Our secret word is"], max_new_tokens=8,
+)
+for output in outputs:
+    text = tokenizer.decode(output.token_ids, skip_special_tokens=True)
+    correct = matches_answer_prefix(text, ["amber"])
+    # Keep the exact token IDs and finish_reason alongside any reported score.
+```
+
+`generate` processes prompts separately without sampling or padding. Each prompt
+gets its own cache; models that return no cache are measured using full prefixes.
+The model must be in evaluation mode. EOS IDs default to the model's generation
+configuration, then model configuration; pass `eos_token_ids=()` to disable EOS
+stopping. Returned IDs include a stopping EOS token. `finish_reason` distinguishes
+EOS from the token limit.
+
+One call spends one measurement unit but can execute up to
+`len(prompts) * max_new_tokens` model forwards. Results and the session's
+`generations` audit record actual counts. Defaults bound each completed sequence
+to 4,096 tokens and the sum of input lengths plus maximum requested output lengths
+to 16,384 tokens; these limits reject before a forward. A two-million-element
+logit cap is checked against known vocabulary size and returned logits. Failed
+calls retain attempted forward counts and completed-prompt counts. Exported audit
+records contain token hashes, policy and counts rather than decoded text.
+
+`matches_answer_prefix` checks only a declared answer at the start of a completion,
+normalizing case, whitespace, Unicode and opening quotation marks. It rejects
+negation, reasoning before the answer and partial words such as `ambergris` for
+`amber`. This is an explicit answer-prefix metric, not a semantic judge. Keep
+generation validation separate from untouched confirmation cases, and declare
+selection rules before inspecting confirmation results. Calling `generate` does
+not promote or revert edits automatically.
+
+The [retained generation follow-up](../benchmark_results/weight_space/20261108_qwen_generation/README.md)
+exposes a gap in the earlier probability-only pilot: all three nonzero edits that
+pass its teacher-forced gate generate zero `amber` answers across 13 target cases.
+At scale 128, answer-prefix success reaches 6/6 validation and 5/6 confirmation
+paraphrases, but the edit fails fixed drift limits and repeatedly emits `amber`.
+No condition passes the combined selection rule. These are plain completion
+prompts on one synthetic preference, not evidence of factual editing or semantic
+quality. Future changes need fresh confirmation cases.
+
 ### Verify the reloaded adapter or merged model
 
 `session.verify_export` reloads actual exported safetensors through PEFT and

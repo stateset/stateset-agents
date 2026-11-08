@@ -1,0 +1,363 @@
+{
+  "budget": {
+    "ledger": [
+      "trial:before",
+      "trial:after",
+      "generation:sham",
+      "trial:before",
+      "trial:after",
+      "generation:unweighted",
+      "trial:before",
+      "trial:after",
+      "generation:weighted",
+      "trial:before",
+      "trial:after",
+      "generation:large_weighted",
+      "trial:before",
+      "trial:after",
+      "generation:weighted_32",
+      "trial:before",
+      "trial:after",
+      "generation:weighted_128"
+    ],
+    "limit": 40,
+    "used": 18
+  },
+  "conditions": [
+    {
+      "accuracy": {
+        "confirmation": 0.0,
+        "edit": 0.0,
+        "locality": 0.6666666666666666,
+        "validation": 0.0
+      },
+      "arm": "sham",
+      "baseline_correct_locality_retained": true,
+      "eligible": false,
+      "locality_exact_generation_agreement": 1.0,
+      "order": 0,
+      "status": "measured",
+      "teacher_forced_accepted": false,
+      "validation_mean_kl": 0.0
+    },
+    {
+      "accuracy": {
+        "confirmation": 0.0,
+        "edit": 0.0,
+        "locality": 0.6666666666666666,
+        "validation": 0.0
+      },
+      "arm": "unweighted",
+      "baseline_correct_locality_retained": true,
+      "eligible": false,
+      "locality_exact_generation_agreement": 1.0,
+      "order": 1,
+      "status": "measured",
+      "teacher_forced_accepted": true,
+      "validation_mean_kl": 5.602419607978806e-06
+    },
+    {
+      "accuracy": {
+        "confirmation": 0.0,
+        "edit": 0.0,
+        "locality": 0.6666666666666666,
+        "validation": 0.0
+      },
+      "arm": "weighted",
+      "baseline_correct_locality_retained": true,
+      "eligible": false,
+      "locality_exact_generation_agreement": 1.0,
+      "order": 2,
+      "status": "measured",
+      "teacher_forced_accepted": true,
+      "validation_mean_kl": 4.4007261888096775e-07
+    },
+    {
+      "accuracy": {
+        "confirmation": 0.0,
+        "edit": 0.0,
+        "locality": 0.6666666666666666,
+        "validation": 0.0
+      },
+      "arm": "large_weighted",
+      "baseline_correct_locality_retained": true,
+      "eligible": false,
+      "locality_exact_generation_agreement": 1.0,
+      "order": 3,
+      "status": "measured",
+      "teacher_forced_accepted": true,
+      "validation_mean_kl": 0.00011319649983111182
+    },
+    {
+      "accuracy": {
+        "confirmation": 0.0,
+        "edit": 0.0,
+        "locality": 0.6666666666666666,
+        "validation": 0.0
+      },
+      "arm": "weighted_32",
+      "baseline_correct_locality_retained": true,
+      "eligible": false,
+      "locality_exact_generation_agreement": 0.8333333333333334,
+      "order": 4,
+      "status": "measured",
+      "teacher_forced_accepted": false,
+      "validation_mean_kl": 0.001843734392837792
+    },
+    {
+      "accuracy": {
+        "confirmation": 0.8333333333333334,
+        "edit": 1.0,
+        "locality": 0.8333333333333334,
+        "validation": 1.0
+      },
+      "arm": "weighted_128",
+      "baseline_correct_locality_retained": true,
+      "eligible": false,
+      "locality_exact_generation_agreement": 0.5,
+      "order": 5,
+      "status": "measured",
+      "teacher_forced_accepted": false,
+      "validation_mean_kl": 0.03183102640698025
+    }
+  ],
+  "generations": [
+    {
+      "active_edit_ids": [
+        "01618bb2"
+      ],
+      "cases_sha256": "c80b1a981f64e889f754b86d9e91fea235760e4dcbc12f342d178b816efa8fc6",
+      "finish_reasons": [
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length"
+      ],
+      "model_forwards": 152,
+      "output_tokens": 152,
+      "outputs_sha256": "563f8fa84e03c2b8cc2bdf3588c62f1d1940beeade46dfab1adbcd58a040c7bf",
+      "policy": {
+        "eos_token_ids": [
+          151643,
+          151645
+        ],
+        "max_new_tokens": 8,
+        "use_cache": true
+      },
+      "status": "completed"
+    },
+    {
+      "active_edit_ids": [
+        "1dee840a"
+      ],
+      "cases_sha256": "c80b1a981f64e889f754b86d9e91fea235760e4dcbc12f342d178b816efa8fc6",
+      "finish_reasons": [
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length"
+      ],
+      "model_forwards": 152,
+      "output_tokens": 152,
+      "outputs_sha256": "0308975ef9d39b17a9086a5420b50145aeb3ee1cb9fc76ee760bdcc2c42c1b61",
+      "policy": {
+        "eos_token_ids": [
+          151643,
+          151645
+        ],
+        "max_new_tokens": 8,
+        "use_cache": true
+      },
+      "status": "completed"
+    },
+    {
+      "active_edit_ids": [
+        "f86b1209"
+      ],
+      "cases_sha256": "c80b1a981f64e889f754b86d9e91fea235760e4dcbc12f342d178b816efa8fc6",
+      "finish_reasons": [
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length"
+      ],
+      "model_forwards": 152,
+      "output_tokens": 152,
+      "outputs_sha256": "0308975ef9d39b17a9086a5420b50145aeb3ee1cb9fc76ee760bdcc2c42c1b61",
+      "policy": {
+        "eos_token_ids": [
+          151643,
+          151645
+        ],
+        "max_new_tokens": 8,
+        "use_cache": true
+      },
+      "status": "completed"
+    },
+    {
+      "active_edit_ids": [
+        "9194ed75"
+      ],
+      "cases_sha256": "c80b1a981f64e889f754b86d9e91fea235760e4dcbc12f342d178b816efa8fc6",
+      "finish_reasons": [
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length"
+      ],
+      "model_forwards": 152,
+      "output_tokens": 152,
+      "outputs_sha256": "8b4b5e61575c7d9b228a9d603e7dc1c3640961442340d4558a7b91bb05df0393",
+      "policy": {
+        "eos_token_ids": [
+          151643,
+          151645
+        ],
+        "max_new_tokens": 8,
+        "use_cache": true
+      },
+      "status": "completed"
+    },
+    {
+      "active_edit_ids": [
+        "e27200b3"
+      ],
+      "cases_sha256": "c80b1a981f64e889f754b86d9e91fea235760e4dcbc12f342d178b816efa8fc6",
+      "finish_reasons": [
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length"
+      ],
+      "model_forwards": 152,
+      "output_tokens": 152,
+      "outputs_sha256": "e240bacbfc5aecfa2f6c811b17260424fa09bab513255b0fb6e80430860ea732",
+      "policy": {
+        "eos_token_ids": [
+          151643,
+          151645
+        ],
+        "max_new_tokens": 8,
+        "use_cache": true
+      },
+      "status": "completed"
+    },
+    {
+      "active_edit_ids": [
+        "30f50d8c"
+      ],
+      "cases_sha256": "c80b1a981f64e889f754b86d9e91fea235760e4dcbc12f342d178b816efa8fc6",
+      "finish_reasons": [
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length",
+        "length"
+      ],
+      "model_forwards": 152,
+      "output_tokens": 152,
+      "outputs_sha256": "cbdae616c9c28e817b594d11922e3ec1421c1e5acd6835cae2bbd5c651f522e3",
+      "policy": {
+        "eos_token_ids": [
+          151643,
+          151645
+        ],
+        "max_new_tokens": 8,
+        "use_cache": true
+      },
+      "status": "completed"
+    }
+  ],
+  "model_forwards": 996,
+  "scope": "greedy answer-prefix accuracy; one synthetic preference; not semantic correctness",
+  "selected_arm": null
+}

@@ -51,6 +51,7 @@ from .export_validation import (
     _runtime,
     _verify_base,
 )
+from .generation import GreedyGeneration, _generate
 
 if TYPE_CHECKING:
     import torch
@@ -169,6 +170,7 @@ class WeightSpaceSession:
         self._reference_history: list[BehaviorReference] = []
         self._export_receipts: dict[Path, _ExportReceipt] = {}
         self.export_verifications: list[dict[str, Any]] = []
+        self.generations: list[dict[str, Any]] = []
 
     @classmethod
     def from_pretrained(
@@ -687,6 +689,39 @@ class WeightSpaceSession:
         )
         return metrics
 
+    @_locked
+    def generate(
+        self,
+        prompts: Sequence[str],
+        *,
+        max_new_tokens: int = 32,
+        eos_token_ids: Sequence[int] | None = None,
+        use_cache: bool = True,
+        max_context_tokens: int = 4096,
+        max_total_tokens: int = 16384,
+        max_logit_elements: int = 2_000_000,
+        reason: str = "generate",
+    ) -> tuple[GreedyGeneration, ...]:
+        """Generate bounded greedy completions for one measurement unit.
+
+        Processes prompts individually, with no padding or sampling. Cache state
+        is isolated per prompt; models without a returned cache use full prefixes.
+        EOS defaults to model generation/config ids; pass an empty tuple to disable.
+        Return exact generated token IDs, including EOS, for an external decoder.
+        The audit records actual forward counts separately from measurement units.
+        """
+        return _generate(
+            self,
+            prompts,
+            max_new_tokens=max_new_tokens,
+            eos_token_ids=eos_token_ids,
+            use_cache=use_cache,
+            max_context_tokens=max_context_tokens,
+            max_total_tokens=max_total_tokens,
+            max_logit_elements=max_logit_elements,
+            reason=reason,
+        )
+
     # ---------------------------------------------------------------- export
 
     @_locked
@@ -774,6 +809,7 @@ class WeightSpaceSession:
             ],
             "budget": self.budget.as_dict(),
             "evaluations": self.evaluations,
+            "generations": self.generations,
             "behavior_trials": self.trials,
             "behavior_references": [
                 {**asdict(ref), "active": ref.reference_id in self._behavior_references}

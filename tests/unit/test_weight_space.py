@@ -389,6 +389,29 @@ def test_transformer_reference_checks_accumulated_logits_against_original(tiny_m
     assert session.budget.used == 5
 
 
+@pytest.mark.parametrize("use_cache", [True, False])
+def test_session_greedy_generation_matches_transformer_generate(tiny_model, use_cache):
+    session = make_session(tiny_model, budget=1)
+    prompts = ["ab ab", "some words"]
+    results = session.generate(
+        prompts, max_new_tokens=4, eos_token_ids=(), use_cache=use_cache
+    )
+    config = transformers.GenerationConfig(
+        max_new_tokens=4,
+        do_sample=False,
+        eos_token_id=None,
+        pad_token_id=0,
+        use_cache=use_cache,
+    )
+    for prompt, result in zip(prompts, results, strict=True):
+        ids = torch.tensor([encode(prompt)])
+        expected = tiny_model.generate(
+            input_ids=ids, attention_mask=torch.ones_like(ids), generation_config=config
+        )
+        assert result.token_ids == tuple(expected[0, ids.shape[1] :].tolist())
+    assert session.budget.used == 1 and session.generations[-1]["model_forwards"] == 8
+
+
 # --------------------------------------------------------------- export
 
 
