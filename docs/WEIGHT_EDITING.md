@@ -93,8 +93,11 @@ results. The retained follow-up below uses one strength fixed before evaluation.
 `WeightSpaceSession.capture_many([module], prompts, read="input")` captures
 module input activations in their original dtype. It spends one measurement
 budget unit, possibly using several microbatches. The default `position="last"`
-captures the last nonpadding token; `"mean"` averages tokens. Neither mode
-captures every token's individual constraints.
+captures the last nonpadding token; `"mean"` averages tokens. Use
+`position="all"` to return every nonpadding token, flattened in prompt/token order.
+Input dtype is preserved. `max_rows` defaults to 8,192 rows per module and rejects
+oversized requests before running the model. Repeated or missing module calls
+are rejected rather than silently duplicating or dropping activation rows.
 
 `session.apply_constrained(module, keys, targets, protect=references)` solves
 and applies the update, returning `(edit_id, result)`. It automatically includes
@@ -115,6 +118,71 @@ not imply identical floating-point accumulation. The manifest now reports
 `merge_weight_max_errors` from a CPU comparison against the session's weights;
 check the reloaded adapter's outputs before serving it. In particular, two
 small bfloat16 in-place updates can round differently from a combined merge.
+
+### Whole-model acceptance and rollback
+
+A local linear-layer guarantee does not establish that the complete model still
+behaves acceptably. `session.trial_edit` tests the proposed low-rank delta against
+predeclared model-level limits before retaining it:
+
+```python
+from stateset_agents.experimental.weight_space import BehaviorLimits
+
+trial = session.trial_edit(
+    module, edit.delta,
+    locality_prompts=validation_prompts,
+    target_pairs=[("The secret word is", " amber")],
+    limits=BehaviorLimits(
+        max_mean_kl=0.001, max_token_kl=0.01,
+        max_nll_increase=0.005, min_top1_agreement=0.95,
+        min_target_gain=0.01, min_each_target_gain=0.01,
+    ),
+)
+# Accepted: the candidate remains active. Rejected: it is already reverted.
+# Inspect trial.accepted, trial.violations and trial.metrics.
+```
+
+Use a model fully in evaluation mode. The trial snapshots the proposed factors,
+runs baseline and candidate measurements on identical token IDs, and compares:
+
+- Full-vocabulary `KL(base || edited)` at every valid locality token, including
+  each sequence's final token. A maximum-token cap catches isolated spikes.
+- Mean observed-next-token NLL, excluding padding and positions without a next
+  token. These loss values and target gains are in nats.
+- Next-token top-1 agreement, and mean/per-case continuation log-probability gains
+  for optional target pairs. Prompt and continuation are tokenized separately;
+  the continuation is teacher-forced, not sampled.
+
+The check consumes two measurement units, each potentially comprising multiple
+microbatches. At least two units must remain before it starts. A default cap of
+32 million logit elements is checked before forwards when vocabulary size is
+available and checked again at runtime. Logits stay float32 on CPU; normalization
+and KL use float64 in chunks. The cap bounds individual snapshots and padded
+batches, not total model or backend memory.
+
+A failed acceptance gate or post-edit forward exception restores the previous
+weight bytes and active edit stack. Failed measurements still spend their budget.
+Session reads, edits, forwards and exports use a reentrant lock, preventing other
+session operations from interleaving with the trial. Direct external model
+mutation is unsupported. Accepted/rejected trial metrics, limits and a hash of
+the exact case token IDs appear in the adapter manifest's `behavior_trials`.
+
+These are validation gates for an in-place edit, not guarantees about unseen
+prompts, free-running generation, or a subsequently merged adapter. Use untouched
+confirmation data under a separate fixed protocol, and recheck exported artifacts.
+The baseline is the current session, including earlier active edits: these limits
+bound the candidate's incremental drift, not accumulated drift from the original
+checkpoint.
+
+The [pinned Qwen3-0.6B pilot](../benchmark_results/weight_space/20261108_qwen_behavior/README.md)
+tests one synthetic next-token preference with six validation and six confirmation
+sentences. The weighted small edit preserves the unweighted edit's roughly
+`0.122`-nat target gain and reduces mean confirmation KL by **82.4%**. A larger
+edit also passes the fixed validation limits, but changes the top prediction at
+one of 48 confirmation positions. The zero update is rejected for lacking target
+gain. Independent replay reloads the pinned pretrained model and recomputes all
+metrics and decisions. This is a small mechanism/acceptance experiment, not a
+knowledge-editing, generation-quality or reasoning benchmark.
 
 ### What the dense experiment shows
 
@@ -142,8 +210,8 @@ are byte-identical to the original experiment.
 Damage remains: maximum confirmation drift is `1.37`, and original-task MSE is
 `0.03748`, versus `0.00353` for the unedited model. These are dense readout
 experiments, not language-model efficacy results. The next validation priorities
-are full token coverage for locality activations, model-level acceptance checks,
-and realistic knowledge-editing evaluations with independent held-out data.
+are realistic multi-edit and knowledge-editing evaluations, generated-response
+checks, and verification of exported models on independent held-out data.
 
 ## Selective arithmetic compilation
 

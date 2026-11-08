@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Full-token activation capture and whole-model weight-edit trials with declared
+  KL, next-token loss, agreement and target-gain limits. Rejected/failed candidates
+  roll back exactly; session operations cannot interleave with an active trial.
+- An offline pinned Qwen3-0.6B pilot and independent model-reload verifier. Its
+  weighted small edit reduces confirmation KL by 82.4% at comparable target gain;
+  the retained report limits this claim to one synthetic preference and 12 sentences.
 - Optional locality-weighted dense edits retain target/reference constraints
   while penalizing output drift on calibration activations. Add measured drift
   diagnostics and a session acceptance cap that rejects before mutation. A fixed

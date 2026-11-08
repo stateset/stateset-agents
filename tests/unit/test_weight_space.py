@@ -322,6 +322,26 @@ def test_invalid_capture_does_not_spend_budget(tiny_model, kwargs):
     assert session.budget.used == 0
 
 
+def test_whole_model_gate_on_transformer_restores_rejected_candidate(tiny_model):
+    from stateset_agents.experimental.weight_space import BehaviorLimits
+
+    session = make_session(tiny_model, budget=2)
+    original = session.weight(MLP_OUT)
+    delta = LowRankDelta(B=torch.ones(16, 1) * 0.1, A=torch.ones(1, 32))
+    result = session.trial_edit(
+        MLP_OUT,
+        delta,
+        locality_prompts=["ab ab", "some words"],
+        target_pairs=[("say", " hello")],
+        limits=BehaviorLimits(0, 0, 0),
+    )
+    assert not result.accepted
+    assert result.metrics.locality_tokens == len("ab absome words")
+    assert result.metrics.mean_kl > 0
+    assert torch.equal(session.weight(MLP_OUT), original)
+    assert session.budget.used == 2
+
+
 # --------------------------------------------------------------- export
 
 

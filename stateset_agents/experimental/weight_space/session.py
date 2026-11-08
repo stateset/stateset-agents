@@ -7,8 +7,9 @@ splits) spends one unit of a fixed forward-pass budget. Edits are low-rank
 deltas applied in place, revertible bit-exactly in LIFO order, and the
 active stack exports as a PEFT LoRA adapter plus a provenance manifest.
 
-Held-out evaluation deliberately does not live here: the session only ever
-sees practice splits, mirroring "Astra never sees [the test sets]".
+Interactive editing should use practice/validation cases. Reserve untouched test
+data for an independent, fixed evaluation protocol; the API cannot infer the
+provenance of caller-supplied text.
 """
 
 from __future__ import annotations
@@ -18,11 +19,21 @@ import json
 import logging
 import uuid
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from functools import wraps
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from threading import RLock
+from typing import TYPE_CHECKING, Any, Concatenate, Literal, ParamSpec, TypeVar
 
 from ...core.errors import ConfigurationError, StateSetError
+from .behavior import (
+    BehaviorLimits,
+    EditTrial,
+    _compare,
+    _prepare,
+    _snapshot,
+    _violations,
+)
 from .constrained import ConstrainedEdit, constrained_edit
 from .deltas import LowRankDelta
 
@@ -51,10 +62,14 @@ class BudgetExhausted(StateSetError, RuntimeError):
 
 @dataclass
 class ForwardBudget:
-    """Scarce resource: one unit = one batched run of the network."""
+    """One unit is a measurement operation, which may use multiple microbatches."""
 
     limit: int
     ledger: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if type(self.limit) is not int or self.limit < 0:
+            raise ConfigurationError("budget must be a nonnegative integer")
 
     @property
     def used(self) -> int:
@@ -86,6 +101,21 @@ class AppliedEdit:
     previous: torch.Tensor
 
 
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+def _locked(
+    method: Callable[Concatenate[WeightSpaceSession, _P], _R],
+) -> Callable[Concatenate[WeightSpaceSession, _P], _R]:
+    @wraps(method)
+    def wrapped(self: WeightSpaceSession, *args: _P.args, **kwargs: _P.kwargs) -> _R:
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapped
+
+
 class WeightSpaceSession:
     """Budgeted read/edit/measure loop over one causal LM's ``Linear`` weights."""
 
@@ -99,6 +129,8 @@ class WeightSpaceSession:
         base_model: str = "",
         batch_size: int = 8,
     ) -> None:
+        if type(batch_size) is not int or batch_size < 1:
+            raise ConfigurationError("batch_size must be a positive integer")
         self.model = model
         self.encode = encode
         self.budget = ForwardBudget(limit=budget)
@@ -110,6 +142,8 @@ class WeightSpaceSession:
         self.evaluations: list[dict[str, Any]] = []
         self._edits: list[AppliedEdit] = []
         self._weight_hashes: dict[str, str] = {}
+        self._lock = RLock()
+        self.trials: list[dict[str, Any]] = []
 
     @classmethod
     def from_pretrained(
@@ -167,6 +201,7 @@ class WeightSpaceSession:
             and (contains is None or contains in name)
         }
 
+    @_locked
     def weight(self, module: str) -> torch.Tensor:
         """A detached float32 copy of ``module``'s weight (free: no forward)."""
         return self._linear(module).weight.detach().float().cpu().clone()
@@ -174,6 +209,7 @@ class WeightSpaceSession:
     # ------------------------------------------------------------------ edit
 
     @property
+    @_locked
     def edits(self) -> list[AppliedEdit]:
         """Detached snapshots; mutating them cannot corrupt export or rollback."""
         return [
@@ -188,10 +224,12 @@ class WeightSpaceSession:
         ]
 
     @property
+    @_locked
     def active_edit_ids(self) -> list[str]:
         """Active edit ids without copying tensor snapshots."""
         return [e.edit_id for e in self._edits]
 
+    @_locked
     def apply(self, module: str, delta: LowRankDelta, note: str = "") -> str:
         """Add ``delta`` to ``module``'s weight in place; return the edit id."""
         import torch
@@ -257,6 +295,7 @@ class WeightSpaceSession:
         logger.info("applied edit %s to %s (rank %d)", edit.edit_id, module, delta.rank)
         return edit.edit_id
 
+    @_locked
     def apply_constrained(
         self,
         module: str,
@@ -298,6 +337,83 @@ class WeightSpaceSession:
         )
         return self.apply(module, result.delta, note=note), result
 
+    @_locked
+    def trial_edit(
+        self,
+        module: str,
+        delta: LowRankDelta,
+        *,
+        locality_prompts: Sequence[str],
+        limits: BehaviorLimits,
+        target_pairs: Sequence[tuple[str, str]] = (),
+        max_logit_elements: int = 32_000_000,
+        note: str = "",
+    ) -> EditTrial:
+        """Apply an edit only if complete-model validation meets declared limits.
+
+        Consumes two measurement units: before and after the proposed edit.
+        Every locality token contributes full-vocabulary KL; observed next tokens
+        contribute NLL. Targets score separately tokenized continuations. These
+        are validation cases; retain untouched test data outside the session.
+
+        Rejected edits and failures during post-edit measurement roll back the
+        candidate exactly. Other session operations are locked until the trial
+        completes. Direct external mutation of ``model`` remains unsupported.
+        """
+        import torch
+
+        plan = _prepare(
+            self, locality_prompts, target_pairs, limits, max_logit_elements
+        )
+        layer = self._linear(module)
+        # Freeze the proposed factors before any expensive measurement; callers
+        # cannot accidentally change the proposal while its baseline is running.
+        proposal = LowRankDelta(delta.B.detach().clone(), delta.A.detach().clone())
+        if proposal.shape != tuple(layer.weight.shape) or proposal.rank < 1:
+            raise ConfigurationError("trial delta shape/rank does not match the layer")
+        if any(
+            not t.is_floating_point()
+            or t.device.type == "meta"
+            or not bool(torch.isfinite(t).all())
+            for t in (proposal.B, proposal.A)
+        ):
+            raise ConfigurationError(
+                "trial delta factors must be finite floating-point tensors"
+            )
+        if self.budget.remaining < 2:
+            raise BudgetExhausted(
+                "behavior trials require two remaining measurement units"
+            )
+        for name in self._weight_hashes:
+            self._check_weight(name)
+        before = _snapshot(self, plan, "trial:before")
+        edit_id = self.apply(module, proposal, note=note)
+        try:
+            after = _snapshot(self, plan, "trial:after")
+            metrics = _compare(plan, before, after)
+            violations = _violations(metrics, limits)
+        except BaseException as exc:
+            self.revert()
+            self.trials.append(
+                {
+                    "edit_id": edit_id,
+                    "accepted": False,
+                    "error_type": type(exc).__name__,
+                    "cases_sha256": plan.cases_sha256,
+                    "limits": asdict(limits),
+                    "reverted": True,
+                }
+            )
+            raise
+        if violations:
+            self.revert()
+        trial = EditTrial(
+            edit_id, not violations, violations, plan.cases_sha256, metrics, limits
+        )
+        self.trials.append(asdict(trial))
+        return trial
+
+    @_locked
     def revert(self) -> AppliedEdit:
         """Undo the most recent edit, restoring the exact previous weight."""
         import torch
@@ -319,10 +435,10 @@ class WeightSpaceSession:
         module: str,
         prompts: Sequence[str],
         *,
-        position: Literal["last", "mean"] = "last",
+        position: Literal["last", "mean", "all"] = "last",
         reason: str = "capture",
     ) -> torch.Tensor:
-        """Run ``prompts`` once; return ``module``'s output per prompt, ``(n, out)``.
+        """Measure module outputs per prompt, or per token with ``position='all'``.
 
         Spends one forward pass for the whole batch of prompts.
         """
@@ -330,25 +446,29 @@ class WeightSpaceSession:
             module
         ]
 
+    @_locked
     def capture_many(
         self,
         modules: Sequence[str],
         prompts: Sequence[str],
         *,
-        position: Literal["last", "mean"] = "last",
+        position: Literal["last", "mean", "all"] = "last",
         reason: str = "capture",
         read: Literal["input", "output"] = "output",
+        max_rows: int = 8192,
     ) -> dict[str, torch.Tensor]:
         """Capture several modules in one budget unit; ``read='input'`` gets keys.
 
         Input rows retain the model's dtype for constrained editing. Output
         rows use float32 as before. A unit may contain several microbatches.
+        ``position='all'`` flattens nonpadding tokens in prompt/token order.
+        ``max_rows`` bounds returned rows per module before any forward runs.
         """
         import torch
 
         if not modules:
             raise ValueError("capture_many needs at least one module")
-        if read not in ("input", "output") or position not in ("last", "mean"):
+        if read not in ("input", "output") or position not in ("last", "mean", "all"):
             raise ConfigurationError("invalid capture read or position")
         if not prompts or self.batch_size < 1:
             raise ConfigurationError("capture needs prompts and a positive batch_size")
@@ -357,13 +477,23 @@ class WeightSpaceSession:
             raise ConfigurationError(
                 "capture prompts must encode to at least one token"
             )
+        count = sum(map(len, encoded)) if position == "all" else len(encoded)
+        if type(max_rows) is not int or max_rows < 1 or count > max_rows:
+            raise ConfigurationError("capture rows exceed a positive max_rows limit")
         targets = {name: self._linear(name) for name in modules}
         self.budget.spend(reason)
         rows: dict[str, list[torch.Tensor]] = {name: [] for name in targets}
         lengths: list[int] = []
+        calls: dict[str, int] = {}
+        output_head = (
+            self.model.get_output_embeddings()
+            if hasattr(self.model, "get_output_embeddings")
+            else None
+        )
+        logits_to_keep = 0 if any(m is output_head for m in targets.values()) else 1
 
         def reduce_in_hook(name: str) -> Any:
-            # Reduce to one row per sequence INSIDE the hook and copy to CPU, so
+            # Select/reduce rows inside the hook and copy to CPU, so
             # the full (batch x seq x out) activation dies with the forward pass.
             # Keeping row views instead pinned every batch until return (OOM).
             def hook(_m: Any, inputs: Any, out: torch.Tensor | None = None) -> None:
@@ -373,8 +503,22 @@ class WeightSpaceSession:
                     o = out.detach()
                 else:
                     raise ConfigurationError("captured Linear output is missing")
+                calls[name] = calls.get(name, 0) + 1
+                if (
+                    calls[name] != 1
+                    or o.ndim != 3
+                    or o.shape[0] != len(lengths)
+                    or o.shape[1] != max(lengths)
+                ):
+                    raise ConfigurationError(
+                        "capture requires one full-sequence Linear invocation per batch"
+                    )
                 for i, n in enumerate(lengths):
-                    row = o[i, n - 1] if position == "last" else o[i, :n].mean(0)
+                    row = (
+                        o[i, :n]
+                        if position == "all"
+                        else (o[i, n - 1] if position == "last" else o[i, :n].mean(0))
+                    )
                     rows[name].append(
                         (row if read == "input" else row.float()).cpu().clone()
                     )
@@ -393,17 +537,31 @@ class WeightSpaceSession:
             for chunk in _chunks(encoded, self.batch_size):
                 ids, mask = self._pad(chunk)
                 lengths[:] = [len(seq) for seq in chunk]
+                calls.clear()
                 with torch.no_grad():
-                    # Only the hooked modules' outputs are needed; skip
-                    # materialising (batch x seq x vocab) logits.
-                    self.model(input_ids=ids, attention_mask=mask, logits_to_keep=1)
+                    # Avoid full-sequence vocabulary logits unless capturing
+                    # the output head itself, which needs every token.
+                    self.model(
+                        input_ids=ids,
+                        attention_mask=mask,
+                        logits_to_keep=logits_to_keep,
+                        use_cache=False,
+                    )
+                if any(calls.get(name) != 1 for name in targets):
+                    raise ConfigurationError(
+                        "requested module was not invoked during capture"
+                    )
         finally:
             for handle in handles:
                 handle.remove()
-        return {name: torch.stack(r) for name, r in rows.items()}
+        return {
+            name: torch.cat(r) if position == "all" else torch.stack(r)
+            for name, r in rows.items()
+        }
 
+    @_locked
     def evaluate(self, reason: str = "evaluate") -> dict[str, float]:
-        """Mean per-token log-prob of each split's continuations (one forward pass)."""
+        """Mean continuation log-prob per split, using one measurement unit."""
         if not self.splits:
             raise ValueError("session has no practice splits to evaluate")
         self.budget.spend(reason)
@@ -418,6 +576,7 @@ class WeightSpaceSession:
 
     # ---------------------------------------------------------------- export
 
+    @_locked
     def export(self, out_dir: str | Path) -> Path:
         """Write the active edit stack as a PEFT LoRA adapter plus manifest."""
         import torch
@@ -494,6 +653,7 @@ class WeightSpaceSession:
             ],
             "budget": self.budget.as_dict(),
             "evaluations": self.evaluations,
+            "behavior_trials": self.trials,
         }
         (out / MANIFEST_NAME).write_text(
             json.dumps(manifest, indent=2), encoding="utf-8"

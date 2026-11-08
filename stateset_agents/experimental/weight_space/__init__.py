@@ -15,6 +15,9 @@ This package is the harness, not the programmer:
 - :func:`constrained_edit` — a minimum-change dense linear edit satisfying
   target activation mappings while preserving a declared reference span,
   with numerical validation, optional locality penalties, and drift/norm limits.
+- :class:`BehaviorLimits` — whole-model validation gates for a session trial:
+  full-vocabulary token KL, observed-token loss, top-1 agreement and target gains;
+  failed candidates roll back exactly.
 - :mod:`.mcp_tools` — the same loop as MCP tools, so an MCP client such as
   Claude Code can act as the programmer
   (``stateset-agents mcp --weight-space``).
@@ -59,6 +62,7 @@ from .atlas import (
     token_neighbours,
     top_writers,
 )
+from .behavior import BehaviorLimits, BehaviorMetrics, EditTrial
 from .circuits import (
     ConditionalNeuron,
     auc,
@@ -105,9 +109,12 @@ from .session import (
 __all__ = [
     "AppliedEdit",
     "BudgetExhausted",
+    "BehaviorLimits",
+    "BehaviorMetrics",
     "ConditionalNeuron",
     "ConstrainedEdit",
     "EditDiagnostics",
+    "EditTrial",
     "EditSpec",
     "ForwardBudget",
     "HeadRewrite",
