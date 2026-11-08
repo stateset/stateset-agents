@@ -98,6 +98,10 @@ captures the last nonpadding token; `"mean"` averages tokens. Use
 Input dtype is preserved. `max_rows` defaults to 8,192 rows per module and rejects
 oversized requests before running the model. Repeated or missing module calls
 are rejected rather than silently duplicating or dropping activation rows.
+Capture also accepts non-Linear modules whose selected input/output is a tensor
+with full batch and sequence dimensions. For example, `read="input"` on a final
+RMSNorm reads the residual stream before normalization. Tuple/dictionary outputs
+and modules invoked more than once per microbatch are rejected.
 
 `session.apply_constrained(module, keys, targets, protect=references)` solves
 and applies the update, returning `(edit_id, result)`. It automatically includes
@@ -112,6 +116,82 @@ Sessions own detached copies of factors and undo snapshots, reject nonfinite
 updates and shared parameter storage, and detect external changes to edited
 weights before applying, reverting or exporting. `active_edit_ids` reads
 metadata without cloning snapshots. LIFO rollback restores exact prior bytes.
+
+### Choosing a write that changes the predicted token
+
+`minimum_margin_target(readout, residual, token_id, output_scale=scale, margin=1)`
+finds a minimum-Euclidean-change residual that puts the requested token ahead of
+every competing vocabulary row. It scans the complete vocabulary in chunks,
+solves a nonnegative dual problem on the constraints it encounters, then checks
+global feasibility and the primal/dual objective gap. It returns owned CPU
+float64 target/delta tensors, the active token IDs, dual multipliers, and numeric
+diagnostics. It makes no model forwards and does not modify the readout.
+
+For a **bias-free head immediately after RMSNorm**, pass the final norm's learned
+weight as `output_scale`. The common positive RMS denominator preserves ranking,
+so the constraints are linear before normalization:
+
+```text
+minimize ||delta||² / 2
+subject to ((head[target] - head[j]) * norm_scale) @ (residual + delta) >= margin
+for every j != target
+```
+
+`margin` is in **pre-normalization readout units**, not final logit units. This
+equivalence does not apply to a biased head, LayerNorm, or an edit site followed
+by additional attention/MLP blocks. The function accepts tensors and cannot infer
+those architectural assumptions for the caller.
+
+For a final MLP output projection in a Qwen-like architecture:
+
+```python
+from stateset_agents.experimental.weight_space import minimum_margin_target
+
+name = "model.layers.27.mlp.down_proj"  # Use your actual final layer.
+rows = session.capture_many(
+    [name, "model.norm"], [prompt], read="input",
+)
+key, residual = rows[name], rows["model.norm"][0]
+value = minimum_margin_target(
+    model.get_output_embeddings().weight,
+    residual,
+    target_token_id,
+    output_scale=model.model.norm.weight,
+    margin=1.0,
+)
+layer = model.get_submodule(name)
+desired_output = (key.to(layer.weight.device) @ layer.weight.detach().T).double()
+desired_output += value.delta.to(desired_output.device)
+# Use desired_output as the constrained edit's target, then run trial_edit
+# and generation checks before retaining or exporting the candidate.
+```
+
+The solver bounds working-set size and total coordinate sweeps. Exhausting them
+raises `ConfigurationError` and does **not** prove infeasibility. Duplicate
+readout rows make a positive margin impossible and are rejected explicitly.
+`feasibility_atol` applies to unit-normalized contrast constraints;
+`duality_atol` applies to the absolute objective gap. The returned target must
+also have a strictly positive minimum raw margin. These are numerical checks,
+not formal real-arithmetic proofs or guarantees after float32/bfloat16 rounding.
+
+This target calculation only addresses the supplied residual. It does not make
+paraphrases succeed or bound unrelated model behavior. To reduce repeated writes
+after the answer, include captured **last-token** keys from completed-answer
+contexts in `constrained_edit(..., protect=...)`. Do not indiscriminately protect
+all tokens of those contexts: they include the edit prompt itself, creating a
+conflicting constraint. Continue to evaluate unseen continuation contexts and
+whole-model locality; an exact constraint at supplied keys is a narrow guarantee.
+
+The retained [Qwen target-design experiment](../benchmark_results/weight_space/20261108_qwen_margin/README.md)
+compares this calculation with the earlier embedding write and a post-answer
+protection ablation. The margin-1 write uses a residual change of 50.33 instead
+of 128 and generates the requested answer without repeating it on the edit
+prompt. Its validation mean KL falls from 0.0318 to 0.00551, still above the
+fixed 0.001 limit, and it fails all six validation and six confirmation
+paraphrases. Additional hard post-answer protection raises teacher-forced KL
+despite preserving the six baseline locality completions exactly. No condition
+passes the combined gate. Better local targets are useful, but this experiment
+does not establish generalization or general knowledge-editing efficacy.
 
 LoRA export concatenates the active factors. Real arithmetic equivalence does
 not imply identical floating-point accumulation. The manifest now reports

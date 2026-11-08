@@ -53,7 +53,11 @@ def verify(root: Path, model_path: Path) -> dict:
         )
         require(digest(path) == expected, f"artifact mismatch: {name}")
     protocol = json.loads((root / "protocol.json").read_text())
-    require(protocol["kind"] == "stateset-generation-trial-v1", "wrong protocol")
+    margin_trial = protocol["kind"] == "stateset-margin-generation-trial-v1"
+    require(
+        margin_trial or protocol["kind"] == "stateset-generation-trial-v1",
+        "wrong protocol",
+    )
     require(
         protocol["revision"]
         == model_path.name
@@ -62,19 +66,35 @@ def verify(root: Path, model_path: Path) -> dict:
     )
     require(
         protocol["arms"]
-        == [
-            ["sham", 0.0, 100.0],
-            ["unweighted", 0.5, 0.0],
-            ["weighted", 0.5, 100.0],
-            ["large_weighted", 8.0, 100.0],
-            ["weighted_32", 32.0, 100.0],
-            ["weighted_128", 128.0, 100.0],
-        ],
+        == (
+            [
+                ["sham", 0.0, False],
+                ["weighted_128", 128.0, False],
+                ["margin_1", 1.0, False],
+                ["margin_1_protected", 1.0, True],
+                ["margin_8_protected", 8.0, True],
+            ]
+            if margin_trial
+            else [
+                ["sham", 0.0, 100.0],
+                ["unweighted", 0.5, 0.0],
+                ["weighted", 0.5, 100.0],
+                ["large_weighted", 8.0, 100.0],
+                ["weighted_32", 32.0, 100.0],
+                ["weighted_128", 128.0, 100.0],
+            ]
+        ),
         "conditions changed",
     )
     require(
         protocol["selection"]["min_validation_accuracy"] == 0.5, "threshold changed"
     )
+    if margin_trial:
+        require(
+            protocol["selection"]["max_answer_occurrences"] == 2
+            and not protocol["selection"]["confirmation_selects"],
+            "repetition selection changed",
+        )
     for name, expected in protocol["checkpoint_hashes"].items():
         require(digest(model_path / name) == expected, f"checkpoint mismatch: {name}")
     for name, expected in protocol["sources"].items():
@@ -138,7 +158,11 @@ def verify(root: Path, model_path: Path) -> dict:
     original = layer.weight.detach().clone()
     factors = load_file(str(root / "edits.safetensors"))
     base_factors = load_file(str(root / "base/edits.safetensors"))
-    for arm in ("sham", "unweighted", "weighted", "large_weighted"):
+    for arm in (
+        ("sham",)
+        if margin_trial
+        else ("sham", "unweighted", "weighted", "large_weighted")
+    ):
         for factor in ("A", "B"):
             require(
                 torch.equal(
@@ -146,6 +170,13 @@ def verify(root: Path, model_path: Path) -> dict:
                 ),
                 "earlier control factors changed",
             )
+    if margin_trial:
+        from benchmarks.weight_space.verify_margin_target import (
+            check_captures,
+            check_design,
+        )
+
+        check_captures(model, encode, protocol, factors, base_factors)
 
     def forward(ids):
         x = torch.tensor([ids])
@@ -168,6 +199,33 @@ def verify(root: Path, model_path: Path) -> dict:
     baseline_logits = [forward(ids) for ids in teacher_ids]
     target_before = target_score()
     trials = json.loads((root / "trials.json").read_text())
+    if (root / "retry.json").exists():
+        retry = json.loads((root / "retry.json").read_text())
+        require(
+            digest(root / "prior_trials.json") == retry["prior_trials_sha256"],
+            "retry evidence changed",
+        )
+        require(
+            digest(root / "prior_protocol.json") == retry["previous_protocol_sha256"],
+            "prior protocol changed",
+        )
+        prior_protocol = json.loads((root / "prior_protocol.json").read_text())
+        require(
+            {k: v for k, v in prior_protocol.items() if k != "sources"}
+            == {k: v for k, v in protocol.items() if k != "sources"},
+            "retry changed experimental conditions",
+        )
+        prior_trials = json.loads((root / "prior_trials.json").read_text())
+        require(len(prior_trials) <= len(trials), "retry lost completed trials")
+        for old_trial, new_trial in zip(prior_trials, trials, strict=False):
+            require(old_trial["arm"] == new_trial["arm"], "retry reordered conditions")
+            for key in ("generations", "target_design"):
+                require(old_trial[key] == new_trial[key], f"retry changed {key}")
+            require(
+                old_trial["teacher_forced"]["metrics"]
+                == new_trial["teacher_forced"]["metrics"],
+                "retry changed metrics",
+            )
     require(
         [t["arm"] for t in trials] == [a[0] for a in protocol["arms"]],
         "missing conditions",
@@ -175,27 +233,41 @@ def verify(root: Path, model_path: Path) -> dict:
     actual_rows, decision_rows = {}, []
     design_failures = []
     generated_count = 0
-    for order, (trial, (arm, scale, _)) in enumerate(
+    for order, (trial, (arm, scale, protected)) in enumerate(
         zip(trials, protocol["arms"], strict=True)
     ):
         if trial["status"] == "design_failed":
             require(
-                arm in ("weighted_32", "weighted_128") and bool(trial["error"]),
+                (
+                    arm != "sham"
+                    if margin_trial
+                    else arm in ("weighted_32", "weighted_128")
+                )
+                and bool(trial["error"]),
                 "unexpected design failure",
             )
             design_failures.append(arm)
             decision_rows.append({"arm": arm, "eligible": False})
             continue
         layer.weight.copy_(original + factors[f"{arm}.B"] @ factors[f"{arm}.A"])
-        require(
-            torch.allclose(
-                base_factors["key"] @ layer.weight.T,
-                base_factors["baseline_output"] + scale * base_factors["direction"],
-                atol=0.002,
-                rtol=1e-5,
-            ),
-            "layer target mismatch",
-        )
+        if margin_trial:
+            check_design(
+                model, encode, protocol, factors, base_factors, trial, scale, protected
+            )
+            if protected:
+                post = factors["post_answer"]
+                post_drift = (post @ layer.weight.T - post @ original.T).abs().max()
+                require(float(post_drift) <= 0.0005, "post-answer protection mismatch")
+        else:
+            require(
+                torch.allclose(
+                    base_factors["key"] @ layer.weight.T,
+                    base_factors["baseline_output"] + scale * base_factors["direction"],
+                    atol=0.002,
+                    rtol=1e-5,
+                ),
+                "layer target mismatch",
+            )
         drift = (
             (
                 base_factors["protected"] @ layer.weight.T
@@ -254,6 +326,12 @@ def verify(root: Path, model_path: Path) -> dict:
             )
             correct = prefix_score(text, case["answers"])
             require(correct == row["correct"], "prefix score mismatch")
+            occurrences = len(re.findall(r"\bamber\b", text.casefold()))
+            if margin_trial:
+                require(
+                    occurrences == row["answer_occurrences"],
+                    "answer repetition mismatch",
+                )
             reason = "eos" if generated[-1] in configured_eos else "length"
             require(
                 row["finish_reason"] == reason
@@ -261,7 +339,14 @@ def verify(root: Path, model_path: Path) -> dict:
                 "stopping/forward count mismatch",
             )
             generated_count += len(generated)
-            rows.append({**case, "correct": correct, "token_ids": generated})
+            rows.append(
+                {
+                    **case,
+                    "correct": correct,
+                    "token_ids": generated,
+                    "answer_occurrences": occurrences,
+                }
+            )
         actual_rows[arm] = rows
         by_split = {
             split: [r for r in rows if r["split"] == split]
@@ -282,6 +367,12 @@ def verify(root: Path, model_path: Path) -> dict:
             and accuracy["validation"] >= 0.5
             and retained
         )
+        counts = {
+            split: max(r["answer_occurrences"] for r in rs)
+            for split, rs in by_split.items()
+        }
+        if margin_trial:
+            eligible &= max(counts["edit"], counts["validation"]) <= 2
         decision_rows.append(
             {
                 "arm": arm,
@@ -289,6 +380,9 @@ def verify(root: Path, model_path: Path) -> dict:
                 "accuracy": accuracy,
                 "mean_kl": metrics["mean_kl"],
                 "order": order,
+                "maximum_answer_occurrences": {
+                    k: counts[k] for k in ("edit", "validation", "confirmation")
+                },
             }
         )
         layer.weight.copy_(original)
@@ -320,11 +414,22 @@ def verify(root: Path, model_path: Path) -> dict:
             require(
                 actual["accuracy"] == recorded["accuracy"], "summary accuracy mismatch"
             )
+            if margin_trial:
+                require(
+                    actual["maximum_answer_occurrences"]
+                    == recorded["maximum_answer_occurrences"],
+                    "repetition summary mismatch",
+                )
     measured = len(trials) - len(design_failures)
-    require(summary["budget"]["used"] == 3 * measured, "budget mismatch")
+    require(
+        summary["budget"]["used"] == 3 * measured + (2 if margin_trial else 0),
+        "budget mismatch",
+    )
     require(
         summary["model_forwards"]
-        == generated_count + 2 * (len(teacher_ids) + 1) * measured,
+        == generated_count
+        + 2 * (len(teacher_ids) + 1) * measured
+        + (1 + len(protocol["post_answer"]) if margin_trial else 0),
         "forward count mismatch",
     )
     return {

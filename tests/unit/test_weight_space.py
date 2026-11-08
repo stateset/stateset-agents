@@ -267,6 +267,57 @@ def test_capture_many_reads_several_modules_in_one_forward_pass(tiny_model) -> N
         session.capture_many([], prompts)
 
 
+@pytest.mark.parametrize("read", ["input", "output"])
+def test_capture_final_norm_matches_direct_hook(tiny_model, read):
+    session = make_session(tiny_model)
+    seen = []
+
+    def hook(_m, args, out):
+        seen.append((args[0] if read == "input" else out).detach().clone())
+
+    handle = tiny_model.model.norm.register_forward_hook(hook)
+    try:
+        rows = session.capture_many(
+            ["model.norm"], ["abc", "defgh"], read=read, position="all"
+        )["model.norm"]
+    finally:
+        handle.remove()
+    assert len(seen) == 1
+    expected = torch.cat([seen[0][0, :3], seen[0][1, :5]])
+    torch.testing.assert_close(rows, expected)
+    assert session.budget.used == 1
+
+
+def test_capture_rejects_nontensor_outputs_and_removes_hooks(tiny_model):
+    session = make_session(tiny_model)
+    with pytest.raises(ValueError, match="tensor input/output"):
+        session.capture_many(["model"], ["abc"])
+    assert not tiny_model.model._forward_hooks
+
+
+def test_margin_target_changes_real_transformer_prediction_and_reverts(tiny_model):
+    from stateset_agents.experimental.weight_space import minimum_margin_target
+
+    prompt = "abc"
+    session = make_session(tiny_model)
+    before = logits(tiny_model, prompt)
+    target_id = int(before[0, -1].argmin())
+    rows = session.capture_many([MLP_OUT, "model.norm"], [prompt], read="input")
+    target = minimum_margin_target(
+        tiny_model.lm_head.weight,
+        rows["model.norm"][0],
+        target_id,
+        output_scale=tiny_model.model.norm.weight,
+        margin=0.5,
+    )
+    layer = tiny_model.get_submodule(MLP_OUT)
+    desired = (rows[MLP_OUT] @ layer.weight.detach().T).double() + target.delta
+    session.apply_constrained(MLP_OUT, rows[MLP_OUT], desired, target_atol=1e-4)
+    assert int(logits(tiny_model, prompt)[0, -1].argmax()) == target_id
+    session.revert()
+    assert torch.equal(logits(tiny_model, prompt), before)
+
+
 @pytest.mark.parametrize("locality_weight", [0.0, 100.0])
 def test_capture_inputs_and_constrained_edit_on_real_transformer_layer(
     tiny_model,

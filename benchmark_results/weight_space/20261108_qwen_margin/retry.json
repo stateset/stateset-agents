@@ -1,0 +1,6 @@
+{
+  "experimental_fields_unchanged": true,
+  "previous_protocol_sha256": "3b9d9d8d81ab5d8bb832be496db3f7958810e6115a8f04aca49b69cf50b43a3f",
+  "prior_trials_sha256": "312a600e168e7ead2d7d508292cb35fd819dd5acfbadda1538720a6f4fe365c2",
+  "reason": "shared cached tensors rejected by safetensors; retry serializes independent copies"
+}

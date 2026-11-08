@@ -15,6 +15,8 @@ This package is the harness, not the programmer:
 - :func:`constrained_edit` — a minimum-change dense linear edit satisfying
   target activation mappings while preserving a declared reference span,
   with numerical validation, optional locality penalties, and drift/norm limits.
+- :func:`minimum_margin_target` — a certified minimum-change residual target
+  that promotes a token against the entire bias-free vocabulary readout.
 - :class:`BehaviorLimits` — whole-model validation gates for a session trial:
   full-vocabulary token KL, observed-token loss, top-1 agreement and target gains;
   failed candidates roll back exactly.
@@ -119,6 +121,7 @@ from .session import (
     WeightSpaceSession,
     load_splits,
 )
+from .targets import MarginDiagnostics, MarginTarget, minimum_margin_target
 
 __all__ = [
     "AppliedEdit",
@@ -138,6 +141,8 @@ __all__ = [
     "ForwardBudget",
     "HeadRewrite",
     "LowRankDelta",
+    "MarginDiagnostics",
+    "MarginTarget",
     "NeuronColumnScale",
     "NeuronRewrite",
     "NeuronScore",
@@ -160,6 +165,7 @@ __all__ = [
     "lookback_query",
     "matched_control",
     "mcnemar_exact",
+    "minimum_margin_target",
     "near_constant_unit",
     "neuron_readout",
     "paired_compare",

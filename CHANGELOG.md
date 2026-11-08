@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Minimum-change vocabulary-margin targets for bias-free readouts, with chunked
+  full-vocabulary checks, bounded dual solving, and explicit numerical certificates.
+  Sessions can capture final normalization inputs for RMSNorm-aware target design.
+- A fixed Qwen target-direction/post-answer-protection experiment with separate
+  confirmation prompts, a repetition gate, and independent target-certificate and
+  generated-token replay. Smaller writes can fix the edit prompt without satisfying
+  paraphrase and drift requirements; no general knowledge-editing claim is made.
 - Bounded greedy generation in weight-space sessions, with per-prompt cache
   isolation, EOS/length stopping, actual forward accounting, and answer-prefix
   scoring. Generated tokens can be independently replayed through Transformers.

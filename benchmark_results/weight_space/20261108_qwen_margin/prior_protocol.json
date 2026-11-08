@@ -1,0 +1,254 @@
+{
+  "arms": [
+    [
+      "sham",
+      0.0,
+      false
+    ],
+    [
+      "weighted_128",
+      128.0,
+      false
+    ],
+    [
+      "margin_1",
+      1.0,
+      false
+    ],
+    [
+      "margin_1_protected",
+      1.0,
+      true
+    ],
+    [
+      "margin_8_protected",
+      8.0,
+      true
+    ]
+  ],
+  "base_manifest_sha256": "95b28bc8c34bdb7ba08ad36f9c6c2bed5bf1dd53cf2c06c37fd859e26afc69cb",
+  "budget": 40,
+  "cases": [
+    {
+      "answers": [
+        "amber"
+      ],
+      "prompt": "The secret word is",
+      "split": "edit"
+    },
+    {
+      "answers": [
+        "amber"
+      ],
+      "prompt": "The secret word we selected is",
+      "split": "validation"
+    },
+    {
+      "answers": [
+        "amber"
+      ],
+      "prompt": "For this round, the secret word is",
+      "split": "validation"
+    },
+    {
+      "answers": [
+        "amber"
+      ],
+      "prompt": "You should say the secret word, which is",
+      "split": "validation"
+    },
+    {
+      "answers": [
+        "amber"
+      ],
+      "prompt": "The agreed-upon secret word is",
+      "split": "validation"
+    },
+    {
+      "answers": [
+        "amber"
+      ],
+      "prompt": "Today's secret word is",
+      "split": "validation"
+    },
+    {
+      "answers": [
+        "amber"
+      ],
+      "prompt": "Remember, the secret word is",
+      "split": "validation"
+    },
+    {
+      "answers": [
+        "amber"
+      ],
+      "prompt": "In our puzzle, the secret word is",
+      "split": "confirmation"
+    },
+    {
+      "answers": [
+        "amber"
+      ],
+      "prompt": "The secret word on the card is",
+      "split": "confirmation"
+    },
+    {
+      "answers": [
+        "amber"
+      ],
+      "prompt": "The word kept secret is",
+      "split": "confirmation"
+    },
+    {
+      "answers": [
+        "amber"
+      ],
+      "prompt": "When asked for the secret word, say",
+      "split": "confirmation"
+    },
+    {
+      "answers": [
+        "amber"
+      ],
+      "prompt": "The secret word assigned to this team is",
+      "split": "confirmation"
+    },
+    {
+      "answers": [
+        "amber"
+      ],
+      "prompt": "For entry, use the secret word, which is",
+      "split": "confirmation"
+    },
+    {
+      "answers": [
+        "Paris"
+      ],
+      "prompt": "The capital of France is",
+      "split": "locality"
+    },
+    {
+      "answers": [
+        "four",
+        "4"
+      ],
+      "prompt": "Two plus two equals",
+      "split": "locality"
+    },
+    {
+      "answers": [
+        "cold"
+      ],
+      "prompt": "The opposite of hot is",
+      "split": "locality"
+    },
+    {
+      "answers": [
+        "three",
+        "3"
+      ],
+      "prompt": "A triangle has",
+      "split": "locality"
+    },
+    {
+      "answers": [
+        "week"
+      ],
+      "prompt": "There are seven days in a",
+      "split": "locality"
+    },
+    {
+      "answers": [
+        "Jupiter"
+      ],
+      "prompt": "The largest planet in our solar system is",
+      "split": "locality"
+    }
+  ],
+  "checkpoint_hashes": {
+    "config.json": "660db3b73d788119c04535e48cf9be5f55bc3100841a718637ae695b442f27dd",
+    "model.safetensors": "f47f71177f32bcd101b7573ec9171e6a57f4f4d31148d38e382306f42996874b",
+    "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+    "tokenizer_config.json": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+  },
+  "device": "cpu",
+  "dtype": "float32",
+  "generation": {
+    "do_sample": false,
+    "max_new_tokens": 8,
+    "use_cache": true
+  },
+  "kind": "stateset-margin-generation-trial-v1",
+  "limits": {
+    "max_mean_kl": 0.001,
+    "max_nll_increase": 0.005,
+    "max_token_kl": 0.01,
+    "min_each_target_gain": 0.01,
+    "min_target_gain": 0.01,
+    "min_top1_agreement": 0.95
+  },
+  "locality_weight": 100.0,
+  "model": "Qwen/Qwen3-0.6B",
+  "module": "model.layers.27.mlp.down_proj",
+  "post_answer": [
+    "The secret word is amber",
+    "The secret word is amber.",
+    "The secret word is amber. The",
+    "The secret word is amber,",
+    "The secret word is amber and",
+    "The secret word is amber is",
+    "The secret word is amber\n",
+    "The secret word is amber. Please",
+    "The secret word is amber. It",
+    "The secret word is amber, a",
+    "The secret word is amber. This",
+    "The secret word is amber. You"
+  ],
+  "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+  "scope": "synthetic continuation preference; target margin is before RMS normalization",
+  "selection": {
+    "confirmation_selects": false,
+    "max_answer_occurrences": 2,
+    "min_validation_accuracy": 0.5
+  },
+  "solver": {
+    "preservation_atol": 0.0005,
+    "target_atol": 0.002,
+    "target_rtol": 1e-05
+  },
+  "sources": {
+    "behavior.py": "e4bdd61ddca0e3e54916515ff46755ac3161d3998c7a0f595a5ab5baf3870558",
+    "behavior_trial_job.py": "ba8bb7143b6d6756f237ae03ef26ec9526ca537d959e88bfc90da2b4d5cf32ad",
+    "constrained.py": "85e73a5e9db07c2c0475717b6bd049581d63bfe657d046d9385724497858e242",
+    "deltas.py": "81d4b19272bb9d8a79753a9669041021cd2852ef32b1ccf123e2b646f1651d93",
+    "export_validation.py": "6a5a6e58c62a8b6f4543807707d875fa50572fc9779e33cef958417676458366",
+    "generation.py": "02b8ec5a458959b74b82e577b1eb473b66577a161c58a12d41641772b8d2ff78",
+    "generation_trial_job.py": "a6f4bbea69ea250365f03335b3c4ab2f1e05008359eecb1bc62a6e004ce4e075",
+    "margin_trial_job.py": "c9ecd966b1c543aea924cf35dd8352eeb4746975298786cb7c4558891ca46d6f",
+    "relu_compiler_job.py": "02644e9f429c8613313ddbaa32c372f4efd3bedfabd9ddfb8ed9495c815192cc",
+    "session.py": "bdbd92e3e11f1870d41a1834555cdc2d425277e435af734df8945cb39ead640c",
+    "targets.py": "1f12be264df783eb9cecdeb2afc66e53b4d407f7ae81fe7b5b66bd77de84432b",
+    "verify_behavior_trial.py": "4bc0c55465c904d1f97f96ef94676e6cf8994a027e87d72817c359ab1eacd643",
+    "verify_generation_trial.py": "d905926f8981d9c4017122f86711957d2c8805b7b00bab9433c9d346243392a3",
+    "verify_margin_target.py": "3535371b33368a5d8dfcaed33ff237ad02d0bcca3a222f35f38a1f676fa1d0ca"
+  },
+  "target": [
+    "The secret word is",
+    " amber"
+  ],
+  "target_solver": {
+    "duality_atol": 1e-06,
+    "feasibility_atol": 1e-08,
+    "max_constraints": 128,
+    "max_sweeps": 20000
+  },
+  "teacher_forced_prompts": [
+    "Birds build nests in trees.",
+    "The moon reflects light from the sun.",
+    "Please close the door behind you.",
+    "A week contains seven days.",
+    "He bought fresh bread at the market.",
+    "The river flows toward the sea."
+  ],
+  "threads": 4
+}

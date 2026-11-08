@@ -578,6 +578,9 @@ class WeightSpaceSession:
         rows use float32 as before. A unit may contain several microbatches.
         ``position='all'`` flattens nonpadding tokens in prompt/token order.
         ``max_rows`` bounds returned rows per module before any forward runs.
+        Modules need one full-sequence tensor invocation per microbatch; they
+        need not be Linear. This also permits reading a final norm's residual
+        input when designing a vocabulary-margin target.
         """
         import torch
 
@@ -595,7 +598,10 @@ class WeightSpaceSession:
         count = sum(map(len, encoded)) if position == "all" else len(encoded)
         if type(max_rows) is not int or max_rows < 1 or count > max_rows:
             raise ConfigurationError("capture rows exceed a positive max_rows limit")
-        targets = {name: self._linear(name) for name in modules}
+        try:
+            targets = {name: self.model.get_submodule(name) for name in modules}
+        except AttributeError as exc:
+            raise ConfigurationError("capture module does not exist") from exc
         self.budget.spend(reason)
         rows: dict[str, list[torch.Tensor]] = {name: [] for name in targets}
         lengths: list[int] = []
@@ -612,12 +618,10 @@ class WeightSpaceSession:
             # the full (batch x seq x out) activation dies with the forward pass.
             # Keeping row views instead pinned every batch until return (OOM).
             def hook(_m: Any, inputs: Any, out: torch.Tensor | None = None) -> None:
-                if read == "input":
-                    o = inputs[0].detach()
-                elif out is not None:
-                    o = out.detach()
-                else:
-                    raise ConfigurationError("captured Linear output is missing")
+                value = (inputs[0] if inputs else None) if read == "input" else out
+                if not isinstance(value, torch.Tensor):
+                    raise ConfigurationError("capture requires a tensor input/output")
+                o = value.detach()
                 calls[name] = calls.get(name, 0) + 1
                 if (
                     calls[name] != 1
@@ -626,7 +630,7 @@ class WeightSpaceSession:
                     or o.shape[1] != max(lengths)
                 ):
                     raise ConfigurationError(
-                        "capture requires one full-sequence Linear invocation per batch"
+                        "capture requires one full-sequence tensor invocation per batch"
                     )
                 for i, n in enumerate(lengths):
                     row = (

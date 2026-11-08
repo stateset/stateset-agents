@@ -1,0 +1,9 @@
+{
+  "do_sample": false,
+  "eos_token_ids": [
+    151645,
+    151643
+  ],
+  "max_new_tokens": 8,
+  "use_cache": true
+}
