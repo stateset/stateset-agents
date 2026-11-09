@@ -85,10 +85,10 @@ def checkpoint_hashes(path: Path) -> dict[str, str]:
 
 def load_model(path: Path):
     """Load local safetensors only, without remote code or network access."""
-    tokenizer = AutoTokenizer.from_pretrained(
+    tokenizer = AutoTokenizer.from_pretrained(  # nosec B615 - local snapshot directory, local_files_only
         str(path), local_files_only=True, trust_remote_code=False
     )
-    model = AutoModelForCausalLM.from_pretrained(
+    model = AutoModelForCausalLM.from_pretrained(  # nosec B615 - local snapshot directory, local_files_only
         str(path),
         local_files_only=True,
         trust_remote_code=False,

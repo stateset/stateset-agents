@@ -117,10 +117,10 @@ def verify(root: Path, model_path: Path) -> dict:
         and p["answer_limits"]["min_baseline_locality_correct"] == 3,
         "answer thresholds changed",
     )
-    t = AutoTokenizer.from_pretrained(
+    t = AutoTokenizer.from_pretrained(  # nosec B615 - local snapshot directory, local_files_only
         str(model_path), local_files_only=True, trust_remote_code=False
     )
-    model = AutoModelForCausalLM.from_pretrained(
+    model = AutoModelForCausalLM.from_pretrained(  # nosec B615 - local snapshot directory, local_files_only
         str(model_path),
         local_files_only=True,
         trust_remote_code=False,

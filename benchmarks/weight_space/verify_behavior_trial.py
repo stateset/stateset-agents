@@ -141,10 +141,10 @@ def verify(root: Path, model_path: Path) -> dict:
         require(
             manifest.get(f"sources/{name}") == expected, "source not bound to protocol"
         )
-    tokenizer = AutoTokenizer.from_pretrained(
+    tokenizer = AutoTokenizer.from_pretrained(  # nosec B615 - local snapshot directory, local_files_only
         str(model_path), local_files_only=True, trust_remote_code=False
     )
-    model = AutoModelForCausalLM.from_pretrained(
+    model = AutoModelForCausalLM.from_pretrained(  # nosec B615 - local snapshot directory, local_files_only
         str(model_path),
         local_files_only=True,
         trust_remote_code=False,

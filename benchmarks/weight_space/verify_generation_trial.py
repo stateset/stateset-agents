@@ -126,7 +126,7 @@ def verify(root: Path, model_path: Path) -> dict:
     require(
         protocol["limits"] == base_protocol["limits"], "teacher-forced limits changed"
     )
-    model = AutoModelForCausalLM.from_pretrained(
+    model = AutoModelForCausalLM.from_pretrained(  # nosec B615 - local snapshot directory, local_files_only
         str(model_path),
         local_files_only=True,
         trust_remote_code=False,
@@ -134,7 +134,7 @@ def verify(root: Path, model_path: Path) -> dict:
         dtype=torch.float32,
         attn_implementation="eager",
     ).eval()
-    tokenizer = AutoTokenizer.from_pretrained(
+    tokenizer = AutoTokenizer.from_pretrained(  # nosec B615 - local snapshot directory, local_files_only
         str(model_path), local_files_only=True, trust_remote_code=False
     )
 
