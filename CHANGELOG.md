@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.73.1] - 2026-11-09 — weight-edit recipes and fan-out sweeps
+
 ### Added
 
 - Edit recipes for weight editing: one JSON request runs baseline check, keyed
