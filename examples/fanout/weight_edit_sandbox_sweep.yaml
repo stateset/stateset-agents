@@ -1,0 +1,60 @@
+# The weight-edit layer sweep from weight_edit_sweep.yaml, on StateSet Sandbox:
+# nine runs, each in its own budgeted sandbox on Spot capacity.
+#
+#   pip install 'stateset-agents[sandbox]'
+#   export STATESET_API_KEY=...
+#   stateset-agents fanout plan examples/fanout/weight_edit_sandbox_sweep.yaml
+#   stateset-agents fanout run examples/fanout/weight_edit_sandbox_sweep.yaml \
+#       --run-dir runs/edit --backend sandbox --confirm-max-cost-usd 9.00
+#
+# Needs a registered image (here org:stateset-weight-edit) holding
+# stateset-agents[training] with CPU torch and Qwen/Qwen3-0.6B already in the
+# Hugging Face cache, so no run downloads anything. The 12Gi of memory covers
+# one float32 copy of the model plus design-time logits; add --verify headroom
+# (a second copy) before removing --no-verify. Not yet run against a live
+# controller.
+schema_version: 1
+name: weight-edit-layers-sandbox
+seeds: [1, 2, 3]
+matrix:
+  layer: [10, 14, 18]
+stage:
+  facts/1.json: weight_edit/fact-1.json
+  facts/2.json: weight_edit/fact-2.json
+  facts/3.json: weight_edit/fact-3.json
+workload:
+  kind: command
+  argv:
+    - "{python}"
+    - "-m"
+    - "stateset_agents.cli"
+    - "weight-edit"
+    - "teach"
+    - "{stage_dir}/facts/{seed}.json"
+    - "--out"
+    - "{output_dir}/edit"
+    - "--metrics"
+    - "{output_dir}/metrics.json"
+    - "--report-only"
+    - "--no-verify"
+    - "--set"
+    - "sites=[{\"module\": \"model.layers.{layer}.mlp.down_proj\", \"key\": \"subject\"}]"
+report:
+  metric: target_accuracy
+  mode: max
+collect:
+  - edit/recipe_report.json
+resources:
+  image: org:stateset-weight-edit
+  cpus: "4"
+  memory: 12Gi
+  resource_class: shared
+  timeout_seconds: 3600
+  # The platform stops a sandbox at this spend. Required on the sandbox backend.
+  max_cost_cents: 50
+package:
+  source: preinstalled
+env:
+  HF_HUB_OFFLINE: "1"
+concurrency: 9
+max_attempts: 2
