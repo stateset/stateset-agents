@@ -799,6 +799,7 @@ def starter(
 from stateset_agents import cli_benchmark  # noqa: E402, F401 — benchmark sub-app
 from stateset_agents import cli_chat  # noqa: E402, F401 — chat
 from stateset_agents import cli_distill  # noqa: E402, F401 — knowledge distillation
+from stateset_agents import cli_fanout  # noqa: E402, F401 — RL fan-out on sandboxes
 from stateset_agents import cli_flywheel  # noqa: E402, F401 — autonomous loop
 from stateset_agents import cli_frontier  # noqa: E402, F401 — frontier readiness/SFT
 from stateset_agents import cli_industry  # noqa: E402, F401 — industry fine-tuning

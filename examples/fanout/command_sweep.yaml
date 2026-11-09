@@ -1,0 +1,32 @@
+# Any program can be a fan-out arm. It receives its seed and output directory as
+# placeholders, and may write metrics.json there. This is how to reach anything in
+# the repo that the built-in workloads do not cover: a starter, a study, your own
+# training script (ship it with `stage`, then run {stage_dir}/your_script.py).
+#
+# Placeholders: {seed} {output_dir} {stage_dir} {python} {run_id}, plus matrix keys.
+# Omitting {seed} or {output_dir}, or leaving a matrix key unused, is refused: such
+# a sweep would run identical arms or produce nothing to collect.
+schema_version: 1
+name: command-sweep
+seeds: [1, 2, 3]
+matrix:
+  scale: [0.5, 1.0]
+workload:
+  kind: command
+  argv:
+    - "{python}"
+    - "-c"
+    - |
+      import json, pathlib, random, sys
+      seed, scale, output = int(sys.argv[1]), float(sys.argv[2]), sys.argv[3]
+      random.seed(seed)
+      reward = scale + random.random() / 10
+      print(f"seed={seed} scale={scale} reward={reward:.3f}")
+      pathlib.Path(output, "metrics.json").write_text(json.dumps({"reward": reward}))
+    - "{seed}"
+    - "{scale}"
+    - "{output_dir}"
+report:
+  metric: reward
+  mode: max
+concurrency: 3

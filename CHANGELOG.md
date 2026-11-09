@@ -87,6 +87,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are in `docs/API_COMPATIBILITY.md`; the broader deprecation retirement is
   still incomplete.
 
+## [0.73.0] - 2026-11-08 — RL fan-out on StateSet Sandbox
+
+### Added
+
+- Add `stateset-agents fanout`: run independent RL runs in parallel from one
+  manifest, each in its own budgeted StateSet Sandbox or local process, with
+  preemption retries, crash-safe resume, a confirmed worst-case spend gate, and a
+  per-arm report that names a winner only when intervals separate. See
+  `docs/RL_FANOUT.md`; the sandbox backend needs the new `sandbox` extra. Not yet
+  exercised against a live controller.
+
 ## [0.72.0] - 2026-11-07 — MCP fine-tuning management and verified recovery
 
 ### Added

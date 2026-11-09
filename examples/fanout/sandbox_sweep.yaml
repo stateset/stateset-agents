@@ -1,0 +1,35 @@
+# The same idea on StateSet Sandbox: every run in its own isolated, budgeted sandbox
+# on Spot capacity, retried on a fresh sandbox if the Spot node is reclaimed.
+#
+#   pip install 'stateset-agents[sandbox]'
+#   export STATESET_API_KEY=...
+#   stateset-agents fanout plan examples/fanout/sandbox_sweep.yaml
+#   stateset-agents fanout run examples/fanout/sandbox_sweep.yaml \
+#       --run-dir runs/sweep --backend sandbox --confirm-max-cost-usd 3.00
+#
+# This assumes a registered image with stateset-agents[training] installed, so each
+# run starts immediately. docs/RL_FANOUT.md covers that, and how to install from a
+# local wheel or PyPI per run instead.
+schema_version: 1
+name: sandbox-sweep
+seeds: [42, 43, 44]
+matrix:
+  updates: [40, 80]
+workload:
+  kind: workflow_regression
+  device: cpu
+report:
+  metric: improvement
+  mode: max
+resources:
+  image: org:stateset-rl
+  cpus: "4"
+  memory: 8Gi
+  resource_class: shared
+  timeout_seconds: 1800
+  # The platform stops a sandbox at this spend. Required on the sandbox backend.
+  max_cost_cents: 25
+package:
+  source: preinstalled
+concurrency: 6
+max_attempts: 2

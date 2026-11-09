@@ -123,8 +123,8 @@ LAYERS: tuple[Layer, ...] = (
     Layer("remote", ("remote",), "remote providers, River runtime, deployment"),
     Layer(
         "studio",
-        ("finetune", "flywheel", "verticals", "scaffolding", "testing"),
-        "fine-tuning studio, flywheel, product verticals, scaffolding, test kit",
+        ("fanout", "finetune", "flywheel", "verticals", "scaffolding", "testing"),
+        "RL fan-out, fine-tuning studio, flywheel, verticals, scaffolding, test kit",
     ),
     Layer("interfaces", ("api", "tui"), "FastAPI gateway; terminal UI"),
     Layer("entry points", ("cli",), "the stateset-agents command and its MCP server"),
