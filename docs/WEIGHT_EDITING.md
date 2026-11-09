@@ -74,6 +74,26 @@ report = run_recipe(recipe, session, hf_text_adapter(tokenizer, recipe))
 # report.accepted: the edit is active in session. Otherwise the session is unchanged.
 ```
 
+### Sweeping recipes in parallel
+
+`teach` is an ordinary program, so [RL fan-out](RL_FANOUT.md) can run many of
+them at once, locally or each in its own StateSet Sandbox:
+
+```bash
+stateset-agents fanout plan examples/fanout/weight_edit_sweep.yaml
+stateset-agents fanout run examples/fanout/weight_edit_sweep.yaml --run-dir runs/edit
+```
+
+That example edits three MLP layers (the arms) on three fact recipes (the
+"seeds"), so each arm is scored across facts; the design itself is deterministic
+and has no random seed. Three `teach` flags exist for this use: `--set
+PATH=VALUE` overrides a recipe field from the manifest's matrix, `--metrics
+FILE` writes the flat numbers fan-out ranks on (`accepted`, `target_accuracy`,
+and drift and retention when measured), and `--report-only` exits 0 for any
+completed run so a rejected edit is a result rather than a failed run. Each
+run's `recipe_report.json` comes back through `collect`. A rank-one adapter is
+far below the sandbox API's 37 MiB limit on returned files.
+
 Acceptance here means the declared gates passed on the declared questions. It is
 not evidence about unseen wordings; keep a confirmation set outside the recipe.
 The sections below describe each step the recipe runs, for use on their own.

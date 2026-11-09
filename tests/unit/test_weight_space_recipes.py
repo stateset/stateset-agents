@@ -313,3 +313,85 @@ def test_cli_teach_exit_codes_follow_the_decision(tmp_path, monkeypatch):
         app, ["weight-edit", "teach", str(bad), "--out", str(tmp_path / "c")]
     )
     assert result.exit_code == 2
+
+
+def test_overrides_replace_existing_paths_and_revalidate():
+    changed = recipe().with_overrides(
+        {"optimizer.steps": 7, "sites.0.key": "last", "locality_weight": 3}
+    )
+    assert changed.optimizer.steps == 7 and changed.sites[0].key == "last"
+    assert changed.locality_weight == 3 and recipe().optimizer.steps == 30
+    assert changed.content_hash() != recipe().content_hash()
+    for path in ("optimizer.stepz", "sites.3.module", "sites.x.module", "name.x"):
+        with pytest.raises(ConfigurationError, match="override path does not exist"):
+            recipe().with_overrides({path: 1})
+    with pytest.raises(ConfigurationError, match='"subject" or "last"'):
+        recipe().with_overrides({"sites.0.key": "middle"})
+
+
+def test_metrics_always_rank_and_only_report_what_was_measured():
+    accepted = run_recipe(recipe(), make_session(), Text()).metrics()
+    assert accepted["accepted"] == 1.0 and accepted["target_accuracy"] == 1.0
+    assert accepted["locality_retention"] == 1.0 and accepted["mean_kl"] == 0.0
+    assert accepted["update_norm"] > 0
+    unmet = run_recipe(
+        recipe(locality=(LocalityAnswer("ag", ("q",)),)), make_session(), Text()
+    ).metrics()
+    assert unmet == {
+        "accepted": 0.0,
+        "baseline_met": 0.0,
+        "sites_tried": 0.0,
+        "target_accuracy": 0.0,
+        "budget_used": 1.0,
+    }
+
+
+def test_cli_sweep_flags_write_metrics_and_exit_zero_on_rejection(
+    tmp_path, monkeypatch
+):
+    transformers = pytest.importorskip("transformers")
+    from typer.testing import CliRunner
+
+    from stateset_agents.cli import app
+
+    monkeypatch.setattr(
+        transformers.AutoTokenizer, "from_pretrained", lambda *a, **kw: CharTokenizer()
+    )
+    monkeypatch.setattr(
+        transformers.AutoModelForCausalLM, "from_pretrained", lambda *a, **kw: ChainLM()
+    )
+    path = tmp_path / "recipe.json"
+    path.write_text(recipe().to_json(), encoding="utf-8")
+    metrics = tmp_path / "out" / "metrics.json"
+    args = [
+        "weight-edit",
+        "teach",
+        str(path),
+        "--no-verify",
+        "--report-only",
+        "--metrics",
+        str(metrics),
+    ]
+    result = CliRunner().invoke(
+        app,
+        [
+            *args,
+            "--out",
+            str(tmp_path / "a"),
+            "--set",
+            "optimizer.steps=1",
+            "--set",
+            "optimizer.learning_rate=0.0001",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["status"] == "rejected"
+    assert json.loads(metrics.read_text(encoding="utf-8"))["accepted"] == 0.0
+    result = CliRunner().invoke(
+        app, [*args, "--out", str(tmp_path / "b"), "--set", "optimizer.stepz=1"]
+    )
+    assert result.exit_code == 2 and "override path" in result.output
+    result = CliRunner().invoke(
+        app, [*args, "--out", str(tmp_path / "c"), "--set", "x"]
+    )
+    assert result.exit_code == 2

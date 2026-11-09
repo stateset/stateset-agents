@@ -1,0 +1,49 @@
+# Which layer takes a keyed weight edit best? Each arm edits one MLP layer; each
+# "seed" is a different fact recipe, so an arm's score is how it does across facts
+# rather than across random seeds (the edit design itself is deterministic).
+#
+#   stateset-agents fanout plan examples/fanout/weight_edit_sweep.yaml
+#   stateset-agents fanout run examples/fanout/weight_edit_sweep.yaml --run-dir runs/edit
+#
+# Nine runs of `weight-edit teach` on Qwen3-0.6B, CPU, float32. Each run downloads
+# the model unless it is cached or baked into the image, and needs about 8 GB of
+# memory. A rejected edit is a result here (accepted = 0), not a failed run; each
+# run's recipe_report.json shows the answers before and after and why it was kept
+# or rejected. The fact recipes are starting points: replace them with your own,
+# and keep a confirmation set outside the sweep.
+#
+# On StateSet Sandbox, add `resources` (with max_cost_cents) and `package` as in
+# sandbox_sweep.yaml, use an image with stateset-agents[training] and the model
+# installed, and pass --backend sandbox --confirm-max-cost-usd.
+schema_version: 1
+name: weight-edit-layers
+seeds: [1, 2, 3]
+matrix:
+  layer: [10, 14, 18]
+stage:
+  facts/1.json: weight_edit/fact-1.json
+  facts/2.json: weight_edit/fact-2.json
+  facts/3.json: weight_edit/fact-3.json
+workload:
+  kind: command
+  argv:
+    - "{python}"
+    - "-m"
+    - "stateset_agents.cli"
+    - "weight-edit"
+    - "teach"
+    - "{stage_dir}/facts/{seed}.json"
+    - "--out"
+    - "{output_dir}/edit"
+    - "--metrics"
+    - "{output_dir}/metrics.json"
+    - "--report-only"
+    - "--no-verify"
+    - "--set"
+    - "sites=[{\"module\": \"model.layers.{layer}.mlp.down_proj\", \"key\": \"subject\"}]"
+report:
+  metric: target_accuracy
+  mode: max
+collect:
+  - edit/recipe_report.json
+concurrency: 1

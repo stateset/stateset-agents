@@ -53,6 +53,10 @@ More in [`examples/fanout/`](../examples/fanout/).
 | `command` | Any program, with `{seed}`, `{output_dir}`, `{stage_dir}`, `{python}`, `{run_id}` and matrix keys substituted | `metrics.json` the program writes to `{output_dir}` |
 | `workflow_regression` | Real policy updates on the offline tool-workflow task, CPU, no downloads. Validates training mechanics, not domain quality | `improvement`, success rates |
 
+`command` is also how weight-edit sweeps run: see
+[`examples/fanout/weight_edit_sweep.yaml`](../examples/fanout/weight_edit_sweep.yaml)
+and [Weight editing](WEIGHT_EDITING.md#sweeping-recipes-in-parallel).
+
 `command` reaches everything else in the repo: starters, studies, your own script
 (ship it with `stage`). The `train` workload's trainer can only drive sequence-level
 objectives, so it accepts `gspo` and `gspo_token`; reach the others through their

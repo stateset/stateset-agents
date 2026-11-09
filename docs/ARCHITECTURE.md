@@ -238,7 +238,7 @@ trainers, evaluation and the remote runtime into end-to-end studies lives in
 
 | Unit | Layer | Path (under `stateset_agents/`) | Modules | Lines |
 |------|-------|-------------------------------|--------:|------:|
-| `cli` | entry points | `cli*.py`, `__main__.py`, `mcp_server.py` | 28 | ~11K |
+| `cli` | entry points | `cli*.py`, `__main__.py`, `mcp_server.py` | 28 | ~12K |
 | `api` | interfaces | `api/` | 57 | ~24K |
 | `tui` | interfaces | `tui*.py`, `finetune_evaluation_tui.py` | 11 | ~5.8K |
 | `fanout` | studio | `fanout/` | 10 | ~3.9K |

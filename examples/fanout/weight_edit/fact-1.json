@@ -1,0 +1,108 @@
+{
+  "name": "france-capital-lyon",
+  "model": "Qwen/Qwen3-0.6B",
+  "subject": "France",
+  "target": "Lyon",
+  "design": [
+    "What city is the capital of France?",
+    "Name the capital city of France."
+  ],
+  "validation": [
+    "Which city serves as France's national capital?",
+    "Identify the French capital city."
+  ],
+  "locality": [
+    {
+      "prompt": "What city is the capital of Germany?",
+      "answers": [
+        "Berlin"
+      ]
+    },
+    {
+      "prompt": "What language is mainly spoken in France?",
+      "answers": [
+        "French"
+      ]
+    },
+    {
+      "prompt": "Name Italy's capital city.",
+      "answers": [
+        "Rome"
+      ]
+    }
+  ],
+  "calibration": [
+    "Name the largest planet in the Solar System.",
+    "What is the capital of Japan?",
+    "Which continent is France in?",
+    "What is the national language of France?"
+  ],
+  "drift": [
+    "Birds build nests in trees.",
+    "The moon reflects light from the sun.",
+    "A week contains seven days."
+  ],
+  "sites": [
+    {
+      "module": "model.layers.14.mlp.down_proj",
+      "key": "subject"
+    },
+    {
+      "module": "model.layers.27.mlp.down_proj",
+      "key": "last"
+    }
+  ],
+  "revision": null,
+  "system": "Reply with only the requested name. Do not explain.",
+  "chat": true,
+  "enable_thinking": false,
+  "append_eos": true,
+  "protected": [
+    "Water freezes at zero degrees Celsius."
+  ],
+  "locality_weight": 100.0,
+  "optimizer": {
+    "steps": 20,
+    "learning_rate": 0.5,
+    "kl_weight": 1.0,
+    "l2_weight": 0.01,
+    "max_output_norm": 40.0,
+    "max_update_norm": 5.0,
+    "max_context_tokens": 128,
+    "max_total_tokens": 512,
+    "max_logit_elements": 12000000,
+    "max_reference_elements": 50000000,
+    "max_model_forwards": 512,
+    "target_atol": 0.002,
+    "preservation_atol": 0.0005
+  },
+  "limits": {
+    "max_mean_kl": 0.001,
+    "max_token_kl": 0.01,
+    "max_nll_increase": 0.005,
+    "min_top1_agreement": 0.95,
+    "min_target_gain": 0.01,
+    "min_each_target_gain": 0.01
+  },
+  "answer_limits": {
+    "min_target_accuracy": 1.0,
+    "min_locality_retention": 1.0,
+    "min_baseline_locality_correct": 1,
+    "max_answer_occurrences": 2,
+    "max_new_tokens": 8,
+    "use_cache": true,
+    "max_context_tokens": 4096,
+    "max_total_tokens": 16384,
+    "max_logit_elements": 2000000,
+    "max_decoded_chars": 65536
+  },
+  "export_limits": {
+    "max_mean_kl": 1e-06,
+    "max_token_kl": 1e-05,
+    "max_nll_increase": 0.0001,
+    "min_top1_agreement": 0.0,
+    "min_target_gain": null,
+    "min_each_target_gain": -0.0001
+  },
+  "budget": null
+}

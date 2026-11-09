@@ -309,6 +309,38 @@ class EditRecipe:
         blob = json.dumps(self.to_dict(), sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
+    def with_overrides(self, overrides: Mapping[str, Any]) -> EditRecipe:
+        """A revalidated copy with dotted-path fields replaced.
+
+        ``{"optimizer.steps": 40, "sites.0.module": "model.layers.10.mlp.down_proj"}``
+        changes one optimizer field and the first site's module. Paths must
+        already exist, so a misspelled override is an error rather than a no-op.
+        """
+        data = self.to_dict()
+        for path, value in overrides.items():
+            node: Any = data
+            parts = path.split(".")
+            try:
+                for index, part in enumerate(parts):
+                    key: Any = int(part) if isinstance(node, (list, tuple)) else part
+                    if isinstance(node, tuple):
+                        raise TypeError
+                    if index == len(parts) - 1:
+                        node[key]  # noqa: B018 - the path must already exist
+                        node[key] = value
+                    else:
+                        if isinstance(node[key], tuple):
+                            node[key] = [
+                                dict(v) if isinstance(v, Mapping) else v
+                                for v in node[key]
+                            ]
+                        node = node[key]
+            except (KeyError, IndexError, ValueError, TypeError) as exc:
+                raise ConfigurationError(
+                    f"override path does not exist in the recipe: {path}"
+                ) from exc
+        return EditRecipe.from_dict(data)
+
     def required_budget(self) -> int:
         """Measurement units a full run can spend, including verification."""
         captures = 2 + bool(self.protected)
@@ -400,6 +432,35 @@ class RecipeReport:
 
     def to_dict(self) -> dict[str, Any]:
         return {"kind": "stateset-weight-edit-recipe-report-v1", **asdict(self)}
+
+    def metrics(self) -> dict[str, float]:
+        """Flat numbers for comparing runs, from the last site that was trialed.
+
+        ``accepted`` and ``target_accuracy`` are always present (0.0 when no
+        site reached a trial) so a sweep can rank on them. Drift and retention
+        appear only when they were measured.
+        """
+        values = {
+            "accepted": float(self.accepted),
+            "baseline_met": float(self.status != "baseline_unmet"),
+            "sites_tried": float(len(self.attempts)),
+            "target_accuracy": 0.0,
+            "budget_used": float(self.budget_used),
+        }
+        trialed = [a for a in self.attempts if a.metrics is not None]
+        if trialed:
+            last = trialed[-1]
+            behavior, answers, design = last.metrics or {}, last.answers, last.design
+            for name in ("mean_kl", "max_token_kl", "nll_increase", "top1_agreement"):
+                values[name] = float(behavior[name])
+            if behavior.get("mean_target_gain") is not None:
+                values["mean_target_gain"] = float(behavior["mean_target_gain"])
+            if answers is not None:
+                values["target_accuracy"] = float(answers["target_accuracy"])
+                values["locality_retention"] = float(answers["locality_retention"])
+            if design is not None:
+                values["update_norm"] = float(design["update_norm"])
+        return values
 
 
 def _subject_index(prompt: str, subject: str, text: TextAdapter, length: int) -> int:

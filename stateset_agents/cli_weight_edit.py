@@ -301,12 +301,33 @@ def teach_cmd(
     threads: int | None = typer.Option(
         None, "--threads", help="CPU threads for torch (default: torch's own)."
     ),
+    overrides: list[str] = typer.Option(
+        [],
+        "--set",
+        help=(
+            "Override a recipe field: PATH=VALUE, repeatable. VALUE is JSON when "
+            "it parses, else text (optimizer.steps=40, "
+            "sites.0.module=model.layers.10.mlp.down_proj)."
+        ),
+    ),
+    metrics: Path | None = typer.Option(
+        None, "--metrics", help="Also write flat numeric results to this JSON file."
+    ),
+    report_only: bool = typer.Option(
+        False,
+        "--report-only",
+        help=(
+            "Exit 0 whenever the run completed, accepted or not. For sweeps, "
+            "where a rejected edit is a result rather than a failure."
+        ),
+    ),
 ) -> None:
     """Design, gate, export and verify one keyed edit from a recipe.
 
     Exit 0 only if the edit passed every declared gate (and verification unless
     --no-verify). Exit 1 means nothing was kept; recipe_report.json in --out
     says which gate failed, shows the generated answers, and suggests changes.
+    The report keeps the recipe hash after any --set overrides.
     Runs on CPU in float32 and holds two copies of the model while verifying.
     """
     from stateset_agents.core.errors import ConfigurationError
@@ -323,8 +344,20 @@ def teach_cmd(
     if mode not in {"merged", "adapter"}:
         _echo("--mode must be merged or adapter", err=True)
         raise typer.Exit(code=2)
+    changes: dict[str, Any] = {}
+    for item in overrides:
+        path, sep, raw = item.partition("=")
+        if not sep or not path:
+            _echo(f"--set needs PATH=VALUE, got {item!r}", err=True)
+            raise typer.Exit(code=2)
+        try:
+            changes[path] = json.loads(raw)
+        except ValueError:
+            changes[path] = raw
     try:
         spec = EditRecipe.from_json(recipe.read_text(encoding="utf-8"))
+        if changes:
+            spec = spec.with_overrides(changes)
     except (OSError, ConfigurationError) as exc:
         _echo(f"Could not read recipe {recipe}: {exc}", err=True)
         raise typer.Exit(code=2) from exc
@@ -393,5 +426,10 @@ def teach_cmd(
         "report": str(out / "recipe_report.json"),
     }
     _echo(json.dumps(summary, indent=2, ensure_ascii=False))
-    if not report.accepted:
+    if metrics is not None:
+        metrics.parent.mkdir(parents=True, exist_ok=True)
+        metrics.write_text(
+            json.dumps(report.metrics(), indent=2) + "\n", encoding="utf-8"
+        )
+    if not report.accepted and not report_only:
         raise typer.Exit(code=1)

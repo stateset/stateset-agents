@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   acceptance text, stop before design work when the unedited model cannot meet
   the locality requirement, roll back rejected sites exactly, and write a report
   with before/after answers and a suggested change for each failed gate.
+- Weight-edit sweeps through `stateset-agents fanout`: `weight-edit teach` gains
+  `--set PATH=VALUE` recipe overrides, `--metrics FILE` and `--report-only`, and
+  `examples/fanout/weight_edit_sweep.yaml` compares edit layers across fact
+  recipes on the local or sandbox backend. Verified on the local backend only.
 - Joint vocabulary-margin weight edits across multiple contexts, with hard
   activation protection, soft locality penalties, dual optimality evidence and
   deployment-dtype checks. Independent full-coordinate and Woodbury checks cover
