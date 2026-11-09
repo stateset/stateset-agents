@@ -408,3 +408,118 @@ def test_cli_sweep_flags_write_metrics_and_exit_zero_on_rejection(
         app, [*args, "--out", str(tmp_path / "c"), "--set", "x"]
     )
     assert result.exit_code == 2
+
+
+def _transformer_session():
+    transformers = pytest.importorskip("transformers")
+    pytest.importorskip("peft")
+    import copy
+
+    with torch.random.fork_rng():
+        torch.manual_seed(17)
+        config = transformers.Qwen3Config(
+            vocab_size=16,
+            hidden_size=8,
+            intermediate_size=16,
+            num_hidden_layers=1,
+            num_attention_heads=2,
+            num_key_value_heads=1,
+            head_dim=4,
+            max_position_embeddings=64,
+            tie_word_embeddings=False,
+            eos_token_id=15,
+        )
+        model = transformers.Qwen3ForCausalLM(config).eval()
+        with torch.no_grad():
+            for parameter in model.parameters():
+                if parameter.ndim == 2:
+                    parameter.normal_(0, 0.3)
+    for parameter in model.parameters():
+        parameter.requires_grad_(False)
+    letters = "abcdefghijklmno$"
+    session = WeightSpaceSession(
+        model,
+        lambda text: [letters.index(c) for c in text],
+        budget=200,
+        batch_size=1,
+        decode=lambda ids: "".join(letters[i] for i in ids if i != 15),
+    )
+    return session, copy.deepcopy(model)
+
+
+def _transformer_recipe(**changes):
+    # A random model answers nothing; the gates are opened so the export and
+    # verification path runs on a real attention model and a real PEFT reload.
+    base = EditRecipe(
+        name="tiny",
+        model="tiny",
+        chat=False,
+        subject="m",
+        target="l",
+        design=("abm", "cdm"),
+        validation=("efm",),
+        locality=(LocalityAnswer("ghi", ("j",)),),
+        calibration=("abc", "def"),
+        drift=("ghj", "kno"),
+        sites=(EditSite("model.layers.0.mlp.down_proj", "subject"),),
+        optimizer=KeyedEditConfig(steps=3, learning_rate=0.05),
+        limits=BehaviorLimits(50.0, 50.0, 50.0),
+        answer_limits=AnswerLimits(
+            max_new_tokens=2,
+            min_target_accuracy=0.0,
+            min_baseline_locality_correct=0,
+            max_answer_occurrences=None,
+        ),
+        export_limits=BehaviorLimits(1e-6, 1e-5, 1e-4, min_each_target_gain=-1e-4),
+    )
+    return replace(base, **changes)
+
+
+@pytest.mark.parametrize("mode", ["merged", "adapter"])
+def test_accepted_edit_is_exported_and_verified_through_peft(tmp_path, mode):
+    s, fresh = _transformer_session()
+    report = run_recipe(
+        _transformer_recipe(),
+        s,
+        Text(),
+        out_dir=tmp_path / "run",
+        fresh_base_model=fresh,
+        verify_mode=mode,
+    )
+    assert report.status == "accepted", report
+    assert report.export["status"] == "passed" and report.export["mode"] == mode
+    assert report.export["violations"] == [] and report.hints == ()
+    assert s.active_edit_ids == [report.edit_id]
+    saved = json.loads(
+        (tmp_path / "run" / "adapter" / "weight_space_verification.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert saved["status"] == "passed"
+    assert report.budget_used <= _transformer_recipe().required_budget()
+
+
+def test_failed_verification_reverts_the_edit(tmp_path):
+    s, fresh = _transformer_session()
+    before = s.weight("model.layers.0.mlp.down_proj")
+    # A reloaded adapter cannot beat the live edit by a full nat on the target.
+    impossible = BehaviorLimits(50.0, 50.0, 50.0, min_each_target_gain=1.0)
+    report = run_recipe(
+        _transformer_recipe(export_limits=impossible),
+        s,
+        Text(),
+        out_dir=tmp_path / "run",
+        fresh_base_model=fresh,
+    )
+    assert report.status == "export_rejected" and not report.accepted
+    assert report.edit_id is None and report.export["status"] == "rejected"
+    assert s.active_edit_ids == []
+    assert torch.equal(s.weight("model.layers.0.mlp.down_proj"), before)
+    assert "reverted" in report.hints[0]
+
+
+def test_verification_requires_an_output_directory():
+    s, fresh = _transformer_session()
+    with pytest.raises(ConfigurationError, match="needs out_dir"):
+        run_recipe(_transformer_recipe(), s, Text(), fresh_base_model=fresh)
+    assert s.budget.used == 0
