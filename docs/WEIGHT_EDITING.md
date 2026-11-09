@@ -5,6 +5,79 @@ linear editing protects a supplied activation span and checks the deployed
 numeric update. Selective ReLU compilation protects other output functions
 structurally, but requires disconnected hidden capacity.
 
+## Edit recipes
+
+A recipe is one JSON file stating the whole request: the model, the fact to
+change, the questions used to fit the edit, the separate questions used to
+accept it, and the limits it must stay within. One command runs it:
+
+```bash
+stateset-agents weight-edit recipe-template > recipe.json   # then edit it
+stateset-agents weight-edit teach recipe.json --out ./lyon-edit
+```
+
+Exit code 0 means the edit passed every gate and `./lyon-edit/adapter` holds a
+LoRA adapter that was reloaded and checked against the live edited model. Exit
+code 1 means nothing was kept. Either way `./lyon-edit/recipe_report.json`
+records the decision.
+
+| Recipe field | Used for | Role |
+| --- | --- | --- |
+| `design` | Fitting the edit; each question mentions `subject` once | Design |
+| `calibration` | Text the edit is penalized for changing | Design |
+| `protected` | Text whose activations the edit must leave exactly alone (optional) | Design |
+| `validation` | Other wordings of the question; must produce `target` | Acceptance |
+| `locality` | Questions with `answers` that must survive the edit | Acceptance |
+| `drift` | Ordinary text for whole-model KL, loss and top-1 limits | Acceptance |
+| `sites` | Modules to try, in order, keyed on the `subject` or `last` token | Design |
+
+A recipe that reuses a design entry for acceptance is rejected when it is
+loaded. `optimizer`, `limits`, `answer_limits` and `export_limits` take the
+fields of `KeyedEditConfig`, `BehaviorLimits` and `AnswerLimits` described
+below; unknown fields are errors.
+
+The run proceeds in a fixed order:
+
+1. **Baseline.** The unedited model answers every question once. If fewer
+   locality answers are correct than `answer_limits.min_baseline_locality_correct`
+   requires, the run stops with status `baseline_unmet` before any design work.
+2. **Sites.** For each site in order, `optimize_keyed_edit` designs a proposal
+   and `trial_edit` applies it under the behavior and answer gates. A rejected
+   site is rolled back exactly. The first accepted site ends the search; later
+   sites are not tried, so the order is part of the declared protocol.
+3. **Export and verification.** The accepted edit is exported and, unless
+   `--no-verify` is passed, reloaded through PEFT on a second copy of the base
+   model under `export_limits`. A failed reload reverts the edit and reports
+   `export_rejected`.
+
+The report lists each question with the model's answer before and after, the
+gates that failed, and a suggested change for each failure. It contains prompts
+and generated text; the exported adapter manifest still contains only hashes.
+`budget` defaults to the most a full run can spend
+(`EditRecipe.required_budget()`); the check happens before the first forward.
+
+From Python, the same run works on any session:
+
+```python
+from stateset_agents.experimental.weight_space import (
+    EditRecipe, WeightSpaceSession, hf_text_adapter, run_recipe,
+)
+
+from transformers import AutoTokenizer
+
+recipe = EditRecipe.from_json(open("recipe.json", encoding="utf-8").read())
+session = WeightSpaceSession.from_pretrained(
+    recipe.model, budget=recipe.required_budget(), batch_size=1,
+)
+tokenizer = AutoTokenizer.from_pretrained(recipe.model)
+report = run_recipe(recipe, session, hf_text_adapter(tokenizer, recipe))
+# report.accepted: the edit is active in session. Otherwise the session is unchanged.
+```
+
+Acceptance here means the declared gates passed on the declared questions. It is
+not evidence about unseen wordings; keep a confirmation set outside the recipe.
+The sections below describe each step the recipe runs, for use on their own.
+
 ## Dense linear edits
 
 By default, `constrained_edit(weight, keys, targets, protect=references, bias=bias)` computes

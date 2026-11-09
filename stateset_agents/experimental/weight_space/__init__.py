@@ -30,6 +30,10 @@ This package is the harness, not the programmer:
   stopping reasons and forward counts alongside answer-prefix scoring.
 - :class:`AnswerLimits` — optional generated-answer, repetition and locality
   retention gates inside an atomic edit trial, with rollback on failure.
+- :class:`EditRecipe` / :func:`run_recipe` — one declarative request that runs
+  design, behavior and answer gates, export and artifact verification in a
+  fixed order, with exact rollback and plain-language rejection hints
+  (``stateset-agents weight-edit teach``).
 - :mod:`.mcp_tools` — the same loop as MCP tools, so an MCP client such as
   Claude Code can act as the programmer
   (``stateset-agents mcp --weight-space``).
@@ -128,6 +132,17 @@ from .protocol import (
     paired_compare,
     strict_rows,
 )
+from .recipes import (
+    EditRecipe,
+    EditSite,
+    LocalityAnswer,
+    RecipeReport,
+    SiteAttempt,
+    TextAdapter,
+    example_recipe,
+    hf_text_adapter,
+    run_recipe,
+)
 from .session import (
     AppliedEdit,
     BudgetExhausted,
@@ -161,7 +176,16 @@ __all__ = [
     "JointMarginEdit",
     "matches_answer_prefix",
     "ReferenceCheck",
+    "EditRecipe",
+    "EditSite",
     "EditSpec",
+    "LocalityAnswer",
+    "RecipeReport",
+    "SiteAttempt",
+    "TextAdapter",
+    "example_recipe",
+    "hf_text_adapter",
+    "run_recipe",
     "ForwardBudget",
     "HeadRewrite",
     "LowRankDelta",

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Edit recipes for weight editing: one JSON request runs baseline check, keyed
+  design at each declared site, behavior and generated-answer gates, LoRA export
+  and reloaded-adapter verification (`stateset-agents weight-edit teach`,
+  `EditRecipe` / `run_recipe`). Recipes reject overlap between design and
+  acceptance text, stop before design work when the unedited model cannot meet
+  the locality requirement, roll back rejected sites exactly, and write a report
+  with before/after answers and a suggested change for each failed gate.
 - Joint vocabulary-margin weight edits across multiple contexts, with hard
   activation protection, soft locality penalties, dual optimality evidence and
   deployment-dtype checks. Independent full-coordinate and Woodbury checks cover

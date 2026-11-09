@@ -1483,10 +1483,22 @@ stateset-agents weight-edit apply spec.json --base Qwen/Qwen3.5-0.8B --revision 
 stateset-agents weight-edit verify spec.json --base Qwen/Qwen3.5-0.8B --revision <sha> --edited ./edited
 stateset-agents weight-edit control spec.json --base ./edited --seed 0 > control.json
 stateset-agents weight-edit compare base_results.jsonl edited_results.jsonl
+stateset-agents weight-edit recipe-template > recipe.json
+stateset-agents weight-edit teach recipe.json --out ./lyon-edit
 ```
 
 #### Subcommands
 
+- `recipe-template`: print a filled-in edit recipe (JSON) to adapt.
+- `teach RECIPE --out DIR [--verify/--no-verify] [--mode merged|adapter]
+  [--threads N]`: run one keyed edit end to end from a recipe: check the
+  unedited model against the recipe's locality requirement, design the edit at
+  each declared site in order, keep the first that passes every behavior and
+  generated-answer gate, export it as a LoRA adapter to `DIR/adapter`, and
+  reload that adapter on a second copy of the base model. Exits 0 only if
+  everything passed; exits 1 with nothing kept otherwise. `DIR/recipe_report.json`
+  names the failed gates, shows each answer before and after, and suggests what
+  to change. CPU, float32. See [Weight editing](WEIGHT_EDITING.md#edit-recipes).
 - `apply SPEC --base DIR|HUB_ID --out DIR [--revision SHA]`: copy the base
   checkpoint with the spec applied and write `weight_space_spec.json`
   (spec, content hash, weights changed). Refuses to overwrite `--out`.

@@ -274,3 +274,124 @@ def atlas_cmd(
         ],
     }
     _echo(json.dumps(report, indent=2))
+
+
+@weight_edit_app.command("recipe-template")
+def recipe_template_cmd() -> None:
+    """Print a filled-in edit recipe to adapt (JSON)."""
+    from stateset_agents.experimental.weight_space.recipes import example_recipe
+
+    _echo(example_recipe().to_json().rstrip("\n"))
+
+
+@weight_edit_app.command("teach")
+def teach_cmd(
+    recipe: Path = typer.Argument(..., help="Edit recipe JSON (see recipe-template)."),
+    out: Path = typer.Option(..., "--out", help="Output dir (must be empty or new)."),
+    verify: bool = typer.Option(
+        True,
+        "--verify/--no-verify",
+        help="Reload the exported adapter on a second copy of the base model.",
+    ),
+    mode: str = typer.Option(
+        "merged",
+        "--mode",
+        help="How verification loads the adapter: merged or adapter.",
+    ),
+    threads: int | None = typer.Option(
+        None, "--threads", help="CPU threads for torch (default: torch's own)."
+    ),
+) -> None:
+    """Design, gate, export and verify one keyed edit from a recipe.
+
+    Exit 0 only if the edit passed every declared gate (and verification unless
+    --no-verify). Exit 1 means nothing was kept; recipe_report.json in --out
+    says which gate failed, shows the generated answers, and suggests changes.
+    Runs on CPU in float32 and holds two copies of the model while verifying.
+    """
+    from stateset_agents.core.errors import ConfigurationError
+    from stateset_agents.experimental.weight_space.recipes import (
+        EditRecipe,
+        hf_text_adapter,
+        run_recipe,
+    )
+    from stateset_agents.experimental.weight_space.session import (
+        BudgetExhausted,
+        WeightSpaceSession,
+    )
+
+    if mode not in {"merged", "adapter"}:
+        _echo("--mode must be merged or adapter", err=True)
+        raise typer.Exit(code=2)
+    try:
+        spec = EditRecipe.from_json(recipe.read_text(encoding="utf-8"))
+    except (OSError, ConfigurationError) as exc:
+        _echo(f"Could not read recipe {recipe}: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    if threads is not None:
+        torch.set_num_threads(threads)
+
+    def load() -> Any:
+        # The recipe names the operator's own model; pinning is opt-in via
+        # its `revision` field (same rationale as WeightSpaceSession).
+        model = AutoModelForCausalLM.from_pretrained(  # nosec: B615
+            spec.model, revision=spec.revision, dtype=torch.float32
+        ).eval()
+        for parameter in model.parameters():
+            parameter.requires_grad_(False)
+        return model
+
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(  # nosec: B615
+            spec.model, revision=spec.revision
+        )
+        model = load()
+    except (OSError, ValueError, ImportError) as exc:
+        _echo(f"Could not load {spec.model!r}: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    session = WeightSpaceSession(
+        model,
+        lambda text: list(tokenizer(text, add_special_tokens=False)["input_ids"]),
+        decode=lambda ids: str(tokenizer.decode(list(ids), skip_special_tokens=True)),
+        budget=spec.budget or spec.required_budget(),
+        base_model=(
+            spec.model if spec.revision is None else f"{spec.model}@{spec.revision}"
+        ),
+        batch_size=1,
+    )
+    try:
+        report = run_recipe(
+            spec,
+            session,
+            hf_text_adapter(tokenizer, spec),
+            out_dir=out,
+            fresh_base_model=load() if verify else None,
+            verify_mode="adapter" if mode == "adapter" else "merged",
+        )
+    except (ConfigurationError, BudgetExhausted) as exc:
+        _echo(f"teach failed: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    summary = {
+        "status": report.status,
+        "site": report.site,
+        "attempts": [
+            {
+                "module": a.module,
+                "key": a.key,
+                "violations": list(a.violations),
+                **({"error": a.error} if a.error else {}),
+            }
+            for a in report.attempts
+        ],
+        "hints": list(report.hints),
+        "adapter_dir": report.adapter_dir,
+        "report": str(out / "recipe_report.json"),
+    }
+    _echo(json.dumps(summary, indent=2, ensure_ascii=False))
+    if not report.accepted:
+        raise typer.Exit(code=1)
