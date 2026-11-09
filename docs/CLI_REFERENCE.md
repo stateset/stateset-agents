@@ -1512,7 +1512,8 @@ stateset-agents weight-edit teach recipe.json --out ./lyon-edit
 
 - `recipe-template`: print a filled-in edit recipe (JSON) to adapt.
 - `teach RECIPE --out DIR [--verify/--no-verify] [--mode merged|adapter]
-  [--threads N] [--set PATH=VALUE ...] [--metrics FILE] [--report-only]`: run one keyed edit end to end from a recipe: check the
+  [--threads N] [--set PATH=VALUE ...] [--metrics FILE] [--report-only]
+  [--quiet]`: run one keyed edit end to end from a recipe: check the
   unedited model against the recipe's locality requirement, design the edit at
   each declared site in order, keep the first that passes every behavior and
   generated-answer gate, export it as a LoRA adapter to `DIR/adapter`, and
@@ -1522,7 +1523,8 @@ stateset-agents weight-edit teach recipe.json --out ./lyon-edit
   to change. CPU, float32. `--set` overrides recipe fields by dotted path
   (`optimizer.steps=40`, `sites.0.module=...`), `--metrics` writes flat numbers
   for comparing runs, and `--report-only` exits 0 for any completed run so a
-  sweep counts a rejected edit as a result. See
+  sweep counts a rejected edit as a result. Stage progress goes to stderr
+  unless `--quiet`; the JSON summary on stdout is unaffected. See
   [Weight editing](WEIGHT_EDITING.md#edit-recipes).
 - `apply SPEC --base DIR|HUB_ID --out DIR [--revision SHA]`: copy the base
   checkpoint with the spec applied and write `weight_space_spec.json`

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol
@@ -499,6 +499,7 @@ def run_recipe(
     out_dir: str | Path | None = None,
     fresh_base_model: Any = None,
     verify_mode: Literal["adapter", "merged"] = "merged",
+    progress: Callable[[str], None] | None = None,
 ) -> RecipeReport:
     """Run ``recipe`` on ``session``; keep the edit only if every gate passes.
 
@@ -509,7 +510,8 @@ def run_recipe(
     a failed verification reverts the edit and reports ``export_rejected``.
 
     The report holds prompts and generated text. The exported adapter manifest
-    still holds only hashes.
+    still holds only hashes. ``progress`` receives one short line per stage;
+    design at a large model's site can take minutes on CPU.
     """
     import torch
 
@@ -528,6 +530,10 @@ def run_recipe(
             f"recipe needs up to {needed} measurement units; "
             f"{session.budget.remaining} remain"
         )
+
+    def say(message: str) -> None:
+        if progress is not None:
+            progress(message)
 
     design = [text.render(q) for q in recipe.design]
     validation = [text.render(q) for q in recipe.validation]
@@ -554,6 +560,7 @@ def run_recipe(
     # One generation unit before any design work: a recipe whose own locality
     # requirement the unedited model cannot meet would fail at every site.
     limits = recipe.answer_limits
+    say(f"baseline: generating answers to {len(cases)} questions")
     generated = session.generate(
         [c.prompt for c in cases],
         max_new_tokens=limits.max_new_tokens,
@@ -622,6 +629,7 @@ def run_recipe(
             ),
         )
 
+    say(f"baseline: {base_correct}/{len(recipe.locality)} locality answers correct")
     modules = list(dict.fromkeys(s.module for s in recipe.sites))
     rows = {
         "design": session.capture_many(
@@ -654,6 +662,10 @@ def run_recipe(
             for i, start in enumerate(starts)
         ]
         keys = torch.stack([rows["design"][site.module][i] for i in picks])
+        say(
+            f"site {site.module} ({site.key}): designing, "
+            f"{recipe.optimizer.steps} steps"
+        )
         try:
             proposal = session.optimize_keyed_edit(
                 site.module,
@@ -669,6 +681,7 @@ def run_recipe(
             attempts.append(
                 SiteAttempt(site.module, site.key, False, ("design_failed",), str(exc))
             )
+            say(f"site {site.module}: design failed: {exc}")
             continue
         first, chosen = proposal.history[0], proposal.history[proposal.selected_step]
         summary = {
@@ -680,6 +693,10 @@ def run_recipe(
             "model_forwards": proposal.model_forwards,
             "backward_calls": proposal.backward_calls,
         }
+        say(
+            f"site {site.module}: target loss {first.target_nll:.3f} -> "
+            f"{chosen.target_nll:.3f}; running acceptance gates"
+        )
         seen: list[str] = []
 
         def tracing(ids: Sequence[int], _sink: list[str] = seen) -> str:
@@ -735,7 +752,9 @@ def run_recipe(
         )
         if not trial.accepted:
             violations.extend(trial.violations)
+            say(f"site {site.module}: rejected ({', '.join(trial.violations)})")
             continue
+        say(f"site {site.module}: accepted")
         if root is None:
             return finish("accepted", attempts, (), site, trial.edit_id)
         adapter = session.export(root / ADAPTER_DIR)
@@ -752,6 +771,7 @@ def run_recipe(
                 {"status": "unverified"},
                 adapter,
             )
+        say("verifying the exported adapter on a fresh base model")
         _, verification = session.verify_export(
             adapter,
             fresh_base_model,

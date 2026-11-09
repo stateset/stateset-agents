@@ -313,6 +313,9 @@ def teach_cmd(
     metrics: Path | None = typer.Option(
         None, "--metrics", help="Also write flat numeric results to this JSON file."
     ),
+    quiet: bool = typer.Option(
+        False, "--quiet", help="Do not print stage progress to stderr."
+    ),
     report_only: bool = typer.Option(
         False,
         "--report-only",
@@ -405,6 +408,7 @@ def teach_cmd(
             out_dir=out,
             fresh_base_model=load() if verify else None,
             verify_mode="adapter" if mode == "adapter" else "merged",
+            progress=None if quiet else (lambda line: _echo(line, err=True)),
         )
     except (ConfigurationError, BudgetExhausted) as exc:
         _echo(f"teach failed: {exc}", err=True)

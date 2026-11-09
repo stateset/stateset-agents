@@ -125,6 +125,16 @@ def test_accepted_recipe_keeps_the_edit_and_reports_generated_text():
     assert s.decode([VOCAB.index("a")]) == "a"  # tracing decoder was removed
 
 
+def test_progress_reports_each_stage_in_order():
+    lines = []
+    run_recipe(recipe(), make_session(), Text(), progress=lines.append)
+    assert lines[0].startswith("baseline: generating answers to 5 questions")
+    assert lines[1] == "baseline: 1/1 locality answers correct"
+    assert lines[2] == "site write (subject): designing, 30 steps"
+    assert "running acceptance gates" in lines[3]
+    assert lines[4] == "site write: accepted"
+
+
 def test_unmet_baseline_stops_before_any_design_work():
     s = make_session()
     wrong = (LocalityAnswer("ag", ("q",)),)
@@ -279,6 +289,7 @@ def test_cli_teach_exit_codes_follow_the_decision(tmp_path, monkeypatch):
             "--out",
             str(tmp_path / "a"),
             "--no-verify",
+            "--quiet",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -299,6 +310,7 @@ def test_cli_teach_exit_codes_follow_the_decision(tmp_path, monkeypatch):
             "--out",
             str(tmp_path / "b"),
             "--no-verify",
+            "--quiet",
         ],
     )
     assert result.exit_code == 1, result.output
@@ -368,6 +380,7 @@ def test_cli_sweep_flags_write_metrics_and_exit_zero_on_rejection(
         "teach",
         str(path),
         "--no-verify",
+        "--quiet",
         "--report-only",
         "--metrics",
         str(metrics),
