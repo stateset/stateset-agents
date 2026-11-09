@@ -78,6 +78,27 @@ judge scores or request an evaluation-only stop. They require cached models,
 immutable pins and reviewed held-out cases. This diagnostic preserves training
 and existing quality evidence; it does not automatically rank checkpoints or certify a
 multi-seed quality gain. See [local paired evaluations](FINETUNING_AGENTS.md#local-paired-evaluations).
+### `stateset-agents fanout`
+
+Run independent RL runs in parallel from one manifest, each in its own StateSet
+Sandbox or local process. See the [RL fan-out guide](RL_FANOUT.md).
+
+```bash
+stateset-agents fanout plan sweep.yaml
+stateset-agents fanout run sweep.yaml --run-dir runs/sweep
+stateset-agents fanout run sweep.yaml --run-dir runs/sweep --backend sandbox \
+    --confirm-max-cost-usd 3.00
+stateset-agents fanout status runs/sweep
+stateset-agents fanout logs runs/sweep <run-id> --stream stderr
+stateset-agents fanout report runs/sweep
+stateset-agents fanout resume runs/sweep --retry-failed --confirm-max-cost-usd 1.00
+stateset-agents fanout cancel runs/sweep
+```
+
+`plan` is free. The `sandbox` backend needs `pip install 'stateset-agents[sandbox]'`
+and `STATESET_API_KEY`, and starts only when `--confirm-max-cost-usd` covers the
+computed worst case. `run` and `resume` exit nonzero unless every run succeeded.
+
 ### `stateset-agents reward-audit`
 
 Exercise a reward on reviewed candidate groups before RL training, retaining

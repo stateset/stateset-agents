@@ -48,6 +48,10 @@ river = [
     # River's SDK requires Python >=3.12; this extra is opt-in.
     "river-client>=0.11.0,<0.12",
 ]
+sandbox = [
+    # RL fan-out on StateSet Sandbox: stateset-agents fanout --backend sandbox.
+    "stateset-sandbox>=2.8.0,<3",
+]
 dev = [
     # NOTE: [dev] must be a superset of [training] and [api] — CI installs
     # ".[dev,api]" and the dev lock is compiled from these extras. A

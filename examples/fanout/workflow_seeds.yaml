@@ -1,0 +1,20 @@
+# Real policy updates across seeds: a small model on the offline tool-workflow
+# task, on CPU, with no downloads. It validates training mechanics, not domain
+# quality. Prove it locally first, for free:
+#
+#   stateset-agents fanout plan examples/fanout/workflow_seeds.yaml
+#   stateset-agents fanout run examples/fanout/workflow_seeds.yaml --run-dir runs/seeds
+#
+# Compares three training lengths across five seeds: 15 runs.
+schema_version: 1
+name: workflow-seeds
+seeds: [42, 43, 44, 45, 46]
+matrix:
+  updates: [20, 40, 80]
+workload:
+  kind: workflow_regression
+  device: cpu
+report:
+  metric: improvement
+  mode: max
+concurrency: 4

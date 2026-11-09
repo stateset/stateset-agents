@@ -298,6 +298,7 @@ closes: chat → ingest → improve → train → chat.
 |---|---|
 | **Nothing but an API key** (no GPUs, ever) | [`docs/GETTING_STARTED_RIVER.md`](docs/GETTING_STARTED_RIVER.md) — train, self-improve, and RL-tune through River's remote autograd; zero machines rented |
 | **A few dollars for rented GPUs** | [`docs/GETTING_STARTED_API.md`](docs/GETTING_STARTED_API.md) — zero to calling your own fine-tuned model over an OpenAI-compatible API |
+| **Many independent runs in parallel** | [`docs/RL_FANOUT.md`](docs/RL_FANOUT.md) — seeds and hyperparameter sweeps fanned out onto StateSet Sandbox, each with its own budget, with preemption retries and crash-safe resume |
 | **Bigger jobs on rented GPUs** | [`docs/RUNPOD_GUIDE.md`](docs/RUNPOD_GUIDE.md) — GPU/disk sizing, spot pricing, multi-GPU sharding, merged serving for hybrid models, and every failure mode we hit |
 | **Five minutes and curiosity** | `bash examples/five_minute_demo.sh` — the whole loop offline, no GPU, no key |
 

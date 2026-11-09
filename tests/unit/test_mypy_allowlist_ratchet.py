@@ -21,7 +21,7 @@ MYPY_INI = Path(__file__).resolve().parents[2] / "mypy.ini"
 # final-answer reader, the code verifier's docker isolation backend, and the
 # experimental weight-space package, its weight-edit CLI, and the four
 # analytically constructed neural solvers and the scalar ReLU program compiler.
-ALLOWLIST_FLOOR = 555
+ALLOWLIST_FLOOR = 566
 
 
 def _allowlisted_files() -> list[str]:

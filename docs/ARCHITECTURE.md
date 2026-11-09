@@ -117,7 +117,7 @@ enforces it in CI:
 |---|-------|-------|----------|
 | 12 | entry points | `cli` | the stateset-agents command and its MCP server |
 | 11 | interfaces | `api`, `tui` | FastAPI gateway; terminal UI |
-| 10 | studio | `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing` | fine-tuning studio, flywheel, product verticals, scaffolding, test kit |
+| 10 | studio | `fanout`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing` | RL fan-out, fine-tuning studio, flywheel, verticals, scaffolding, test kit |
 | 9 | remote | `remote` | remote providers, River runtime, deployment |
 | 8 | research | `experimental` | experimental algorithms; no stability guarantee |
 | 7 | training | `training` | trainers, the training spine, train() |
@@ -135,28 +135,29 @@ Each unit imports only itself and units in lower layers; siblings in one layer n
 
 | Unit | Layer | May import | Must not import |
 |------|-------|------------|-----------------|
-| `cli` | 12 entry points | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui` | nothing |
-| `api` | 11 interfaces | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing` | `tui`, `cli` |
-| `tui` | 11 interfaces | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing` | `api`, `cli` |
-| `finetune` | 10 studio | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote` | `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
-| `flywheel` | 10 studio | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote` | `finetune`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
-| `verticals` | 10 studio | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote` | `finetune`, `flywheel`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
-| `scaffolding` | 10 studio | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote` | `finetune`, `flywheel`, `verticals`, `testing`, `api`, `tui`, `cli` |
-| `testing` | 10 studio | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote` | `finetune`, `flywheel`, `verticals`, `scaffolding`, `api`, `tui`, `cli` |
-| `remote` | 9 remote | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental` | `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
-| `experimental` | 8 research | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training` | `remote`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
-| `training` | 7 training | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools` | `experimental`, `remote`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
-| `environments` | 6 packs | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards` | `tools`, `training`, `experimental`, `remote`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
-| `tools` | 6 packs | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards` | `environments`, `training`, `experimental`, `remote`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
-| `rewards` | 5 rewards | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation` | `environments`, `tools`, `training`, `experimental`, `remote`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
-| `data` | 4 data & evaluation | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core` | `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
-| `evaluation` | 4 data & evaluation | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core` | `data`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
-| `core` | 3 core | `_deprecation`, `exceptions`, `errors`, `utils`, `config` | `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
-| `utils` | 2 utilities | `_deprecation`, `exceptions`, `errors` | `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
-| `config` | 2 utilities | `_deprecation`, `exceptions`, `errors` | `utils`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
-| `errors` | 1 errors | `_deprecation`, `exceptions` | `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
-| `_deprecation` | 0 foundation | nothing | `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
-| `exceptions` | 0 foundation | nothing | `_deprecation`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
+| `cli` | 12 entry points | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `fanout`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui` | nothing |
+| `api` | 11 interfaces | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `fanout`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing` | `tui`, `cli` |
+| `tui` | 11 interfaces | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `fanout`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing` | `api`, `cli` |
+| `fanout` | 10 studio | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote` | `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
+| `finetune` | 10 studio | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote` | `fanout`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
+| `flywheel` | 10 studio | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote` | `fanout`, `finetune`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
+| `verticals` | 10 studio | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote` | `fanout`, `finetune`, `flywheel`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
+| `scaffolding` | 10 studio | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote` | `fanout`, `finetune`, `flywheel`, `verticals`, `testing`, `api`, `tui`, `cli` |
+| `testing` | 10 studio | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote` | `fanout`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `api`, `tui`, `cli` |
+| `remote` | 9 remote | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental` | `fanout`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
+| `experimental` | 8 research | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training` | `remote`, `fanout`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
+| `training` | 7 training | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools` | `experimental`, `remote`, `fanout`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
+| `environments` | 6 packs | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards` | `tools`, `training`, `experimental`, `remote`, `fanout`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
+| `tools` | 6 packs | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards` | `environments`, `training`, `experimental`, `remote`, `fanout`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
+| `rewards` | 5 rewards | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation` | `environments`, `tools`, `training`, `experimental`, `remote`, `fanout`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
+| `data` | 4 data & evaluation | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core` | `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `fanout`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
+| `evaluation` | 4 data & evaluation | `_deprecation`, `exceptions`, `errors`, `utils`, `config`, `core` | `data`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `fanout`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
+| `core` | 3 core | `_deprecation`, `exceptions`, `errors`, `utils`, `config` | `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `fanout`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
+| `utils` | 2 utilities | `_deprecation`, `exceptions`, `errors` | `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `fanout`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
+| `config` | 2 utilities | `_deprecation`, `exceptions`, `errors` | `utils`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `fanout`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
+| `errors` | 1 errors | `_deprecation`, `exceptions` | `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `fanout`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
+| `_deprecation` | 0 foundation | nothing | `exceptions`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `fanout`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
+| `exceptions` | 0 foundation | nothing | `_deprecation`, `errors`, `utils`, `config`, `core`, `data`, `evaluation`, `rewards`, `environments`, `tools`, `training`, `experimental`, `remote`, `fanout`, `finetune`, `flywheel`, `verticals`, `scaffolding`, `testing`, `api`, `tui`, `cli` |
 
 **Layer DAG** (who imports whom, transitively reduced; arrows point at the layer imported):
 
@@ -164,7 +165,7 @@ Each unit imports only itself and units in lower layers; siblings in one layer n
 flowchart TD
     L12["12 entry points<br/>cli"]
     L11["11 interfaces<br/>api, tui"]
-    L10["10 studio<br/>finetune, flywheel, verticals, scaffolding, testing"]
+    L10["10 studio<br/>fanout, finetune, flywheel, verticals, scaffolding, testing"]
     L9["9 remote<br/>remote"]
     L8["8 research<br/>experimental"]
     L7["7 training<br/>training"]
@@ -194,9 +195,10 @@ flowchart TD
 
 | Unit | Imports |
 |------|---------|
-| `cli` | `api`, `config`, `core`, `data`, `errors`, `evaluation`, `exceptions`, `experimental`, `facade`, `finetune`, `flywheel`, `remote`, `rewards`, `scaffolding`, `training`, `tui`, `utils`, `verticals` |
+| `cli` | `api`, `config`, `core`, `data`, `errors`, `evaluation`, `exceptions`, `experimental`, `facade`, `fanout`, `finetune`, `flywheel`, `remote`, `rewards`, `scaffolding`, `training`, `tui`, `utils`, `verticals` |
 | `api` | `_deprecation`, `core`, `errors`, `exceptions`, `experimental`, `facade`, `finetune`, `rewards`, `training`, `utils` |
 | `tui` | `core`, `data`, `evaluation`, `finetune`, `remote` |
+| `fanout` | `core`, `facade`, `remote`, `training`, `utils` |
 | `finetune` | `core`, `data`, `evaluation`, `facade`, `remote`, `rewards`, `training`, `utils` |
 | `flywheel` | `remote`, `training` |
 | `verticals` | `core`, `data`, `evaluation`, `remote`, `training`, `utils` |
@@ -242,9 +244,10 @@ trainers, evaluation and the remote runtime into end-to-end studies lives in
 
 | Unit | Layer | Path (under `stateset_agents/`) | Modules | Lines |
 |------|-------|-------------------------------|--------:|------:|
-| `cli` | entry points | `cli*.py`, `__main__.py`, `mcp_server.py` | 27 | ~11K |
+| `cli` | entry points | `cli*.py`, `__main__.py`, `mcp_server.py` | 28 | ~11K |
 | `api` | interfaces | `api/` | 57 | ~24K |
 | `tui` | interfaces | `tui*.py`, `finetune_evaluation_tui.py` | 11 | ~5.8K |
+| `fanout` | studio | `fanout/` | 10 | ~3.8K |
 | `finetune` | studio | `finetune_*.py` | 11 | ~8.4K |
 | `flywheel` | studio | `flywheel.py` | 1 | ~0.6K |
 | `verticals` | studio | `verticals/` | 7 | ~3.3K |
@@ -265,7 +268,7 @@ trainers, evaluation and the remote runtime into end-to-end studies lives in
 | `_deprecation` | foundation | `_deprecation.py` | 1 | ~0.1K |
 | `exceptions` | foundation | `exceptions.py` | 1 | ~0.1K |
 | `facade` | facade | `__init__.py` | 1 | ~0.4K |
-| **total** | | | 555 | ~228K |
+| **total** | | | 566 | ~232K |
 <!-- package-layout:end -->
 
 Outside the package: `deployment/` (Helm chart and value profiles, Kubernetes
