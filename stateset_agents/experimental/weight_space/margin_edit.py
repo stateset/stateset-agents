@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from functools import partial
+from typing import TYPE_CHECKING, NamedTuple
 
 from ...core.errors import ConfigurationError
 from .constrained import _locality_metric, _matrix
@@ -55,53 +56,20 @@ class JointMarginEdit:
     multipliers: torch.Tensor
 
 
-def joint_margin_edit(
-    weight: torch.Tensor,
-    keys: torch.Tensor,
-    residuals: torch.Tensor,
-    readout: torch.Tensor,
-    target_token_ids: Sequence[int],
+def _check_joint_options(
     *,
-    output_scale: torch.Tensor | None = None,
-    protect: torch.Tensor | None = None,
-    locality: torch.Tensor | None = None,
-    locality_weight: float = 1.0,
-    margin: float = 1.0,
-    rcond: float = 1e-10,
-    feasibility_atol: float = 1e-9,
-    duality_atol: float = 1e-8,
-    margin_atol: float = 1e-4,
-    preservation_atol: float = 1e-5,
-    max_update_norm: float | None = None,
-    chunk_size: int = 2048,
-    max_constraints: int = 256,
-    max_sweeps: int = 40000,
-) -> JointMarginEdit:
-    """Minimize a shared weight update subject to every context's token margins.
-
-    For ``weight[out, in]``, ``keys[cases, in]`` and captured pre-normalization
-    ``residuals[cases, out]``, minimize half of
-    ``||D||² + locality_weight * ||H D.T||² / len(H)`` subject to ``P D.T = 0``
-    and ``c[i,j] @ (residuals[i] + D @ keys[i]) >= margin`` for every competing
-    vocabulary token j, where ``c[i,j]=(readout[target[i]]-readout[j])*scale``.
-
-    The linear model is exact only when the edited layer writes additively into
-    these residuals, followed immediately by a bias-free linear head (optionally
-    after RMSNorm with its learned ``output_scale``). Callers must establish this
-    architecture and capture inputs on the same unmodified model. Margins before
-    RMS normalization are not final-logit margins. This is not an earlier-layer
-    approximation or a guarantee of unseen-prompt generalization.
-
-    Thin protected/locality bases and a factored dual Gram avoid a vocabulary-
-    sized float64 matrix and a square input-width metric. No model forwards,
-    gradients or random numbers occur. CPU float64 ideal factors receive a full
-    vocabulary feasibility/duality check. Returned float32 factors additionally
-    pass deployment-dtype linear execution, margin and protection checks.
-    Resource/rank failures do not establish mathematical infeasibility.
-    """
-    import torch
-    from torch.nn import functional as F
-
+    margin: float,
+    feasibility_atol: float,
+    duality_atol: float,
+    locality_weight: float,
+    margin_atol: float,
+    preservation_atol: float,
+    rcond: float,
+    chunk_size: int,
+    max_constraints: int,
+    max_sweeps: int,
+    max_update_norm: float | None,
+) -> None:
     for name, value in (
         ("margin", margin),
         ("feasibility_atol", feasibility_atol),
@@ -129,6 +97,29 @@ def joint_margin_edit(
         not math.isfinite(max_update_norm) or max_update_norm < 0
     ):
         raise ConfigurationError("max_update_norm must be finite and nonnegative")
+
+
+def _joint_request(
+    weight: torch.Tensor,
+    keys: torch.Tensor,
+    residuals: torch.Tensor,
+    readout: torch.Tensor,
+    target_token_ids: Sequence[int],
+    output_scale: torch.Tensor | None,
+    protect: torch.Tensor | None,
+    locality: torch.Tensor | None,
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    tuple[int, ...],
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor | None,
+]:
+    """Validate the request; return float64 CPU copies (w, k, r, ids, scale, p, h)."""
+    import torch
+
     w, k, r = (
         _matrix(weight, "weight"),
         _matrix(keys, "keys"),
@@ -183,64 +174,101 @@ def joint_margin_edit(
         raise ConfigurationError(
             "locality must be nonempty and match input width/dtype"
         )
-    q = p
-    if len(p):
-        pn = p / p.norm(dim=1, keepdim=True).clamp_min(torch.finfo(torch.float64).tiny)
-        _, singular, vectors = torch.linalg.svd(pn, full_matrices=False)
-        q = vectors[singular > rcond * singular[0]]
-    metric = (
-        _locality_metric(h, q, locality_weight, rcond)
-        if h is not None and locality_weight > 0
-        else None
-    )
+    return w, k, r, ids, scale, p, h
 
-    def project(rows):
-        rows = rows - (rows @ q.T) @ q
-        return rows - (rows @ q.T) @ q
 
-    projected = project(k)
-    whitened = projected if metric is None else project(metric.whiten(projected))
-    lengths = whitened.norm(dim=1)
-    inactive = lengths <= rcond * k.norm(dim=1)
-    lengths[inactive] = 0
-    units = whitened / lengths.clamp_min(torch.finfo(torch.float64).tiny)[:, None]
-    units[inactive] = 0
-    a = project(units if metric is None else metric.whiten(units))
-    key_gram = units @ units.T
-    chosen = readout[list(ids)].detach().to(device="cpu", dtype=torch.float64)
+def _project(rows: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
+    """Remove the protected span from ``rows``, twice for roundoff."""
+    rows = rows - (rows @ q.T) @ q
+    return rows - (rows @ q.T) @ q
 
-    def scan(points):
-        worst, competitors = [-math.inf] * n, [-1] * n
-        margins = [math.inf] * n
-        for start in range(0, len(readout), chunk_size):
-            stop = min(start + chunk_size, len(readout))
-            rows = readout[start:stop].detach().to(device="cpu", dtype=torch.float64)
-            if not bool(torch.isfinite(rows).all()):
-                raise ConfigurationError("readout must be finite")
-            for i in range(n):
-                c = (chosen[i] - rows) * scale
-                norms = c.norm(dim=1)
-                values = c @ points[i]
-                keep = torch.arange(start, stop) != ids[i]
-                if not bool(
-                    torch.isfinite(norms).all() and torch.isfinite(values).all()
-                ) or bool(((norms == 0) & keep).any()):
-                    raise ConfigurationError(
-                        "nonfinite or zero contrast norm; infeasibility is not established"
-                    )
-                violation = (
-                    (margin - values)
-                    / norms.clamp_min(torch.finfo(torch.float64).tiny)
-                    / max(float(lengths[i]), torch.finfo(torch.float64).tiny)
+
+def _scan_contexts(
+    points: torch.Tensor,
+    *,
+    readout: torch.Tensor,
+    chosen: torch.Tensor,
+    scale: torch.Tensor,
+    ids: tuple[int, ...],
+    lengths: torch.Tensor,
+    margin: float,
+    chunk_size: int,
+) -> tuple[list[float], list[int], list[float]]:
+    """Per context: worst normalized violation, its token, and minimum margin."""
+    import torch
+
+    n = len(ids)
+    worst, competitors = [-math.inf] * n, [-1] * n
+    margins = [math.inf] * n
+    for start in range(0, len(readout), chunk_size):
+        stop = min(start + chunk_size, len(readout))
+        rows = readout[start:stop].detach().to(device="cpu", dtype=torch.float64)
+        if not bool(torch.isfinite(rows).all()):
+            raise ConfigurationError("readout must be finite")
+        for i in range(n):
+            c = (chosen[i] - rows) * scale
+            norms = c.norm(dim=1)
+            values = c @ points[i]
+            keep = torch.arange(start, stop) != ids[i]
+            if not bool(
+                torch.isfinite(norms).all() and torch.isfinite(values).all()
+            ) or bool(((norms == 0) & keep).any()):
+                raise ConfigurationError(
+                    "nonfinite or zero contrast norm; infeasibility is not established"
                 )
-                violation[~keep] = -math.inf
-                if bool(keep.any()):
-                    margins[i] = min(margins[i], float(values[keep].min()))
-                value, index = violation.max(dim=0)
-                if float(value) > worst[i]:
-                    worst[i], competitors[i] = float(value), start + int(index)
-        return worst, competitors, margins
+            violation = (
+                (margin - values)
+                / norms.clamp_min(torch.finfo(torch.float64).tiny)
+                / max(float(lengths[i]), torch.finfo(torch.float64).tiny)
+            )
+            violation[~keep] = -math.inf
+            if bool(keep.any()):
+                margins[i] = min(margins[i], float(values[keep].min()))
+            value, index = violation.max(dim=0)
+            if float(value) > worst[i]:
+                worst[i], competitors[i] = float(value), start + int(index)
+    return worst, competitors, margins
 
+
+class _JointSolution(NamedTuple):
+    """The dual solve's output factor, bound, final scan and working set."""
+
+    b: torch.Tensor
+    dual: float
+    worst: list[float]
+    margins: list[float]
+    context_ids: list[int]
+    token_ids: list[int]
+    multipliers: torch.Tensor
+    scans: int
+    sweeps: int
+
+
+def _solve_joint(
+    scan: Callable[[torch.Tensor], tuple[list[float], list[int], list[float]]],
+    w: torch.Tensor,
+    k: torch.Tensor,
+    r: torch.Tensor,
+    a: torch.Tensor,
+    key_gram: torch.Tensor,
+    lengths: torch.Tensor,
+    chosen: torch.Tensor,
+    readout: torch.Tensor,
+    scale: torch.Tensor,
+    *,
+    margin: float,
+    feasibility_atol: float,
+    duality_atol: float,
+    max_constraints: int,
+    max_sweeps: int,
+) -> _JointSolution:
+    """Constraint generation on the dual until a full scan certifies the optimum.
+
+    ``worst`` and ``margins`` are from the certifying scan.
+    """
+    import torch
+
+    out_dim, n = w.shape[0], len(k)
     context_ids: list[int] = []
     token_ids: list[int] = []
     normals = w.new_empty((0, out_dim))
@@ -257,7 +285,17 @@ def joint_margin_edit(
             and abs(primal - dual) <= duality_atol
             and min(margins) > 0
         ):
-            break
+            return _JointSolution(
+                b,
+                dual,
+                worst,
+                margins,
+                context_ids,
+                token_ids,
+                multipliers,
+                scans,
+                sweeps,
+            )
         new = [i for i in range(n) if worst[i] > feasibility_atol or margins[i] <= 0]
         if not new or len(context_ids) + len(new) > max_constraints:
             raise ConfigurationError(
@@ -296,18 +334,31 @@ def joint_margin_edit(
         for j, i in enumerate(context_ids):
             b[:, i] += multipliers[j] * normals[j]
 
-    ideal = b @ a
-    actual_primal = float(ideal.square().sum() / 2)
-    if h is not None:
-        actual_primal += (
-            locality_weight * float((h @ ideal.T).square().sum()) / (2 * len(h))
-        )
-    if not math.isfinite(actual_primal) or abs(actual_primal - dual) > duality_atol:
-        raise ConfigurationError("joint margin numerical objective certificate failed")
-    delta = LowRankDelta(
-        b.to(device=weight.device, dtype=torch.float32),
-        a.to(device=weight.device, dtype=torch.float32),
-    )
+
+def _deploy_checks(
+    scan: Callable[[torch.Tensor], tuple[list[float], list[int], list[float]]],
+    weight: torch.Tensor,
+    keys: torch.Tensor,
+    delta: LowRankDelta,
+    w: torch.Tensor,
+    r: torch.Tensor,
+    q: torch.Tensor,
+    p: torch.Tensor,
+    h: torch.Tensor | None,
+    *,
+    margin: float,
+    margin_atol: float,
+    preservation_atol: float,
+    max_update_norm: float | None,
+) -> tuple[float, list[float], float, torch.Tensor, float | None]:
+    """Run the rounded edit in the deployment dtype and check every guarantee.
+
+    Returns (update_norm, deployed_margins, span_error, protected_drift,
+    locality_rms).
+    """
+    import torch
+    from torch.nn import functional as F
+
     with torch.no_grad(), torch.autocast(device_type=weight.device.type, enabled=False):
         edited = weight.detach() + delta.dense().to(weight.dtype)
         realized = edited.double().cpu() - w
@@ -361,26 +412,200 @@ def joint_margin_edit(
             locality_rms = float(hd.square().mean().sqrt())
             if not math.isfinite(locality_rms):
                 raise ConfigurationError("locality execution is nonfinite")
+    return update_norm, deployed_margins, span_error, pd, locality_rms
+
+
+def _key_geometry(
+    k: torch.Tensor,
+    p: torch.Tensor,
+    h: torch.Tensor | None,
+    locality_weight: float,
+    rcond: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Protected basis, retained key lengths, input factor and key Gram matrix."""
+    import torch
+
+    q = p
+    if len(p):
+        pn = p / p.norm(dim=1, keepdim=True).clamp_min(torch.finfo(torch.float64).tiny)
+        _, singular, vectors = torch.linalg.svd(pn, full_matrices=False)
+        q = vectors[singular > rcond * singular[0]]
+    metric = (
+        _locality_metric(h, q, locality_weight, rcond)
+        if h is not None and locality_weight > 0
+        else None
+    )
+    projected = _project(k, q)
+    whitened = projected if metric is None else _project(metric.whiten(projected), q)
+    lengths = whitened.norm(dim=1)
+    inactive = lengths <= rcond * k.norm(dim=1)
+    lengths[inactive] = 0
+    units = whitened / lengths.clamp_min(torch.finfo(torch.float64).tiny)[:, None]
+    units[inactive] = 0
+    a = _project(units if metric is None else metric.whiten(units), q)
+    key_gram = units @ units.T
+    return q, lengths, a, key_gram
+
+
+def _certified_objective(
+    ideal: torch.Tensor,
+    h: torch.Tensor | None,
+    locality_weight: float,
+    dual: float,
+    duality_atol: float,
+) -> float:
+    """The primal objective of ``ideal``, required to match the dual bound."""
+    actual_primal = float(ideal.square().sum() / 2)
+    if h is not None:
+        actual_primal += (
+            locality_weight * float((h @ ideal.T).square().sum()) / (2 * len(h))
+        )
+    if not math.isfinite(actual_primal) or abs(actual_primal - dual) > duality_atol:
+        raise ConfigurationError("joint margin numerical objective certificate failed")
+    return actual_primal
+
+
+def joint_margin_edit(
+    weight: torch.Tensor,
+    keys: torch.Tensor,
+    residuals: torch.Tensor,
+    readout: torch.Tensor,
+    target_token_ids: Sequence[int],
+    *,
+    output_scale: torch.Tensor | None = None,
+    protect: torch.Tensor | None = None,
+    locality: torch.Tensor | None = None,
+    locality_weight: float = 1.0,
+    margin: float = 1.0,
+    rcond: float = 1e-10,
+    feasibility_atol: float = 1e-9,
+    duality_atol: float = 1e-8,
+    margin_atol: float = 1e-4,
+    preservation_atol: float = 1e-5,
+    max_update_norm: float | None = None,
+    chunk_size: int = 2048,
+    max_constraints: int = 256,
+    max_sweeps: int = 40000,
+) -> JointMarginEdit:
+    """Minimize a shared weight update subject to every context's token margins.
+
+    For ``weight[out, in]``, ``keys[cases, in]`` and captured pre-normalization
+    ``residuals[cases, out]``, minimize half of
+    ``||D||² + locality_weight * ||H D.T||² / len(H)`` subject to ``P D.T = 0``
+    and ``c[i,j] @ (residuals[i] + D @ keys[i]) >= margin`` for every competing
+    vocabulary token j, where ``c[i,j]=(readout[target[i]]-readout[j])*scale``.
+
+    The linear model is exact only when the edited layer writes additively into
+    these residuals, followed immediately by a bias-free linear head (optionally
+    after RMSNorm with its learned ``output_scale``). Callers must establish this
+    architecture and capture inputs on the same unmodified model. Margins before
+    RMS normalization are not final-logit margins. This is not an earlier-layer
+    approximation or a guarantee of unseen-prompt generalization.
+
+    Thin protected/locality bases and a factored dual Gram avoid a vocabulary-
+    sized float64 matrix and a square input-width metric. No model forwards,
+    gradients or random numbers occur. CPU float64 ideal factors receive a full
+    vocabulary feasibility/duality check. Returned float32 factors additionally
+    pass deployment-dtype linear execution, margin and protection checks.
+    Resource/rank failures do not establish mathematical infeasibility.
+    """
+    import torch
+
+    _check_joint_options(
+        margin=margin,
+        feasibility_atol=feasibility_atol,
+        duality_atol=duality_atol,
+        locality_weight=locality_weight,
+        margin_atol=margin_atol,
+        preservation_atol=preservation_atol,
+        rcond=rcond,
+        chunk_size=chunk_size,
+        max_constraints=max_constraints,
+        max_sweeps=max_sweeps,
+        max_update_norm=max_update_norm,
+    )
+    w, k, r, ids, scale, p, h = _joint_request(
+        weight,
+        keys,
+        residuals,
+        readout,
+        target_token_ids,
+        output_scale,
+        protect,
+        locality,
+    )
+    q, lengths, a, key_gram = _key_geometry(k, p, h, locality_weight, rcond)
+    chosen = readout[list(ids)].detach().to(device="cpu", dtype=torch.float64)
+    scan = partial(
+        _scan_contexts,
+        readout=readout,
+        chosen=chosen,
+        scale=scale,
+        ids=ids,
+        lengths=lengths,
+        margin=margin,
+        chunk_size=chunk_size,
+    )
+    solved = _solve_joint(
+        scan,
+        w,
+        k,
+        r,
+        a,
+        key_gram,
+        lengths,
+        chosen,
+        readout,
+        scale,
+        margin=margin,
+        feasibility_atol=feasibility_atol,
+        duality_atol=duality_atol,
+        max_constraints=max_constraints,
+        max_sweeps=max_sweeps,
+    )
+
+    actual_primal = _certified_objective(
+        solved.b @ a, h, locality_weight, solved.dual, duality_atol
+    )
+    delta = LowRankDelta(
+        solved.b.to(device=weight.device, dtype=torch.float32),
+        a.to(device=weight.device, dtype=torch.float32),
+    )
+    update_norm, deployed_margins, span_error, pd, locality_rms = _deploy_checks(
+        scan,
+        weight,
+        keys,
+        delta,
+        w,
+        r,
+        q,
+        p,
+        h,
+        margin=margin,
+        margin_atol=margin_atol,
+        preservation_atol=preservation_atol,
+        max_update_norm=max_update_norm,
+    )
     return JointMarginEdit(
         delta,
         JointMarginDiagnostics(
             len(q),
             actual_primal,
-            dual,
-            actual_primal - dual,
-            max(0.0, max(worst)),
-            tuple(margins),
+            solved.dual,
+            actual_primal - solved.dual,
+            max(0.0, max(solved.worst)),
+            tuple(solved.margins),
             tuple(deployed_margins),
             update_norm,
             span_error,
             float(pd.abs().max()) if pd.numel() else 0.0,
             locality_rms,
-            scans,
-            sweeps,
+            solved.scans,
+            solved.sweeps,
         ),
-        b.clone(),
+        solved.b.clone(),
         a.clone(),
-        tuple(context_ids),
-        tuple(token_ids),
-        multipliers.clone(),
+        tuple(solved.context_ids),
+        tuple(solved.token_ids),
+        solved.multipliers.clone(),
     )
