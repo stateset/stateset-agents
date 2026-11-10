@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rent a second pod).
 - Gateway: a non-admin can no longer delete an operator-registered agent
   (such as the one `serve --checkpoint` loads); the request gets 403.
+- `chat --checkpoint DIR` without `--model` no longer silently drops the
+  adapter and answers from the stub model: it uses the base model recorded in
+  the adapter. When none is recorded, or `--model` is itself a stub, it still
+  runs on the stub but prints a warning that the checkpoint is ignored.
 - CLI: `recipe` opens a recipe by number (including `2b`), slug, slug prefix
   or words from its title, so the documented examples work; `preflight`,
   `publish-check` and `validate-config` accept `--json` as well as

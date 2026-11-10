@@ -178,3 +178,72 @@ class TestChatCheckpointValidation:
             str(ckpt),
         )
         assert result.returncode == 0
+
+
+class TestChatCheckpoint:
+    """`--checkpoint` must never be dropped in favour of the stub model."""
+
+    def test_checkpoint_without_a_recorded_base_model_warns_loudly(
+        self, tmp_path: Path
+    ) -> None:
+        from typer.testing import CliRunner
+
+        from stateset_agents.cli import app
+
+        result = CliRunner().invoke(
+            app, ["chat", "--checkpoint", str(tmp_path)], input="/quit\n"
+        )
+        assert result.exit_code == 0, result.output
+        assert "WARNING: --checkpoint is ignored" in result.output
+        assert "records no base model" in result.output
+
+    def test_explicit_stub_model_with_a_checkpoint_warns(self, tmp_path: Path) -> None:
+        import json
+
+        from typer.testing import CliRunner
+
+        from stateset_agents.cli import app
+
+        (tmp_path / "adapter_config.json").write_text(
+            json.dumps({"base_model_name_or_path": "acme/base-model"}),
+            encoding="utf-8",
+        )
+        result = CliRunner().invoke(
+            app,
+            ["chat", "--model", "stub://demo", "--checkpoint", str(tmp_path)],
+            input="/quit\n",
+        )
+        assert result.exit_code == 0, result.output
+        assert "--model stub://demo is a stub" in result.output
+
+    def test_checkpoint_uses_the_base_model_the_adapter_records(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import json
+
+        from typer.testing import CliRunner
+
+        import stateset_agents.core.agent as agent_module
+        from stateset_agents.cli import app
+
+        (tmp_path / "adapter_config.json").write_text(
+            json.dumps({"base_model_name_or_path": "acme/base-model"}),
+            encoding="utf-8",
+        )
+        seen = {}
+
+        class FakeAgent:
+            def __init__(self, config) -> None:
+                seen["config"] = config
+
+            async def initialize(self) -> None:
+                raise RuntimeError("stop before loading a model")
+
+        monkeypatch.setattr(agent_module, "MultiTurnAgent", FakeAgent)
+        result = CliRunner().invoke(app, ["chat", "--checkpoint", str(tmp_path)])
+        assert result.exit_code == 2  # the fake refuses to initialise
+        assert "Using the adapter's base model: acme/base-model" in result.output
+        config = seen["config"]
+        assert config.model_name == "acme/base-model"
+        assert config.use_stub_model is False
+        assert config.peft_path == str(tmp_path)

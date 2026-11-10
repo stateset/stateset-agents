@@ -26,10 +26,27 @@ _load_config = _cli._load_config
 _coerce_positive_int = _cli._coerce_positive_int
 
 
+_DEFAULT_CHAT_MODEL = "stub://chat"
+
+
+def _adapter_base_model(checkpoint: Path) -> str | None:
+    """The base model a LoRA adapter directory says it was trained on."""
+    import json
+
+    try:
+        data = json.loads(
+            (checkpoint / "adapter_config.json").read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError):
+        return None
+    name = data.get("base_model_name_or_path") if isinstance(data, dict) else None
+    return name if isinstance(name, str) and name.strip() else None
+
+
 @app.command("chat")
 def chat(
     model: str = typer.Option(
-        "stub://chat",
+        _DEFAULT_CHAT_MODEL,
         "--model",
         "-m",
         help="HF model name or stub://<id> for the in-process REPL.",
@@ -38,7 +55,8 @@ def chat(
         None,
         "--checkpoint",
         "-c",
-        help="Path to a LoRA adapter to load on top of --model.",
+        help="Path to a LoRA adapter to load on top of --model. Without "
+        "--model, the base model recorded in the adapter is used.",
     ),
     system_prompt: str | None = typer.Option(
         None,
@@ -104,6 +122,26 @@ def chat(
             raise typer.Exit(code=2)
 
     is_stub = model.startswith("stub://") or model == "gpt2"
+    if checkpoint and is_stub:
+        # An adapter cannot load on the stub. Dropping it silently meant
+        # `chat --checkpoint X` answered with canned stub replies, and a
+        # transcript graded from that session graded the stub.
+        base_model = _adapter_base_model(Path(checkpoint))
+        if base_model is not None and model == _DEFAULT_CHAT_MODEL:
+            _echo(f"Using the adapter's base model: {base_model}")
+            model, is_stub = base_model, False
+        else:
+            reason = (
+                f"--model {model} is a stub"
+                if model != _DEFAULT_CHAT_MODEL
+                else f"{checkpoint} records no base model (no adapter_config.json)"
+            )
+            print(
+                f"WARNING: --checkpoint is ignored: {reason}. Replies come from "
+                "the stub model, not the fine-tune. Pass --model <base model> "
+                "to load the adapter.",
+                file=sys.stderr,
+            )
     config = AgentConfig(
         model_name=model,
         max_new_tokens=max_new_tokens,
