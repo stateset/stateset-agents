@@ -234,3 +234,22 @@ async def test_pool_grows_at_once_and_retires_a_failed_resource() -> None:
     assert broken in factory.closed
     assert pool._stats.failed_requests == 1
     assert all(entry.resource is not broken for entry in pool._pool)
+
+
+@pytest.mark.parametrize(
+    "name", ["Dockerfile", "Dockerfile.trainer", "Dockerfile.scaling"]
+)
+def test_dockerfiles_copy_only_paths_that_exist(name: str) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    missing = []
+    for line in (repo / "deployment" / "docker" / name).read_text().splitlines():
+        parts = line.split()
+        if (
+            not parts
+            or parts[0] != "COPY"
+            or any(p.startswith("--from") for p in parts)
+        ):
+            continue
+        sources = [p for p in parts[1:-1] if not p.startswith("--")]
+        missing += [s for s in sources if s != "." and not (repo / s).exists()]
+    assert not missing, f"{name} copies paths that are not in the repo: {missing}"

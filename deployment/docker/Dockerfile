@@ -47,12 +47,10 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Copy only what we need to install the package. (The `grpo_agent_framework`
-# package is intentionally not installed via packaging, but is used at runtime
-# through `PYTHONPATH=/app`.)
-COPY pyproject.toml setup.py README.md ./
+# Copy only what we need to install the package. LICENSE is named by
+# pyproject's license-files, so the build needs it.
+COPY pyproject.toml README.md LICENSE ./
 COPY stateset_agents/ ./stateset_agents/
-COPY grpo_agent_framework/ ./grpo_agent_framework/
 
 RUN pip install --no-cache-dir ".[${STATESET_EXTRAS}]"
 
@@ -89,8 +87,6 @@ ENV PATH="/opt/venv/bin:$PATH" \
 
 COPY --from=builder /opt/venv /opt/venv
 
-# Runtime-only source needed on PYTHONPATH (not installed as a distribution).
-COPY --chown=10001:10001 grpo_agent_framework/ ./grpo_agent_framework/
 
 USER 10001:10001
 

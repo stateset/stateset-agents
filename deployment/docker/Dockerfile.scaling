@@ -26,7 +26,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates git && \
     rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml setup.py README.md ./
+COPY pyproject.toml README.md LICENSE ./
 COPY stateset_agents/ ./stateset_agents/
 RUN python -m pip install --no-cache-dir --no-deps . && \
     python -c "import stateset_agents, torch; assert stateset_agents.__version__ == '${PACKAGE_VERSION}'; assert torch.cuda.is_available() or torch.version.cuda"

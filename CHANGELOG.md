@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transport error or interrupt while a serve session waits for networking or
   looks up its price, and CPU pod creation is no longer retried (a retry could
   rent a second pod).
+- The gateway, trainer and scaling Dockerfiles no longer copy `setup.py` and
+  `grpo_agent_framework/`, which no longer exist and failed every build at
+  that step; they copy `LICENSE`, which the package build needs. Not rebuilt
+  here.
 - `AsyncResourcePool.acquire()` no longer hands out a resource the health
   check or a scale-down already closed, grows the pool at once when nothing is
   idle (it used to wait out the full acquire timeout first), retires a
