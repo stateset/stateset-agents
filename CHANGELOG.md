@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Declared lifecycles: the statuses, terminal sets and legal transitions of a
+  remote job, a fan-out run, a fine-tune run and a gateway training job are
+  stated once in `stateset_agents/lifecycles.py`, and the modules that write
+  them derive their constants from it. `stateset-agents lifecycles [--json]`
+  prints them. Status values and behaviour are unchanged; a test now fails
+  when a module writes a status its lifecycle does not declare. See
+  `docs/LIFECYCLES.md`, which also lists the state machines not yet declared.
+
 ### Fixed
 
 - Project audit (2026-11): cloud pods can no longer be left running after a

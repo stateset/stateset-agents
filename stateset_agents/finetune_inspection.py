@@ -33,6 +33,7 @@ from stateset_agents.finetune_workspace import (
     read_scenarios,
     read_training_data,
 )
+from stateset_agents.lifecycles import FINETUNE_RUN
 
 
 def inspect_workflow(
@@ -690,18 +691,7 @@ def _comparison_snapshot(run: Path) -> dict[str, Any]:
         "run_id": run.name,
         "status": (
             status
-            if isinstance(status, str)
-            and status
-            in {
-                "prepared",
-                "starting",
-                "queued",
-                "running",
-                "succeeded",
-                "failed",
-                "interrupted",
-                "cancelled",
-            }
+            if isinstance(status, str) and status in FINETUNE_RUN.states
             else "unknown" if isinstance(status, str) else "unreadable"
         ),
         "plan_sha256": digest,

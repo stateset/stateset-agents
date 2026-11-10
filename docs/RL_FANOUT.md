@@ -143,7 +143,8 @@ runs/sweep/
     attempt-1/artifacts/   whatever `collect` matched
 ```
 
-`fanout status`, `logs`, and `report` read only this directory.
+`fanout status`, `logs`, and `report` read only this directory. What each run status means, and what
+can follow it, is in [Lifecycles](LIFECYCLES.md) (`stateset-agents lifecycles fanout-run`).
 
 The verdict names a winner only when the evidence separates the best arm from every
 other: all arms complete, at least two seeds each, and non-overlapping 95% intervals

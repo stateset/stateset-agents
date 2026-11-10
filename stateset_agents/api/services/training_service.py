@@ -11,6 +11,7 @@ from typing import Any
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.core.reward import CompositeReward, HelpfulnessReward, SafetyReward
+from stateset_agents.lifecycles import GATEWAY_TRAINING_JOB
 from stateset_agents.utils.async_calls import drain_owned_operation, run_sync_owned
 from stateset_agents.utils.clock import utc_now
 
@@ -25,7 +26,7 @@ from ..training_queue import (
 
 logger = logging.getLogger(__name__)
 
-TERMINAL_TRAINING_STATUSES = frozenset({"completed", "failed", "cancelled"})
+TERMINAL_TRAINING_STATUSES = GATEWAY_TRAINING_JOB.terminal
 
 
 class JobProgressCallback:

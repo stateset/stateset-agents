@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from stateset_agents.finetune_remote_code import RemoteCodeSelection
+from stateset_agents.lifecycles import FINETUNE_RUN
 from stateset_agents.utils.process_probe import probe_process, process_start_token
 
 MAX_DATA_BYTES = 64 * 1024 * 1024
@@ -102,7 +103,7 @@ def require_backend_credentials(provider: str) -> None:
 #: long as it writes the same receipt version.
 STOP_PROTOCOL_VERSION = 1
 
-TERMINAL_STATES = frozenset({"succeeded", "failed", "interrupted", "cancelled"})
+TERMINAL_STATES = FINETUNE_RUN.terminal
 FAILURE_GUIDANCE = {
     "cancelled": (
         "Local stop request completed",

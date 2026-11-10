@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from stateset_agents.fanout.manifest import FanoutManifest, RunSpec
+from stateset_agents.lifecycles import FANOUT_RUN
 from stateset_agents.utils.atomic_io import atomic_json
 
 __all__ = [
@@ -33,7 +34,7 @@ __all__ = [
 RUN_FILE = "run.json"
 EVENTS_FILE = "events.jsonl"
 STATE_FILE = "state.json"
-TERMINAL_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
+TERMINAL_STATUSES = FANOUT_RUN.terminal
 
 
 @dataclass

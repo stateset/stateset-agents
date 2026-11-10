@@ -95,8 +95,9 @@ class Layer:
 LAYERS: tuple[Layer, ...] = (
     Layer(
         "foundation",
-        ("_deprecation", "exceptions"),
-        "deprecation helper and shared exception tuples; no package imports",
+        ("_deprecation", "exceptions", "lifecycles"),
+        "deprecation helper, shared exception tuples and declared lifecycles; "
+        "no package imports",
     ),
     Layer(
         "errors",

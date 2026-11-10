@@ -357,3 +357,44 @@ def publish_check(
 
     if fail:
         raise typer.Exit(code=2)
+
+
+@app.command("lifecycles")
+def lifecycles_cmd(
+    name: str | None = typer.Argument(
+        None, help="One lifecycle to show (default: all)."
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", "--json-output", help="Print machine-readable JSON."
+    ),
+) -> None:
+    """Show the status lifecycles this package persists.
+
+    For each one: every status and what it means, which statuses are terminal
+    (stop polling) and which are settled (will never change), and what can
+    follow each status. Use it to interpret a status from `fanout status`,
+    `finetune`, `remote-job` or the gateway, or to write a poller.
+    """
+    from stateset_agents.lifecycles import LIFECYCLES, get_lifecycle
+
+    try:
+        machines = [get_lifecycle(name)] if name else list(LIFECYCLES.values())
+    except ValueError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    if json_output:
+        _echo(json.dumps([m.describe() for m in machines], indent=2))
+        return
+    for machine in machines:
+        _echo(f"{machine.name}: {machine.summary}")
+        _echo(f"  written by {machine.owner}; found in {machine.stored_in}")
+        for row in machine.describe()["states"]:
+            kind = (
+                "settled"
+                if row["settled"]
+                else "terminal" if row["terminal"] else "active"
+            )
+            follows = ", ".join(row["next"]) or "-"
+            _echo(f"  {row['status']:<12} {kind:<9} {row['meaning']}")
+            _echo(f"  {'':<12} {'':<9} next: {follows}")
+        _echo("")

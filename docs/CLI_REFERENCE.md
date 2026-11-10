@@ -1549,6 +1549,27 @@ stateset-agents weight-edit teach recipe.json --out ./lyon-edit
   `config.json` (Qwen3.5 / Gemma use `x * (1 + w)`). Atlas neurons are
   candidates to test, not causes.
 
+### `stateset-agents lifecycles`
+
+Show the status lifecycles this package persists: every status and what it
+means, which are terminal (stop polling) or settled (will never change), and
+what can follow each one. See [Lifecycles](LIFECYCLES.md).
+
+```bash
+stateset-agents lifecycles
+stateset-agents lifecycles fanout-run
+stateset-agents lifecycles --json
+```
+
+#### Arguments
+
+- `NAME`: one lifecycle to show: `remote-job`, `fanout-run`, `finetune-run` or
+  `gateway-training-job` (default: all).
+
+#### Options
+
+- `--json, --json-output`: Print machine-readable JSON.
+
 ### `stateset-agents auto-research`
 
 Run the autonomous research loop to optimize agent training.

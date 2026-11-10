@@ -17,6 +17,8 @@ from dataclasses import InitVar, asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.lifecycles import REMOTE_JOB
+
 __all__ = ["JobHandle", "JobStatus", "RemoteJobResult", "RemoteJobSpec"]
 
 #: Execution modes understood by the remote job contract. Providers support
@@ -70,7 +72,7 @@ class JobStatus(enum.Enum):
     @property
     def is_terminal(self) -> bool:
         """True when no further state transition will occur."""
-        return self in (JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELLED)
+        return self.value in REMOTE_JOB.terminal
 
 
 @dataclass(frozen=True)

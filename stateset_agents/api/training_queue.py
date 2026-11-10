@@ -26,9 +26,10 @@ from stateset_agents.core.errors import (
     TrainingError,
     ValidationError,
 )
+from stateset_agents.lifecycles import GATEWAY_TRAINING_JOB
 from stateset_agents.utils.clock import as_utc, utc_now
 
-TERMINAL = {"completed", "failed", "cancelled"}
+TERMINAL = GATEWAY_TRAINING_JOB.terminal
 MAX_PENDING_JOBS = 1000
 
 
