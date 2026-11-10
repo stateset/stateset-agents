@@ -997,7 +997,9 @@ class FanoutRunner:
             if not line.startswith(marker):
                 continue
             try:
-                event = json.loads(line[len(marker) :])
+                # NaN/Infinity are not JSON; kept as floats they make the
+                # journal write fail and turn a succeeded run into a failure.
+                event = json.loads(line[len(marker) :], parse_constant=lambda _: None)
             except ValueError:
                 continue
             if isinstance(event, dict):

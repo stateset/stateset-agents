@@ -17,10 +17,10 @@ CLI quick start
 
 .. code-block:: bash
 
-   stateset-agents muse-glimmer --json-output
-   stateset-agents muse-glimmer --starter-profile memory --json-output
-   stateset-agents muse-glimmer --list-profiles --json-output
-   stateset-agents muse-glimmer --write-config ./muse_glimmer.json
+   stateset-agents model muse-glimmer --json-output
+   stateset-agents model muse-glimmer --starter-profile memory --json-output
+   stateset-agents model muse-glimmer --list-profiles --json-output
+   stateset-agents model muse-glimmer --write-config ./muse_glimmer.json
    stateset-agents init --preset muse-glimmer --path ./muse_glimmer.json --format json
 
 Run the starter
@@ -28,15 +28,15 @@ Run the starter
 
 .. code-block:: bash
 
-   stateset-agents muse-glimmer --no-dry-run --task customer_service
-   stateset-agents muse-glimmer --config ./muse_glimmer.json --no-dry-run
+   stateset-agents model muse-glimmer --no-dry-run --task customer_service
+   stateset-agents model muse-glimmer --config ./muse_glimmer.json --no-dry-run
 
 Low-memory profile
 ------------------
 
 .. code-block:: bash
 
-   stateset-agents muse-glimmer --starter-profile memory --json-output
+   stateset-agents model muse-glimmer --starter-profile memory --json-output
    python examples/finetune_gspo.py --model muse-glimmer --starter-profile memory --dry-run
 
 Starter profiles

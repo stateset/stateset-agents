@@ -287,7 +287,12 @@ class InferenceService:
         if self.is_stub:
             return True
         client = await self._get_client()
-        response = await client.get(self.config.health_path)
+        try:
+            response = await client.get(self.config.health_path)
+        except httpx.HTTPError:
+            # Unreachable is "not healthy", not a server error: /ready must
+            # answer 503, and an escaped ConnectError made it a 500.
+            return False
         # When mypy skips following imports, httpx can become `Any` and the
         # comparison result becomes `Any`. Force a concrete bool.
         return bool(response.status_code == 200)

@@ -28,6 +28,7 @@ import json
 import logging
 import math
 import re
+import types
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -214,7 +215,7 @@ def _python_type_to_json_schema(python_type: type) -> dict[str, Any]:
     args = get_args(python_type)
 
     # Handle Optional
-    if origin is Union:
+    if origin is Union or origin is types.UnionType:  # also ``int | None``
         non_none = [a for a in args if a is not type(None)]
         if len(non_none) == 1:
             return _python_type_to_json_schema(non_none[0])

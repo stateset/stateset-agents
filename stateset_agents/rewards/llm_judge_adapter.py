@@ -203,7 +203,9 @@ class LLMJudgeReward(RewardFunction):
             score=float(score),
             components={"llm_judge": float(score)},
             metadata={
-                "judge_model": getattr(self.judge.config, "model_name", "unknown")
+                "judge_model": getattr(
+                    getattr(self.judge, "config", None), "model_name", "unknown"
+                )
             },
         )
 

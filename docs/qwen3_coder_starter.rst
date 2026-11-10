@@ -20,10 +20,10 @@ CLI quick start
 
 .. code-block:: bash
 
-   stateset-agents qwen3-coder --json-output
-   stateset-agents qwen3-coder --starter-profile memory --json-output
-   stateset-agents qwen3-coder --list-profiles --json-output
-   stateset-agents qwen3-coder --write-config ./qwen3_coder.json
+   stateset-agents model qwen3-coder --json-output
+   stateset-agents model qwen3-coder --starter-profile memory --json-output
+   stateset-agents model qwen3-coder --list-profiles --json-output
+   stateset-agents model qwen3-coder --write-config ./qwen3_coder.json
    stateset-agents init --preset qwen3-coder --path ./qwen3_coder.json --format json
 
 Run the starter
@@ -31,15 +31,15 @@ Run the starter
 
 .. code-block:: bash
 
-   stateset-agents qwen3-coder --no-dry-run --task customer_service
-   stateset-agents qwen3-coder --config ./qwen3_coder.json --no-dry-run
+   stateset-agents model qwen3-coder --no-dry-run --task customer_service
+   stateset-agents model qwen3-coder --config ./qwen3_coder.json --no-dry-run
 
 Low-memory profile
 ------------------
 
 .. code-block:: bash
 
-   stateset-agents qwen3-coder --starter-profile memory --json-output
+   stateset-agents model qwen3-coder --starter-profile memory --json-output
    python examples/finetune_gspo.py --model qwen3-coder --starter-profile memory --dry-run
 
 Starter profiles

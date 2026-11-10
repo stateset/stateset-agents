@@ -170,8 +170,9 @@ def compute_mmd(
     Returns:
         MMD value
     """
-    x = np.asarray(x).reshape(-1, 1) if x.ndim == 1 else x
-    y = np.asarray(y).reshape(-1, 1) if y.ndim == 1 else y
+    x, y = np.asarray(x), np.asarray(y)
+    x = x.reshape(-1, 1) if x.ndim == 1 else x
+    y = y.reshape(-1, 1) if y.ndim == 1 else y
 
     def rbf_kernel(a, b, sigma):
         sq_dist = np.sum((a[:, np.newaxis] - b[np.newaxis, :]) ** 2, axis=-1)

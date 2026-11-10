@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import inspect
 import json
 import logging
 import os
@@ -181,10 +182,17 @@ async def train_customer_service_with_trl(
         base_config, num_episodes=num_episodes, output_dir=output_dir, **kwargs
     )
 
+    # kwargs are training options (use_lora, lora_r, ...); pass the agent only
+    # the ones it has, or any training option raises TypeError here.
+    agent_fields = set(inspect.signature(AgentConfig).parameters)
     agent_config = AgentConfig(
         model_name=model_name,
         system_prompt="You are a helpful and empathetic customer service representative.",
-        **kwargs,
+        **{
+            key: value
+            for key, value in kwargs.items()
+            if key in agent_fields and key not in ("model_name", "system_prompt")
+        },
     )
     agent = MultiTurnAgent(agent_config)
     await agent.initialize()

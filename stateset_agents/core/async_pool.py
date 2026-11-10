@@ -501,6 +501,7 @@ class AsyncResourcePool(Generic[T]):
                 f"Target size {target_size} outside valid range [{self.min_size}, {self.max_size}]"
             )
 
+        resources_to_remove: list[PooledResource[T]] = []
         async with self._lock:
             current_size = len(self._pool)
 
@@ -514,7 +515,6 @@ class AsyncResourcePool(Generic[T]):
 
             elif target_size < current_size:
                 # Scale down - remove idle resources
-                resources_to_remove: list[PooledResource[T]] = []
                 for resource in self._pool:
                     if (
                         resource.info.state == ResourceState.IDLE
@@ -522,8 +522,10 @@ class AsyncResourcePool(Generic[T]):
                     ):
                         resources_to_remove.append(resource)
 
-                for resource in resources_to_remove:
-                    await self._remove_resource(resource)
+        # Outside the lock: _remove_resource takes it, and it is not
+        # re-entrant, so removing under it deadlocked every scale-down.
+        for resource in resources_to_remove:
+            await self._remove_resource(resource)
 
         logger.info(f"Scaled pool {self.name} to {len(self._pool)} resources")
 

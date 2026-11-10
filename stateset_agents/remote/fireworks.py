@@ -881,7 +881,11 @@ def _dataset_id(spec: RemoteJobSpec) -> str:
     dataset, which the API rejects rather than overwrites.
     """
     stem = re.sub(r"[^a-z0-9-]+", "-", Path(spec.output_dir).name.lower()).strip("-")
-    return f"stateset-{stem or 'sft'}-{uuid.uuid4().hex[:8]}"[:63]
+    # Truncate the stem, not the whole id: cutting after the suffix made long
+    # names deterministic, so a rerun collided with its own earlier dataset.
+    suffix = f"-{uuid.uuid4().hex[:8]}"
+    prefix = f"stateset-{stem or 'sft'}"[: 63 - len(suffix)].rstrip("-")
+    return prefix + suffix
 
 
 def _read_chat_rows(

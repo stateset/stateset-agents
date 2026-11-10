@@ -854,6 +854,11 @@ class RemoteServeSession:
                 self.terminate()
                 if attempt >= self.max_provision_attempts:
                     raise
+            except BaseException:
+                # A transport error or Ctrl-C while waiting: the pod is
+                # rented and nothing else will stop it.
+                self.terminate()
+                raise
         else:  # pragma: no cover - loop always breaks or raises
             raise AssertionError("unreachable")
 
@@ -981,14 +986,17 @@ class RemoteServeSession:
         self._gpu = gpu
         self._gpu_count = gpu_count
         try:
-            raw_price = pod.get("costPerHr")
-            if raw_price is None:
-                raw_price = api.get_pod(self.pod_id).get("costPerHr")
-            self._pod_cost_per_hr = float(raw_price) if raw_price is not None else None
-        except (TypeError, ValueError):
-            self._pod_cost_per_hr = None
-
-        try:
+            # Inside the terminating block: a failed price lookup must not
+            # leave the pod running.
+            try:
+                raw_price = pod.get("costPerHr")
+                if raw_price is None:
+                    raw_price = api.get_pod(self.pod_id).get("costPerHr")
+                self._pod_cost_per_hr = (
+                    float(raw_price) if raw_price is not None else None
+                )
+            except (TypeError, ValueError):
+                self._pod_cost_per_hr = None
             self._enforce_cost_ceiling(max_hours, max_cost_usd)
             self.endpoint_url = self._proxy_endpoint_url(self.pod_id)
             self._await_direct_server_ready()

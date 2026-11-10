@@ -90,8 +90,9 @@ def _ingest_to_transcripts(fmt: str, source: Path, dest_dir: Path) -> list[Path]
         trajectories = from_langchain_json(source)
 
     if not trajectories:
-        _echo(f"No conversations found in {source}", err=True)
-        raise typer.Exit(code=1)
+        # A library error, not typer.Exit: the MCP tool calls this too and
+        # reported an empty "Exit: " message.
+        raise ImproveDataError(f"No conversations found in {source}")
 
     dest_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []

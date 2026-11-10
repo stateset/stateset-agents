@@ -1345,7 +1345,8 @@ class MultiTurnAgent(Agent):
     ) -> list[dict[str, str]]:
         """Apply memory window to conversation history"""
         if self.memory_window <= 0:
-            return messages
+            # A copy: callers insert the system prompt into the result.
+            return list(messages)
 
         # Keep system message and last N turns
         system_messages = [msg for msg in messages if msg["role"] == "system"]

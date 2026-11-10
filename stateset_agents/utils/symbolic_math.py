@@ -54,7 +54,9 @@ def sanitize_expression(expression: str) -> str:
     expr = expression.strip().strip("`").strip()
     if expr.startswith("$") and expr.endswith("$"):
         expr = expr[1:-1].strip()
-    expr = re.sub(r"[^A-Za-z0-9_+\-*/().,^\\s]", "", expr)
+    # ``\s`` (not ``\\s``): the doubled backslash kept backslashes and deleted
+    # whitespace, so "2 3" was evaluated as 23.
+    expr = re.sub(r"[^A-Za-z0-9_+\-*/().,^\s]", "", expr)
     return expr.strip()
 
 

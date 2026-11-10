@@ -599,8 +599,9 @@ class ConversationalBEAR:
         if self.training_step < self.config.warmup_steps:
             return {"alpha_loss": 0.0}
 
-        # alpha_loss = alpha * (mmd - threshold)
-        alpha_loss = torch.exp(self.log_alpha) * (
+        # Dual ascent: minimising -alpha * (mmd - threshold) raises alpha
+        # while the constraint is violated. Without the sign it shrank.
+        alpha_loss = -torch.exp(self.log_alpha) * (
             mmd_loss.detach() - self.config.lagrange_threshold
         )
 
@@ -779,7 +780,10 @@ class ConversationalBEAR:
         self.q2.load_state_dict(checkpoint["q2_state_dict"])
         self.q1_target.load_state_dict(checkpoint["q1_target_state_dict"])
         self.q2_target.load_state_dict(checkpoint["q2_target_state_dict"])
-        self.log_alpha = checkpoint["log_alpha"]
+        # In place: the alpha optimizer holds this tensor, and rebinding the
+        # attribute left alpha frozen after any reload.
+        with torch.no_grad():
+            self.log_alpha.copy_(checkpoint["log_alpha"])
         self.training_step = checkpoint.get("training_step", 0)
 
         # Checkpoints store the config as a plain dict (see save()); rebuild it.

@@ -364,9 +364,10 @@ def openai_response_to_anthropic(response: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(tool_name, str):
             tool_name = ""
         try:
-            tool_id = str(call.get("id"))
-            if not tool_id:
+            raw_id = call.get("id")
+            if not raw_id:  # str(None) is "None", which is truthy
                 raise TypeError
+            tool_id = str(raw_id)
         except TypeError:
             tool_id = f"tool_{uuid.uuid4().hex[:8]}"
         content_blocks.append(

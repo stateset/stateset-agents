@@ -4,6 +4,7 @@ Configuration validation for StateSet Agents.
 Provides JSON Schema validation and pre-flight checks.
 """
 
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -370,8 +371,6 @@ class PreFlightChecker:
 
         # Check if output directory exists
         if "output_dir" in config:
-            import os
-
             output_dir = config["output_dir"]
             if os.path.exists(output_dir):
                 warnings.append(

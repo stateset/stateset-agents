@@ -4,7 +4,7 @@ This guide covers setting up a development environment for StateSet Agents.
 
 ## Prerequisites
 
-- Python 3.8+ (3.10+ recommended)
+- Python 3.10+
 - Git
 - pip or uv (recommended)
 - Optional: CUDA toolkit for GPU support

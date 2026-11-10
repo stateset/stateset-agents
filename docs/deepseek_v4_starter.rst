@@ -23,10 +23,10 @@ CLI quick start
 
 .. code-block:: bash
 
-   stateset-agents deepseek-v4 --json-output
-   stateset-agents deepseek-v4 --starter-profile memory --json-output
-   stateset-agents deepseek-v4 --list-profiles --json-output
-   stateset-agents deepseek-v4 --write-config ./deepseek_v4.json
+   stateset-agents model deepseek-v4 --json-output
+   stateset-agents model deepseek-v4 --starter-profile memory --json-output
+   stateset-agents model deepseek-v4 --list-profiles --json-output
+   stateset-agents model deepseek-v4 --write-config ./deepseek_v4.json
    stateset-agents init --preset deepseek-v4 --path ./deepseek_v4.json --format json
 
 Run the starter
@@ -34,15 +34,15 @@ Run the starter
 
 .. code-block:: bash
 
-   stateset-agents deepseek-v4 --no-dry-run --task customer_service
-   stateset-agents deepseek-v4 --config ./deepseek_v4.json --no-dry-run
+   stateset-agents model deepseek-v4 --no-dry-run --task customer_service
+   stateset-agents model deepseek-v4 --config ./deepseek_v4.json --no-dry-run
 
 Low-memory profile
 ------------------
 
 .. code-block:: bash
 
-   stateset-agents deepseek-v4 --starter-profile memory --json-output
+   stateset-agents model deepseek-v4 --starter-profile memory --json-output
    python examples/finetune_gspo.py --model deepseek-v4 --starter-profile memory --dry-run
 
 Starter profiles

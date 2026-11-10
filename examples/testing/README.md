@@ -22,7 +22,7 @@ own CI.
 ## Run them
 
 ```bash
-pip install "stateset-agents[testing]"  # adds hypothesis, pytest-asyncio
+pip install "stateset-agents[dev]"  # adds hypothesis, pytest-asyncio
 cd examples/testing
 pytest -q
 ```

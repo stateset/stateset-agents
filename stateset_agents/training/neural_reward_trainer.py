@@ -258,9 +258,16 @@ class NeuralRewardModel(nn.Module):
         prompt_emb = self._embed_text(prompt).unsqueeze(0)
         response_emb = self._embed_text(response).unsqueeze(0)
 
-        with torch.no_grad():
-            reward = self.forward(prompt_emb, response_emb)
-            return float(reward.item())
+        # Dropout must be off for a prediction: in train mode the same pair
+        # scored differently on every call.
+        was_training = self.training
+        self.eval()
+        try:
+            with torch.no_grad():
+                reward = self.forward(prompt_emb, response_emb)
+                return float(reward.item())
+        finally:
+            self.train(was_training)
 
     def _embed_text(self, text: str) -> torch.Tensor:
         """Embed ``text`` with ``encoder``, or the hash smoke-test fallback.

@@ -305,13 +305,13 @@ class CodeFormattingHeuristic(BaseRewardComponent):
         code_block_markers = ["```python", "```javascript", "```java", "```c++", "```"]
         has_code = any(marker in response for marker in code_block_markers)
 
-        if self.require_code_blocks and not has_code:
-            return 0.0
-
         # If not a coding task, give full marks
         is_coding_task = bool(context.get("is_coding_task", False))
         if not is_coding_task:
             return 1.0
+
+        if self.require_code_blocks and not has_code:
+            return 0.0
 
         # Evaluate code quality indicators
         quality_indicators = [

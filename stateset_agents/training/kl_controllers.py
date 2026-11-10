@@ -248,8 +248,8 @@ class WarmupKLScheduler(KLController):
             self.kl_coef = progress * self.peak_kl_coef
         else:
             # Linear decay from peak to final
-            decay_progress = (step - self.warmup_steps) / (
-                self.total_steps - self.warmup_steps
+            decay_progress = (step - self.warmup_steps) / max(
+                self.total_steps - self.warmup_steps, 1
             )
             decay_progress = min(decay_progress, 1.0)
             self.kl_coef = (
@@ -374,9 +374,12 @@ def create_kl_controller(
         )
 
     elif controller_type == "cosine":
+        # Popped, not read: it is also in kwargs, and passing it twice
+        # raised TypeError for every caller that set it.
+        min_kl_coef = kwargs.pop("min_kl_coef", init_kl_coef * 0.1)
         return CosineKLScheduler(
             init_kl_coef=init_kl_coef,
-            min_kl_coef=kwargs.get("min_kl_coef", init_kl_coef * 0.1),
+            min_kl_coef=min_kl_coef,
             total_steps=total_steps,
             **kwargs,
         )

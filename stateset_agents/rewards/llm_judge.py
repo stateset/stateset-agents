@@ -25,6 +25,7 @@ import math
 import os
 import re
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
@@ -629,36 +630,33 @@ class ResultCache:
     """Simple LRU cache for evaluation results."""
 
     def __init__(self, max_size: int = 10000):
+        if max_size < 1:
+            raise ValueError("max_size must be at least 1")
         self.max_size = max_size
-        self.cache: dict[str, Any] = {}
-        self.access_order: list[str] = []
+        self.cache: OrderedDict[str, Any] = OrderedDict()
 
     def _hash_key(self, query: str, response: str, criteria: str) -> str:
         """Create hash key for cache."""
-        content = f"{query}|{response}|{criteria}"
+        # A JSON list keeps the parts separate: joining on "|" made
+        # ("a|b", "c") and ("a", "b|c") collide.
+        content = json.dumps([query, response, criteria])
         return hashlib.md5(content.encode(), usedforsecurity=False).hexdigest()
 
     def get(self, query: str, response: str, criteria: str) -> Any | None:
         """Get cached result."""
         key = self._hash_key(query, response, criteria)
         if key in self.cache:
-            # Move to end (most recently used)
-            self.access_order.remove(key)
-            self.access_order.append(key)
+            self.cache.move_to_end(key)
             return self.cache[key]
         return None
 
     def set(self, query: str, response: str, criteria: str, result: Any) -> None:
-        """Set cache entry."""
+        """Set cache entry, evicting the least recently used when full."""
         key = self._hash_key(query, response, criteria)
-
-        # Evict if full
-        while len(self.cache) >= self.max_size:
-            oldest = self.access_order.pop(0)
-            del self.cache[oldest]
-
         self.cache[key] = result
-        self.access_order.append(key)
+        self.cache.move_to_end(key)
+        while len(self.cache) > self.max_size:
+            self.cache.popitem(last=False)
 
 
 class LLMJudgeBase(ABC):

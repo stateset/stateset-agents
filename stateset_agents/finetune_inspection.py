@@ -700,6 +700,7 @@ def _comparison_snapshot(run: Path) -> dict[str, Any]:
                 "succeeded",
                 "failed",
                 "interrupted",
+                "cancelled",
             }
             else "unknown" if isinstance(status, str) else "unreadable"
         ),

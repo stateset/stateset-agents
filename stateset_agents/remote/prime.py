@@ -109,7 +109,9 @@ class PrimeLabExecutor(RemoteExecutor):
                 if match:
                     record.run_id = match.group(1)
             code = record.process.wait()
-            record.status = JobStatus.SUCCEEDED if code == 0 else JobStatus.FAILED
+            if record.status is not JobStatus.CANCELLED:
+                # cancel() terminates the process; its exit is not a failure.
+                record.status = JobStatus.SUCCEEDED if code == 0 else JobStatus.FAILED
         except FileNotFoundError:
             record.logs.append(
                 "prime CLI not found; install it with 'uv tool install prime'"

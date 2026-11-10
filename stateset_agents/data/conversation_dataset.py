@@ -498,7 +498,8 @@ class ConversationDataset(TorchDataset):
         if returns_to_go:
             result["returns_to_go"] = torch.FloatTensor(returns_to_go)
 
-        if include_embeddings and self.embedding_cache:
+        # ``is not None``: the cache defines __len__, so an empty one is falsy.
+        if include_embeddings and self.embedding_cache is not None:
             states, actions = self._get_embeddings(batch_trajectories)
             result["states"] = states
             result["actions"] = actions

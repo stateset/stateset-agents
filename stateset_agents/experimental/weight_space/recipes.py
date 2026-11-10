@@ -757,7 +757,13 @@ def run_recipe(
         say(f"site {site.module}: accepted")
         if root is None:
             return finish("accepted", attempts, (), site, trial.edit_id)
-        adapter = session.export(root / ADAPTER_DIR)
+        try:
+            adapter = session.export(root / ADAPTER_DIR)
+        except BaseException:
+            # Nothing is kept unless every step passes: an export that
+            # raises must not leave the edit active in the session.
+            session.revert()
+            raise
         if fresh_base_model is None:
             return finish(
                 "accepted",
@@ -772,14 +778,20 @@ def run_recipe(
                 adapter,
             )
         say("verifying the exported adapter on a fresh base model")
-        _, verification = session.verify_export(
-            adapter,
-            fresh_base_model,
-            locality_prompts=list(recipe.drift),
-            target_pairs=[(p, continuation) for p in validation],
-            limits=recipe.export_limits,
-            mode=verify_mode,
-        )
+        try:
+            _, verification = session.verify_export(
+                adapter,
+                fresh_base_model,
+                locality_prompts=list(recipe.drift),
+                target_pairs=[(p, continuation) for p in validation],
+                limits=recipe.export_limits,
+                mode=verify_mode,
+            )
+        except BaseException:
+            # A wrong base model or a load error raises instead of
+            # rejecting; the edit must still not survive it.
+            session.revert()
+            raise
         export = {
             "status": "passed" if verification.accepted else "rejected",
             "mode": verify_mode,

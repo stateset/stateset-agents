@@ -9,10 +9,10 @@ CLI quick start
 
 .. code-block:: bash
 
-   stateset-agents kimi-k2-6 --json-output
-   stateset-agents kimi-k2-6 --starter-profile memory --json-output
-   stateset-agents kimi-k2-6 --list-profiles --json-output
-   stateset-agents kimi-k2-6 --write-config ./kimi_k2_6.json
+   stateset-agents model kimi-k2-6 --json-output
+   stateset-agents model kimi-k2-6 --starter-profile memory --json-output
+   stateset-agents model kimi-k2-6 --list-profiles --json-output
+   stateset-agents model kimi-k2-6 --write-config ./kimi_k2_6.json
    stateset-agents init --preset kimi-k2-6 --path ./kimi_k2_6.json --format json
 
 Run the starter
@@ -20,15 +20,15 @@ Run the starter
 
 .. code-block:: bash
 
-   stateset-agents kimi-k2-6 --no-dry-run --task customer_service
-   stateset-agents kimi-k2-6 --config ./kimi_k2_6.json --no-dry-run
+   stateset-agents model kimi-k2-6 --no-dry-run --task customer_service
+   stateset-agents model kimi-k2-6 --config ./kimi_k2_6.json --no-dry-run
 
 Low-memory profile
 ------------------
 
 .. code-block:: bash
 
-   stateset-agents kimi-k2-6 --starter-profile memory --json-output
+   stateset-agents model kimi-k2-6 --starter-profile memory --json-output
    python examples/finetune_kimi_k2_6_gspo.py --starter-profile memory --dry-run
 
 Starter profiles

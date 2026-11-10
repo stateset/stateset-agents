@@ -520,15 +520,18 @@ class RunPodApi:
                     headers=self._headers(),
                     json=payload,
                     timeout=60,
-                )
+                ),
+                # Never retried: a retried create can rent a second pod.
+                attempts=1,
             )
         except requests.RequestException as exc:
             status = exc.response.status_code if exc.response is not None else None
             detail = f" (HTTP {status})" if status is not None else ""
             raise RemoteExecutionError(
-                "RunPod CPU pod creation failed after retries" + detail,
+                "RunPod CPU pod creation failed; a pod may still have been "
+                "allocated" + detail,
                 provider="runpod",
-                attempts=_HTTP_ATTEMPTS,
+                attempts=1,
             ) from exc
         return dict(response.json())
 

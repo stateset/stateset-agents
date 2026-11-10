@@ -1713,7 +1713,7 @@ async def export_experiment(
 
     return {
         "experiment": exp,
-        "episodes": eps,
+        "episodes": list(eps),  # a deque is not JSON-serialisable
         "exported_at": time.time(),
     }
 

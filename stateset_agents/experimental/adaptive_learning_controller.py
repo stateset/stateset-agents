@@ -308,6 +308,8 @@ class ExplorationController:
         entropy = -sum(p * math.log(p + 1e-8) for p in action_probs if p > 0)
 
         # Explore more when entropy is high (uniform distribution)
+        if len(available_actions) < 2:
+            return False  # one action: nothing to explore, and log(1) is 0
         max_entropy = math.log(len(available_actions))
         exploration_probability = entropy / max_entropy
         return random.random() < exploration_probability

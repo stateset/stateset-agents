@@ -102,6 +102,11 @@ def _clause_verdicts(clause: str) -> set[str]:
     return found
 
 
+def _straight_apostrophes(text: str) -> str:
+    """Models often emit typographic apostrophes; the cue patterns use "'"."""
+    return text.replace("\u2019", "'").replace("\u2018", "'")
+
+
 def extract_verdict(text: str) -> str | None:
     """Extract the model's decision verdict from its response text.
 
@@ -123,7 +128,7 @@ def extract_verdict(text: str) -> str | None:
         pass
 
     found: set[str] = set()
-    for clause in _CLAUSE_SPLIT_RE.split(text):
+    for clause in _CLAUSE_SPLIT_RE.split(_straight_apostrophes(text)):
         found |= _clause_verdicts(clause)
     if len(found) == 1:
         return found.pop()

@@ -4,7 +4,7 @@ Cache service for the GRPO Agent Framework
 
 import logging
 import time
-from threading import Lock
+from threading import RLock
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,8 @@ class CacheService:
     def __init__(self, default_ttl: int = 300):
         self.cache: dict[str, tuple[Any, float]] = {}  # key -> (value, expiry)
         self.default_ttl = default_ttl
-        self.lock = Lock()
+        # Re-entrant: size() and keys() call cleanup_expired() while holding it.
+        self.lock = RLock()
 
     def get(self, key: str) -> Any | None:
         """Get value from cache if not expired"""

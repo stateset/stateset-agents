@@ -11,10 +11,10 @@ Start with a dry-run so you can inspect the resolved configuration without loadi
 
 .. code-block:: bash
 
-   stateset-agents qwen3-5-0-8b --json-output
-   stateset-agents qwen3-5-0-8b --starter-profile memory --json-output
-   stateset-agents qwen3-5-0-8b --list-profiles --json-output
-   stateset-agents qwen3-5-0-8b --write-config ./qwen3_5_0_8b.json
+   stateset-agents model qwen3-5-0-8b --json-output
+   stateset-agents model qwen3-5-0-8b --starter-profile memory --json-output
+   stateset-agents model qwen3-5-0-8b --list-profiles --json-output
+   stateset-agents model qwen3-5-0-8b --write-config ./qwen3_5_0_8b.json
    stateset-agents init --preset qwen3-5-0-8b --path ./qwen3_5_0_8b.json --format json
    stateset-agents init --preset qwen3-5-0-8b --starter-profile memory --path ./qwen3_5_0_8b_memory.json --format json
 
@@ -22,14 +22,14 @@ Then launch the starter run:
 
 .. code-block:: bash
 
-   stateset-agents qwen3-5-0-8b --no-dry-run --task customer_service
-   stateset-agents qwen3-5-0-8b --config ./qwen3_5_0_8b.json --no-dry-run
+   stateset-agents model qwen3-5-0-8b --no-dry-run --task customer_service
+   stateset-agents model qwen3-5-0-8b --config ./qwen3_5_0_8b.json --no-dry-run
 
 If GPU memory is tight, use 4-bit quantization for the first pass:
 
 .. code-block:: bash
 
-   stateset-agents qwen3-5-0-8b --no-dry-run --task customer_service --use-4bit
+   stateset-agents model qwen3-5-0-8b --no-dry-run --task customer_service --use-4bit
 
 Starter profiles
 ----------------
@@ -49,7 +49,7 @@ Use the built-in discovery mode when you want to compare the starter profiles be
 
 .. code-block:: bash
 
-   stateset-agents qwen3-5-0-8b --task sales --list-profiles --json-output
+   stateset-agents model qwen3-5-0-8b --task sales --list-profiles --json-output
    python examples/finetune_qwen3_5_0_8b_gspo.py --task sales --list-profiles
 
 The catalog includes a description, validation warnings, the fully resolved config, and a short summary of effective batch size, quantization, context lengths, and group sizes.
@@ -71,8 +71,8 @@ The starter can write a reusable config file and load it back later:
 
 .. code-block:: bash
 
-   stateset-agents qwen3-5-0-8b --write-config ./qwen3_5_0_8b.json
-   stateset-agents qwen3-5-0-8b --config ./qwen3_5_0_8b.json --json-output
+   stateset-agents model qwen3-5-0-8b --write-config ./qwen3_5_0_8b.json
+   stateset-agents model qwen3-5-0-8b --config ./qwen3_5_0_8b.json --json-output
 
 Programmatic surface
 --------------------

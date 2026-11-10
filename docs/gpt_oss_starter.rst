@@ -21,10 +21,10 @@ CLI quick start
 
 .. code-block:: bash
 
-   stateset-agents gpt-oss --json-output
-   stateset-agents gpt-oss --starter-profile memory --json-output
-   stateset-agents gpt-oss --list-profiles --json-output
-   stateset-agents gpt-oss --write-config ./gpt_oss.json
+   stateset-agents model gpt-oss --json-output
+   stateset-agents model gpt-oss --starter-profile memory --json-output
+   stateset-agents model gpt-oss --list-profiles --json-output
+   stateset-agents model gpt-oss --write-config ./gpt_oss.json
    stateset-agents init --preset gpt-oss --path ./gpt_oss.json --format json
 
 Run the starter
@@ -32,15 +32,15 @@ Run the starter
 
 .. code-block:: bash
 
-   stateset-agents gpt-oss --no-dry-run --task customer_service
-   stateset-agents gpt-oss --config ./gpt_oss.json --no-dry-run
+   stateset-agents model gpt-oss --no-dry-run --task customer_service
+   stateset-agents model gpt-oss --config ./gpt_oss.json --no-dry-run
 
 Low-memory profile
 ------------------
 
 .. code-block:: bash
 
-   stateset-agents gpt-oss --starter-profile memory --json-output
+   stateset-agents model gpt-oss --starter-profile memory --json-output
    python examples/finetune_gspo.py --model gpt-oss --starter-profile memory --dry-run
 
 Starter profiles

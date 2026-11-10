@@ -79,7 +79,6 @@ __all__ = [
     "RulerRewardFunction",
     "create_customer_service_ruler",
     "create_general_ruler",
-    "SupportConversationReward",
     "SymbolicPhysicsRewardFunction",
     "SymbolicRewardConfig",
     "ThinkingModeReward",

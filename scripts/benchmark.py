@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from utils.performance_monitor import (
+from stateset_agents.utils.performance_monitor import (
     BenchmarkRunner,
     MemoryProfiler,
     PerformanceMonitor,

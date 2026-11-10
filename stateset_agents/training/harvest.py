@@ -261,7 +261,7 @@ def run_harvest_job(payload: dict[str, Any]) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     harvest_specs = normalize_eval_prompts(payload["harvest_prompts"])
     for i, spec in enumerate(harvest_specs):
-        if not spec.get("expect") and not spec.get("forbid") and not spec.get("judge"):
+        if not any(spec.get(gate) for gate in ("expect", "forbid", "judge", "nsr")):
             raise ValueError(
                 f"harvest prompt {i} has no expect/forbid checks and no "
                 "judge — without a success criterion every sample passes "

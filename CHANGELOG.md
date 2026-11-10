@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Project audit (2026-11): cloud pods can no longer be left running after a
+  transport error or interrupt while a serve session waits for networking or
+  looks up its price, and CPU pod creation is no longer retried (a retry could
+  rent a second pod).
+- `AsyncResourcePool.scale()` no longer deadlocks on scale-down, and
+  `CacheService.size()` / `.keys()` no longer deadlock.
+- Judge and reward fixes: typographic apostrophes negate an approval in
+  `extract_verdict`; `ResultCache` no longer raises `KeyError` after a key is
+  set twice and its keys no longer collide across part boundaries; the RULER
+  cache key includes the rubric text and temperature; `max_retries=0` is
+  rejected instead of scoring 0.0 without calling the judge; cache and fallback
+  rates use every request as the denominator; `CodeFormattingHeuristic` no
+  longer zeroes non-coding replies; `LLMJudgeReward` accepts a judge without
+  `.config`.
+- Training fixes: a resumed preference/distillation run with more steps no
+  longer trains the extra steps at a learning rate of zero;
+  `train_customer_service_with_trl` no longer crashes on training keyword
+  arguments; `NeuralRewardModel.predict_reward` is deterministic;
+  `create_kl_controller("cosine", min_kl_coef=...)` no longer raises; the
+  warmup KL scheduler no longer divides by zero; a harvest spec gated only by
+  `nsr` is accepted.
+- Experimental fixes: the BEAR Lagrange multiplier now rises when its
+  constraint is violated and survives a checkpoint reload; a recipe whose
+  export or verification raises reverts its edit; RLAIF checkpoints no longer
+  pickle the judge API key; `compute_mmd` accepts lists; information-gain
+  exploration handles a single action.
+- Gateway and CLI fixes: `/ready` answers 503 when the inference backend is
+  unreachable; the training-lab JSON export no longer fails on a deque; a tool
+  call without an id gets a generated id instead of `"None"`; the MCP
+  `improve_run` tool reports "No conversations found" instead of an empty
+  error; `finetune compare` recognises cancelled runs.
+- Other: fan-out progress events containing NaN no longer fail a succeeded run;
+  Nebius and CoreWeave durable handles reload after the local dataset moves;
+  long Fireworks dataset ids keep their random suffix; a cancelled Prime job
+  stays cancelled; the expression sanitiser keeps whitespace (so `2 3` is no
+  longer evaluated as 23); `int | None` produces the same JSON schema as
+  `Optional[int]`; the preflight checker no longer crashes without
+  `output_dir`; `scripts/benchmark.py` imports again; eight starter pages use
+  the current `stateset-agents model <name>` commands.
+
 ## [0.73.1] - 2026-11-09 — weight-edit recipes and fan-out sweeps
 
 ### Added

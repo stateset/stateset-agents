@@ -20,10 +20,10 @@ CLI quick start
 
 .. code-block:: bash
 
-   stateset-agents nemotron-3-5 --json-output
-   stateset-agents nemotron-3-5 --starter-profile memory --json-output
-   stateset-agents nemotron-3-5 --list-profiles --json-output
-   stateset-agents nemotron-3-5 --write-config ./nemotron_3_5.json
+   stateset-agents model nemotron-3-5 --json-output
+   stateset-agents model nemotron-3-5 --starter-profile memory --json-output
+   stateset-agents model nemotron-3-5 --list-profiles --json-output
+   stateset-agents model nemotron-3-5 --write-config ./nemotron_3_5.json
    stateset-agents init --preset nemotron-3-5 --path ./nemotron_3_5.json --format json
 
 Run the starter
@@ -31,15 +31,15 @@ Run the starter
 
 .. code-block:: bash
 
-   stateset-agents nemotron-3-5 --no-dry-run --task customer_service
-   stateset-agents nemotron-3-5 --config ./nemotron_3_5.json --no-dry-run
+   stateset-agents model nemotron-3-5 --no-dry-run --task customer_service
+   stateset-agents model nemotron-3-5 --config ./nemotron_3_5.json --no-dry-run
 
 Low-memory profile
 ------------------
 
 .. code-block:: bash
 
-   stateset-agents nemotron-3-5 --starter-profile memory --json-output
+   stateset-agents model nemotron-3-5 --starter-profile memory --json-output
    python examples/finetune_gspo.py --model nemotron-3-5 --starter-profile memory --dry-run
 
 Starter profiles

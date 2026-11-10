@@ -227,6 +227,9 @@ class RulerRewardFunction(RewardFunction):
         self.fallback_enabled = fallback_enabled
         self.cache_ttl = cache_ttl
         self.batch_size = batch_size
+        if max_retries < 1:
+            # Zero attempts would skip the judge and report a score of 0.0.
+            raise ValueError("max_retries must be at least 1")
         self.max_retries = max_retries
         self.timeout = timeout
 
@@ -251,7 +254,10 @@ class RulerRewardFunction(RewardFunction):
                 "turns": self._normalize_turns(turns),
                 "context": context,
                 "model": self.model,
-                "rubric": self.rubric_type,
+                # The rubric text, not its type: two judges with different
+                # custom rubrics share the "custom" type.
+                "rubric": self.rubric,
+                "temperature": self.temperature,
             },
             sort_keys=True,
             default=str,
@@ -651,14 +657,18 @@ class RulerRewardFunction(RewardFunction):
         )
         return f"ruler_reward:{hashlib.sha256(content.encode()).hexdigest()}"
 
+    def _requests(self) -> int:
+        return max(1, self.total_calls + self.cache_hits + self.fallback_uses)
+
     def get_metrics(self) -> dict[str, Any]:
         """Get performance metrics"""
         return {
             "total_calls": self.total_calls,
             "cache_hits": self.cache_hits,
             "fallback_uses": self.fallback_uses,
-            "cache_hit_rate": self.cache_hits / max(1, self.total_calls),
-            "fallback_rate": self.fallback_uses / max(1, self.total_calls),
+            # total_calls counts judge calls only; a rate needs every request.
+            "cache_hit_rate": self.cache_hits / self._requests(),
+            "fallback_rate": self.fallback_uses / self._requests(),
         }
 
     @staticmethod

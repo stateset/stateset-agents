@@ -606,5 +606,15 @@ class WindowedTrainer:
         torch = require_torch()
         state = load_state(path, trusted=trusted)
         self.optimizer.load_state_dict(state["optimizer"])
+        # LambdaLR saves the schedule object's attributes, so loading would
+        # restore the old run length: a resume with more steps then trained
+        # every extra step at a learning rate of zero.
+        schedules = self.lr_scheduler.lr_lambdas
+        current = [
+            dict(vars(s)) if isinstance(s, _Schedule) else None for s in schedules
+        ]
         self.lr_scheduler.load_state_dict(state["scheduler"])
+        for schedule, values in zip(schedules, current, strict=True):
+            if values is not None:
+                vars(schedule).update(values)
         torch.set_rng_state(state["torch_rng"])

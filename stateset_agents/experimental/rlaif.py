@@ -23,7 +23,7 @@ Reference: https://arxiv.org/abs/2309.00267 (RLAIF)
 
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -746,7 +746,13 @@ class RLAIFTrainer:
             {
                 "global_step": self.global_step,
                 "metrics_history": self.metrics_history,
-                "config": self.config,
+                # A plain dict without the judge key: pickling the config
+                # object wrote the API key to disk.
+                "config": {
+                    key: value
+                    for key, value in asdict(self.config).items()
+                    if key != "judge_api_key"
+                },
             },
             os.path.join(path, "training_state.pt"),
         )

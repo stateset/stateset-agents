@@ -40,5 +40,5 @@ def evaluate_causal_lm(
     return {
         "pass_at_1": total_score / count,
         "parse_rate": parseable / count,
-        "n": float(count),
+        "n": float(len(examples)),
     }

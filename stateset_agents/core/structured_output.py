@@ -34,6 +34,7 @@ Example:
 import json
 import logging
 import re
+import types
 from dataclasses import dataclass
 from typing import Any, TypeVar, Union, cast, get_args, get_origin
 
@@ -125,7 +126,7 @@ def json_schema_from_type(python_type: type) -> dict[str, Any]:
     args = get_args(python_type)
 
     # Handle Optional (Union with None)
-    if origin is Union:
+    if origin is Union or origin is types.UnionType:  # also ``int | None``
         non_none_args = [a for a in args if a is not type(None)]
         if len(non_none_args) == 1:
             schema = json_schema_from_type(non_none_args[0])

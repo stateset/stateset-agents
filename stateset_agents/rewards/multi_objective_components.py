@@ -703,6 +703,7 @@ __all__ = [
     "ActionOrientedRewardComponent",
     "BaseRewardComponent",
     "EmpathyRewardComponent",
+    "GroundedComponent",
     "LengthRewardComponent",
     "MULTI_REWARD_EXCEPTIONS",
     "ModelBasedRewardComponent",
@@ -710,6 +711,7 @@ __all__ = [
     "ReasoningRewardComponent",
     "RewardComponent",
     "SimilarityRewardComponent",
+    "ground_components",
 ]
 
 

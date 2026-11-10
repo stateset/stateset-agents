@@ -235,7 +235,7 @@ class CoreWeaveExecutor(RemoteExecutor):
             if payload.get("schema_version") != _STATE_SCHEMA_VERSION:
                 raise ValueError("unsupported state schema")
             job = _CoreWeaveJob(
-                spec=RemoteJobSpec.from_dict(payload["spec"]),
+                spec=RemoteJobSpec.from_dict(payload["spec"], require_dataset=False),
                 input_uri=str(payload["input_uri"]),
                 output_uri=str(payload["output_uri"]),
                 status=JobStatus(payload.get("status", "pending")),
