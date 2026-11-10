@@ -78,7 +78,7 @@ BASELINE: dict[str, tuple[int, int]] = {
     "stateset_agents/core/enhanced_state_management.py": (0, 7),
     "stateset_agents/core/function_calling.py": (1, 1),
     "stateset_agents/core/gym/adapter.py": (1, 3),
-    "stateset_agents/core/multiturn_agent.py": (3, 6),
+    "stateset_agents/core/multiturn_agent.py": (3, 5),
     "stateset_agents/core/tool_agent.py": (0, 1),
     "stateset_agents/core/type_system.py": (1, 2),
     "stateset_agents/data/conversation_dataset.py": (1, 1),

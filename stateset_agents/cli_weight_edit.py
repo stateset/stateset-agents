@@ -284,6 +284,41 @@ def recipe_template_cmd() -> None:
     _echo(example_recipe().to_json().rstrip("\n"))
 
 
+def _parse_overrides(overrides: list[str]) -> dict[str, Any]:
+    """``--set PATH=VALUE`` items as a mapping; VALUE is JSON when it parses."""
+    changes: dict[str, Any] = {}
+    for item in overrides:
+        path, sep, raw = item.partition("=")
+        if not sep or not path:
+            _echo(f"--set needs PATH=VALUE, got {item!r}", err=True)
+            raise typer.Exit(code=2)
+        try:
+            changes[path] = json.loads(raw)
+        except ValueError:
+            changes[path] = raw
+    return changes
+
+
+def _teach_summary(report: Any, out: Path) -> dict[str, Any]:
+    """What ``teach`` prints: the outcome, each site tried, and where to look."""
+    return {
+        "status": report.status,
+        "site": report.site,
+        "attempts": [
+            {
+                "module": a.module,
+                "key": a.key,
+                "violations": list(a.violations),
+                **({"error": a.error} if a.error else {}),
+            }
+            for a in report.attempts
+        ],
+        "hints": list(report.hints),
+        "adapter_dir": report.adapter_dir,
+        "report": str(out / "recipe_report.json"),
+    }
+
+
 @weight_edit_app.command("teach")
 def teach_cmd(
     recipe: Path = typer.Argument(..., help="Edit recipe JSON (see recipe-template)."),
@@ -347,16 +382,7 @@ def teach_cmd(
     if mode not in {"merged", "adapter"}:
         _echo("--mode must be merged or adapter", err=True)
         raise typer.Exit(code=2)
-    changes: dict[str, Any] = {}
-    for item in overrides:
-        path, sep, raw = item.partition("=")
-        if not sep or not path:
-            _echo(f"--set needs PATH=VALUE, got {item!r}", err=True)
-            raise typer.Exit(code=2)
-        try:
-            changes[path] = json.loads(raw)
-        except ValueError:
-            changes[path] = raw
+    changes = _parse_overrides(overrides)
     try:
         spec = EditRecipe.from_json(recipe.read_text(encoding="utf-8"))
         if changes:
@@ -413,23 +439,7 @@ def teach_cmd(
     except (ConfigurationError, BudgetExhausted) as exc:
         _echo(f"teach failed: {exc}", err=True)
         raise typer.Exit(code=2) from exc
-    summary = {
-        "status": report.status,
-        "site": report.site,
-        "attempts": [
-            {
-                "module": a.module,
-                "key": a.key,
-                "violations": list(a.violations),
-                **({"error": a.error} if a.error else {}),
-            }
-            for a in report.attempts
-        ],
-        "hints": list(report.hints),
-        "adapter_dir": report.adapter_dir,
-        "report": str(out / "recipe_report.json"),
-    }
-    _echo(json.dumps(summary, indent=2, ensure_ascii=False))
+    _echo(json.dumps(_teach_summary(report, out), indent=2, ensure_ascii=False))
     if metrics is not None:
         metrics.parent.mkdir(parents=True, exist_ok=True)
         metrics.write_text(

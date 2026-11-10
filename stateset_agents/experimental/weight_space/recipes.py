@@ -491,6 +491,342 @@ def _hints(violations: Sequence[str]) -> tuple[str, ...]:
     return tuple(seen)
 
 
+class _RecipeRun:
+    """One run of a recipe: the rendered prompts, the baseline, the attempts.
+
+    :func:`run_recipe` drives it; the steps are methods so each stays readable.
+    The order of session calls is the order the budget is spent in.
+    """
+
+    def __init__(
+        self,
+        recipe: EditRecipe,
+        session: WeightSpaceSession,
+        text: TextAdapter,
+        *,
+        root: Path | None,
+        fresh_base_model: Any,
+        verify_mode: Literal["adapter", "merged"],
+        progress: Callable[[str], None] | None,
+    ) -> None:
+        self.recipe = recipe
+        self.session = session
+        self.root = root
+        self.fresh_base_model = fresh_base_model
+        self.verify_mode: Literal["adapter", "merged"] = verify_mode
+        self.progress = progress
+        self.design = [text.render(q) for q in recipe.design]
+        self.validation = [text.render(q) for q in recipe.validation]
+        self.calibration = [text.render(q) for q in recipe.calibration]
+        locality = [
+            (text.render(item.prompt), item.answers) for item in recipe.locality
+        ]
+        self.continuation = recipe.target + (text.eos_text if recipe.append_eos else "")
+        self.cases = [
+            AnswerCase(p, (recipe.target,)) for p in self.design + self.validation
+        ]
+        self.cases += [AnswerCase(p, answers, "locality") for p, answers in locality]
+        self.questions = [
+            *recipe.design,
+            *recipe.validation,
+            *(item.prompt for item in recipe.locality),
+        ]
+        self.lengths = [len(session.encode(p)) for p in self.design]
+        self.subject_at = (
+            [
+                _subject_index(p, recipe.subject, text, n)
+                for p, n in zip(self.design, self.lengths, strict=True)
+            ]
+            if any(s.key == "subject" for s in recipe.sites)
+            else []
+        )
+        self.baseline: list[dict[str, Any]] = []
+        self.attempts: list[SiteAttempt] = []
+        self.violations: list[str] = []
+
+    def say(self, message: str) -> None:
+        if self.progress is not None:
+            self.progress(message)
+
+    def measure_baseline(self) -> int:
+        """Generate the unedited answers; return how many locality ones are right.
+
+        One generation unit before any design work: a recipe whose own locality
+        requirement the unedited model cannot meet would fail at every site.
+        """
+        session, limits = self.session, self.recipe.answer_limits
+        decode = session.decode
+        assert decode is not None  # run_recipe checked
+        self.say(f"baseline: generating answers to {len(self.cases)} questions")
+        generated = session.generate(
+            [c.prompt for c in self.cases],
+            max_new_tokens=limits.max_new_tokens,
+            use_cache=limits.use_cache,
+            max_context_tokens=limits.max_context_tokens,
+            max_total_tokens=limits.max_total_tokens,
+            max_logit_elements=limits.max_logit_elements,
+            reason="recipe:baseline",
+        )
+        for question, case, result in zip(
+            self.questions, self.cases, generated, strict=True
+        ):
+            answer = decode(result.token_ids)
+            self.baseline.append(
+                {
+                    "kind": case.kind,
+                    "question": question,
+                    "text": answer,
+                    "finish_reason": result.finish_reason,
+                    "correct": matches_answer_prefix(answer, case.answers),
+                }
+            )
+        return sum(bool(r["correct"]) for r in self.baseline if r["kind"] == "locality")
+
+    def finish(
+        self,
+        status: Status,
+        hints: Sequence[str],
+        site: EditSite | None = None,
+        edit_id: str | None = None,
+        export: dict[str, Any] | None = None,
+        adapter: Path | None = None,
+    ) -> RecipeReport:
+        """Build the report and, with an output directory, write it."""
+        report = RecipeReport(
+            status,
+            self.recipe.content_hash(),
+            self.recipe.name,
+            self.recipe.model,
+            None if site is None else {"module": site.module, "key": site.key},
+            edit_id,
+            tuple(self.attempts),
+            tuple(self.baseline),
+            tuple(hints),
+            None if adapter is None else str(adapter),
+            export,
+            self.session.budget.used,
+            self.session.budget.limit,
+        )
+        if self.root is not None:
+            self.root.mkdir(parents=True, exist_ok=True)
+            (self.root / REPORT_NAME).write_text(
+                json.dumps(report.to_dict(), indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+        return report
+
+    def capture_rows(self) -> dict[str, Any]:
+        """Site inputs for the design, calibration and protected prompts."""
+        recipe, session = self.recipe, self.session
+        modules = list(dict.fromkeys(s.module for s in recipe.sites))
+        rows = {
+            "design": session.capture_many(
+                modules, self.design, read="input", position="all", reason="recipe:keys"
+            ),
+            "calibration": session.capture_many(
+                modules,
+                self.calibration,
+                read="input",
+                position="all",
+                reason="recipe:calibration",
+            ),
+        }
+        if recipe.protected:
+            rows["protected"] = session.capture_many(
+                modules,
+                list(recipe.protected),
+                read="input",
+                position="all",
+                reason="recipe:protected",
+            )
+        return rows
+
+    def design_site(self, site: EditSite, rows: Mapping[str, Any]) -> Any:
+        """Optimise an edit at ``site``; ``None`` (and a recorded attempt) on failure."""
+        import torch
+
+        recipe, lengths = self.recipe, self.lengths
+        starts = [sum(lengths[:i]) for i in range(len(lengths))]
+        picks = [
+            start + (self.subject_at[i] if site.key == "subject" else lengths[i] - 1)
+            for i, start in enumerate(starts)
+        ]
+        keys = torch.stack([rows["design"][site.module][i] for i in picks])
+        self.say(
+            f"site {site.module} ({site.key}): designing, "
+            f"{recipe.optimizer.steps} steps"
+        )
+        try:
+            return self.session.optimize_keyed_edit(
+                site.module,
+                keys,
+                target_pairs=[(p, self.continuation) for p in self.design],
+                locality_prompts=self.calibration,
+                config=recipe.optimizer,
+                protect=rows["protected"][site.module] if recipe.protected else None,
+                locality=rows["calibration"][site.module],
+                locality_weight=float(recipe.locality_weight),
+            )
+        except ConfigurationError as exc:
+            self.attempts.append(
+                SiteAttempt(site.module, site.key, False, ("design_failed",), str(exc))
+            )
+            self.say(f"site {site.module}: design failed: {exc}")
+            return None
+
+    def gate_site(self, site: EditSite, proposal: Any) -> Any:
+        """Trial the designed edit against the gates; record the attempt."""
+        recipe, session, cases = self.recipe, self.session, self.cases
+        first, chosen = proposal.history[0], proposal.history[proposal.selected_step]
+        summary = {
+            "selected_step": proposal.selected_step,
+            "initial_target_nll": first.target_nll,
+            "target_nll": chosen.target_nll,
+            "calibration_kl": chosen.locality_kl,
+            "update_norm": proposal.update_norm,
+            "model_forwards": proposal.model_forwards,
+            "backward_calls": proposal.backward_calls,
+        }
+        self.say(
+            f"site {site.module}: target loss {first.target_nll:.3f} -> "
+            f"{chosen.target_nll:.3f}; running acceptance gates"
+        )
+        seen: list[str] = []
+        decoder = session.decode
+        assert decoder is not None  # run_recipe checked
+
+        def tracing(ids: Sequence[int]) -> str:
+            value = decoder(ids)
+            seen.append(value)
+            return value
+
+        session.decode = tracing
+        try:
+            trial = session.trial_edit(
+                site.module,
+                proposal.delta,
+                locality_prompts=list(recipe.drift),
+                target_pairs=[(p, self.continuation) for p in self.validation],
+                limits=recipe.limits,
+                answer_cases=cases,
+                answer_limits=recipe.answer_limits,
+                note=f"recipe:{recipe.name}",
+            )
+        finally:
+            session.decode = decoder
+        outputs: tuple[dict[str, Any], ...] = ()
+        check = trial.answer_check
+        if check is not None and len(seen) == 2 * len(cases):
+            outputs = tuple(
+                {
+                    "kind": score.kind,
+                    "question": question,
+                    "before": before,
+                    "after": after,
+                    "correct": score.edited_correct,
+                }
+                for question, score, before, after in zip(
+                    self.questions,
+                    check.scores,
+                    seen[: len(cases)],
+                    seen[len(cases) :],
+                    strict=True,
+                )
+            )
+        self.attempts.append(
+            SiteAttempt(
+                site.module,
+                site.key,
+                trial.accepted,
+                trial.violations,
+                None,
+                summary,
+                asdict(trial.metrics),
+                None if check is None else asdict(check.metrics),
+                outputs,
+            )
+        )
+        return trial
+
+    def keep(self, site: EditSite, edit_id: str) -> RecipeReport:
+        """Export and verify an accepted edit; revert it if either step fails."""
+        recipe, session, root = self.recipe, self.session, self.root
+        if root is None:
+            return self.finish("accepted", (), site, edit_id)
+        try:
+            adapter = session.export(root / ADAPTER_DIR)
+        except BaseException:
+            # Nothing is kept unless every step passes: an export that
+            # raises must not leave the edit active in the session.
+            session.revert()
+            raise
+        if self.fresh_base_model is None:
+            return self.finish(
+                "accepted",
+                (
+                    "The adapter was exported but not reloaded. Verify it against "
+                    "a fresh copy of the base model before serving it.",
+                ),
+                site,
+                edit_id,
+                {"status": "unverified"},
+                adapter,
+            )
+        self.say("verifying the exported adapter on a fresh base model")
+        try:
+            _, verification = session.verify_export(
+                adapter,
+                self.fresh_base_model,
+                locality_prompts=list(recipe.drift),
+                target_pairs=[(p, self.continuation) for p in self.validation],
+                limits=recipe.export_limits,
+                mode=self.verify_mode,
+            )
+        except BaseException:
+            # A wrong base model or a load error raises instead of
+            # rejecting; the edit must still not survive it.
+            session.revert()
+            raise
+        export = {
+            "status": "passed" if verification.accepted else "rejected",
+            "mode": self.verify_mode,
+            "violations": list(verification.violations),
+            "metrics": asdict(verification.metrics),
+        }
+        if verification.accepted:
+            return self.finish("accepted", (), site, edit_id, export, adapter)
+        session.revert()
+        return self.finish(
+            "export_rejected",
+            (
+                "The edit passed in the live model but the reloaded adapter did "
+                "not match it within export_limits. The edit was reverted. Try "
+                'verify mode "adapter", or loosen export_limits for a low-precision '
+                "model.",
+            ),
+            site,
+            None,
+            export,
+            adapter,
+        )
+
+    def rejected(self) -> RecipeReport:
+        """The report when no site's edit was accepted."""
+        if any(a.design is not None for a in self.attempts):
+            return self.finish("rejected", _hints(self.violations))
+        errors = list(dict.fromkeys(a.error for a in self.attempts if a.error))
+        return self.finish(
+            "rejected",
+            (
+                "No site produced a design: " + "; ".join(errors) + ". Resource "
+                "caps live under optimizer (max_logit_elements, "
+                "max_reference_elements, max_total_tokens, max_model_forwards); "
+                "other causes are keys that conflict with protected text or a site "
+                "that is not a float32 Linear.",
+            ),
+        )
+
+
 def run_recipe(
     recipe: EditRecipe,
     session: WeightSpaceSession,
@@ -513,8 +849,6 @@ def run_recipe(
     still holds only hashes. ``progress`` receives one short line per stage;
     design at a large model's site can take minutes on CPU.
     """
-    import torch
-
     if fresh_base_model is not None and out_dir is None:
         raise ConfigurationError("verification needs out_dir for the exported adapter")
     if not callable(session.decode):
@@ -531,95 +865,20 @@ def run_recipe(
             f"{session.budget.remaining} remain"
         )
 
-    def say(message: str) -> None:
-        if progress is not None:
-            progress(message)
-
-    design = [text.render(q) for q in recipe.design]
-    validation = [text.render(q) for q in recipe.validation]
-    calibration = [text.render(q) for q in recipe.calibration]
-    locality = [(text.render(item.prompt), item.answers) for item in recipe.locality]
-    continuation = recipe.target + (text.eos_text if recipe.append_eos else "")
-    cases = [AnswerCase(p, (recipe.target,)) for p in design + validation]
-    cases += [AnswerCase(p, answers, "locality") for p, answers in locality]
-    questions = [
-        *recipe.design,
-        *recipe.validation,
-        *(item.prompt for item in recipe.locality),
-    ]
-    lengths = [len(session.encode(p)) for p in design]
-    subject_at = (
-        [
-            _subject_index(p, recipe.subject, text, n)
-            for p, n in zip(design, lengths, strict=True)
-        ]
-        if any(s.key == "subject" for s in recipe.sites)
-        else []
+    run = _RecipeRun(
+        recipe,
+        session,
+        text,
+        root=root,
+        fresh_base_model=fresh_base_model,
+        verify_mode=verify_mode,
+        progress=progress,
     )
-
-    # One generation unit before any design work: a recipe whose own locality
-    # requirement the unedited model cannot meet would fail at every site.
     limits = recipe.answer_limits
-    say(f"baseline: generating answers to {len(cases)} questions")
-    generated = session.generate(
-        [c.prompt for c in cases],
-        max_new_tokens=limits.max_new_tokens,
-        use_cache=limits.use_cache,
-        max_context_tokens=limits.max_context_tokens,
-        max_total_tokens=limits.max_total_tokens,
-        max_logit_elements=limits.max_logit_elements,
-        reason="recipe:baseline",
-    )
-    baseline: list[dict[str, Any]] = []
-    for question, case, result in zip(questions, cases, generated, strict=True):
-        answer = session.decode(result.token_ids)
-        baseline.append(
-            {
-                "kind": case.kind,
-                "question": question,
-                "text": answer,
-                "finish_reason": result.finish_reason,
-                "correct": matches_answer_prefix(answer, case.answers),
-            }
-        )
-    base_correct = sum(bool(r["correct"]) for r in baseline if r["kind"] == "locality")
-
-    def finish(
-        status: Status,
-        attempts: Sequence[SiteAttempt],
-        hints: Sequence[str],
-        site: EditSite | None = None,
-        edit_id: str | None = None,
-        export: dict[str, Any] | None = None,
-        adapter: Path | None = None,
-    ) -> RecipeReport:
-        report = RecipeReport(
-            status,
-            recipe.content_hash(),
-            recipe.name,
-            recipe.model,
-            None if site is None else {"module": site.module, "key": site.key},
-            edit_id,
-            tuple(attempts),
-            tuple(baseline),
-            tuple(hints),
-            None if adapter is None else str(adapter),
-            export,
-            session.budget.used,
-            session.budget.limit,
-        )
-        if root is not None:
-            root.mkdir(parents=True, exist_ok=True)
-            (root / REPORT_NAME).write_text(
-                json.dumps(report.to_dict(), indent=2, ensure_ascii=False) + "\n",
-                encoding="utf-8",
-            )
-        return report
-
+    base_correct = run.measure_baseline()
     if base_correct < limits.min_baseline_locality_correct:
-        return finish(
+        return run.finish(
             "baseline_unmet",
-            (),
             (
                 f"The unedited model answers {base_correct} of "
                 f"{len(recipe.locality)} locality questions in the declared form; "
@@ -628,206 +887,20 @@ def run_recipe(
                 _HINTS["generation:baseline_locality_correct"],
             ),
         )
-
-    say(f"baseline: {base_correct}/{len(recipe.locality)} locality answers correct")
-    modules = list(dict.fromkeys(s.module for s in recipe.sites))
-    rows = {
-        "design": session.capture_many(
-            modules, design, read="input", position="all", reason="recipe:keys"
-        ),
-        "calibration": session.capture_many(
-            modules,
-            calibration,
-            read="input",
-            position="all",
-            reason="recipe:calibration",
-        ),
-    }
-    if recipe.protected:
-        rows["protected"] = session.capture_many(
-            modules,
-            list(recipe.protected),
-            read="input",
-            position="all",
-            reason="recipe:protected",
-        )
-
-    attempts: list[SiteAttempt] = []
-    violations: list[str] = []
-    decoder = session.decode
+    run.say(f"baseline: {base_correct}/{len(recipe.locality)} locality answers correct")
+    rows = run.capture_rows()
     for site in recipe.sites:
-        starts = [sum(lengths[:i]) for i in range(len(lengths))]
-        picks = [
-            start + (subject_at[i] if site.key == "subject" else lengths[i] - 1)
-            for i, start in enumerate(starts)
-        ]
-        keys = torch.stack([rows["design"][site.module][i] for i in picks])
-        say(
-            f"site {site.module} ({site.key}): designing, "
-            f"{recipe.optimizer.steps} steps"
-        )
-        try:
-            proposal = session.optimize_keyed_edit(
-                site.module,
-                keys,
-                target_pairs=[(p, continuation) for p in design],
-                locality_prompts=calibration,
-                config=recipe.optimizer,
-                protect=rows["protected"][site.module] if recipe.protected else None,
-                locality=rows["calibration"][site.module],
-                locality_weight=float(recipe.locality_weight),
-            )
-        except ConfigurationError as exc:
-            attempts.append(
-                SiteAttempt(site.module, site.key, False, ("design_failed",), str(exc))
-            )
-            say(f"site {site.module}: design failed: {exc}")
+        proposal = run.design_site(site, rows)
+        if proposal is None:
             continue
-        first, chosen = proposal.history[0], proposal.history[proposal.selected_step]
-        summary = {
-            "selected_step": proposal.selected_step,
-            "initial_target_nll": first.target_nll,
-            "target_nll": chosen.target_nll,
-            "calibration_kl": chosen.locality_kl,
-            "update_norm": proposal.update_norm,
-            "model_forwards": proposal.model_forwards,
-            "backward_calls": proposal.backward_calls,
-        }
-        say(
-            f"site {site.module}: target loss {first.target_nll:.3f} -> "
-            f"{chosen.target_nll:.3f}; running acceptance gates"
-        )
-        seen: list[str] = []
-
-        def tracing(ids: Sequence[int], _sink: list[str] = seen) -> str:
-            value = decoder(ids)
-            _sink.append(value)
-            return value
-
-        session.decode = tracing
-        try:
-            trial = session.trial_edit(
-                site.module,
-                proposal.delta,
-                locality_prompts=list(recipe.drift),
-                target_pairs=[(p, continuation) for p in validation],
-                limits=recipe.limits,
-                answer_cases=cases,
-                answer_limits=limits,
-                note=f"recipe:{recipe.name}",
-            )
-        finally:
-            session.decode = decoder
-        outputs: tuple[dict[str, Any], ...] = ()
-        check = trial.answer_check
-        if check is not None and len(seen) == 2 * len(cases):
-            outputs = tuple(
-                {
-                    "kind": score.kind,
-                    "question": question,
-                    "before": before,
-                    "after": after,
-                    "correct": score.edited_correct,
-                }
-                for question, score, before, after in zip(
-                    questions,
-                    check.scores,
-                    seen[: len(cases)],
-                    seen[len(cases) :],
-                    strict=True,
-                )
-            )
-        attempts.append(
-            SiteAttempt(
-                site.module,
-                site.key,
-                trial.accepted,
-                trial.violations,
-                None,
-                summary,
-                asdict(trial.metrics),
-                None if check is None else asdict(check.metrics),
-                outputs,
-            )
-        )
+        trial = run.gate_site(site, proposal)
         if not trial.accepted:
-            violations.extend(trial.violations)
-            say(f"site {site.module}: rejected ({', '.join(trial.violations)})")
+            run.violations.extend(trial.violations)
+            run.say(f"site {site.module}: rejected ({', '.join(trial.violations)})")
             continue
-        say(f"site {site.module}: accepted")
-        if root is None:
-            return finish("accepted", attempts, (), site, trial.edit_id)
-        try:
-            adapter = session.export(root / ADAPTER_DIR)
-        except BaseException:
-            # Nothing is kept unless every step passes: an export that
-            # raises must not leave the edit active in the session.
-            session.revert()
-            raise
-        if fresh_base_model is None:
-            return finish(
-                "accepted",
-                attempts,
-                (
-                    "The adapter was exported but not reloaded. Verify it against "
-                    "a fresh copy of the base model before serving it.",
-                ),
-                site,
-                trial.edit_id,
-                {"status": "unverified"},
-                adapter,
-            )
-        say("verifying the exported adapter on a fresh base model")
-        try:
-            _, verification = session.verify_export(
-                adapter,
-                fresh_base_model,
-                locality_prompts=list(recipe.drift),
-                target_pairs=[(p, continuation) for p in validation],
-                limits=recipe.export_limits,
-                mode=verify_mode,
-            )
-        except BaseException:
-            # A wrong base model or a load error raises instead of
-            # rejecting; the edit must still not survive it.
-            session.revert()
-            raise
-        export = {
-            "status": "passed" if verification.accepted else "rejected",
-            "mode": verify_mode,
-            "violations": list(verification.violations),
-            "metrics": asdict(verification.metrics),
-        }
-        if verification.accepted:
-            return finish(
-                "accepted", attempts, (), site, trial.edit_id, export, adapter
-            )
-        session.revert()
-        return finish(
-            "export_rejected",
-            attempts,
-            (
-                "The edit passed in the live model but the reloaded adapter did "
-                "not match it within export_limits. The edit was reverted. Try "
-                'verify mode "adapter", or loosen export_limits for a low-precision '
-                "model.",
-            ),
-            site,
-            None,
-            export,
-            adapter,
-        )
-    if not any(a.design is not None for a in attempts):
-        errors = list(dict.fromkeys(a.error for a in attempts if a.error))
-        hints: tuple[str, ...] = (
-            "No site produced a design: " + "; ".join(errors) + ". Resource "
-            "caps live under optimizer (max_logit_elements, max_reference_elements, "
-            "max_total_tokens, max_model_forwards); other causes are keys that "
-            "conflict with protected text or a site that is not a float32 Linear.",
-        )
-    else:
-        hints = _hints(violations)
-    return finish("rejected", attempts, hints)
+        run.say(f"site {site.module}: accepted")
+        return run.keep(site, trial.edit_id)
+    return run.rejected()
 
 
 def example_recipe() -> EditRecipe:

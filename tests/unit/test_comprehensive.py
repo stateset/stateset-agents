@@ -390,8 +390,13 @@ class TestMultiTurnAgent:
     @pytest.mark.asyncio
     async def test_multiturn_planning_injected_prompt(self):
         """Ensure planning summaries are injected into advanced prompts."""
+        from stateset_agents.experimental.long_term_planning import (
+            planning_manager_from_config,
+        )
+
         agent = MultiTurnAgent(
-            model_config={"model_type": "test", "enable_planning": True}
+            model_config={"model_type": "test", "enable_planning": True},
+            planning_manager=planning_manager_from_config(None),
         )
         context = await agent.start_conversation(
             initial_context={"goal": "Ship a release"}
