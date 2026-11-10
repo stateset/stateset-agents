@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transport error or interrupt while a serve session waits for networking or
   looks up its price, and CPU pod creation is no longer retried (a retry could
   rent a second pod).
+- `ensure_async_type_safety` is a decorator again (declared `async`, it
+  returned a coroutine object); `TypeSafeSerializer.deserialize` returns the
+  object instead of its envelope; `find_optimal_batch_size` no longer loops
+  forever from a batch size of 1.
 - The gateway, trainer and scaling Dockerfiles no longer copy `setup.py` and
   `grpo_agent_framework/`, which no longer exist and failed every build at
   that step; they copy `LICENSE`, which the package build needs. Not rebuilt

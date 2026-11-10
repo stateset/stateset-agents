@@ -389,7 +389,10 @@ class BatchOptimizer:
                 )
 
                 last_working_size = current_batch_size
-                current_batch_size = int(current_batch_size * growth_factor)
+                # At least +1: int(1 * 1.5) is 1, which never left the loop.
+                current_batch_size = max(
+                    current_batch_size + 1, int(current_batch_size * growth_factor)
+                )
 
             except RuntimeError as e:
                 if "out of memory" in str(e).lower():

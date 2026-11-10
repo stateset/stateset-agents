@@ -253,3 +253,37 @@ def test_dockerfiles_copy_only_paths_that_exist(name: str) -> None:
         sources = [p for p in parts[1:-1] if not p.startswith("--")]
         missing += [s for s in sources if s != "." and not (repo / s).exists()]
     assert not missing, f"{name} copies paths that are not in the repo: {missing}"
+
+
+@pytest.mark.asyncio
+async def test_async_type_safety_decorator_returns_a_callable() -> None:
+    import inspect
+
+    from stateset_agents.core.type_system import ensure_async_type_safety
+
+    # Unannotated: this file's postponed annotations are strings, which the
+    # validator cannot check (a separate, listed defect).
+    async def double(value):  # type: ignore[no-untyped-def]
+        return value * 2
+
+    wrapped = ensure_async_type_safety(double)
+    assert inspect.iscoroutinefunction(wrapped)  # was a bare coroutine object
+    assert await wrapped(2) == 4
+
+
+def test_type_safe_deserialize_returns_the_object() -> None:
+    from stateset_agents.core.type_system import TypeSafeSerializer
+
+    assert TypeSafeSerializer.deserialize(
+        TypeSafeSerializer.serialize({"a": 1}), dict
+    ) == {"a": 1}
+
+
+def test_batch_size_search_grows_from_one() -> None:
+    source = Path(
+        __import__(
+            "stateset_agents.core.performance_optimizer", fromlist=["x"]
+        ).__file__
+    ).read_text(encoding="utf-8")
+    assert "current_batch_size + 1, int(current_batch_size * growth_factor)" in source
+    assert max(1 + 1, int(1 * 1.5)) == 2

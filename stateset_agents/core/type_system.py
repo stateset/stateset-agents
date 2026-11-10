@@ -626,7 +626,7 @@ def ensure_type_safety(func: Callable) -> Callable:
     return wrapper
 
 
-async def ensure_async_type_safety(func: Callable) -> Callable:
+def ensure_async_type_safety(func: Callable) -> Callable:
     """Async version of type safety decorator"""
 
     async def wrapper(*args, **kwargs):
@@ -699,7 +699,7 @@ class TypeSafeSerializer:
                 raise TypeError(
                     f"Deserialized object does not match expected type {expected_type}"
                 )
-            return data
+            return obj  # the object, not the envelope it was wrapped in
         else:
             # Validate top-level
             if not TypeValidator.validate_type(data, expected_type):
