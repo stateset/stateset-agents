@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transport error or interrupt while a serve session waits for networking or
   looks up its price, and CPU pod creation is no longer retried (a retry could
   rent a second pod).
+- `AsyncResourcePool.acquire()` no longer hands out a resource the health
+  check or a scale-down already closed, grows the pool at once when nothing is
+  idle (it used to wait out the full acquire timeout first), retires a
+  resource whose caller failed, and counts that failure once.
 - `AsyncResourcePool.scale()` no longer deadlocks on scale-down, and
   `CacheService.size()` / `.keys()` no longer deadlock.
 - Judge and reward fixes: typographic apostrophes negate an approval in

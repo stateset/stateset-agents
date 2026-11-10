@@ -317,31 +317,42 @@ class AsyncResourcePool(Generic[T]):
         start_time = time.time()
 
         try:
-            # Try to get available resource
-            try:
-                pooled_resource = await asyncio.wait_for(
-                    self._available.get(), timeout=timeout
-                )
-                self._stats.pool_hits += 1
-
-            except asyncio.TimeoutError:
-                # Try to create new resource if under max size
-                async with self._lock:
-                    if len(self._pool) < self.max_size:
-                        new_resource = await self._create_resource()
-                        if new_resource is not None:
+            # Take an idle resource, or grow the pool, or wait for a release.
+            pooled_resource: PooledResource[T] | None = None
+            while pooled_resource is None:
+                candidate: PooledResource[T] | None = None
+                try:
+                    candidate = self._available.get_nowait()
+                except asyncio.QueueEmpty:
+                    # Nothing idle. Grow now if there is room: waiting out the
+                    # whole timeout first stalled callers for 30 s.
+                    async with self._lock:
+                        if len(self._pool) < self.max_size:
+                            new_resource = await self._create_resource()
+                            if new_resource is None:
+                                raise RuntimeError(
+                                    "Failed to create new resource"
+                                ) from None
                             pooled_resource = new_resource
                             self._pool.append(pooled_resource)
                             self._stats.total_connections += 1
                             self._stats.pool_misses += 1
-                        else:
+                    if pooled_resource is None:
+                        remaining = timeout - (time.time() - start_time)
+                        try:
+                            candidate = await asyncio.wait_for(
+                                self._available.get(), timeout=max(remaining, 0)
+                            )
+                        except asyncio.TimeoutError:
                             raise RuntimeError(
-                                "Failed to create new resource"
+                                f"Pool {self.name} exhausted (timeout after {timeout}s)"
                             ) from None
-                    else:
-                        raise RuntimeError(
-                            f"Pool {self.name} exhausted (timeout after {timeout}s)"
-                        ) from None
+                if candidate is not None:
+                    if candidate in self._pool:
+                        pooled_resource = candidate
+                        self._stats.pool_hits += 1
+                    # else: retired by the health check or a scale-down while
+                    # it sat in the queue. It is closed; drop it and look again.
 
             # Validate resource
             if not await self.factory.validate_resource(pooled_resource.resource):
@@ -381,11 +392,9 @@ class AsyncResourcePool(Generic[T]):
                         ) / self._stats.successful_requests
 
             except POOL_EXCEPTIONS as e:
-                # Mark resource as failed
+                # Mark resource as failed. The outer handler counts the
+                # failed request; counting it here too doubled the figure.
                 await pooled_resource.mark_failed(e)
-
-                async with self._lock:
-                    self._stats.failed_requests += 1
 
                 logger.error(
                     f"Error using resource {pooled_resource.info.resource_id}: {e}"
@@ -393,19 +402,21 @@ class AsyncResourcePool(Generic[T]):
                 raise
 
             finally:
-                # Release resource back to pool
-                await pooled_resource.release()
+                # release() sets the state to idle, so check for a failure
+                # first: releasing a failed resource put it back in service.
+                failed = pooled_resource.info.state == ResourceState.FAILED
+                if not failed:
+                    await pooled_resource.release()
 
                 async with self._lock:
                     self._stats.active_connections -= 1
-                    self._stats.idle_connections += 1
+                    if not failed:
+                        self._stats.idle_connections += 1
 
-                # Return to available pool if resource is still good
-                if pooled_resource.info.state == ResourceState.IDLE:
-                    await self._available.put(pooled_resource)
-                else:
-                    # Remove failed resource
+                if failed:
                     await self._remove_resource(pooled_resource)
+                else:
+                    await self._available.put(pooled_resource)
 
         except POOL_EXCEPTIONS:
             async with self._lock:

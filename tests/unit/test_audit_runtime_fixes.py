@@ -178,3 +178,59 @@ def test_preflight_with_data_path_and_no_output_dir_does_not_crash(tmp_path) -> 
     checker.check_training_readiness(
         {"model_name": "gpt2"}, data_path=str(tmp_path / "missing.jsonl")
     )
+
+
+class _PoolFactory:
+    def __init__(self) -> None:
+        self.created = 0
+        self.closed: list[object] = []
+
+    async def create_resource(self) -> object:
+        self.created += 1
+        return object()
+
+    async def validate_resource(self, resource: object) -> bool:
+        return resource not in self.closed
+
+    async def cleanup_resource(self, resource: object) -> None:
+        self.closed.append(resource)
+
+
+@pytest.mark.asyncio
+async def test_pool_never_hands_out_a_resource_the_health_check_retired() -> None:
+    from stateset_agents.core.async_pool import AsyncResourcePool
+
+    factory = _PoolFactory()
+    pool = AsyncResourcePool(factory, min_size=1, max_size=2, name="audit-stale")
+    await pool.initialize()
+    stale = pool._pool[0]
+    await pool._remove_resource(stale)  # what the health check does on expiry
+    async with pool.acquire(timeout=5) as resource:
+        assert resource is not stale.resource and resource not in factory.closed
+    assert factory.created == 2
+
+
+@pytest.mark.asyncio
+async def test_pool_grows_at_once_and_retires_a_failed_resource() -> None:
+    import asyncio
+
+    from stateset_agents.core.async_pool import AsyncResourcePool
+
+    factory = _PoolFactory()
+    pool = AsyncResourcePool(factory, min_size=1, max_size=2, name="audit-grow")
+    await pool.initialize()
+
+    async def second() -> object:
+        async with pool.acquire(timeout=30) as resource:
+            return resource
+
+    async with pool.acquire(timeout=30) as first:
+        other = await asyncio.wait_for(second(), timeout=5)  # no 30 s stall
+        assert other is not first
+
+    with pytest.raises(RuntimeError, match="boom"):
+        async with pool.acquire(timeout=5) as broken:
+            raise RuntimeError("boom")
+    assert broken in factory.closed
+    assert pool._stats.failed_requests == 1
+    assert all(entry.resource is not broken for entry in pool._pool)
