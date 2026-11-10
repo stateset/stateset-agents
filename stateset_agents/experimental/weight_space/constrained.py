@@ -115,6 +115,228 @@ def _locality_metric(
     return _LocalityMetric(rows[active], inverse_scales[active])
 
 
+def _check_tolerances(
+    *,
+    rcond: float,
+    target_atol: float,
+    target_rtol: float,
+    preservation_atol: float,
+    locality_weight: float,
+    max_update_norm: float | None,
+    max_locality_rms: float | None,
+    has_locality: bool,
+) -> None:
+    for name, value in (
+        ("rcond", rcond),
+        ("target_atol", target_atol),
+        ("target_rtol", target_rtol),
+        ("preservation_atol", preservation_atol),
+        ("locality_weight", locality_weight),
+    ):
+        if not math.isfinite(value) or value < 0:
+            raise ConfigurationError(f"{name} must be finite and nonnegative")
+    if not 0 < rcond < 1:
+        raise ConfigurationError("rcond must be strictly between zero and one")
+    if max_update_norm is not None and (
+        not math.isfinite(max_update_norm) or max_update_norm < 0
+    ):
+        raise ConfigurationError("max_update_norm must be finite and nonnegative")
+    if max_locality_rms is not None and (
+        not math.isfinite(max_locality_rms) or max_locality_rms < 0
+    ):
+        raise ConfigurationError("max_locality_rms must be finite and nonnegative")
+    if max_locality_rms is not None and not has_locality:
+        raise ConfigurationError("max_locality_rms requires locality activations")
+
+
+def _request_matrices(
+    weight: torch.Tensor,
+    keys: torch.Tensor,
+    targets: torch.Tensor,
+    protect: torch.Tensor | None,
+    bias: torch.Tensor | None,
+    locality: torch.Tensor | None,
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor | None,
+    torch.Tensor,
+]:
+    """Validate the request; return float64 CPU copies (w, k, t, p, h, b)."""
+    import torch
+
+    w, k, t = (
+        _matrix(weight, "weight"),
+        _matrix(keys, "keys"),
+        _matrix(targets, "targets"),
+    )
+    out_dim, in_dim = w.shape
+    if not out_dim or not in_dim or not len(k):
+        raise ConfigurationError("weight and keys must have nonempty dimensions")
+    if k.shape[1] != in_dim or t.shape != (len(k), out_dim):
+        raise ConfigurationError("keys/targets dimensions do not match weight")
+    if weight.dtype not in (torch.float32, torch.float16, torch.bfloat16):
+        raise ConfigurationError("weight must be float32, float16 or bfloat16")
+    if keys.dtype != weight.dtype:
+        raise ConfigurationError("keys must have the same dtype as weight")
+    p = w.new_empty((0, in_dim)) if protect is None else _matrix(protect, "protect")
+    if p.shape[1] != in_dim or (protect is not None and protect.dtype != weight.dtype):
+        raise ConfigurationError("protect must match weight's input width and dtype")
+    h = None if locality is None else _matrix(locality, "locality")
+    if h is not None and (
+        not len(h)
+        or h.shape[1] != in_dim
+        or (locality is not None and locality.dtype != weight.dtype)
+    ):
+        raise ConfigurationError(
+            "locality must be nonempty and match weight's input width and dtype"
+        )
+    b = w.new_zeros(out_dim)
+    if bias is not None:
+        if bias.ndim != 1 or bias.shape[0] != out_dim or bias.dtype != weight.dtype:
+            raise ConfigurationError("bias must match weight's output width and dtype")
+        b = _matrix(bias[None, :], "bias")[0]
+    return w, k, t, p, h, b
+
+
+def _protected_basis(p: torch.Tensor, rcond: float) -> tuple[int, torch.Tensor]:
+    """Rank and orthonormal row basis of the protected span."""
+    import torch
+
+    # Work with thin row bases: no [in_dim, in_dim] projection is materialized.
+    pn = p / p.norm(dim=1, keepdim=True).clamp_min(torch.finfo(torch.float64).tiny)
+    if len(p):
+        _, ps, pv = torch.linalg.svd(pn, full_matrices=False)
+        protected_rank = int((ps > rcond * ps[0]).sum())
+        q = pv[:protected_rank]
+    else:
+        protected_rank, q = 0, p
+    return protected_rank, q
+
+
+def _solve_factors(
+    w: torch.Tensor,
+    k: torch.Tensor,
+    t: torch.Tensor,
+    b: torch.Tensor,
+    q: torch.Tensor,
+    metric: _LocalityMetric | None,
+    *,
+    rcond: float,
+    target_atol: float,
+    target_rtol: float,
+) -> tuple[torch.Tensor, torch.Tensor, int, torch.Tensor]:
+    """The float64 low-rank factors (A, B), their rank and singular values."""
+    import torch
+
+    out_dim, in_dim = w.shape
+    scale = k.norm(dim=1, keepdim=True)
+    scale = torch.where(scale == 0, torch.ones_like(scale), scale)
+    kn = k / scale
+    residual = (t - (k @ w.T + b)) / scale
+    projected = kn - (kn @ q.T) @ q
+    # Reorthogonalize to avoid magnifying residual projection error in a solve.
+    projected = projected - (projected @ q.T) @ q
+    if metric is not None:
+        projected = metric.whiten(projected)
+        projected = projected - (projected @ q.T) @ q
+    u, s, v = torch.linalg.svd(projected, full_matrices=False)
+    cutoff = rcond * float(
+        torch.linalg.matrix_norm(kn if metric is None else metric.whiten(kn), ord=2)
+    )
+    rank = int((s > cutoff).sum())
+    if rank:
+        a = v[:rank] - (v[:rank] @ q.T) @ q
+        factor_b = (residual.T @ u[:, :rank]) / s[:rank]
+        if metric is not None:
+            a = metric.whiten(a)
+            a = a - (a @ q.T) @ q
+    else:
+        # A zero update is still a valid rank-one LoRA representation.
+        a, factor_b = w.new_zeros((1, in_dim)), w.new_zeros((out_dim, 1))
+    ideal = factor_b @ a
+    if not bool(torch.isfinite(ideal).all()) or not torch.allclose(
+        k @ (w + ideal).T + b, t, atol=target_atol, rtol=target_rtol
+    ):
+        raise ConfigurationError(
+            "edit constraints are infeasible at the selected numerical rank; "
+            "targets may conflict with each other or the protected span"
+        )
+    return a, factor_b, rank, s
+
+
+def _locality_drift(
+    h: torch.Tensor,
+    weight: torch.Tensor,
+    edited: torch.Tensor,
+    device_bias: torch.Tensor | None,
+    realized: torch.Tensor,
+    objective_value: float,
+    *,
+    locality_weight: float,
+    max_locality_rms: float | None,
+) -> tuple[float, float, float]:
+    """Measured drift on the locality rows: (rms, max, objective with penalty)."""
+    import torch
+    from torch.nn import functional as F
+
+    drift = (
+        F.linear(h.to(weight), edited, device_bias).double()
+        - F.linear(h.to(weight), weight.detach(), device_bias).double()
+    ).cpu()
+    if not bool(torch.isfinite(drift).all()):
+        raise ConfigurationError("locality execution produces nonfinite outputs")
+    locality_rms = float(drift.square().mean().sqrt())
+    locality_max = _max_abs(drift)
+    objective_value += locality_weight * float((h @ realized.T).square().sum() / len(h))
+    if not math.isfinite(objective_value):
+        raise ConfigurationError("locality objective is nonfinite")
+    if max_locality_rms is not None and locality_rms > max_locality_rms:
+        raise ConfigurationError(
+            f"locality RMS drift {locality_rms:.6g} exceeds max_locality_rms "
+            f"{max_locality_rms:.6g}"
+        )
+    return locality_rms, locality_max, objective_value
+
+
+def _check_execution(
+    actual: torch.Tensor,
+    t: torch.Tensor,
+    before_p: torch.Tensor,
+    after_p: torch.Tensor,
+    p: torch.Tensor,
+    *,
+    target_atol: float,
+    target_rtol: float,
+    preservation_atol: float,
+) -> tuple[float, float]:
+    """Reject a rounded edit that misses in linear execution; return the errors."""
+    import torch
+
+    target_error = _max_abs(actual - t)
+    protected_error = _max_abs(after_p - before_p)
+    if not bool(torch.isfinite(actual).all()) or not torch.allclose(
+        actual, t, atol=target_atol, rtol=target_rtol
+    ):
+        raise ConfigurationError(
+            "rounded edit fails target tolerance in linear execution"
+        )
+    if not bool(
+        torch.isfinite(before_p).all() and torch.isfinite(after_p).all()
+    ) or bool(
+        (
+            (after_p - before_p).abs()
+            > preservation_atol * p.norm(dim=1, keepdim=True).clamp_min(1)
+        ).any()
+    ):
+        raise ConfigurationError(
+            "rounded edit fails reference preservation in linear execution"
+        )
+    return target_error, protected_error
+
+
 def constrained_edit(
     weight: torch.Tensor,
     keys: torch.Tensor,
@@ -163,104 +385,35 @@ def constrained_edit(
     import torch
     from torch.nn import functional as F
 
-    for name, value in (
-        ("rcond", rcond),
-        ("target_atol", target_atol),
-        ("target_rtol", target_rtol),
-        ("preservation_atol", preservation_atol),
-        ("locality_weight", locality_weight),
-    ):
-        if not math.isfinite(value) or value < 0:
-            raise ConfigurationError(f"{name} must be finite and nonnegative")
-    if not 0 < rcond < 1:
-        raise ConfigurationError("rcond must be strictly between zero and one")
-    if max_update_norm is not None and (
-        not math.isfinite(max_update_norm) or max_update_norm < 0
-    ):
-        raise ConfigurationError("max_update_norm must be finite and nonnegative")
-    if max_locality_rms is not None and (
-        not math.isfinite(max_locality_rms) or max_locality_rms < 0
-    ):
-        raise ConfigurationError("max_locality_rms must be finite and nonnegative")
-    if max_locality_rms is not None and locality is None:
-        raise ConfigurationError("max_locality_rms requires locality activations")
-    w, k, t = (
-        _matrix(weight, "weight"),
-        _matrix(keys, "keys"),
-        _matrix(targets, "targets"),
+    _check_tolerances(
+        rcond=rcond,
+        target_atol=target_atol,
+        target_rtol=target_rtol,
+        preservation_atol=preservation_atol,
+        locality_weight=locality_weight,
+        max_update_norm=max_update_norm,
+        max_locality_rms=max_locality_rms,
+        has_locality=locality is not None,
     )
-    out_dim, in_dim = w.shape
-    if not out_dim or not in_dim or not len(k):
-        raise ConfigurationError("weight and keys must have nonempty dimensions")
-    if k.shape[1] != in_dim or t.shape != (len(k), out_dim):
-        raise ConfigurationError("keys/targets dimensions do not match weight")
-    if weight.dtype not in (torch.float32, torch.float16, torch.bfloat16):
-        raise ConfigurationError("weight must be float32, float16 or bfloat16")
-    if keys.dtype != weight.dtype:
-        raise ConfigurationError("keys must have the same dtype as weight")
-    p = w.new_empty((0, in_dim)) if protect is None else _matrix(protect, "protect")
-    if p.shape[1] != in_dim or (protect is not None and protect.dtype != weight.dtype):
-        raise ConfigurationError("protect must match weight's input width and dtype")
-    h = None if locality is None else _matrix(locality, "locality")
-    if h is not None and (
-        not len(h)
-        or h.shape[1] != in_dim
-        or (locality is not None and locality.dtype != weight.dtype)
-    ):
-        raise ConfigurationError(
-            "locality must be nonempty and match weight's input width and dtype"
-        )
-    b = w.new_zeros(out_dim)
-    if bias is not None:
-        if bias.ndim != 1 or bias.shape[0] != out_dim or bias.dtype != weight.dtype:
-            raise ConfigurationError("bias must match weight's output width and dtype")
-        b = _matrix(bias[None, :], "bias")[0]
-
-    # Work with thin row bases: no [in_dim, in_dim] projection is materialized.
-    pn = p / p.norm(dim=1, keepdim=True).clamp_min(torch.finfo(torch.float64).tiny)
-    if len(p):
-        _, ps, pv = torch.linalg.svd(pn, full_matrices=False)
-        protected_rank = int((ps > rcond * ps[0]).sum())
-        q = pv[:protected_rank]
-    else:
-        protected_rank, q = 0, p
+    w, k, t, p, h, b = _request_matrices(weight, keys, targets, protect, bias, locality)
+    in_dim = w.shape[1]
+    protected_rank, q = _protected_basis(p, rcond)
     metric = (
         _locality_metric(h, q, locality_weight, rcond)
         if h is not None and locality_weight > 0
         else None
     )
-    scale = k.norm(dim=1, keepdim=True)
-    scale = torch.where(scale == 0, torch.ones_like(scale), scale)
-    kn = k / scale
-    residual = (t - (k @ w.T + b)) / scale
-    projected = kn - (kn @ q.T) @ q
-    # Reorthogonalize to avoid magnifying residual projection error in a solve.
-    projected = projected - (projected @ q.T) @ q
-    if metric is not None:
-        projected = metric.whiten(projected)
-        projected = projected - (projected @ q.T) @ q
-    u, s, v = torch.linalg.svd(projected, full_matrices=False)
-    cutoff = rcond * float(
-        torch.linalg.matrix_norm(kn if metric is None else metric.whiten(kn), ord=2)
+    a, factor_b, rank, s = _solve_factors(
+        w,
+        k,
+        t,
+        b,
+        q,
+        metric,
+        rcond=rcond,
+        target_atol=target_atol,
+        target_rtol=target_rtol,
     )
-    rank = int((s > cutoff).sum())
-    if rank:
-        a = v[:rank] - (v[:rank] @ q.T) @ q
-        factor_b = (residual.T @ u[:, :rank]) / s[:rank]
-        if metric is not None:
-            a = metric.whiten(a)
-            a = a - (a @ q.T) @ q
-    else:
-        # A zero update is still a valid rank-one LoRA representation.
-        a, factor_b = w.new_zeros((1, in_dim)), w.new_zeros((out_dim, 1))
-    ideal = factor_b @ a
-    if not bool(torch.isfinite(ideal).all()) or not torch.allclose(
-        k @ (w + ideal).T + b, t, atol=target_atol, rtol=target_rtol
-    ):
-        raise ConfigurationError(
-            "edit constraints are infeasible at the selected numerical rank; "
-            "targets may conflict with each other or the protected span"
-        )
     delta = LowRankDelta(
         B=factor_b.to(device=weight.device, dtype=torch.float32),
         A=a.to(device=weight.device, dtype=torch.float32),
@@ -293,45 +446,26 @@ def constrained_edit(
         locality_rms, locality_max = None, None
         objective_value = update_norm**2
         if h is not None:
-            drift = (
-                F.linear(h.to(weight), edited, device_bias).double()
-                - F.linear(h.to(weight), weight.detach(), device_bias).double()
-            ).cpu()
-            if not bool(torch.isfinite(drift).all()):
-                raise ConfigurationError(
-                    "locality execution produces nonfinite outputs"
-                )
-            locality_rms = float(drift.square().mean().sqrt())
-            locality_max = _max_abs(drift)
-            objective_value += locality_weight * float(
-                (h @ realized.T).square().sum() / len(h)
+            locality_rms, locality_max, objective_value = _locality_drift(
+                h,
+                weight,
+                edited,
+                device_bias,
+                realized,
+                objective_value,
+                locality_weight=locality_weight,
+                max_locality_rms=max_locality_rms,
             )
-            if not math.isfinite(objective_value):
-                raise ConfigurationError("locality objective is nonfinite")
-            if max_locality_rms is not None and locality_rms > max_locality_rms:
-                raise ConfigurationError(
-                    f"locality RMS drift {locality_rms:.6g} exceeds max_locality_rms "
-                    f"{max_locality_rms:.6g}"
-                )
-    target_error = _max_abs(actual - t)
-    protected_error = _max_abs(after_p - before_p)
-    if not bool(torch.isfinite(actual).all()) or not torch.allclose(
-        actual, t, atol=target_atol, rtol=target_rtol
-    ):
-        raise ConfigurationError(
-            "rounded edit fails target tolerance in linear execution"
-        )
-    if not bool(
-        torch.isfinite(before_p).all() and torch.isfinite(after_p).all()
-    ) or bool(
-        (
-            (after_p - before_p).abs()
-            > preservation_atol * p.norm(dim=1, keepdim=True).clamp_min(1)
-        ).any()
-    ):
-        raise ConfigurationError(
-            "rounded edit fails reference preservation in linear execution"
-        )
+    target_error, protected_error = _check_execution(
+        actual,
+        t,
+        before_p,
+        after_p,
+        p,
+        target_atol=target_atol,
+        target_rtol=target_rtol,
+        preservation_atol=preservation_atol,
+    )
     return ConstrainedEdit(
         delta=delta,
         diagnostics=EditDiagnostics(

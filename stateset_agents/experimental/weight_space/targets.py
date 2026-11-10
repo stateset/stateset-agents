@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -43,6 +44,65 @@ def _solve_dual(
     raise ConfigurationError(
         "margin solve reached max_sweeps; infeasibility is not established"
     )
+
+
+def _require_positive(**values: float) -> None:
+    for name, value in values.items():
+        if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
+            raise ConfigurationError(f"{name} must be finite and positive")
+
+
+def _require_counts(**values: int) -> None:
+    for name, value in values.items():
+        if type(value) is not int or value < 1:
+            raise ConfigurationError(f"{name} must be a positive integer")
+
+
+def _scan_vocabulary(
+    contrast: Callable[[int, int], torch.Tensor],
+    point: torch.Tensor,
+    vocab: int,
+    chunk_size: int,
+    target_token_id: int,
+    margin: float,
+) -> tuple[float, int, float]:
+    """One full pass over the rivals at ``point``.
+
+    Returns the largest normalized constraint violation, the token it belongs
+    to, and the smallest raw margin over every rival.
+    """
+    import torch
+
+    worst, worst_id, minimum_margin = -math.inf, -1, math.inf
+    for start in range(0, vocab, chunk_size):
+        stop = min(start + chunk_size, vocab)
+        c = contrast(start, stop)
+        lengths = c.norm(dim=1)
+        values = c @ point
+        keep = torch.arange(start, stop) != target_token_id
+        if not bool(torch.isfinite(lengths).all() and torch.isfinite(values).all()):
+            raise ConfigurationError("contrast calculation is nonfinite")
+        zero = (lengths == 0) & keep
+        if bool(zero.any()) and bool((c[zero] != 0).any()):
+            raise ConfigurationError(
+                "contrast norm underflow; infeasibility is not established"
+            )
+        if bool(zero.any()):
+            raise ConfigurationError(
+                "a duplicate readout row makes positive margin infeasible"
+            )
+        violations = (margin - values) / lengths.clamp_min(
+            torch.finfo(torch.float64).tiny
+        )
+        if not bool(torch.isfinite(violations[keep]).all()):
+            raise ConfigurationError("contrast calculation is nonfinite")
+        violations[~keep] = -math.inf
+        if bool(keep.any()):
+            minimum_margin = min(minimum_margin, float(values[keep].min()))
+        value, index = violations.max(dim=0)
+        if float(value) > worst:
+            worst, worst_id = float(value), start + int(index)
+    return worst, worst_id, minimum_margin
 
 
 @dataclass(frozen=True)
@@ -109,20 +169,12 @@ def minimum_margin_target(
     """
     import torch
 
-    for name, value in (
-        ("margin", margin),
-        ("feasibility_atol", feasibility_atol),
-        ("duality_atol", duality_atol),
-    ):
-        if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
-            raise ConfigurationError(f"{name} must be finite and positive")
-    for name, value in (
-        ("chunk_size", chunk_size),
-        ("max_constraints", max_constraints),
-        ("max_sweeps", max_sweeps),
-    ):
-        if type(value) is not int or value < 1:
-            raise ConfigurationError(f"{name} must be a positive integer")
+    _require_positive(
+        margin=margin, feasibility_atol=feasibility_atol, duality_atol=duality_atol
+    )
+    _require_counts(
+        chunk_size=chunk_size, max_constraints=max_constraints, max_sweeps=max_sweeps
+    )
 
     def validate(tensor: torch.Tensor, ndim: int, name: str) -> None:
         if (
@@ -165,36 +217,10 @@ def minimum_margin_target(
     selected: list[int] = []
     sweeps = 0
     for scan in range(1, max_constraints + 2):
-        worst, worst_id, minimum_margin = -math.inf, -1, math.inf
         # Every scan checks every row, including rows not in the working set.
-        for start in range(0, vocab, chunk_size):
-            stop = min(start + chunk_size, vocab)
-            c = contrast(start, stop)
-            lengths = c.norm(dim=1)
-            values = c @ (x + delta)
-            keep = torch.arange(start, stop) != target_token_id
-            if not bool(torch.isfinite(lengths).all() and torch.isfinite(values).all()):
-                raise ConfigurationError("contrast calculation is nonfinite")
-            zero = (lengths == 0) & keep
-            if bool(zero.any()) and bool((c[zero] != 0).any()):
-                raise ConfigurationError(
-                    "contrast norm underflow; infeasibility is not established"
-                )
-            if bool(zero.any()):
-                raise ConfigurationError(
-                    "a duplicate readout row makes positive margin infeasible"
-                )
-            violations = (margin - values) / lengths.clamp_min(
-                torch.finfo(torch.float64).tiny
-            )
-            if not bool(torch.isfinite(violations[keep]).all()):
-                raise ConfigurationError("contrast calculation is nonfinite")
-            violations[~keep] = -math.inf
-            if bool(keep.any()):
-                minimum_margin = min(minimum_margin, float(values[keep].min()))
-            value, index = violations.max(dim=0)
-            if float(value) > worst:
-                worst, worst_id = float(value), start + int(index)
+        worst, worst_id, minimum_margin = _scan_vocabulary(
+            contrast, x + delta, vocab, chunk_size, target_token_id, margin
+        )
         primal = float(delta.square().sum() / 2)
         dual = float(rhs @ multipliers) - primal
         gap = primal - dual
