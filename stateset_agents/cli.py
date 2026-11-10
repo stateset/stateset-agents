@@ -392,7 +392,12 @@ def validate_config(
         False,
         help="Fail if validation warnings are found.",
     ),
-    json_output: bool = typer.Option(False, help="Output machine-readable diagnostics"),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        "--json-output",
+        help="Output machine-readable diagnostics",
+    ),
 ) -> None:
     """Validate a training config file for common CLI-relevant issues."""
     cfg = _load_config(config)
@@ -564,14 +569,17 @@ def recipe(
     """Open a cookbook recipe in $PAGER, or `list` them all.
 
     Recipes are sourced from ``docs/COOKBOOK.md`` — self-contained, copy-paste
-    workflows for the 7 most common things you'll want to do with the platform.
+    workflows for the most common things you'll want to do with the platform.
+    A recipe is chosen by its number (``2b``), its slug or the start of it, or
+    by words from its title.
 
     Examples:
 
         stateset-agents recipe list                     # show every recipe
         stateset-agents recipe first-fine-tune          # open recipe 1
         stateset-agents recipe iterate-from-logs        # open recipe 2
-        stateset-agents recipe debug-stuck-reward       # open recipe 5
+        stateset-agents recipe 2b                       # open recipe 2b
+        stateset-agents recipe debug-stuck-reward       # open recipe 6
     """
     import re
     import shutil
@@ -592,7 +600,9 @@ def recipe(
     body = cookbook.read_text(encoding="utf-8")
 
     # Extract every recipe by matching "## Recipe N — <title>" headers
-    recipe_re = re.compile(r"^## Recipe (\d+) — (.+?)$", re.MULTILINE)
+    # ``2b`` is a recipe too; without the letter it could not be listed or
+    # opened and its text was folded into recipe 2.
+    recipe_re = re.compile(r"^## Recipe (\d+[a-z]?) — (.+?)$", re.MULTILINE)
     matches = list(recipe_re.finditer(body))
 
     def _slug(title: str) -> str:
@@ -611,7 +621,8 @@ def recipe(
         _echo("Read the full cookbook: cat docs/COOKBOOK.md")
         return
 
-    # Find the matching recipe (by slug or numeric prefix)
+    # Find the matching recipe: number, slug or slug prefix first, then every
+    # word of the name appearing in the title ("first-fine-tune").
     name_norm = name.lower().strip()
     chosen_idx: int | None = None
     for i, m in enumerate(matches):
@@ -619,6 +630,12 @@ def recipe(
         if slug == name_norm or slug.startswith(name_norm) or m.group(1) == name_norm:
             chosen_idx = i
             break
+    if chosen_idx is None:
+        wanted = {word for word in _slug(name_norm).split("-") if word}
+        for i, m in enumerate(matches):
+            if wanted and wanted <= set(_slug(m.group(2)).split("-")):
+                chosen_idx = i
+                break
 
     if chosen_idx is None:
         print(

@@ -62,13 +62,27 @@ class AgentService:
     def can_access_agent(
         self, agent_id: str, user_id: str | None, *, is_admin: bool = False
     ) -> bool:
-        """Whether ``user_id`` may see or modify ``agent_id`` (admins may)."""
+        """Whether ``user_id`` may see and talk to ``agent_id`` (admins may)."""
         if agent_id not in self.agents:
             return False
         if is_admin or user_id is None:
             return True
         owner = self.agent_owners.get(agent_id)
         return owner is None or owner == user_id
+
+    def can_modify_agent(
+        self, agent_id: str, user_id: str | None, *, is_admin: bool = False
+    ) -> bool:
+        """Whether ``user_id`` may delete ``agent_id``.
+
+        Stricter than access: an operator-registered agent has no owner and is
+        visible to everyone, but only an admin may remove it.
+        """
+        if agent_id not in self.agents:
+            return False
+        if is_admin or user_id is None:
+            return True
+        return self.agent_owners.get(agent_id) == user_id
 
     def _get_or_create_conversation(
         self,

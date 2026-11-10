@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transport error or interrupt while a serve session waits for networking or
   looks up its price, and CPU pod creation is no longer retried (a retry could
   rent a second pod).
+- Gateway: a non-admin can no longer delete an operator-registered agent
+  (such as the one `serve --checkpoint` loads); the request gets 403.
+- CLI: `recipe` opens a recipe by number (including `2b`), slug, slug prefix
+  or words from its title, so the documented examples work; `preflight`,
+  `publish-check` and `validate-config` accept `--json` as well as
+  `--json-output`; the `serve-remote` example names an adapter that exists;
+  `deploy` prints the adapter-effect warnings `serve-remote` prints.
 - `ensure_async_type_safety` is a decorator again (declared `async`, it
   returned a coroutine object); `TypeSafeSerializer.deserialize` returns the
   object instead of its envelope; `find_optimal_batch_size` no longer loops

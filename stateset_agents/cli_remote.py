@@ -388,7 +388,14 @@ def serve_remote(
         _echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
-    model_name = "adapter" if adapters else base_model
+    # The name clients must send: a merged model answers as "adapter"; named
+    # adapters answer by their own names, so "adapter" may not exist.
+    if not adapters:
+        model_name = base_model
+    elif merge or "adapter" in adapters:
+        model_name = "adapter"
+    else:
+        model_name = next(iter(adapters))
     for warning in getattr(session, "effect_warnings", []):
         _echo(f"WARNING: {warning}", err=True)
     _echo("")
@@ -549,6 +556,10 @@ def deploy(
     except StateSetError as exc:
         _echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
+    # The same warnings serve-remote prints, e.g. "adapter has no effect" on a
+    # hybrid base: without them the endpoint can serve base weights silently.
+    for warning in getattr(session, "effect_warnings", []):
+        _echo(f"WARNING: {warning}", err=True)
     _echo("")
     _echo(f"Endpoint ready (bills until stopped, max {max_hours}h):")
     _echo(f"URL:   {session.endpoint_url}/v1")

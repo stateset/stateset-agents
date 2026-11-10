@@ -269,6 +269,32 @@ async def test_agents_are_private_to_their_owner(secure_env):
         ).status_code == 204
 
 
+async def test_only_an_admin_can_delete_an_operator_registered_agent(secure_env):
+    app = _app()
+    async with _client(app) as client:
+        created = await client.post(
+            "/agents",
+            json={"model_name": "stub://shared", "system_prompt": "shared"},
+            headers=_h(ADMIN),
+        )
+        assert created.status_code == 201, created.text
+        agent_id = created.json()["agent_id"]
+        # What `serve --checkpoint` registers: an agent with no owner.
+        app.state.agent_service.agent_owners[agent_id] = None
+
+        assert (
+            await client.get(f"/agents/{agent_id}", headers=_h(BOB))
+        ).status_code == 200
+        refused = await client.delete(f"/agents/{agent_id}", headers=_h(BOB))
+        assert refused.status_code == 403, refused.text
+        assert (
+            await client.get(f"/agents/{agent_id}", headers=_h(BOB))
+        ).status_code == 200
+        assert (
+            await client.delete(f"/agents/{agent_id}", headers=_h(ADMIN))
+        ).status_code == 204
+
+
 # --- 3. external model loading ----------------------------------------------
 
 

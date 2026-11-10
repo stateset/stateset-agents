@@ -153,7 +153,12 @@ def preflight(
         False,
         help="Fail if config warnings are present.",
     ),
-    json_output: bool = typer.Option(False, help="Output machine-readable diagnostics"),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        "--json-output",
+        help="Output machine-readable diagnostics",
+    ),
 ) -> None:
     """Run environment and config checks in one command."""
     import platform
@@ -238,7 +243,12 @@ def publish_check(
         False,
         help="Fail if config warnings are present.",
     ),
-    json_output: bool = typer.Option(False, help="Output machine-readable diagnostics"),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        "--json-output",
+        help="Output machine-readable diagnostics",
+    ),
 ) -> None:
     """Run publish-readiness checks for release preparation."""
     import platform

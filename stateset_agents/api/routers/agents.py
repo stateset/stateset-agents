@@ -25,6 +25,7 @@ from ..dependencies import (
 from ..errors import (
     AgentNotFoundError,
     ConversationNotFoundError,
+    ForbiddenError,
     InternalError,
     InvalidAgentConfigError,
     PromptInjectionError,
@@ -357,9 +358,16 @@ async def delete_agent(
 
     Raises:
         AgentNotFoundError: If the agent doesn't exist.
+        ForbiddenError: If the caller can see the agent but does not own it.
     """
-    if not svc.can_access_agent(agent_id, user.user_id, is_admin=_is_admin(user)):
+    is_admin = _is_admin(user)
+    if not svc.can_access_agent(agent_id, user.user_id, is_admin=is_admin):
         raise AgentNotFoundError(agent_id)
+    if not svc.can_modify_agent(agent_id, user.user_id, is_admin=is_admin):
+        # Visible but not theirs: an operator-registered agent (the one
+        # `serve --checkpoint` loads) has no owner, and any user could
+        # delete it.
+        raise ForbiddenError("Only an admin can delete an operator-registered agent")
 
     deleted = svc.delete_agent(agent_id)
     if not deleted:

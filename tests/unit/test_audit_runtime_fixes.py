@@ -287,3 +287,49 @@ def test_batch_size_search_grows_from_one() -> None:
     ).read_text(encoding="utf-8")
     assert "current_batch_size + 1, int(current_batch_size * growth_factor)" in source
     assert max(1 + 1, int(1 * 1.5)) == 2
+
+
+@pytest.mark.parametrize(
+    ("name", "heading"),
+    [
+        ("first-fine-tune", "## Recipe 1 "),
+        ("iterate-from-logs", "## Recipe 2 "),
+        ("2b", "## Recipe 2b "),
+        ("debug-stuck-reward", "## Recipe 6 "),
+        ("3", "## Recipe 3 "),
+    ],
+)
+def test_recipe_opens_by_number_slug_or_title_words(
+    name: str, heading: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typer.testing import CliRunner
+
+    from stateset_agents.cli import app
+
+    monkeypatch.setenv("PAGER", "cat")
+    result = CliRunner().invoke(app, ["recipe", name])
+    assert result.exit_code == 0, result.output
+    assert heading in result.output
+    if name == "iterate-from-logs":
+        assert "## Recipe 2b" not in result.output  # 2b is its own recipe now
+
+
+def test_recipe_lists_2b_and_rejects_an_unknown_name() -> None:
+    from typer.testing import CliRunner
+
+    from stateset_agents.cli import app
+
+    listed = CliRunner().invoke(app, ["recipe", "list"])
+    assert listed.exit_code == 0 and "2b." in listed.output
+    assert CliRunner().invoke(app, ["recipe", "no-such-thing"]).exit_code == 2
+
+
+@pytest.mark.parametrize("command", ["preflight", "publish-check", "validate-config"])
+def test_json_flag_has_both_spellings(command: str) -> None:
+    import typer
+
+    from stateset_agents.cli import app
+
+    params = typer.main.get_command(app).commands[command].params  # type: ignore[attr-defined]
+    option = next(p for p in params if p.name == "json_output")
+    assert {"--json", "--json-output"} <= set(option.opts)
