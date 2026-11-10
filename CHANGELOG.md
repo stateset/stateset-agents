@@ -56,9 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rates use every request as the denominator; `CodeFormattingHeuristic` no
   longer zeroes non-coding replies; `LLMJudgeReward` accepts a judge without
   `.config`.
-- Training fixes: a resumed preference/distillation run with more steps no
-  longer trains the extra steps at a learning rate of zero;
-  `train_customer_service_with_trl` no longer crashes on training keyword
+- Training fixes: `train_customer_service_with_trl` no longer crashes on training keyword
   arguments; `NeuralRewardModel.predict_reward` is deterministic;
   `create_kl_controller("cosine", min_kl_coef=...)` no longer raises; the
   warmup KL scheduler no longer divides by zero; a harvest spec gated only by

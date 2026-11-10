@@ -35,35 +35,6 @@ def test_prime_cancel_is_not_overwritten_by_the_exit_code() -> None:
     assert JobStatus.CANCELLED is not JobStatus.FAILED
 
 
-def test_resumed_schedule_uses_the_new_run_length() -> None:
-    torch = pytest.importorskip("torch")
-    from stateset_agents.training.preference import _loop
-
-    def scheduler(total: int):
-        parameter = torch.nn.Parameter(torch.zeros(1))
-        optimizer = torch.optim.SGD([parameter], lr=1.0)
-        return optimizer, _loop.build_scheduler(optimizer, "linear", 0, total)
-
-    optimizer, short = scheduler(4)
-    for _ in range(4):
-        optimizer.step()
-        short.step()
-    saved = short.state_dict()
-
-    optimizer, longer = scheduler(8)
-    holder = SimpleNamespace(optimizer=optimizer, lr_scheduler=longer)
-    schedules = longer.lr_lambdas
-    current = [dict(vars(s)) for s in schedules]
-    longer.load_state_dict(saved)
-    assert schedules[0].total == 4  # what loading alone does
-    for schedule, values in zip(schedules, current, strict=True):
-        vars(schedule).update(values)
-    assert schedules[0].total == 8
-    optimizer.step()
-    longer.step()
-    assert holder.lr_scheduler.get_last_lr()[0] > 0
-
-
 def test_neural_reward_prediction_is_deterministic() -> None:
     torch = pytest.importorskip("torch")
     from stateset_agents.training.neural_reward_trainer import NeuralRewardModel

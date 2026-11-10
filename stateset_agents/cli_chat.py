@@ -136,11 +136,10 @@ def chat(
                 if model != _DEFAULT_CHAT_MODEL
                 else f"{checkpoint} records no base model (no adapter_config.json)"
             )
-            print(
+            sys.stderr.write(
                 f"WARNING: --checkpoint is ignored: {reason}. Replies come from "
                 "the stub model, not the fine-tune. Pass --model <base model> "
-                "to load the adapter.",
-                file=sys.stderr,
+                "to load the adapter.\n"
             )
     config = AgentConfig(
         model_name=model,

@@ -300,8 +300,8 @@ class TestTypeSystem:
 
         # Test deserialization
         deserialized = serializer.deserialize(json_str, dict)
-        assert deserialized["data"]["key"] == "value"
-        assert deserialized["data"]["number"] == 42
+        # Round trip: the object comes back, not the type envelope around it.
+        assert deserialized == data
 
 
 class TestAsyncResourceManagement:
