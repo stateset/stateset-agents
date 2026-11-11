@@ -39,6 +39,7 @@ from stateset_agents.finetune_workspace import (
     transition_state,
     write_json,
 )
+from stateset_agents.lifecycles import FINETUNE_COMPARISON
 
 RECORD_ID = r"[0-9]{8}-[0-9]{6}-[0-9a-f]{8}"
 MAX_COMPARISON_RECORDS = 100
@@ -47,7 +48,7 @@ MAX_COMPARISON_RECORDS = 100
 #: job itself is not cancelled; if it starts later it simply verifies again.
 QUEUED_STALE_AFTER_SECONDS = 6 * 3600
 #: Derived statuses that still represent work that may complete.
-ACTIVE_COMPARISON_STATUSES = frozenset({"queued", "running", "submission_uncertain"})
+ACTIVE_COMPARISON_STATUSES = FINETUNE_COMPARISON.active
 DIRECTORY = "validation-comparisons"
 GUARDS = (
     "no_success_regressions",
@@ -737,12 +738,7 @@ def comparison_status(path: Path) -> dict[str, Any]:
     _validate_plan(plan, run)
     state = read_json(path / "state.json")
     status = state.get("status")
-    if not isinstance(status, str) or status not in {
-        "queued",
-        "running",
-        "succeeded",
-        "failed",
-    }:
+    if not isinstance(status, str) or status not in FINETUNE_COMPARISON.stored:
         raise ValidationComparisonError("Comparison status is unreadable.")
     submission = (
         read_json(path / "submission.json")

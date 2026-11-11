@@ -382,8 +382,9 @@ def lifecycles_cmd(
 
     For each one: every status and what it means, which statuses are terminal
     (stop polling) and which are settled (will never change), and what can
-    follow each status. Use it to interpret a status from `fanout status`,
-    `finetune`, `remote-job` or the gateway, or to write a poller.
+    follow each status. A derived status is one a status command reports but
+    no file stores. Use it to interpret a status from `fanout status`,
+    `finetune`, `remote-job`, `weight-edit` or the gateway, or to write a poller.
     """
     from stateset_agents.lifecycles import LIFECYCLES, get_lifecycle
 
@@ -398,6 +399,7 @@ def lifecycles_cmd(
     for machine in machines:
         _echo(f"{machine.name}: {machine.summary}")
         _echo(f"  written by {machine.owner}; found in {machine.stored_in}")
+        width = max(12, *(len(status) for status in machine.states))
         for row in machine.describe()["states"]:
             kind = (
                 "settled"
@@ -405,6 +407,7 @@ def lifecycles_cmd(
                 else "terminal" if row["terminal"] else "active"
             )
             follows = ", ".join(row["next"]) or "-"
-            _echo(f"  {row['status']:<12} {kind:<9} {row['meaning']}")
-            _echo(f"  {'':<12} {'':<9} next: {follows}")
+            derived = "" if row["stored"] else " Derived: never stored."
+            _echo(f"  {row['status']:<{width}} {kind:<9} {row['meaning']}{derived}")
+            _echo(f"  {'':<{width}} {'':<9} next: {follows}")
         _echo("")

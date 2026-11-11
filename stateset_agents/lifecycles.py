@@ -1,7 +1,9 @@
 """Declared lifecycles: the state machines this package persists, in one place.
 
 Several long-running things here move through a small set of statuses: a
-remote job, a fan-out run, a local fine-tune run, a gateway training job.
+remote job, a fan-out run and each of its attempts, a local fine-tune run, its
+evaluations and checkpoint comparisons, a gateway training job, a weight-edit
+export.
 Each used to state its statuses, its terminal set and its legal moves only
 implicitly, as string literals and frozensets repeated across the modules
 that read and write them. Two copies drifting apart is how a cancelled run
@@ -27,11 +29,15 @@ from types import MappingProxyType
 from typing import Any
 
 __all__ = [
+    "FANOUT_ATTEMPT",
     "FANOUT_RUN",
+    "FINETUNE_COMPARISON",
+    "FINETUNE_EVALUATION",
     "FINETUNE_RUN",
     "GATEWAY_TRAINING_JOB",
     "LIFECYCLES",
     "REMOTE_JOB",
+    "WEIGHT_EDIT_EXPORT",
     "Lifecycle",
     "get_lifecycle",
 ]
@@ -48,6 +54,12 @@ class Lifecycle:
     outcome to be corrected; ``settled`` is the subset that never changes
     again. ``owner`` names the module that writes the status and ``stored_in``
     says where a reader finds it.
+
+    ``derived`` statuses are reported but never written: the reader works them
+    out from other evidence (a worker that is gone, a queue receipt that never
+    arrived). A file on disk only ever holds a ``stored`` status, so code that
+    validates a file checks ``stored`` and code that interprets a status
+    command checks ``states``.
     """
 
     name: str
@@ -58,12 +70,15 @@ class Lifecycle:
     transitions: Mapping[str, frozenset[str]]
     owner: str
     stored_in: str
+    derived: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         known = set(self.states)
         if self.initial not in known:
             raise ValueError(f"{self.name}: initial state {self.initial!r} is unknown")
-        unknown = (set(self.terminal) | set(self.transitions)) - known
+        unknown = (
+            set(self.terminal) | set(self.transitions) | set(self.derived)
+        ) - known
         for targets in self.transitions.values():
             unknown |= set(targets) - known
         if unknown:
@@ -90,6 +105,11 @@ class Lifecycle:
     @property
     def all_states(self) -> frozenset[str]:
         return frozenset(self.states)
+
+    @property
+    def stored(self) -> frozenset[str]:
+        """Statuses a writer records; the rest are worked out by the reader."""
+        return self.all_states - self.derived
 
     @property
     def active(self) -> frozenset[str]:
@@ -140,6 +160,7 @@ class Lifecycle:
                     "meaning": meaning,
                     "terminal": status in self.terminal,
                     "settled": status in self.settled,
+                    "stored": status not in self.derived,
                     "next": sorted(self.next_states(status)),
                 }
                 for status, meaning in self.states.items()
@@ -193,6 +214,56 @@ FANOUT_RUN = Lifecycle(
     stored_in="<run-dir>/runs/<run_id>/state.json",
 )
 
+FANOUT_ATTEMPT = Lifecycle(
+    name="fanout-attempt",
+    summary="One attempt at a fan-out run: one sandbox's worth of trying.",
+    states={
+        "open": "In progress; the attempt's outcome is still null.",
+        "succeeded": "The workload finished and was collected; the run succeeds.",
+        "workload_failed": "The workload itself failed; the run fails, no retry.",
+        "timed_out": "The run's time limit passed; the run fails, no retry.",
+        "budget_exhausted": "The run's cost budget stopped it; the run fails.",
+        "capacity_exhausted": "No sandbox became available in time; the run fails.",
+        "infra_failed": (
+            "The sandbox or control plane failed; the run retries on a fresh "
+            "sandbox while attempts remain."
+        ),
+        "fatal": (
+            "The backend refused in a way no retry fixes; the fan-out aborts, "
+            "the run returns to pending and this attempt is not counted."
+        ),
+        "cancelled": "Stopped on request.",
+    },
+    initial="open",
+    terminal=frozenset(
+        {
+            "succeeded",
+            "workload_failed",
+            "timed_out",
+            "budget_exhausted",
+            "capacity_exhausted",
+            "infra_failed",
+            "fatal",
+            "cancelled",
+        }
+    ),
+    transitions=_moves(
+        open=(
+            "succeeded",
+            "workload_failed",
+            "timed_out",
+            "budget_exhausted",
+            "capacity_exhausted",
+            "infra_failed",
+            "fatal",
+            "cancelled",
+        ),
+    ),
+    owner="stateset_agents.fanout.orchestrator",
+    stored_in="attempts[].outcome in <run-dir>/runs/<run_id>/state.json",
+    derived=frozenset({"open"}),
+)
+
 _FINETUNE_STATES = (
     "prepared",
     "queued",
@@ -234,6 +305,67 @@ FINETUNE_RUN = Lifecycle(
     stored_in="<workspace>/runs/<run_id>/state.json",
 )
 
+FINETUNE_EVALUATION = Lifecycle(
+    name="finetune-evaluation",
+    summary="A before/after evaluation of a fine-tune run's adapter.",
+    states={
+        "prepared": "The reviewed plan is saved; nothing has been launched.",
+        "queued": "Launched; waiting for the device.",
+        "running": "A phase (baseline, candidate or judge) is in progress.",
+        "interrupted": (
+            "Its owner is gone and no outcome was recorded; detached work may "
+            "still finish."
+        ),
+        "succeeded": "Every phase finished and the result matches the plan.",
+        "failed": "It ended with an error; no quality evidence was accepted.",
+        "cancelled": "Stopped on request.",
+    },
+    initial="prepared",
+    terminal=frozenset({"interrupted", "succeeded", "failed", "cancelled"}),
+    transitions=_moves(
+        prepared=("queued", "interrupted", "failed", "cancelled"),
+        queued=("running", "interrupted", "failed", "cancelled"),
+        running=("interrupted", "succeeded", "failed", "cancelled"),
+        interrupted=("running", "succeeded", "failed", "cancelled"),
+    ),
+    owner="stateset_agents.finetune_evaluation_worker",
+    stored_in="<workspace>/runs/<run_id>/evaluations/<evaluation_id>/state.json",
+    derived=frozenset({"interrupted"}),
+)
+
+FINETUNE_COMPARISON = Lifecycle(
+    name="finetune-comparison",
+    summary="A verification that compares a run's checkpoints on validation data.",
+    states={
+        "queued": "Submitted; no worker has claimed it.",
+        "submission_uncertain": (
+            "Queued, but the queue never confirmed the submission; it may still "
+            "start."
+        ),
+        "stale": (
+            "Queued for so long that it no longer blocks a new submission; it "
+            "verifies normally if it does start."
+        ),
+        "running": "A worker is verifying checkpoints.",
+        "interrupted": "The worker that claimed it is gone; submit a new one.",
+        "succeeded": "Verified; the result is retained.",
+        "failed": "The worker could not start, or verification raised an error.",
+    },
+    initial="queued",
+    terminal=frozenset({"stale", "interrupted", "succeeded", "failed"}),
+    transitions=_moves(
+        queued=("submission_uncertain", "stale", "running", "interrupted", "failed"),
+        submission_uncertain=("stale", "running", "interrupted", "failed"),
+        stale=("running", "interrupted", "failed"),
+        running=("interrupted", "succeeded", "failed"),
+    ),
+    owner="stateset_agents.finetune_validation",
+    stored_in=(
+        "<workspace>/runs/<run_id>/validation-comparisons/<comparison_id>/state.json"
+    ),
+    derived=frozenset({"submission_uncertain", "stale", "interrupted"}),
+)
+
 GATEWAY_TRAINING_JOB = Lifecycle(
     name="gateway-training-job",
     summary="A training job submitted to the API gateway (POST /training).",
@@ -256,10 +388,45 @@ GATEWAY_TRAINING_JOB = Lifecycle(
     stored_in="the job record returned by GET /training/{job_id}",
 )
 
+_VERIFIED = ("passed", "rejected", "failed")
+
+WEIGHT_EDIT_EXPORT = Lifecycle(
+    name="weight-edit-export",
+    summary="The verification gate on an exported weight-edit adapter.",
+    states={
+        "unverified": "Exported; the reloaded adapter has not been checked.",
+        "passed": "The reloaded adapter met every limit; it may be used.",
+        "rejected": "Verification ran and a limit was exceeded.",
+        "failed": "Verification could not finish (an error, or changed files).",
+    },
+    initial="unverified",
+    terminal=frozenset(_VERIFIED),
+    # Exporting again to the same directory resets the report first, and
+    # verification can be repeated, so no outcome here is permanent.
+    transitions={
+        "unverified": frozenset(_VERIFIED),
+        **{
+            state: frozenset(("unverified", *_VERIFIED)) - {state}
+            for state in _VERIFIED
+        },
+    },
+    owner="stateset_agents.experimental.weight_space.session",
+    stored_in="status in <export-dir>/weight_space_verification.json",
+)
+
 LIFECYCLES: Mapping[str, Lifecycle] = MappingProxyType(
     {
         machine.name: machine
-        for machine in (REMOTE_JOB, FANOUT_RUN, FINETUNE_RUN, GATEWAY_TRAINING_JOB)
+        for machine in (
+            REMOTE_JOB,
+            FANOUT_RUN,
+            FANOUT_ATTEMPT,
+            FINETUNE_RUN,
+            FINETUNE_EVALUATION,
+            FINETUNE_COMPARISON,
+            GATEWAY_TRAINING_JOB,
+            WEIGHT_EDIT_EXPORT,
+        )
     }
 )
 

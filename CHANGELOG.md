@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Four more declared lifecycles: `fanout-attempt` (what each attempt outcome
+  means and whether the run retries), `finetune-evaluation`,
+  `finetune-comparison` and `weight-edit-export`. A lifecycle can now mark
+  statuses as derived: reported by a status command but never stored, such as
+  a comparison's `stale` or `submission_uncertain`. `stateset-agents
+  lifecycles --json` adds a `stored` field to each status. Status values and
+  behaviour are unchanged.
+
 ## [0.73.2] - 2026-11-10 — project audit fixes and declared lifecycles
 
 ### Added
