@@ -25,6 +25,14 @@ import os
 from collections.abc import Callable, Sequence
 from typing import Any
 
+_TEMPLATE_ERRORS: tuple[type[Exception], ...] = ()
+try:
+    from jinja2.exceptions import TemplateError
+except ImportError:  # pragma: no cover
+    pass
+else:
+    _TEMPLATE_ERRORS = (TemplateError,)
+
 Render = Callable[[list[dict[str, Any]], bool], "str | None"]
 
 #: Replaces a turn's content to find which characters of the render are the
@@ -35,6 +43,46 @@ _SENTINEL = "\ue000\ue001"
 #: Roles whose turns the environment (a tool, a code interpreter) wrote.
 #: They are context for the policy and never a training target.
 OBSERVATION_ROLES = frozenset({"tool", "ipython", "function", "environment"})
+
+
+def truncates_weighted_target(
+    messages: Sequence[dict[str, Any]], token_weights: Sequence[float], max_length: int
+) -> bool:
+    """Check whether a prefix cutoff discards a loss token in a weighted chat row."""
+    return (
+        len(token_weights) > max_length
+        and any(m.get("role") == "assistant" and "weight" in m for m in messages)
+        and any(token_weights[i] > 0 for i in range(max_length, len(token_weights)))
+    )
+
+
+def _check_parallel_calls(
+    render: Render, messages: list[dict[str, Any]], full: str
+) -> None:
+    """Detect templates that silently omit a call in an explicitly weighted row."""
+    for position, message in enumerate(messages):
+        calls = message.get("tool_calls")
+        if (
+            message.get("role") != "assistant"
+            or "weight" not in message
+            or not isinstance(calls, list)
+            or len(calls) < 2
+        ):
+            continue
+        for index in range(len(calls)):
+            reduced = {**message, "tool_calls": calls[:index] + calls[index + 1 :]}
+            comparison = messages.copy()
+            comparison[position] = reduced
+            try:
+                text = render(comparison, False)
+            except _TEMPLATE_ERRORS:
+                # Some templates reject the comparison because a result lost its call.
+                continue
+            if text == full:
+                raise ValueError(
+                    "Chat template omits a parallel tool call from this weighted chat row. "
+                    "Use a template that renders every call."
+                )
 
 
 def is_supervised(message: dict[str, Any]) -> bool:
@@ -91,6 +139,8 @@ def assistant_char_spans(
     full = render(messages, False)
     if not full:
         return None
+    if honor_weights:
+        _check_parallel_calls(render, messages, full)
     turns: list[tuple[int, int, str]] = []  # (message index, start, after)
     for i, message in enumerate(messages):
         if message.get("role") != "assistant":
@@ -270,6 +320,7 @@ def final_turn_token_mask(
     messages: Sequence[dict[str, Any]],
     *,
     tools: Any | None = None,
+    honor_weights: bool = False,
 ) -> tuple[list[int], list[bool]] | None:
     """Mask only the final assistant turn, tolerating rewritten history.
 
@@ -295,6 +346,8 @@ def final_turn_token_mask(
     context = render(conversation[:last], False) if last else ""
     if not full or before is None or context is None:
         return None
+    if honor_weights:
+        _check_parallel_calls(render, conversation, full)
     start = _turn_start(full, before, context)
     if start is None or start >= len(full):
         return None
@@ -354,7 +407,9 @@ def supervised_turn_sequences(
         return "all_assistant_turns", [stable]
     sequences = []
     for index in targets:
-        sequence = final_turn_token_mask(tokenizer, messages[: index + 1], tools=tools)
+        sequence = final_turn_token_mask(
+            tokenizer, messages[: index + 1], tools=tools, honor_weights=True
+        )
         if sequence is None:
             return None
         sequences.append(sequence)
@@ -402,6 +457,7 @@ def _mask_by_prefix_encoding(
 
 
 __all__ = [
+    "truncates_weighted_target",
     "OBSERVATION_ROLES",
     "assistant_char_spans",
     "assistant_token_mask",

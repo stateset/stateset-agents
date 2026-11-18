@@ -175,8 +175,17 @@ def parse_text_sft_records(
                 raise ValueError("messages must be a nonempty list")
             expected = "user"
             for index, message in enumerate(messages):
-                if not isinstance(message, dict) or set(message) != {"role", "content"}:
+                if not isinstance(message, dict) or set(message) - {"weight"} != {
+                    "role",
+                    "content",
+                }:
                     raise ValueError("messages require exactly role and content")
+                if "weight" in message and (
+                    message["role"] != "assistant"
+                    or type(message["weight"]) is not int
+                    or message["weight"] not in (0, 1)
+                ):
+                    raise ValueError("assistant weight must be 0 or 1")
                 if message["role"] == "system" and index == 0:
                     pass
                 elif message["role"] != expected:

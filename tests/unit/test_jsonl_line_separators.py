@@ -89,7 +89,13 @@ def test_every_reader_keeps_every_record(tmp_path_factory, pairs, newline):
         newline,
     )
     assert [e["prompt"] for e in prep.load_curated(curated)] == [u for u, _ in pairs]
-    assert len(gt._existing_curated_keys(curated)[1]) == len(set(pairs))
+    for user, answer in pairs:
+        assert (
+            gt.write_curated_examples(
+                curated, _chat(user, answer)["messages"], [{"score": 1}], 0.5, curated
+            )
+            == 0
+        )
 
     transcript = tmp / "transcript.jsonl"
     turns = [t for u, a in pairs for t in _chat(u, a)["messages"]]

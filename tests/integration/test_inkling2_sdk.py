@@ -120,6 +120,89 @@ def test_real_renderer_trains_tool_calls_and_masks_tool_results(inkling_sdk):
     assert "TOOL_ONLY_AWAITING_PICKUP" not in learned_text
 
 
+@pytest.mark.parametrize("target", ["calls", "reply"])
+def test_native_weighted_actions_keep_only_complete_targets(inkling_sdk, target):
+    sdk, renderer = inkling_sdk
+    calls = [
+        {
+            "id": key,
+            "type": "function",
+            "function": {"name": "lookup", "arguments": {"order": key}},
+        }
+        for key in ("ORDER_CACTUS", "ORDER_ORCHID")
+    ]
+    messages = [
+        {"role": "user", "content": "Check two orders."},
+        {
+            "role": "assistant",
+            "content": "Looking up both orders.",
+            "tool_calls": calls,
+            "weight": int(target == "calls"),
+        },
+    ]
+    if target == "reply":
+        messages.extend(
+            [
+                {
+                    "role": "tool",
+                    "tool_call_id": call["id"],
+                    "content": "PRIVATE_RECEIPT",
+                }
+                for call in reversed(calls)
+            ]
+        )
+        messages.append(
+            {"role": "assistant", "content": "Both orders shipped.", "weight": 1}
+        )
+    row = {
+        "messages": messages,
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "description": "Find an order.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"order": {"type": "string"}},
+                    },
+                },
+            }
+        ],
+    }
+    data = build_inkling2_sft_batch([row])
+    assert data
+
+    def supervised(batch):
+        return [
+            token
+            for datum in batch
+            for token, weight in zip(
+                datum["target_tokens"], datum["weights"], strict=True
+            )
+            if weight > 0
+        ]
+
+    learned = renderer.tokenizer.decode(supervised(data))
+    for item in data:
+        assert isinstance(TinkerExecutor._datum(sdk, item), sdk.Datum)
+    assert "PRIVATE_RECEIPT" not in learned
+    if target == "calls":
+        assert "ORDER_CACTUS" in learned and "ORDER_ORCHID" in learned
+    else:
+        assert "Both orders shipped." in learned
+        assert all(
+            marker not in learned
+            for marker in ("Looking up", "ORDER_CACTUS", "ORDER_ORCHID")
+        )
+        context = renderer.tokenizer.decode(data[-1]["input_ids"])
+        assert "ORDER_CACTUS" in context and "ORDER_ORCHID" in context
+    # A shifted weight at index i supervises the unshifted token at i + 1.
+    end = max(i + 2 for item in data for i, w in enumerate(item["weights"]) if w > 0)
+    assert supervised(build_inkling2_sft_batch([row], end)) == supervised(data)
+    assert build_inkling2_sft_batch([row], end - 1) == []
+
+
 def test_real_sdk_training_handoff_and_checkpoint_fetch(inkling_sdk, tmp_path):
     sdk, _ = inkling_sdk
     calls = []

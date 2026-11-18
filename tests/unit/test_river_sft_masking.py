@@ -73,3 +73,12 @@ def test_assistant_token_mask_rejects_history_rewriting_templates():
         "{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}"
     )
     assert assistant_token_mask(_byte_tokenizer(reversing), CONVERSATION) is None
+
+
+def test_selected_action_alone_receives_loss():
+    messages = [dict(message) for message in CONVERSATION]
+    messages[2]["weight"] = 0
+    messages[4]["weight"] = 1
+    _, full, weighted = _weighted_and_full(QWEN3_LIKE, messages)
+    assert "Shipped." in full and "Shipped." not in weighted
+    assert "Refunded." in weighted

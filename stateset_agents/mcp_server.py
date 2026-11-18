@@ -117,15 +117,16 @@ def ingest_transcripts(input_path: str, format: str, output_dir: str) -> dict[st
         return _err(exc)
 
 
-async def _grade_transcript_async(history_path: str, reward: str) -> dict[str, Any]:
+async def _grade_transcript_async(
+    history_path: str, reward: str, context_file: str | None = None
+) -> dict[str, Any]:
     """Grade a transcript directly on the caller's event loop."""
     try:
         history = Path(history_path)
         if not history.exists():
             return {"error": f"Transcript not found: {history}"}
 
-        _ensure_scripts_on_path()
-        import grade_transcript as gt
+        from stateset_agents.data import grade_transcript as gt
 
         try:
             reward_fn = gt.get_reward(reward)
@@ -133,15 +134,20 @@ async def _grade_transcript_async(history_path: str, reward: str) -> dict[str, A
             return {"error": str(exc)}
 
         turns = gt.load_transcript(history)
-        rows = await gt.grade_transcript(turns, [], reward_fn)
+        contexts = gt.load_contexts(
+            Path(context_file) if context_file else None,
+            expected_count=sum(t["role"] == "assistant" for t in turns),
+        )
+        rows = await gt.grade_transcript(turns, contexts, reward_fn, reward_name=reward)
 
-        scores = [row["score"] for row in rows]
-        mean_score = (sum(scores) / len(scores)) if scores else 0.0
+        scores = [row["score"] for row in rows if row["score"] is not None]
+        mean_score = (sum(scores) / len(scores)) if scores else None
 
         breakdown_totals: dict[str, list[float]] = {}
         for row in rows:
             for key, value in (row.get("breakdown") or {}).items():
-                breakdown_totals.setdefault(key, []).append(float(value))
+                if isinstance(value, (int, float)):
+                    breakdown_totals.setdefault(key, []).append(float(value))
         breakdown = {
             key: (sum(values) / len(values)) if values else 0.0
             for key, values in breakdown_totals.items()
@@ -151,6 +157,8 @@ async def _grade_transcript_async(history_path: str, reward: str) -> dict[str, A
             "history_path": str(history),
             "reward": reward,
             "assistant_turn_count": len(rows),
+            "graded_turn_count": len(scores),
+            "ungradable_turn_count": len(rows) - len(scores),
             "mean_score": mean_score,
             "breakdown": breakdown,
             "rows": rows,
@@ -159,13 +167,15 @@ async def _grade_transcript_async(history_path: str, reward: str) -> dict[str, A
         return _err(exc)
 
 
-async def grade_transcript(history_path: str, reward: str) -> dict[str, Any]:
+async def grade_transcript(
+    history_path: str, reward: str, context_file: str | None = None
+) -> dict[str, Any]:
     """Grade a single transcript JSONL, returning mean score + breakdown.
 
     The grading implementation is already asynchronous, so keep it on
     FastMCP's event loop and avoid dependence on a process-global executor.
     """
-    return await _grade_transcript_async(history_path, reward)
+    return await _grade_transcript_async(history_path, reward, context_file)
 
 
 async def improve_run(
@@ -174,6 +184,7 @@ async def improve_run(
     output_dir: str,
     threshold: float = 0.7,
     format: str = "transcripts",
+    context_file: str | None = None,
 ) -> dict[str, Any]:
     """Run the grade -> curate -> next-steps loop asynchronously."""
     try:
@@ -190,6 +201,7 @@ async def improve_run(
                 output=output_dir,
                 threshold=threshold,
                 format=format,
+                context_file=context_file,
             )
         except (ImproveUsageError, ImproveDataError) as exc:
             return {"error": str(exc)}

@@ -27,7 +27,10 @@ import math
 from collections.abc import Sequence
 from typing import Any
 
-from stateset_agents.core.chat_masking import assistant_token_mask
+from stateset_agents.core.chat_masking import (
+    assistant_token_mask,
+    truncates_weighted_target,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +167,7 @@ def _encode(tokenizer: Any, text: str) -> list[int]:
     return [int(i) for i in ids]
 
 
-_TOOL_FIELDS = ("tool_calls", "tool_call_id", "name")
+_MESSAGE_FIELDS = ("tool_calls", "tool_call_id", "name", "weight")
 
 
 def _valid_messages(row: Any) -> list[dict[str, Any]] | None:
@@ -189,7 +192,7 @@ def _valid_messages(row: Any) -> list[dict[str, Any]] | None:
             {
                 "role": role,
                 "content": content,
-                **{key: message[key] for key in _TOOL_FIELDS if key in message},
+                **{key: message[key] for key in _MESSAGE_FIELDS if key in message},
             }
         )
     if not any(
@@ -217,13 +220,12 @@ def build_sft_batch(
 
     Prompt tokens (system/user/tool, plus the generation prefix that precedes
     each assistant reply) get weight ``0.0``; assistant tokens get ``1.0``.
-    Loss is therefore computed only on what the model should say — the whole
-    point of masking. Multi-turn conversations get *every* assistant turn
-    weighted, not just the last.
+    An assistant message with explicit ``weight=0`` provides context. Other
+    assistant messages contribute to training loss.
 
-    Truncation keeps the first ``max_length`` tokens; a row left with no
-    weighted token after truncation is dropped, since it would contribute
-    nothing but compute.
+    Truncation keeps the first ``max_length`` tokens. Rows with explicit
+    assistant weights must retain every supervised token. Rows with no
+    trainable tokens are skipped.
 
     ``shift_targets`` is the flip for the UNVERIFIED assumption documented at
     the top of this module. ``True`` (default): the caller performs the causal
@@ -237,6 +239,7 @@ def build_sft_batch(
         raise ValueError(f"max_length must be > 1, got {max_length}")
 
     batch: list[dict[str, Any]] = []
+    skipped_targets = 0
     for index, row in enumerate(rows):
         messages = _valid_messages(row)
         if messages is None:
@@ -255,6 +258,14 @@ def build_sft_batch(
             continue
         if datum is not None:
             batch.append(datum)
+        else:
+            skipped_targets += 1
+    if skipped_targets:
+        logger.warning(
+            "Skipped %d SFT rows at max_length=%d with empty or incomplete targets",
+            skipped_targets,
+            max_length,
+        )
     return batch
 
 
@@ -284,12 +295,13 @@ def _build_sft_datum(
             "chat template rewrites earlier turns; cannot locate assistant tokens"
         )
     ids, assistant = masked
-    weights = [_COMPLETION_WEIGHT if a else _PROMPT_WEIGHT for a in assistant]
-    if not ids:
+    if truncates_weighted_target(messages, assistant, max_length):
         return None
 
     ids = ids[:max_length]
-    weights = weights[:max_length]
+    weights = [
+        _COMPLETION_WEIGHT if a else _PROMPT_WEIGHT for a in assistant[:max_length]
+    ]
 
     if not shift_targets:
         # River shifts server-side: send the sequence unshifted, labels

@@ -297,6 +297,7 @@ class LLMJudgeRewardWithFallback(RewardFunction):
         heuristic_weight: float = 0.3,
         name: str = "LLMJudgeRewardWithFallback",
         heuristic: RewardFunction | None = None,
+        require_reference_match: bool = False,
     ):
         super().__init__(weight=1.0, reward_type=RewardType.IMMEDIATE, name=name)
         self.judge = judge
@@ -305,6 +306,7 @@ class LLMJudgeRewardWithFallback(RewardFunction):
         self._judge_available = judge is not None
 
         # Injected heuristic, or lazy-init default fallback.
+        self.require_reference_match = require_reference_match
         self._heuristic: RewardFunction | None = heuristic
 
     def _get_heuristic(self) -> RewardFunction:
@@ -343,7 +345,15 @@ class LLMJudgeRewardWithFallback(RewardFunction):
         """
         # Always run heuristic (fast, no API cost)
         heuristic_result = await self._get_heuristic().compute_reward(turns, context)
+        if heuristic_result.metadata.get("ungradable_reason"):
+            return heuristic_result
         heuristic_score = heuristic_result.score
+        if self.require_reference_match and (
+            heuristic_score <= 0 or (turns and not turns[-1].content)
+        ):
+            # A text judge can assess the wording of a verified answer. A
+            # failed reference check or a call with no text is already decided.
+            return heuristic_result
         metadata: dict[str, Any] = {}
         inherited = reward_fallback(heuristic_result)
         if inherited is not None:

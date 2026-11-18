@@ -396,7 +396,7 @@ class TestWriteCuratedExamples:
             return [
                 {**t, "weight": 0} if t["role"] == "assistant" else t
                 for t in turns[: upto - 1]
-            ] + [turns[upto - 1]]
+            ] + [{**turns[upto - 1], "weight": 1}]
 
         assert [e["messages"] for e in entries] == [
             context(3),

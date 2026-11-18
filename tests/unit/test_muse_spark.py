@@ -108,6 +108,10 @@ def test_encoder_rejects_truncation_and_missing_supervision():
     rows = [{"messages": []}]
     with pytest.raises(ValueError, match="no truncation"):
         _validate_encoded_rows(tokenizer, rows, 2)
+    with pytest.raises(ValueError, match="per-action weights"):
+        _validate_encoded_rows(
+            tokenizer, [{"messages": [{"role": "assistant", "weight": 0}]}], 4
+        )
     for mask in (None, [1], [1, 0, 0]):
         tokenizer.apply_chat_template.return_value = {
             "input_ids": [1, 2, 3],

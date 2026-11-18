@@ -37,7 +37,10 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from stateset_agents.core.chat_masking import supervised_turn_sequences
+from stateset_agents.core.chat_masking import (
+    supervised_turn_sequences,
+    truncates_weighted_target,
+)
 from stateset_agents.core.lora_targets import (
     NON_TEXT_STACK_MARKERS as _NON_TEXT_STACK_MARKERS,
 )
@@ -336,7 +339,8 @@ def _render_sft_row(tokenizer: Any, row: dict[str, Any]) -> dict[str, str]:
 #:   turn, each rendered as the final turn of its prefix;
 #: * ``dropped_no_target`` — every assistant turn carries ``weight: 0``;
 #: * ``dropped_unmaskable`` — a target turn cannot be located in the render;
-#: * ``dropped_truncated`` — every supervised token fell past ``max_length``.
+#: * ``dropped_truncated`` — truncation removed all target tokens or removed
+#:   any target token from an explicitly weighted row.
 #:
 #: Kept rows that lost some supervised tokens (or whole later-turn sequences)
 #: to ``max_length`` are counted separately as ``partially_truncated``.
@@ -364,6 +368,8 @@ def _tokenize_sft_row(
     tokenizer: Any, row: dict[str, Any], max_length: int
 ) -> tuple[list[dict[str, list[int]]], str, bool]:
     """(records, outcome, lost supervised tokens to truncation)."""
+    if max_length < 2:
+        raise ValueError("max_length must be at least 2 for next-token training")
     tools = _row_tools(row)
     _validate_weights(row["messages"])
     located = supervised_turn_sequences(tokenizer, row["messages"], tools=tools)
@@ -375,6 +381,8 @@ def _tokenize_sft_row(
     records = []
     truncated = False
     for ids, assistant in sequences:
+        if truncates_weighted_target(row["messages"], assistant, max_length):
+            return [], "dropped_truncated", True
         truncated = truncated or any(assistant[max_length:])
         ids, assistant = ids[:max_length], assistant[:max_length]
         if not any(assistant):
@@ -407,7 +415,8 @@ def tokenize_sft_row(
     renders a turn differently once it is history (Qwen3/Qwen3.5) the row is
     split per target turn and this returns the last surviving sequence — use
     :func:`tokenize_sft_rows` for all of them. ``None`` when no target turn
-    can be located or every supervised token was truncated at ``max_length``.
+    can be located, all target tokens were truncated, or an explicitly weighted
+    row loses any target tokens at ``max_length``.
     """
     records, _outcome, _truncated = _tokenize_sft_row(tokenizer, row, max_length)
     return records[-1] if records else None
@@ -441,7 +450,7 @@ def tokenize_sft_rows(
     for outcome, reason in (
         ("dropped_no_target", "have no assistant turn without weight 0"),
         ("dropped_unmaskable", "have an assistant turn the template render hides"),
-        ("dropped_truncated", f"lost every target token at max_length={max_length}"),
+        ("dropped_truncated", f"lost required target tokens at max_length={max_length}"),
     ):
         if counts[outcome]:
             logger.warning(

@@ -4,21 +4,19 @@ Thin orchestrator over existing, tested pieces:
 
 * ``stateset_agents.data.trajectory_ingest`` — converts OpenAI/LangChain logs
   into transcript JSONLs (same shape ``chat --history`` writes).
-* ``scripts/grade_transcript.py`` — scores every assistant turn with a reward
+* ``stateset_agents.data.grade_transcript`` — scores every assistant turn with a reward
   function and curates high-scoring (prompt, response) pairs.
-* ``scripts/sft_from_curated.py`` / ``examples/finetune_gspo.py`` — the two
-  training paths that consume the curated set (referenced, not reimplemented,
-  in the generated ``next_steps.md``).
+* ``stateset_agents.training.sft`` — the training path that consumes the curated
+  set (referenced, not reimplemented, in the generated ``next_steps.md``).
 
 No new grading or curation logic lives here — every phase below imports and
-calls the functions those scripts already define and test.
+calls the packaged grading and training functions.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -30,15 +28,6 @@ from stateset_agents.cli import app
 from stateset_agents.core.errors import ConfigurationError, DataError
 
 _echo = _cli._echo
-
-# `scripts/` isn't a package (no __init__.py) — the existing test suite
-# (tests/unit/test_trajectory_ingest.py) already imports grade_transcript.py
-# the same way: add scripts/ to sys.path and import it directly. This keeps
-# grade_transcript.py as the single source of truth for grading/curation
-# logic instead of duplicating it here.
-_SCRIPTS_DIR = str(Path(__file__).resolve().parents[1] / "scripts")
-if _SCRIPTS_DIR not in sys.path:
-    sys.path.insert(0, _SCRIPTS_DIR)
 
 # "nsr" is network-backed but deterministic and rule-based (a symbolic
 # verifier, not an LLM judge), so it is allowed where judge rewards are
@@ -110,17 +99,45 @@ def _collect_transcript_files(transcripts_dir: Path) -> list[Path]:
     return files
 
 
-async def _grade_all(transcript_files: list[Path], reward: Any) -> list[dict[str, Any]]:
-    """Grade every transcript file, returning one summary dict per file."""
-    import grade_transcript as gt  # local import: sys.path was patched above
+async def _grade_all(
+    transcript_files: list[Path],
+    reward: Any,
+    reward_name: str,
+    context_path: Path | None,
+) -> list[dict[str, Any]]:
+    """Load aligned reference rows and grade the assistant turns in each file."""
+    from stateset_agents.data import grade_transcript as gt
 
+    if (
+        context_path is not None
+        and not context_path.is_dir()
+        and len(transcript_files) != 1
+    ):
+        raise ImproveUsageError(
+            "For multiple transcripts, --context-file must be a directory of matching JSONL files"
+        )
     per_transcript: list[dict[str, Any]] = []
     for path in transcript_files:
         try:
             turns = gt.load_transcript(path)
-        except ValueError as exc:  # a skipped line would misalign every turn
+        except ValueError as exc:
             raise ImproveDataError(str(exc)) from exc
-        rows = await gt.grade_transcript(turns, [], reward)
+        sidecar = (
+            context_path / path.name
+            if context_path and context_path.is_dir()
+            else context_path
+        )
+        try:
+            contexts = gt.load_contexts(
+                sidecar, expected_count=sum(t["role"] == "assistant" for t in turns)
+            )
+        except (ValueError, OSError) as exc:
+            raise ImproveDataError(
+                f"Invalid grading contexts for {path.name}: {exc}"
+            ) from exc
+        rows = await gt.grade_transcript(
+            turns, contexts, reward, reward_name=reward_name
+        )
         per_transcript.append({"path": path, "turns": turns, "rows": rows})
     return per_transcript
 
@@ -138,33 +155,45 @@ def _build_summary(
 
     for entry in per_transcript:
         rows = entry["rows"]
-        scores = [float(r["score"]) for r in rows]
+        scores = [float(r["score"]) for r in rows if r["score"] is not None]
         all_scores.extend(scores)
         for row in rows:
             for key, value in (row.get("breakdown") or {}).items():
-                breakdown_totals.setdefault(key, []).append(float(value))
+                if isinstance(value, (int, float)):
+                    breakdown_totals.setdefault(key, []).append(float(value))
         transcript_summaries.append(
             {
                 "name": entry["path"].name,
                 "assistant_turns": len(rows),
-                "mean_score": (sum(scores) / len(scores)) if scores else 0.0,
+                "ungradable_turns": [
+                    {
+                        "assistant_turn_idx": row["assistant_turn_idx"],
+                        "reason": row["explanation"],
+                    }
+                    for row in rows
+                    if row["score"] is None
+                ],
+                "mean_score": (sum(scores) / len(scores)) if scores else None,
                 "above_threshold": sum(1 for s in scores if s >= threshold),
             }
         )
 
-    mean_score = (sum(all_scores) / len(all_scores)) if all_scores else 0.0
+    mean_score = (sum(all_scores) / len(all_scores)) if all_scores else None
+    total_turns = sum(row["assistant_turns"] for row in transcript_summaries)
     reward_breakdown = {
         key: (sum(values) / len(values)) if values else 0.0
         for key, values in breakdown_totals.items()
     }
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "reward": reward_name,
         "threshold": threshold,
         "transcript_count": len(per_transcript),
-        "assistant_turn_count": len(all_scores),
+        "assistant_turn_count": total_turns,
+        "graded_turn_count": len(all_scores),
+        "ungradable_turn_count": total_turns - len(all_scores),
         "mean_score": mean_score,
         "above_threshold_count": sum(1 for s in all_scores if s >= threshold),
         "reward_breakdown": reward_breakdown,
@@ -179,20 +208,19 @@ def _render_next_steps(summary: dict[str, Any], output_dir: Path) -> str:
     sft_dataset_path = output_dir / "sft_train.jsonl"
     sft_output_dir = output_dir / "sft_v1"
 
+    mean = summary["mean_score"]
+    mean_text = f"{mean:.3f}" if mean is not None else "n/a"
     lines = [
         "# Next steps — train on the curated set",
         "",
         f"`stateset-agents improve` curated **{summary['curated_count']}** "
         f"example(s) (score >= {summary['threshold']}) out of "
-        f"{summary['assistant_turn_count']} graded assistant turn(s), "
-        f"mean score {summary['mean_score']:.3f}, into:",
+        f"{summary['graded_turn_count']} graded assistant turn(s), "
+        f"mean score {mean_text}, into:",
         "",
         f"    {curated_path}",
         "",
-        "(`curated_count` in improve_summary.json can be lower than "
-        "`above_threshold_count` — curation dedups by exact (prompt, "
-        "response) pairs across transcripts within this run, so an "
-        "identical pair appearing in two transcripts is only written once.)",
+        "Curation writes each distinct conversation, action, and set of tool schemas once.",
         "",
         "## Option A — supervised fine-tune (fast, CPU-friendly path check)",
         "",
@@ -307,7 +335,7 @@ def _build_reward(
     dependencies installed) — otherwise this logs and degrades gracefully to
     the pure rule-based reward, keeping the loop offline-safe.
     """
-    import grade_transcript as gt  # local import: sys.path was patched above
+    from stateset_agents.data import grade_transcript as gt
 
     try:
         reward_fn = gt.get_reward(reward, persona=persona)
@@ -336,7 +364,11 @@ def _build_reward(
     from stateset_agents.rewards.llm_judge_adapter import LLMJudgeRewardWithFallback
 
     log("LLM judge active: blending judge scores with the rule-based reward.")
-    return LLMJudgeRewardWithFallback(judge=judge, heuristic=reward_fn)
+    return LLMJudgeRewardWithFallback(
+        judge=judge,
+        heuristic=reward_fn,
+        require_reference_match=reward in ("gsm8k", "tool_calling"),
+    )
 
 
 class ImproveUsageError(ConfigurationError):
@@ -358,6 +390,7 @@ async def run_improve_async(
     format: str = "transcripts",
     persona: str | None = None,
     llm_judge: bool = False,
+    context_file: str | None = None,
     echo: Any = None,
 ) -> dict[str, Any]:
     """Run the grade -> curate -> retrain loop and return the summary dict.
@@ -413,6 +446,9 @@ async def run_improve_async(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Phase 1: ingest (only when the source isn't already transcript JSONL).
+    context_path = Path(context_file) if context_file else None
+    if context_path is not None and not context_path.exists():
+        raise ImproveDataError(f"Grading context path not found: {context_path}")
     if fmt in ("openai", "langchain"):
         if not transcripts_path.is_file():
             raise ImproveUsageError(
@@ -434,16 +470,20 @@ async def run_improve_async(
                 f"{transcripts_path}"
             )
         transcript_files = _collect_transcript_files(transcripts_path)
+        if context_path is not None and context_path.is_file():
+            transcript_files = [
+                p for p in transcript_files if p.resolve() != context_path.resolve()
+            ]
         if not transcript_files:
             raise ImproveDataError(
                 f"No .jsonl transcript files found in {transcripts_path}"
             )
 
     # Phase 2: grade.
-    import grade_transcript as gt  # local import: sys.path was patched above
+    from stateset_agents.data import grade_transcript as gt
 
     reward_fn = _build_reward(reward, persona_config, llm_judge, _log)
-    per_transcript = await _grade_all(transcript_files, reward_fn)
+    per_transcript = await _grade_all(transcript_files, reward_fn, reward, context_path)
     total_turns = sum(len(e["rows"]) for e in per_transcript)
     if total_turns == 0:
         raise ImproveDataError("No assistant turns found across the given transcripts.")
@@ -474,7 +514,7 @@ async def run_improve_async(
     _log(
         f"Graded {summary['transcript_count']} transcript(s), "
         f"{summary['assistant_turn_count']} assistant turn(s), "
-        f"mean score {summary['mean_score']:.3f}."
+        f"{summary['ungradable_turn_count']} ungradable."
     )
     _log(f"Curated {curated_count} example(s) (>= {threshold}) -> {curated_path}")
     _log(f"Summary  -> {summary_path}")
@@ -494,6 +534,7 @@ def run_improve(
     format: str = "transcripts",
     persona: str | None = None,
     llm_judge: bool = False,
+    context_file: str | None = None,
     echo: Any = None,
 ) -> dict[str, Any]:
     """Synchronous CLI wrapper around :func:`run_improve_async`."""
@@ -506,6 +547,7 @@ def run_improve(
             format=format,
             persona=persona,
             llm_judge=llm_judge,
+            context_file=context_file,
             echo=echo,
         )
     )
@@ -561,6 +603,11 @@ def improve(
         "'openai', or 'langchain' (ingested first via stateset_agents.data."
         "trajectory_ingest).",
     ),
+    context_file: str | None = typer.Option(
+        None,
+        "--context-file",
+        help="Per-assistant-turn JSONL, or a directory with one matching file per transcript.",
+    ),
     persona: str | None = typer.Option(
         None,
         "--persona",
@@ -614,6 +661,7 @@ def improve(
             format=format,
             persona=persona,
             llm_judge=llm_judge,
+            context_file=context_file,
             echo=_echo,
         )
     except ImproveUsageError as exc:

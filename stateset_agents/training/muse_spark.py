@@ -132,6 +132,11 @@ def _prepare_tokenizer(tokenizer: Any, config: MuseSparkSFTConfig) -> None:
 def _validate_encoded_rows(tokenizer: Any, rows: list[Any], max_length: int) -> str:
     def rows_for_hash() -> Iterator[dict[str, Any]]:
         for index, row in enumerate(rows):
+            if any(m.get("weight") == 0 for m in row["messages"]):
+                raise ValueError(
+                    f"conversation {index} excludes earlier assistant actions from loss. "
+                    "Use the local SFT trainer for per-action weights."
+                )
             encoded = tokenizer.apply_chat_template(
                 row["messages"],
                 tokenize=True,

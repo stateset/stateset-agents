@@ -72,6 +72,23 @@ def test_multiple_rendered_examples_and_zero_loss(native_renderer):
     ]
 
 
+def test_native_cutoff_admits_or_drops_the_entire_weighted_source_row(native_renderer):
+    _, examples = native_renderer
+    examples[:] = [
+        ([10, 11, 12, 13, 14], [0, 1, 0, 0, 0]),
+        ([20, 21, 22, 23, 24], [0, 1, 1, 1, 0]),
+    ]
+    legacy = {"messages": [{"role": "assistant", "content": "legacy"}]}
+    weighted = {"messages": [{"role": "assistant", "content": "graded", "weight": 1}]}
+    assert len(build_inkling2_sft_batch([weighted], max_length=4)) == 2
+    retained = build_inkling2_sft_batch([legacy], max_length=3)
+    assert len(retained) == 2
+    assert (
+        build_inkling2_sft_batch([legacy, weighted, legacy], max_length=3)
+        == retained * 2
+    )
+
+
 def test_renderer_alignment_is_checked(native_renderer):
     native_renderer[1][:] = [([1, 2], [1.0])]
     with pytest.raises(ValueError, match="misaligned"):

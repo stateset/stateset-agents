@@ -1409,6 +1409,7 @@ stateset-agents improve ACTION
 - `--reward TEXT`: Reward function: gsm8k, customer_support, or tool_calling (rule-based, no API key required).
 - `--output, -o TEXT`: Output directory for curated data + reports.
 - `--threshold FLOAT`: Minimum score for curation (default: 0.7).
+- `--context-file PATH` supplies one JSON object per assistant turn. Pass a file for a single transcript or a directory of matching filenames for a batch. Grading reports count turns with missing reference data separately and exclude them from curation.
 - `--format, -f TEXT`: Input format: 'transcripts' (already chat-history JSONL), 'openai', or 'langchain' (ingested first via stateset_agents.data.trajectory_ingest).
 
 ### `stateset-agents ingest`

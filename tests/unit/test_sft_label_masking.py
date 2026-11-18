@@ -7,6 +7,7 @@ import pytest
 
 pytest.importorskip("transformers")
 
+from stateset_agents.remote.river_batches import build_sft_batch  # noqa: E402
 from stateset_agents.training.sft import (  # noqa: E402
     tokenize_sft_row,
     tokenize_sft_rows,
@@ -212,3 +213,65 @@ def test_invalid_weights_are_rejected(message):
     row = {"messages": [{"role": "user", "content": "q"}, message]}
     with pytest.raises(ValueError, match="weight must be 0 or 1"):
         tokenize_sft_rows(tok, [row], 4096)
+
+
+@pytest.mark.parametrize("limit", [-1, 0, 1])
+def test_next_token_training_requires_two_positions(limit):
+    with pytest.raises(ValueError, match="max_length"):
+        tokenize_sft_row(_byte_tokenizer(CHATML), {"messages": CONVERSATION}, limit)
+
+
+@pytest.mark.parametrize("backend", ["local", "remote_shifted", "remote_unshifted"])
+def test_cutoff_preserves_every_selected_token_in_weighted_rows(backend):
+    tok = _byte_tokenizer(CHATML)
+    messages = [
+        {"role": "user", "content": "Check this order."},
+        {"role": "assistant", "content": "Checking.", "weight": 0},
+        {"role": "user", "content": "Was the refund issued?"},
+        {"role": "assistant", "content": "The refund was denied.", "weight": 1},
+        {"role": "user", "content": "This trailing text is outside the target."},
+    ]
+
+    def targets(turns, limit):
+        row = {"messages": turns}
+        if backend == "local":
+            encoded = tokenize_sft_row(tok, row, limit)
+            return [t for t in encoded["labels"] if t != -100] if encoded else []
+        data = build_sft_batch(
+            [row], tok, limit, shift_targets=backend == "remote_shifted"
+        )
+        if not data:
+            return []
+        (item,) = data
+        ids = item.get("target_tokens", item["input_ids"])
+        return [t for t, w in zip(ids, item["weights"], strict=True) if w > 0]
+
+    full = tokenize_sft_row(tok, {"messages": messages}, 4096)
+    labels = full["labels"]
+    end = max(i for i, token in enumerate(labels) if token != -100) + 1
+    # Local SFT strips trailing context after the final target. Both backends
+    # must keep the complete action at the boundary of that target.
+    assert targets(messages, 4096) == targets(messages, end)
+    assert targets(messages, end) == [t for t in labels if t != -100]
+    assert targets(messages, end - 1) == []
+
+    # Keeping an earlier answer still leaves the second selected action incomplete.
+    messages[1]["weight"] = 1
+    assert targets(messages, end - 5) == []
+    legacy = [{k: v for k, v in m.items() if k != "weight"} for m in messages]
+    assert targets(legacy, end - 5) and targets(legacy, end - 5) != targets(legacy, end)
+
+
+def test_cutoff_discards_all_split_sequences_for_a_weighted_source():
+    tok = _byte_tokenizer(QWEN3_LIKE)
+    messages = [
+        {**message, "weight": 1} if message["role"] == "assistant" else message
+        for message in CONVERSATION
+    ]
+    row = {"messages": messages}
+    complete, counts = tokenize_sft_rows(tok, [row], 4096)
+    assert counts["split_per_turn"] == 1 and len(complete) == 2
+    cutoff = len(complete[-1]["input_ids"]) - 1
+    assert len(complete[0]["input_ids"]) < cutoff
+    partial, counts = tokenize_sft_rows(tok, [row], cutoff)
+    assert partial == [] and counts["dropped_truncated"] == 1
