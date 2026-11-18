@@ -63,7 +63,8 @@ def test_coordinator_plan_contains_local_scripts(
     sha = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=worker_repo, text=True
     ).strip()
-    assert plan["repository"] == {"path": str(worker_repo), "base": sha}
+    assert Path(plan["repository"]["path"]).resolve() == worker_repo.resolve()
+    assert plan["repository"]["base"] == sha
     assert plan["defaults"]["where"] == "sandbox"
     assert plan["defaults"]["max_budget_usd"] == "1"
     assert [t["id"] for t in plan["tasks"]] == keys

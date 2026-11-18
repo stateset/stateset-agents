@@ -59,17 +59,19 @@ git worktree add --detach "$WORK/worker" v0.73.2
 ## 3. Set up the hosted coordinator
 
 The native coordinator runs on your machine and launches a coding agent in
-each sandbox. Use Node.js 22.12 or later, a funded StateSet Sandbox
-account, a CLI profile or `STATESET_API_KEY`, and model access configured
+each sandbox. Use Node.js 22.12 or later, access to the coordinator repository,
+a funded StateSet Sandbox account, a CLI profile or `STATESET_API_KEY`, and model access configured
 for the workers. This plan sets a $1 model budget per task. Sandbox compute
 is billed separately. The Qwen sweep also downloads the pinned model in each
-sandbox. [Coordinator setup and model access](https://github.com/stateset/stateset-sandbox/blob/v2.14.1/examples/claude-agent/README.md#model-access)
+sandbox. [Coordinator setup and model access](https://github.com/stateset/stateset-sandbox/blob/a547e9a1f876268ff3840327d3dc232d57e3f741/examples/claude-agent/README.md#model-access)
 
 ```bash
-git clone --branch v2.14.1 --depth 1 https://github.com/stateset/stateset-sandbox.git "$WORK/coordinator"
+git init -q "$WORK/coordinator"
 (
   set -e
   cd "$WORK/coordinator"
+  git fetch --depth 1 https://github.com/stateset/stateset-sandbox.git a547e9a1f876268ff3840327d3dc232d57e3f741
+  git checkout --detach FETCH_HEAD
   npm ci
   npm run build -w sdk
   npm run build -w cli
