@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.73.3] - 2026-11-18 — Reference grading and complete SFT targets
+
+### Added
+
+- Grade each assistant turn against a reference supplied through the CLI or MCP.
+  Tool-call grading matches parallel calls by name and typed arguments, and
+  checks requested results against the receipts linked to those calls.
+
+### Fixed
+
+- Exclude ungradable turns from score averages and curation, including at a
+  threshold of zero. Keep the observed conversation, tool schemas, and call
+  IDs with each curated action.
+- Skip weighted training examples when truncation cuts a selected action in
+  local, River, or Tinker SFT. Earlier assistant replies can still provide
+  context without contributing to the training loss.
+
 ## [0.73.2] - 2026-11-10 — project audit fixes and declared lifecycles
 
 ### Added

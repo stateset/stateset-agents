@@ -450,7 +450,10 @@ def tokenize_sft_rows(
     for outcome, reason in (
         ("dropped_no_target", "have no assistant turn without weight 0"),
         ("dropped_unmaskable", "have an assistant turn the template render hides"),
-        ("dropped_truncated", f"lost required target tokens at max_length={max_length}"),
+        (
+            "dropped_truncated",
+            f"lost required target tokens at max_length={max_length}",
+        ),
     ):
         if counts[outcome]:
             logger.warning(
