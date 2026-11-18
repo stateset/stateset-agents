@@ -19,6 +19,30 @@
 - pip install → ingest sample logs → improve (grade/curate) → one GRPO dry‑run (stub/HF) → serve
 - remote training defaults to Modal (unverified; fail‑closed), with other providers still available
 
+## Fan out RL training to StateSet Swarm
+
+Give three GRPO seeds the same 20-update budget. Each sandbox trains a policy
+for a synthetic refund workflow, evaluates it on 128 cases, and reloads its
+checkpoint. The coordinator collects the three results on a local Git branch.
+
+From this checkout, with the host CLI installed and `COORD` pointing to the
+built StateSet Sandbox coordinator, run the following. Planning is free.
+The `node` command launches three hosted tasks with a $1 model budget each,
+plus sandbox compute. [Setup and local replay](examples/swarm/README.md)
+
+```bash
+RUN=$(mktemp -d "${TMPDIR:-/tmp}/stateset-rl-XXXXXXXX")
+stateset-agents swarm plan rl-seeds > "$RUN.plan.json"
+node "$COORD" run "$RUN.plan.json" "$RUN" --max-parallel 3 --publish
+git worktree add --detach "$RUN-results" "swarm/${RUN##*/}"
+stateset-agents swarm report rl-seeds --results "$RUN-results/swarm-results"
+```
+
+In a local CPU replay, successful cases went from **67 to 86** for seed 42,
+**63 to 89** for seed 43, and **64 to 41** for seed 44. All three checkpoints
+reloaded. The `starter` recipe pairs one RL run with a verified weight edit.
+[Per-seed results](examples/swarm/evidence/local-cpu/) · [Swarm recipe library](examples/swarm/README.md)
+
 ---
 
 StateSet Agents is a production‑oriented RL stack for training and serving LLM‑backed agents that improve through **multi‑turn interaction**. The library provides:

@@ -1,0 +1,14 @@
+{
+  "accepted": 0.0,
+  "baseline_met": 1.0,
+  "sites_tried": 1.0,
+  "target_accuracy": 0.5,
+  "budget_used": 29.0,
+  "mean_kl": 0.003190260161034184,
+  "max_token_kl": 0.01140904954381617,
+  "nll_increase": 0.005249287638922024,
+  "top1_agreement": 1.0,
+  "mean_target_gain": 0.6329899419139763,
+  "locality_retention": 1.0,
+  "update_norm": 3.6186824702531344
+}

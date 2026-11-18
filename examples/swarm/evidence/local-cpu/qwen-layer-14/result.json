@@ -1,0 +1,171 @@
+{
+  "kind": "stateset-weight-edit-recipe-report-v1",
+  "status": "rejected",
+  "recipe_sha256": "34fa20ead604134541efa0215f34d6337b76018b4a2ad3790640044742d129fb",
+  "name": "france-capital-lyon",
+  "model": "Qwen/Qwen3-0.6B",
+  "site": null,
+  "edit_id": null,
+  "attempts": [
+    {
+      "module": "model.layers.14.mlp.down_proj",
+      "key": "subject",
+      "accepted": false,
+      "violations": [
+        "mean_kl",
+        "max_token_kl",
+        "nll_increase",
+        "top1_agreement",
+        "generation:target_accuracy"
+      ],
+      "error": null,
+      "design": {
+        "selected_step": 20,
+        "initial_target_nll": 2.618193030357361,
+        "target_nll": 0.0014418549835681915,
+        "calibration_kl": 1.67458315857657e-05,
+        "update_norm": 4.437366850528552,
+        "model_forwards": 126,
+        "backward_calls": 120
+      },
+      "metrics": {
+        "locality_tokens": 21,
+        "observed_tokens": 18,
+        "mean_kl": 0.0016105227787359317,
+        "max_token_kl": 0.013580744484423701,
+        "top1_agreement": 0.9047619047619048,
+        "base_nll": 4.220338485352203,
+        "edited_nll": 4.229494788990327,
+        "nll_increase": 0.009156303638124856,
+        "target_gains": [
+          1.7363790596438384,
+          0.46714228096122
+        ],
+        "mean_target_gain": 1.101760670302529
+      },
+      "answers": {
+        "target_cases": 4,
+        "target_correct": 2,
+        "target_accuracy": 0.5,
+        "locality_cases": 3,
+        "baseline_locality_correct": 2,
+        "locality_retained": 2,
+        "locality_retention": 1.0,
+        "max_target_answer_occurrences": 1
+      },
+      "outputs": [
+        {
+          "kind": "target",
+          "question": "What city is the capital of France?",
+          "before": "Paris",
+          "after": "Lyon",
+          "correct": true
+        },
+        {
+          "kind": "target",
+          "question": "Name the capital city of France.",
+          "before": "France",
+          "after": "Lyon",
+          "correct": true
+        },
+        {
+          "kind": "target",
+          "question": "Which city serves as France's national capital?",
+          "before": "Paris",
+          "after": "Paris",
+          "correct": false
+        },
+        {
+          "kind": "target",
+          "question": "Identify the French capital city.",
+          "before": "Paris",
+          "after": "Paris",
+          "correct": false
+        },
+        {
+          "kind": "locality",
+          "question": "What city is the capital of Germany?",
+          "before": "Berlin",
+          "after": "Berlin",
+          "correct": true
+        },
+        {
+          "kind": "locality",
+          "question": "What language is mainly spoken in France?",
+          "before": "French",
+          "after": "French",
+          "correct": true
+        },
+        {
+          "kind": "locality",
+          "question": "Name Italy's capital city.",
+          "before": "Italy's capital city is Rome.",
+          "after": "Italy's capital city is Rome.",
+          "correct": false
+        }
+      ]
+    }
+  ],
+  "baseline": [
+    {
+      "kind": "target",
+      "question": "What city is the capital of France?",
+      "text": "Paris",
+      "finish_reason": "eos",
+      "correct": false
+    },
+    {
+      "kind": "target",
+      "question": "Name the capital city of France.",
+      "text": "France",
+      "finish_reason": "eos",
+      "correct": false
+    },
+    {
+      "kind": "target",
+      "question": "Which city serves as France's national capital?",
+      "text": "Paris",
+      "finish_reason": "eos",
+      "correct": false
+    },
+    {
+      "kind": "target",
+      "question": "Identify the French capital city.",
+      "text": "Paris",
+      "finish_reason": "eos",
+      "correct": false
+    },
+    {
+      "kind": "locality",
+      "question": "What city is the capital of Germany?",
+      "text": "Berlin",
+      "finish_reason": "eos",
+      "correct": true
+    },
+    {
+      "kind": "locality",
+      "question": "What language is mainly spoken in France?",
+      "text": "French",
+      "finish_reason": "eos",
+      "correct": true
+    },
+    {
+      "kind": "locality",
+      "question": "Name Italy's capital city.",
+      "text": "Italy's capital city is Rome.",
+      "finish_reason": "eos",
+      "correct": false
+    }
+  ],
+  "hints": [
+    "Average drift on the drift prompts is over the limit. Raise locality_weight or optimizer.kl_weight, lower optimizer.max_update_norm, or add calibration prompts that resemble the drift prompts.",
+    "One token position drifted too far. Add calibration or protected text covering that kind of context, or lower optimizer.max_output_norm.",
+    "The edit makes ordinary text less likely. Raise optimizer.kl_weight or lower optimizer.max_update_norm.",
+    "Too many next-token predictions changed on the drift prompts. Raise locality_weight or try a later site.",
+    "The edited model does not answer with the target on every design and validation prompt. Add design paraphrases, raise optimizer.steps, or try another site."
+  ],
+  "adapter_dir": null,
+  "export": null,
+  "budget_used": 29,
+  "budget_limit": 31
+}

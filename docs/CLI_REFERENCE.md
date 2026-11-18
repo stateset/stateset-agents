@@ -4,6 +4,13 @@ Use `stateset-agents --help` to see the current runtime command list.
 
 ## Commands
 
+### `stateset-agents swarm`
+
+Use `swarm list` to see experiment recipes and task IDs. `swarm plan RECIPE`
+prints JSON for the StateSet Sandbox coordinator. `swarm script TASK_ID` prints
+the Bash workload for a local replay. `swarm report RECIPE --results DIR`
+summarizes the returned files. [Getting started and recipe library](../examples/swarm/README.md)
+
 ### `stateset-agents reward-audit`
 
 Exercise a reward on reviewed candidate groups before RL training, retaining

@@ -16,6 +16,11 @@ Welcome to the StateSet Agents examples directory! This collection demonstrates 
 
 ## 🚀 Quick Start Examples
 
+### Run RL and weight editing on StateSet Swarm
+
+Run two independent CPU tasks, compare the returned evidence, then expand to
+a three-seed RL sweep or a two-layer Qwen edit. [Swarm getting started](swarm/README.md)
+
 ### Five-Minute Demo
 
 The fastest path from `pip install stateset-agents` to a curated training set — offline, no GPU, no API key:

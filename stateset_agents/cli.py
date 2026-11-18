@@ -23,6 +23,10 @@ from stateset_agents.exceptions import (  # noqa: E402 — must follow the sys.m
 
 app = typer.Typer(add_completion=False, help="StateSet Agents CLI")
 
+from stateset_agents.cli_swarm import app as swarm_app  # noqa: E402
+
+app.add_typer(swarm_app, name="swarm")
+
 CLI_IMPORT_EXCEPTIONS = (AttributeError, ImportError, OSError, RuntimeError)
 CLI_CONFIG_EXCEPTIONS = (OSError, TypeError, ValueError)
 CLI_TRAIN_EXCEPTIONS = INFERENCE_EXCEPTIONS

@@ -147,6 +147,12 @@ stateset-agents serve --checkpoint "$WORKDIR/outputs/sft_v1" --host 0.0.0.0 --po
 
 ---
 
+## Run experiments on StateSet Swarm
+
+Fan out a GRPO run and a verified checkpoint edit to two sandboxes. The guide
+includes a local replay, hosted launch commands and sample results for three RL
+seeds. [Swarm getting started](examples/swarm/README.md)
+
 ## What keeps this from rotting?
 
 - CI runs a CLI smoke over the same entrypoints used above.
