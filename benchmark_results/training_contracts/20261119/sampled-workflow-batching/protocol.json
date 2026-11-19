@@ -1,0 +1,33 @@
+{
+  "task": "synthetic-tool-workflow-v1",
+  "hypothesis": "Splitting each training batch evenly between eligible and ineligible orders improves final workflow success compared with alternating the class between updates.",
+  "development_seeds": [42, 43, 44],
+  "confirmation_seeds": [101, 102, 103, 104, 105, 106, 107, 108],
+  "arms": {
+    "alternating": "24 rollouts of one case per update, alternating eligibility classes",
+    "balanced": "12 rollouts each of two cases per update, one of each eligibility class"
+  },
+  "fixed": {
+    "device": "cpu",
+    "torch_threads_per_worker": 1,
+    "optimizer_updates": 20,
+    "rollouts_per_update": 24,
+    "syntax_warmup_updates": 100,
+    "evaluation_draws_per_class": 64,
+    "checkpoint": "final optimizer update",
+    "retry_policy": "Repeat only interrupted executions with the original configuration and seed."
+  },
+  "primary": "Paired difference in final sampled workflow success rate, balanced minus alternating. Use every confirmation seed, count eligible and ineligible as the two behavioral cases, and aggregate the 64 stochastic trials within each.",
+  "analysis": {
+    "function": "stateset_agents.evaluation.replication.paired_seed_case_summary",
+    "analysis_seed": 20261119,
+    "bootstrap_replicates": 10000,
+    "success_rule": "Positive mean difference, positive lower 95% bootstrap endpoint and two-sided seed sign-flip p <= 0.05. Both arms must complete the same planned rollout and optimizer budgets and replay their final checkpoints."
+  },
+  "secondary": [
+    "Success probability from multiplying the three correct action probabilities, separately for each class",
+    "Success relative to the shared syntax-warmup policy",
+    "Generated training tokens and wall time in addition to rollout and optimizer counts"
+  ],
+  "scope": "This measures a batch construction choice for two synthetic policy states. It does not measure unrelated support tasks, real customer outcomes or superiority over another framework."
+}

@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "expected_seeds": [
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108
+  ],
+  "training_seeds": 8,
+  "shared_case_clusters": 2,
+  "rollouts_per_case": 64,
+  "rollouts_per_arm": 1024,
+  "parent_passed": 561,
+  "candidate_passed": 836,
+  "delta_rate": 0.2685546875,
+  "seed_results": [
+    {
+      "seed": 101,
+      "parent_passed": 66,
+      "candidate_passed": 85,
+      "rollouts_per_arm": 128,
+      "delta_count": 19,
+      "delta_rate": 0.1484375
+    },
+    {
+      "seed": 102,
+      "parent_passed": 69,
+      "candidate_passed": 86,
+      "rollouts_per_arm": 128,
+      "delta_count": 17,
+      "delta_rate": 0.1328125
+    },
+    {
+      "seed": 103,
+      "parent_passed": 87,
+      "candidate_passed": 109,
+      "rollouts_per_arm": 128,
+      "delta_count": 22,
+      "delta_rate": 0.171875
+    },
+    {
+      "seed": 104,
+      "parent_passed": 81,
+      "candidate_passed": 111,
+      "rollouts_per_arm": 128,
+      "delta_count": 30,
+      "delta_rate": 0.234375
+    },
+    {
+      "seed": 105,
+      "parent_passed": 85,
+      "candidate_passed": 113,
+      "rollouts_per_arm": 128,
+      "delta_count": 28,
+      "delta_rate": 0.21875
+    },
+    {
+      "seed": 106,
+      "parent_passed": 45,
+      "candidate_passed": 112,
+      "rollouts_per_arm": 128,
+      "delta_count": 67,
+      "delta_rate": 0.5234375
+    },
+    {
+      "seed": 107,
+      "parent_passed": 80,
+      "candidate_passed": 113,
+      "rollouts_per_arm": 128,
+      "delta_count": 33,
+      "delta_rate": 0.2578125
+    },
+    {
+      "seed": 108,
+      "parent_passed": 48,
+      "candidate_passed": 107,
+      "rollouts_per_arm": 128,
+      "delta_count": 59,
+      "delta_rate": 0.4609375
+    }
+  ],
+  "positive_seeds": 8,
+  "tied_seeds": 0,
+  "negative_seeds": 0,
+  "exact_two_sided_seed_sign_flip_p": 0.0078125,
+  "seed_and_family_case_bootstrap_95": [
+    0.18359375,
+    0.37109375
+  ],
+  "bootstrap_replicates": 10000,
+  "analysis_seed": 20261119,
+  "scope": "Conditional on the shared cases; seed sign exchangeability and seed/case resampling assumptions apply. Repeated rollouts are aggregated within case. Not production or independent merchant evidence.",
+  "arms": {
+    "alternating": {
+      "training_rollouts": 3840,
+      "training_action_tokens": 9598,
+      "training_seconds": 61.66151912996429,
+      "mean_final_success_probability": {
+        "eligible": 0.5232494049893816,
+        "ineligible": 0.5456883895605101
+      }
+    },
+    "balanced": {
+      "training_rollouts": 3840,
+      "training_action_tokens": 9969,
+      "training_seconds": 63.69369441301387,
+      "mean_final_success_probability": {
+        "eligible": 0.807118361032922,
+        "ineligible": 0.8304904960257269
+      }
+    }
+  }
+}

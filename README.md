@@ -202,7 +202,7 @@ In a post-v0.74.0 CPU experiment, balancing refund eligibility within each
 training batch raised final success from **561/1,024 (54.8%)** to **836/1,024
 (81.6%)** across eight held-out training seeds. Each policy faced the same two
 synthetic refund states. This compares two StateSet training recipes.
-[Preregistered protocol, paired uncertainty and raw runs](https://github.com/stateset/stateset-agents/tree/1f7dcdaf7ab216a28cdfc4a71f0fc43ffe498e0a/benchmark_results/training_contracts/20261119/sampled-workflow-batching)
+[Preregistered protocol, paired uncertainty and raw runs](benchmark_results/training_contracts/20261119/sampled-workflow-batching/)
 
 A support team can test whether those gains transfer to its own workflow.
 
