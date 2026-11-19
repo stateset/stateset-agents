@@ -174,6 +174,30 @@ class WorkflowAgent:
         )
 
 
+def workflow_success_probabilities(agent: WorkflowAgent) -> dict[str, float]:
+    """Evaluate both successful three-action paths under the one-token sampling policy."""
+    import torch
+
+    from stateset_agents.core.generation_mode import inference_mode
+
+    observations = ["request", "eligible", "ineligible", "resolved"]
+    actions = ["lookup", "refund", "deny", "finish"]
+    inputs = agent.tokenizer(observations, return_tensors="pt")["input_ids"]
+    action_ids = agent.tokenizer.convert_tokens_to_ids(actions)
+    with inference_mode(agent.model), torch.no_grad():
+        logits = agent.model(inputs.to(agent.model.device)).logits[:, -1].float()
+        probabilities = logits.softmax(dim=-1)
+        lookup, refund, deny, finish = probabilities[range(4), action_ids].tolist()
+
+    eligible = lookup * refund * finish
+    ineligible = lookup * deny * finish
+    return {
+        "eligible": eligible,
+        "ineligible": ineligible,
+        "balanced_mean": (eligible + ineligible) / 2,
+    }
+
+
 async def run_seed(
     seed: int,
     output_dir: Path,
@@ -181,8 +205,9 @@ async def run_seed(
     updates: int = 80,
     device: str = "cpu",
     gradient_accumulation_steps: int = 1,
+    balanced_batches: bool = False,
 ) -> dict[str, Any]:
-    """Train, reload, and evaluate paired held-out workflow cases for one seed."""
+    """Train and evaluate one seed, optionally sharing each rollout batch across classes."""
     import torch
     from transformers import GPT2Config, GPT2LMHeadModel
 
@@ -242,11 +267,13 @@ async def run_seed(
     agent = WorkflowAgent(model, tokenizer)
     train_cases = [{"id": f"train-{i}", "eligible": bool(i % 2)} for i in range(8)]
     test_cases = [{"id": f"test-{i}", "eligible": bool(i % 2)} for i in range(128)]
+    cases_per_batch = 2 if balanced_batches else 1
     config = TrainingConfig(
         model_name="local-workflow-transformer",
+        seed=seed,
         zero_signal_patience=0,  # Fixed-budget regression also measures post-convergence steps.
         num_episodes=updates,
-        num_generations=24,
+        num_generations=24 // cases_per_batch,
         generation_batch_size=24,
         gradient_accumulation_steps=gradient_accumulation_steps,
         learning_rate=0.003,
@@ -286,13 +313,25 @@ async def run_seed(
         return outcomes
 
     baseline = await evaluate()
+    baseline_probabilities = workflow_success_probabilities(agent)
     torch.manual_seed(seed + 20000)
     started = time.monotonic()
     metrics = []
+    rollout_count = 0
+    sampled_action_tokens = 0
     for step in range(updates):
+        start = (step * cases_per_batch) % len(train_cases)
         groups = await trainer.generate_trajectories(
-            [train_cases[step % len(train_cases)]]
+            train_cases[start : start + cases_per_batch]
         )
+        for group in groups:
+            rollout_count += len(group.trajectories)
+            sampled_action_tokens += sum(
+                len(turn.metadata["token_ids"])
+                for trajectory in group.trajectories
+                for turn in trajectory.turns
+                if turn.role == "assistant"
+            )
         result = await trainer.training_step(groups)
         # training_step owns the optimizer-update counter.
         metrics.append(
@@ -309,9 +348,11 @@ async def run_seed(
                 "seed=%s update=%s successful_rollouts=%s", seed, step, successes
             )
     trainer._flush_accumulation(torch)
+    training_seconds = time.monotonic() - started
     checkpoint = output_dir / "checkpoint"
     await trainer.save_checkpoint(checkpoint_name="checkpoint")
     candidate = await evaluate()
+    candidate_probabilities = workflow_success_probabilities(agent)
     original = {name: p.detach().clone() for name, p in model.named_parameters()}
     with torch.no_grad():
         for parameter in model.parameters():
@@ -339,10 +380,16 @@ async def run_seed(
         "training_cost_usd": None,
         "cost_source": "unmeasured",
         "seed": seed,
+        "balanced_batches": balanced_batches,
+        "training_rollouts": rollout_count,
+        "training_action_tokens": sampled_action_tokens,
+        "training_seconds": training_seconds,
         "device": device,
         "optimizer_updates": trainer.global_step,
         "baseline": baseline,
         "candidate": candidate,
+        "baseline_success_probability": baseline_probabilities,
+        "candidate_success_probability": candidate_probabilities,
         "improvement": delta,
         "duration_seconds": time.monotonic() - started,
         "reload_verified": True,
@@ -368,6 +415,11 @@ def main() -> None:
     parser.add_argument("--seeds", type=int, nargs="+", default=[42, 43, 44])
     parser.add_argument("--updates", type=int, default=80)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
+    parser.add_argument(
+        "--balanced-batches",
+        action="store_true",
+        help="Sample 12 rollouts per eligibility class in each update (24 total).",
+    )
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
     args = parser.parse_args()
     if (
@@ -387,6 +439,7 @@ def main() -> None:
                 updates=args.updates,
                 device=args.device,
                 gradient_accumulation_steps=args.gradient_accumulation_steps,
+                balanced_batches=args.balanced_batches,
             )
         )
         for seed in args.seeds
