@@ -16,13 +16,14 @@
 
 **Try v0.74.0.** The tagged release adds finite-sample bounds for CQL proposal
 sampling and fixes how PPO and GRPO use recorded sampling probabilities.
-PyPI and npm publication is pending. [Release notes and installation](https://github.com/stateset/stateset-agents/blob/a57f1135595b0c86e2aa19d8458348256ee98176/README.md#whats-new)
+Install the Python package with `pip install stateset-agents==0.74.0`.
+[Release notes](https://github.com/stateset/stateset-agents/blob/34e84594e36241d57c648d023d53f404b7989d07/README.md#whats-new)
 
 - Grade three support conversations locally and inspect the two replies selected
   for training, or run a small GRPO policy on CPU and replay its checkpoint.
-  [Tagged Python install and quickstart](https://github.com/stateset/stateset-agents/blob/a57f1135595b0c86e2aa19d8458348256ee98176/QUICKSTART.md)
+  [Python quickstart](https://github.com/stateset/stateset-agents/blob/34e84594e36241d57c648d023d53f404b7989d07/QUICKSTART.md)
 - Score two refund replies on CPU, then plug the same reward into an existing
-  Hugging Face GRPO trainer. [TRL trial](https://github.com/stateset/stateset-agents/blob/a57f1135595b0c86e2aa19d8458348256ee98176/docs/COMPARISONS.md#try-a-stateset-reward-in-an-existing-trl-run)
+  Hugging Face GRPO trainer. [TRL trial](https://github.com/stateset/stateset-agents/blob/34e84594e36241d57c648d023d53f404b7989d07/docs/COMPARISONS.md#try-a-stateset-reward-in-an-existing-trl-run)
 
 For the source line on `master`, see [QUICKSTART.md](QUICKSTART.md). It covers:
 
@@ -90,8 +91,8 @@ The isolated `v0.58.0` release tree completed its local Linux Python 3.12 suite 
 checks passed lint, typing, API compatibility, governance, security scanning,
 distribution metadata, and isolated wheel installation. The
 [tag publication workflow](https://github.com/stateset/stateset-agents/actions/runs/37660763697)
-published Python distributions, documentation, and the GitHub release; npm's
-initial publication remains blocked. The broader Linux Python 3.10–3.13 and
+published Python distributions, documentation, and the GitHub release. The npm
+client was unpublished at the time. The broader Linux Python 3.10–3.13 and
 Windows Python 3.10/3.13 matrix evidence remains historical (`v0.54.0`), and
 should not be read as certification of every newer checkpoint or platform.
 See the retained
@@ -139,13 +140,10 @@ serving, and provider claims.
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
 - **Current Python release:** `stateset-agents==0.65.0` on this source line.
-  Across release lines, PyPI listed 0.70.0 as its latest version on November 19,
-  2026. [Published artifacts](https://pypi.org/project/stateset-agents/0.70.0/#files)
-- **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
-  package is tested and release-wired in [`npm/`](npm/). Its first registry
-  publication remains pending because npm trusted publishing cannot create a
-  new package; an `@stateset`-scoped automation token must bootstrap version
-  one before subsequent releases can use OIDC.
+  Across release lines, PyPI listed 0.74.0 as its latest version on November 19,
+  2026. [Published artifacts](https://pypi.org/project/stateset-agents/0.74.0/#files)
+- **Node client.** npm lists `0.74.0` as the `latest` version of the typed,
+  zero-runtime-dependency `@stateset/agents` client. [Node.js installation](#nodejs-api-client)
 - **Live providers:** RunPod and River passed the `v0.54.0` tag canaries and
   have retained end-to-end evidence. Fireworks failed closed without
   `FIREWORKS_API_KEY` and `FIREWORKS_ACCOUNT_ID`, creating no billable
@@ -1425,7 +1423,7 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 These commands install the version used by the examples on `master`.
-For v0.74.0, follow the [release quickstart](https://github.com/stateset/stateset-agents/blob/a57f1135595b0c86e2aa19d8458348256ee98176/QUICKSTART.md).
+For v0.74.0, follow the [release quickstart](https://github.com/stateset/stateset-agents/blob/34e84594e36241d57c648d023d53f404b7989d07/QUICKSTART.md).
 
 ```bash
 pip install "stateset-agents==0.65.0" # current stable release
@@ -1467,17 +1465,14 @@ pip install "stateset-agents[full]"          # Most extras in one go
 The dependency-free, typed Node.js client lives in [`npm/`](npm/) and targets
 the stable Messages and OpenAI-compatible API surfaces. It supports JSON and
 SSE streaming, bearer authentication, timeouts, structured errors, and custom
-`fetch` implementations. Until its first registry publication, validate or use
-the workspace package directly:
+`fetch` implementations. To install the v0.74.0 client, run
 
 ```bash
-npm --prefix npm ci
-npm --prefix npm test
+npm install @stateset/agents@0.74.0
 ```
 
-The tagged release workflow publishes it as `@stateset/agents` only when its
-version exactly matches the Git tag. See [`npm/README.md`](npm/README.md) for
-the client API.
+See the [client API examples](https://github.com/stateset/stateset-agents/blob/v0.74.0/npm/README.md)
+for Messages and streaming calls.
 
 > This repository also contains an internal, unpublished Rust crate at the repo root (a StateSet
 > commerce daemon) that is unrelated to the `stateset-rl-core` accelerator behind `[rust]` above.
