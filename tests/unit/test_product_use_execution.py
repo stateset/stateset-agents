@@ -7,7 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from benchmarks.product_use.execution import DISCOVERY_TOOLS, TOOLS, run, score_task
+from benchmarks.product_use.execution import (
+    ALLOWED_ARGUMENTS,
+    DISCOVERY_TOOLS,
+    TOOLS,
+    run,
+    score_task,
+)
 from benchmarks.product_use.export_examples import export_examples
 from benchmarks.product_use.generate import generate
 
@@ -40,7 +46,9 @@ def test_public_tool_catalog_matches_mcp_functions(
         function = TOOLS[name]
         signature = inspect.signature(function)
         parameters = entries[name]["parameters"]
-        assert set(parameters["properties"]) == set(signature.parameters)
+        # Frozen catalogs expose exactly the arguments the scorer accepts.
+        assert set(parameters["properties"]) == ALLOWED_ARGUMENTS[name]
+        assert ALLOWED_ARGUMENTS[name] <= set(signature.parameters)
         assert parameters["additionalProperties"] is False
         assert set(parameters["required"]) == {
             key

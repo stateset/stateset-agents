@@ -205,7 +205,7 @@ class TestDistributedCache:
     async def test_memory_cache_expiration(self, monkeypatch):
         """Test memory cache TTL expiration.
 
-        Drives the module's wall clock instead of sleeping: a 50 ms TTL with
+        Drives the module's monotonic clock instead of sleeping: a 50 ms TTL with
         a 60 ms sleep is flaky on Windows' ~16 ms timer resolution.
         """
         from stateset_agents.api import distributed_cache as dc
@@ -215,8 +215,8 @@ class TestDistributedCache:
             dc,
             "time",
             SimpleNamespace(
-                time=lambda: clock["now"],
-                monotonic=dc.time.monotonic,
+                time=dc.time.time,
+                monotonic=lambda: clock["now"],
                 sleep=dc.time.sleep,
             ),
         )

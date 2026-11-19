@@ -326,12 +326,15 @@ async def run_seed(
         )
         for group in groups:
             rollout_count += len(group.trajectories)
-            sampled_action_tokens += sum(
-                len(turn.metadata["token_ids"])
-                for trajectory in group.trajectories
-                for turn in trajectory.turns
-                if turn.role == "assistant"
-            )
+            for trajectory in group.trajectories:
+                for record in trajectory.turns:
+                    turn = (
+                        ConversationTurn.from_dict(record)
+                        if isinstance(record, dict)
+                        else record
+                    )
+                    if turn.role == "assistant":
+                        sampled_action_tokens += len(turn.metadata["token_ids"])
         result = await trainer.training_step(groups)
         # training_step owns the optimizer-update counter.
         metrics.append(
