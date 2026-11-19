@@ -17,13 +17,16 @@
 **Try v0.74.0.** The tagged release adds finite-sample bounds for CQL proposal
 sampling and fixes how PPO and GRPO use recorded sampling probabilities.
 Install the Python package with `pip install stateset-agents==0.74.0`.
-[Release notes](https://github.com/stateset/stateset-agents/blob/34e84594e36241d57c648d023d53f404b7989d07/README.md#whats-new)
+[Release notes](https://github.com/stateset/stateset-agents/releases/tag/v0.74.0)
 
 - Grade three support conversations locally and inspect the two replies selected
   for training, or run a small GRPO policy on CPU and replay its checkpoint.
   [Python quickstart](https://github.com/stateset/stateset-agents/blob/34e84594e36241d57c648d023d53f404b7989d07/QUICKSTART.md)
 - Score two refund replies on CPU, then plug the same reward into an existing
   Hugging Face GRPO trainer. [TRL trial](https://github.com/stateset/stateset-agents/blob/34e84594e36241d57c648d023d53f404b7989d07/docs/COMPARISONS.md#try-a-stateset-reward-in-an-existing-trl-run)
+
+If your team runs a support agent, try the quickstart on a redacted conversation
+and share where it helped or got stuck. [Join the 30-day pilot](https://github.com/stateset/stateset-agents/issues/136)
 
 For the source line on `master`, see [QUICKSTART.md](QUICKSTART.md). It covers:
 
