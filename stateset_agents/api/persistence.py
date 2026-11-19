@@ -405,8 +405,8 @@ class SQLiteRepository(Repository[T]):
         await self.connect()
         with self._owner.operation():
             cursor = self._store.connect().execute(
-                f"SELECT data FROM {self._table_name} WHERE id = ?",
-                (id,),  # nosec: B608
+                f"SELECT data FROM {self._table_name} WHERE id = ?",  # nosec: B608
+                (id,),
             )
             try:
                 row = cursor.fetchone()
@@ -439,8 +439,8 @@ class SQLiteRepository(Repository[T]):
         await self.connect()
         with self._owner.operation():
             cursor = self._store.connect().execute(
-                f"DELETE FROM {self._table_name} WHERE id = ?",
-                (id,),  # nosec: B608
+                f"DELETE FROM {self._table_name} WHERE id = ?",  # nosec: B608
+                (id,),
             )
             try:
                 return cursor.rowcount > 0

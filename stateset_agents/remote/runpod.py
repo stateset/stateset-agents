@@ -320,14 +320,15 @@ class RunPodApi:
     def get_pod(self, pod_id: str, *, deadline: float | None = None) -> dict[str, Any]:
         import requests
 
-        response = self._send(
-            lambda: requests.get(
+        def request() -> requests.Response:
+            timeout = min(60, _time_left(deadline) or 60)
+            return requests.get(
                 f"{self.root}/pods/{pod_id}",
                 headers=self._headers(),
-                timeout=min(60, _time_left(deadline) or 60),
-            ),
-            deadline=deadline,
-        )
+                timeout=timeout,
+            )
+
+        response = self._send(request, deadline=deadline)
         return dict(response.json())
 
     def list_pods(self) -> list[dict[str, Any]]:

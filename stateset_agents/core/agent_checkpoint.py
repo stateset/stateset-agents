@@ -338,7 +338,8 @@ class _CheckpointRestore:
     def tokenizer(self, config: AgentConfig) -> Any:
         from transformers import AutoTokenizer
 
-        return AutoTokenizer.from_pretrained(
+        # The checkpoint is local and local_files_only overrides caller options.
+        return AutoTokenizer.from_pretrained(  # nosec: B615
             str(self.path),
             trust_remote_code=config.trust_remote_code,
             **{**(config.tokenizer_kwargs or {}), "local_files_only": True},
