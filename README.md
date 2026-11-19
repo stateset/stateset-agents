@@ -14,7 +14,17 @@
 
 </div>
 
-👉 Start here: the one‑page, boring path is in [QUICKSTART.md](QUICKSTART.md). It covers:
+**Try v0.74.0.** The tagged release adds finite-sample bounds for CQL proposal
+sampling and fixes how PPO and GRPO use recorded sampling probabilities.
+PyPI and npm publication is pending. [Release notes and installation](https://github.com/stateset/stateset-agents/blob/a57f1135595b0c86e2aa19d8458348256ee98176/README.md#whats-new)
+
+- Grade three support conversations locally and inspect the two replies selected
+  for training, or run a small GRPO policy on CPU and replay its checkpoint.
+  [Tagged Python install and quickstart](https://github.com/stateset/stateset-agents/blob/a57f1135595b0c86e2aa19d8458348256ee98176/QUICKSTART.md)
+- Score two refund replies on CPU, then plug the same reward into an existing
+  Hugging Face GRPO trainer. [TRL trial](https://github.com/stateset/stateset-agents/blob/a57f1135595b0c86e2aa19d8458348256ee98176/docs/COMPARISONS.md#try-a-stateset-reward-in-an-existing-trl-run)
+
+For the source line on `master`, see [QUICKSTART.md](QUICKSTART.md). It covers:
 
 - pip install → ingest sample logs → improve (grade/curate) → one GRPO dry‑run (stub/HF) → serve
 - remote training defaults to Modal (unverified; fail‑closed), with other providers still available
@@ -128,8 +138,9 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python release:** `stateset-agents==0.65.0`, published from the
-  annotated release tag with build attestation and an isolated wheel smoke test.
+- **Current Python release:** `stateset-agents==0.65.0` on this source line.
+  Across release lines, PyPI listed 0.70.0 as its latest version on November 19,
+  2026. [Published artifacts](https://pypi.org/project/stateset-agents/0.70.0/#files)
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/). Its first registry
   publication remains pending because npm trusted publishing cannot create a
@@ -1412,6 +1423,9 @@ asyncio.run(main())
 ## Installation
 
 ### Core (lightweight, stub‑ready)
+
+These commands install the version used by the examples on `master`.
+For v0.74.0, follow the [release quickstart](https://github.com/stateset/stateset-agents/blob/a57f1135595b0c86e2aa19d8458348256ee98176/QUICKSTART.md).
 
 ```bash
 pip install "stateset-agents==0.65.0" # current stable release
