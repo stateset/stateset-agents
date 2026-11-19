@@ -31,9 +31,9 @@ and fixes how PPO and GRPO use recorded sampling probabilities.
   and use the same reward function in your existing GRPO trainer.
   [Try the TRL example](docs/COMPARISONS.md#try-a-stateset-reward-in-an-existing-trl-run)
 
-Tried either workflow? Share which step you reached and what helped or blocked
-you. A short description is enough. Keep transcripts and customer details local.
-[Share pilot feedback](https://github.com/stateset/stateset-agents/issues/new?title=%5BRL%20pilot%5D%20Trial%20feedback&body=How%20I%20found%20StateSet%3A%0AWorkflow%20and%20current%20tool%3A%0AStage%20reached%20%28sample%2C%20own%20data%2C%20or%20repeat%20run%29%3A%0AResult%20or%20blocker%3A)
+The v0.74.0 support-agent pilot runs through December 19, 2026. Try either
+workflow and share which step you reached and what helped or blocked you. Keep transcripts
+and customer details local. [Join the 30-day pilot](https://github.com/stateset/stateset-agents/issues/136)
 
 ## Fan out RL training to StateSet Swarm
 
