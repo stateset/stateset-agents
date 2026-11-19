@@ -120,6 +120,54 @@ StateSet Agents includes TRL integration (see `training/trl_grpo_trainer.py`). A
 
 This gives you TRL's mature transformer training utilities with StateSet's agent‑level scaffolding.
 
+### Try a StateSet reward in an existing TRL run
+
+Start with two saved replies to the same support prompt. This example uses the
+core StateSet package and runs on CPU with no model download. In your TRL
+environment, install StateSet from the [v0.74.0 tag](../README.md#installation).
+
+```python
+import asyncio
+
+from stateset_agents.core.trajectory import ConversationTurn
+from stateset_agents.data.customer_support_bench import (
+    SupportRewardComposite,
+    load_support_scenarios,
+)
+
+grader = SupportRewardComposite()
+
+
+async def support_reward(completions, rubric, **kwargs):
+    scores = []
+    for text, context in zip(completions, rubric, strict=True):
+        turn = ConversationTurn(role="assistant", content=text)
+        result = await grader.compute_reward([turn], context)
+        scores.append(result.score)
+    return scores
+
+
+scenario = load_support_scenarios(intent_filter="refund", limit=1)[0]
+row = {"prompt": scenario.user_query, "rubric": scenario.to_scenario()}
+replies = [
+    "For a refund, check the website.",
+    "Let me look up order #4521. I'll check your refund options right now.",
+]
+scores = asyncio.run(support_reward(replies, [row["rubric"]] * len(replies)))
+print([round(score, 3) for score in scores])  # [0.3, 0.875]
+```
+
+The second reply acknowledges the order and offers a concrete next step. The
+grader scores the wording. A completed refund requires separate evidence from
+your order system.
+
+To try this with TRL 1.12, give each plain-text prompt its own `rubric` column
+as in `row`, set `remove_unused_columns=False` on your `GRPOConfig`, and pass
+`reward_funcs=support_reward` to your existing `GRPOTrainer`. TRL supplies one
+rubric per generated completion. For a first trial, score saved completions
+from your own run and compare the ranking with a support reviewer's choices
+before using it to update a policy. [Support grader](../stateset_agents/data/customer_support_bench.py)
+
 ### Migration notes
 
 If you have a TRL script already:

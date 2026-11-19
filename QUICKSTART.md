@@ -1,26 +1,22 @@
 # StateSet Agents quickstart
 
-Run an offline loop from conversation logs to a graded, curated training
-dataset. Then preview training and serving. The commands below work from an
-installed Python package without a repository checkout, GPU, or API key.
+Grade three support conversations and inspect the two replies selected for
+training. This first result needs only the base Python package. To see a policy
+actually train, skip to the [CPU GRPO experiment](#run-grpo-on-a-cpu). Both
+paths run locally after installation and work without a checkout or API key.
 
 `traceforge-rl` and `import traceforge_rl` are aliases for `stateset-agents`
 and `stateset_agents`. See the [rename guide](docs/RENAME_TRACEFORGE.md).
 
 ## 1. Install
 
-Use Python 3.10 or later:
+In Bash, use Python 3.10 or later to install the tagged v0.74.0 source.
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install stateset-agents
+python -m pip install 'stateset-agents @ https://github.com/stateset/stateset-agents/archive/refs/tags/v0.74.0.zip'
 ```
-
-The packaged grading and dataset-preparation modules described here require a
-release containing these changes. To verify the current source before that
-release is published, run `python -m pip install .` from its checkout, then
-follow the remaining steps from any directory.
 
 ## 2. Grade and curate sample conversations
 
@@ -87,9 +83,16 @@ assert summary["curated_count"] == 2
 rows = [json.loads(line) for line in (output / "curated.jsonl").read_text().splitlines()]
 assert len(rows) == 2
 assert all(row["response"] != "No." for row in rows)
-print("Graded three conversations and retained two examples.")
+for row in rows:
+    print(f"{row['score']:.3f}  {row['prompt']}")
+print(f"Retained {len(rows)} of {summary['assistant_turn_count']} replies in {output / 'curated.jsonl'}")
 CHECK
 ```
+
+The sample prints a score of `0.940` for each retained reply. Open
+`curated.jsonl` to see the response paired with each prompt. To grade your own
+logs, supply an OpenAI-format JSONL file to the same ingest command and use a
+fresh working directory for each run.
 
 ## 3. Prepare data and preview training
 
@@ -111,6 +114,44 @@ For real local SFT, install `stateset-agents[training]`, use a supported GPU,
 and rerun the SFT command without `--dry-run`. Review held-out quality before
 serving. See [the improvement pipeline](docs/IMPROVEMENT_PIPELINE.md) for
 validation/test separation and promotion criteria.
+
+### Run GRPO on a CPU
+
+This standalone experiment constructs a tiny transformer locally, warms it up
+on refund-tool syntax, then samples multi-turn trajectories for 20 GRPO
+updates. It evaluates the baseline and trained policy on the same 128 synthetic
+orders and reloads the checkpoint to replay the candidate outcomes. The
+experiment uses its own cases, so you can start here without preparing logs.
+
+From an activated Python 3.12 environment, install the training dependencies
+and run one seed.
+
+```bash
+python -m pip install 'stateset-agents[training] @ https://github.com/stateset/stateset-agents/archive/refs/tags/v0.74.0.zip'
+python - <<'GRPO'
+import asyncio
+from pathlib import Path
+from tempfile import mkdtemp
+
+import torch
+from stateset_agents.training.sampled_workflow import run_seed
+
+torch.set_num_threads(1)
+output = Path(mkdtemp(prefix="stateset-grpo-"))
+report = asyncio.run(run_seed(42, output, updates=20, device="cpu"))
+for policy in ("baseline", "candidate"):
+    cases = report[policy]
+    print(f"{policy}: {sum(case['success'] for case in cases)}/{len(cases)} successful")
+print(f"Optimizer updates: {report['optimizer_updates']}")
+print(f"Checkpoint replay matched: {report['reload_verified']}")
+print(f"Case results: {output / 'result.json'}")
+GRPO
+```
+
+In a v0.74.0 CPU run, seed 42 completed 67 of 128 orders before GRPO and 86
+after 20 optimizer updates. Checkpoint replay matched. Open `result.json` to
+inspect each order's success, policy violations and reward. Other seeds can
+regress on the same task. [Three-seed example](examples/swarm/README.md#what-the-runs-showed)
 
 ## 4. Plan remote training
 

@@ -20,10 +20,21 @@
 
 </div>
 
-👉 Start here: the one‑page, boring path is in [QUICKSTART.md](QUICKSTART.md). It covers:
+**v0.74.0 is tagged.** It adds finite-sample bounds for CQL proposal sampling
+and fixes how PPO and GRPO use recorded sampling probabilities. The Python
+package can be installed from the tag while registry publication is pending.
+[Release highlights](#whats-new) · [Installation](#installation)
 
-- install → ingest sample logs → grade/curate → prepare training data → preview SFT and serving
-- run the offline workflow from an installed wheel; choose remote providers explicitly
+- **If you run a support agent**, grade sample conversations locally and inspect
+  which replies become training data. Then try the same steps on a redacted
+  conversation from your own agent. [Quickstart](QUICKSTART.md)
+- **If you already use Hugging Face TRL**, score two refund replies on CPU
+  and use the same reward function in your existing GRPO trainer.
+  [Try the TRL example](docs/COMPARISONS.md#try-a-stateset-reward-in-an-existing-trl-run)
+
+Tried either workflow? Share which step you reached and what helped or blocked
+you. A short description is enough. Keep transcripts and customer details local.
+[Share pilot feedback](https://github.com/stateset/stateset-agents/issues/new?title=%5BRL%20pilot%5D%20Trial%20feedback&body=How%20I%20found%20StateSet%3A%0AWorkflow%20and%20current%20tool%3A%0AStage%20reached%20%28sample%2C%20own%20data%2C%20or%20repeat%20run%29%3A%0AResult%20or%20blocker%3A)
 
 ## Fan out RL training to StateSet Swarm
 
@@ -108,8 +119,8 @@ representative quality gains and the complete 200-pair re-score remain unverifie
 
 ### Verification evidence
 
-The package's current version is listed above. Test and provider results below
-belong to the named release or experiment; they do not certify later changes.
+The v0.74.0 [verification coverage](formal/README.md) lists the properties
+checked for each algorithm. The results below apply to the named release or experiment.
 The [improvement pipeline guide](docs/IMPROVEMENT_PIPELINE.md) describes logged
 policy training, data governance, diagnostics, and production promotion.
 
@@ -186,15 +197,13 @@ serving, and provider claims.
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
 - **Current Python candidate:** `stateset-agents==0.74.0`, publication pending.
-  Publication status and retained runs are listed in
-  [release evidence](docs/RELEASE_EVIDENCE.md).
-- **Latest verified PyPI release:** `stateset-agents==0.66.1`, checked October 20,
-  2026 against the [version's published artifacts](https://pypi.org/project/stateset-agents/0.66.1/).
-- **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
-  package is tested and release-wired in [`npm/`](npm/). Its first registry
-  publication remains pending because npm trusted publishing cannot create a
-  new package; an `@stateset`-scoped automation token must bootstrap version
-  one before subsequent releases can use OIDC.
+  On November 19, 2026, the tagged workflow stopped before the PyPI and npm
+  upload jobs started. [Publish run](https://github.com/stateset/stateset-agents/actions/runs/44608239323)
+- **Latest verified PyPI release:** `stateset-agents==0.70.0`, checked November 19,
+  2026. [Published artifacts](https://pypi.org/project/stateset-agents/0.70.0/#files)
+- **Node client.** The tagged source includes version 0.74.0 of the typed
+  `@stateset/agents` client. Its first public npm release is pending.
+  [Use the client from the checkout](#nodejs-api-client)
 - **Live providers:** RunPod and River passed the `v0.54.0` tag canaries and
   have retained end-to-end evidence. Fireworks failed closed without
   `FIREWORKS_API_KEY` and `FIREWORKS_ACCOUNT_ID`, creating no billable
@@ -444,6 +453,23 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
+**v0.74.0 (latest candidate; publication pending):**
+
+- **Offline RL.** For a fixed critic, the Lean proofs bound how the number
+  of sampled action proposals affects CQL's estimated soft value and penalty
+  gradient under the stated sampling assumptions. CPU tests check IQL and CQL
+  critic updates and checkpoint replay. [Proofs and assumptions](formal/README.md#rl-mathematics)
+- **Online training.** PPO records token probabilities from the weights used
+  to sample each rollout. Native and continual GRPO reuse the recorded sampler
+  probabilities across repeated updates. DAPO and VAPO apply their configured
+  entropy and KL terms during training. [Changelog](CHANGELOG.md)
+- **Verification scope.** The formal suite covers 38 Lean roots, 49 finite
+  TLA+ model configurations, and 57 equations extracted from PyTorch.
+  End-to-end proofs for every trainer remain open. [Verification coverage](formal/README.md)
+
+The tag follows the 0.67.0 source line. The 0.73.x releases have a separate
+history. [Tagged source](https://github.com/stateset/stateset-agents/tree/v0.74.0)
+
 **Platform verification improvements included in v0.67.0:**
 
 - **Evidence-first README refresh.** Release, installation, provider, and
@@ -495,12 +521,6 @@ coverage, live hardware attempts, and successful inference by provider.
   package versions, unbound evaluator model revisions, and dirty harness
   checkouts before invoking an evaluator. Every model-consuming stage is bound,
   and standalone execution verifies the checkout's exact suite revision.
-
-**v0.74.0 (latest candidate; publication pending):**
-
-- This release captures the complete `feat/a-plus-verification` branch workspace based on the 0.67.0 source line. The 0.73.x release series has a separate history.
-- Add Lean proofs and CPU checks for offline RL critic updates, CQL proposal sampling, and deterministic checkpoint replay.
-- Extend training verification, provider integrations and resource cleanup checks across the framework.
 
 **v0.67.0:**
 
@@ -1396,10 +1416,16 @@ asyncio.run(main())
 
 ### Core (lightweight, stub‑ready)
 
+To install v0.74.0 from its Git tag, run
+
 ```bash
-pip install "stateset-agents==0.66.1" # latest verified PyPI release
-# Tagged candidate; publication is blocked. Post-tag fixes require their own commit.
 pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.74.0"
+```
+
+To install the latest version verified on PyPI, run
+
+```bash
+pip install "stateset-agents==0.70.0" # latest verified PyPI release
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1448,20 +1474,20 @@ pip install "stateset-agents[full]"          # Most extras in one go
 
 ### Node.js API client
 
-The dependency-free, typed Node.js client lives in [`npm/`](npm/) and targets
-the stable Messages and OpenAI-compatible API surfaces. It supports JSON and
-SSE streaming, bearer authentication, timeouts, structured errors, and custom
-`fetch` implementations. Until its first registry publication, validate or use
-the workspace package directly:
+The typed Node.js client requires Node 18+ and has no runtime dependencies.
+It supports Messages and OpenAI-compatible calls, including SSE streaming.
+Until the first npm publication, install the client from the tagged source.
+From your Node application's directory, point npm at the `npm/` folder of
+a local v0.74.0 checkout and run
 
 ```bash
-npm --prefix npm ci
-npm --prefix npm test
+npm pack /path/to/stateset-agents/npm
+npm install ./stateset-agents-0.74.0.tgz
+node --input-type=module -e "import { StateSet } from '@stateset/agents'; console.log(new StateSet().constructor.name)"
 ```
 
-The tagged release workflow publishes it as `@stateset/agents` only when its
-version exactly matches the Git tag. See [`npm/README.md`](npm/README.md) for
-the client API.
+The last command prints `StateSet` without connecting to a server.
+[Messages and streaming examples](npm/README.md)
 
 > This repository also contains an internal, unpublished Rust crate at the repo root (a StateSet
 > commerce daemon) that is unrelated to the `stateset-rl-core` accelerator behind `[rust]` above.
@@ -2270,8 +2296,8 @@ For complex runs prefer the Python API and the examples folder.
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
 - [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest candidate `v0.74.0`).
-- [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
-  provider, GPU, cleanup, and publication claims for the current release.
+- [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — retained test,
+  provider, GPU, and publication records for earlier releases.
 
 Other entry points:
 
