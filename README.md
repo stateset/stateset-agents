@@ -22,7 +22,7 @@
 
 **v0.74.0 is on PyPI.** It adds finite-sample bounds for CQL proposal sampling
 and fixes how PPO and GRPO use recorded sampling probabilities.
-[Release highlights](#whats-new) · [Installation](#installation)
+[Release highlights](#whats-new) · [Installation](#installation) · [How to evaluate StateSet](#how-to-evaluate-stateset)
 
 - **If you run a support agent**, grade sample conversations locally and inspect
   which replies become training data. Then try the same steps on a redacted
@@ -239,14 +239,45 @@ serving, and provider claims.
   accounts for failures, and invokes the strict publication gate. Live
   execution and the 12-hour soak remain pending.
 
-### What makes this an A+ framework
+### How to evaluate StateSet
 
-StateSet is currently a strong beta with an A−-level engineering foundation;
-an A+ claim requires measured outcomes, not more algorithm names. The shortest
-credible path is:
+For a team running a support agent, the practical question is how many more
+cases it can resolve correctly at the same total cost. In the retained
+48-step comparison, StateSet's TRL-backed trainer was about 7% slower than
+direct TRL. Neither showed a measurable learning-quality gain at that scale.
+[Comparison results and limitations](docs/BENCHMARKS.md#48-step-three-framework-comparison-v2-protocol)
 
-1. Finish the corrected, equal-compute 1.5B native-GSPO versus direct-TRL
-   v4 matrix (its checked-in six-pair dry run passes), then run the immutable
+A separate matched 200-step GSM8K trial on Qwen2.5-1.5B scored **31.4%** for
+StateSet native GSPO and **31.1%** for direct TRL. The paired 95% interval
+for the difference spans −7.5 to +8.0 percentage points across three seeds.
+[Matched framework results](https://github.com/stateset/stateset-agents/blob/4164974a853bca6c42fab94cbc9142c506a16ebd/benchmark_results/framework_comparison_v5_1/README.md)
+
+In a post-v0.74.0 CPU experiment, balancing refund eligibility within each
+training batch raised final success from **561/1,024 (54.8%)** to **836/1,024
+(81.6%)** across eight held-out training seeds. Each policy faced the same two
+synthetic refund states. This compares two StateSet training recipes.
+[Preregistered protocol, paired uncertainty and raw runs](benchmark_results/training_contracts/20261119/sampled-workflow-batching/)
+
+A support team can test whether those gains transfer to its own workflow.
+
+1. **Agree on a win before training.** Have an independent support team hold
+   back fresh cases and define a meaningful improvement, a total cost ceiling,
+   and a maximum rate of policy violations. Count a refund as resolved only
+   when the correct ledger action occurs.
+2. **Compare credible alternatives.** Include the team's current system, a
+   supervised fine-tune, and a tuned RL baseline such as direct TRL or verl.
+   Match starting weights, training data, tool access, hardware and tuning
+   budget across training frameworks. Include failed runs, retries and serving
+   costs at the same declared traffic volume.
+3. **Publish enough to challenge the result.** Freeze configurations before
+   opening the holdout. Score the same cases blind, report paired uncertainty
+   across cases and training seeds, and show the result for each team and each
+   comparator. Ask a second team to repeat the winning workflow on fresh data.
+   [Public pilot](https://github.com/stateset/stateset-agents/issues/136)
+
+Broader framework claims also depend on the following engineering evidence:
+
+1. Repeat the matched 1.5B comparison on the frozen release, then run the
    7–9B three-seed flagship and require a
    positive paired 95% confidence bound on held-out quality.
 2. Run the same experiment contract through verl, NeMo RL, and OpenRLHF and
@@ -256,7 +287,7 @@ credible path is:
 4. Execute the official τ³-bench, BFCL V4, and SWE-bench Verified pipelines on
    base and trained policies rather than treating implemented adapters as
    benchmark results.
-5. Close npm, container, Fireworks, Modal, CoreWeave, and Nebius live evidence,
+5. Close container, Fireworks, Modal, CoreWeave, and Nebius live evidence,
    then obtain an independent reproduction and security review.
 
 The multi-node scaling path is now executable rather than aspirational:

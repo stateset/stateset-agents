@@ -265,9 +265,10 @@ canaries, and binds every benchmark and publish-readiness result to one commit.
    staleness bounds, checkpoint recovery, and a long-running soak.
 6. Add reproducible tool-use and long-horizon agent suites (starting with
    τ³-bench/BFCL V4 and a SWE task) and obtain an independent reproduction.
-7. Bootstrap `@stateset/agents` with an npm automation token, configure
-   Fireworks and Docker credentials, and remove the scoped PyPI-token fallback
+7. Verify trusted publishing for future npm and PyPI releases, configure
+   Fireworks and Docker credentials, and retire the scoped PyPI-token fallback
    after the trusted-publisher identity is independently verified.
+   [Published Node.js client](https://www.npmjs.com/package/@stateset/agents/v/0.74.0)
 
 ## Contribution policy
 

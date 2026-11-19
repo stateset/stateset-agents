@@ -1,0 +1,2598 @@
+{
+  "baseline_preparation": "100 supervised syntax updates; balanced decision labels",
+  "evidence_class": "synthetic",
+  "train_case_sha256": "8adf2f1b55ec1c546a55ee8ebf002111c5cb941d88cae451d69ce711fb1382c6",
+  "test_case_sha256": "94ad0279bcfb0a318b0f23e3cce659f4404c72479ee23f2423615be0bd30cd1c",
+  "training_cost_usd": null,
+  "cost_source": "unmeasured",
+  "seed": 105,
+  "balanced_batches": false,
+  "training_rollouts": 480,
+  "training_action_tokens": 1219,
+  "training_seconds": 8.288622905994998,
+  "device": "cpu",
+  "optimizer_updates": 20,
+  "baseline": [
+    {
+      "case_id": "test-0",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-1",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-2",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-3",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-4",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-5",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-6",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-7",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-8",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-9",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-10",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-11",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-12",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-13",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-14",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-15",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-16",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-17",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-18",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-19",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-20",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-21",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-22",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-23",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-24",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-25",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-26",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-27",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-28",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-29",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-30",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-31",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-32",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-33",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-34",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-35",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-36",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-37",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-38",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-39",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-40",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-41",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-42",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-43",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-44",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-45",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-46",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-47",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-48",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-49",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-50",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-51",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-52",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-53",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-54",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-55",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-56",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-57",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-58",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-59",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-60",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-61",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-62",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-63",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-64",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-65",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-66",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-67",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-68",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-69",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-70",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-71",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-72",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-73",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-74",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-75",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-76",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-77",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-78",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-79",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-80",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-81",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-82",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-83",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-84",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-85",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-86",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-87",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-88",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-89",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-90",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-91",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-92",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-93",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-94",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-95",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-96",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-97",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-98",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-99",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-100",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-101",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-102",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-103",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-104",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-105",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-106",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-107",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-108",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-109",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-110",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-111",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-112",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-113",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-114",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-115",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-116",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-117",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-118",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-119",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-120",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-121",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-122",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-123",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-124",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-125",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-126",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-127",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    }
+  ],
+  "candidate": [
+    {
+      "case_id": "test-0",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-1",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-2",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-3",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-4",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-5",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-6",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-7",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-8",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-9",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-10",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-11",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-12",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-13",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-14",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-15",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-16",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-17",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-18",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-19",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-20",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-21",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-22",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-23",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-24",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-25",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-26",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-27",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-28",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-29",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-30",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-31",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-32",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-33",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-34",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-35",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-36",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-37",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-38",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-39",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-40",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-41",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-42",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-43",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-44",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-45",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-46",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-47",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-48",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-49",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-50",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-51",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-52",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-53",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-54",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-55",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-56",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-57",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-58",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-59",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-60",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-61",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-62",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-63",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-64",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-65",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-66",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-67",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-68",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-69",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-70",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-71",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-72",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-73",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-74",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-75",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-76",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-77",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-78",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-79",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-80",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-81",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-82",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-83",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-84",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-85",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-86",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-87",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-88",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-89",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-90",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-91",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-92",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-93",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-94",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-95",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-96",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-97",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-98",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-99",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-100",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-101",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-102",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-103",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-104",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-105",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-106",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-107",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-108",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-109",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-110",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-111",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-112",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-113",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-114",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-115",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-116",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-117",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-118",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    },
+    {
+      "case_id": "test-119",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-120",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 1
+    },
+    {
+      "case_id": "test-121",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-122",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-123",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-124",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-125",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-126",
+      "success": true,
+      "policy_violations": 0,
+      "reward": 1.0,
+      "generated_tokens": 3
+    },
+    {
+      "case_id": "test-127",
+      "success": false,
+      "policy_violations": 1,
+      "reward": 0.0,
+      "generated_tokens": 2
+    }
+  ],
+  "baseline_success_probability": {
+    "eligible": 0.49562820644999384,
+    "ineligible": 0.49604012904760303,
+    "balanced_mean": 0.4958341677487984
+  },
+  "candidate_success_probability": {
+    "eligible": 0.5672917444141692,
+    "ineligible": 0.7608149773730505,
+    "balanced_mean": 0.6640533608936099
+  },
+  "improvement": 0.2265625,
+  "duration_seconds": 13.290558638997027,
+  "reload_verified": true,
+  "performance": {
+    "scope": "host_wall_timing; cost is caller-supplied, not provider-verified",
+    "elapsed_seconds": 15.290491780004231,
+    "stages": {
+      "environment_rollout": {
+        "host_seconds": 7.908132054202724,
+        "p95_host_seconds": 0.02630527099245228,
+        "recent_samples": 480,
+        "failures": 0
+      },
+      "learner_step": {
+        "host_seconds": 0.36039826697378885,
+        "p95_host_seconds": 0.028330475994152948,
+        "recent_samples": 20,
+        "failures": 0
+      }
+    },
+    "attempted_rollouts": 480,
+    "accepted_rollouts": 480,
+    "verified_successes": 263,
+    "unknown_successes": 0,
+    "generated_tokens": 1219,
+    "accepted_rollouts_per_second": 31.39205768565981,
+    "cost_usd": null,
+    "cost_per_accepted_rollout": null,
+    "cost_per_verified_success": null
+  },
+  "metrics": [
+    {
+      "total_loss": -0.5072057247161865,
+      "policy_loss": -0.5072057247161865,
+      "policy_objective_loss": -0.49826082587242126,
+      "kl_penalty": 0.0,
+      "entropy": 0.2981642484664917,
+      "entropy_measured": true,
+      "mean_advantage": -1.4901161193847656e-08,
+      "nonzero_advantage_fraction": 1.0,
+      "advantage_std": 0.999999976467033,
+      "num_trajectories": 24,
+      "num_rows": 59,
+      "num_tokens": 59,
+      "policy_denominator": 24,
+      "path": "token",
+      "objective": "grpo",
+      "ratio_mean": 1.0,
+      "clip_fraction": 0.0,
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "learning_rate": 0.003,
+      "global_step": 1,
+      "optimizer_step": true,
+      "optimizer_updates": 1,
+      "grad_accum_step": 1,
+      "inner_updates": 1,
+      "rollout_seconds": 0.5386464759940282,
+      "generated_tokens": 59,
+      "successful_episodes": 11,
+      "step_seconds": 0.01981409700238146,
+      "generated_tokens_per_second": 105.64756556302018
+    },
+    {
+      "total_loss": -0.5070981383323669,
+      "policy_loss": -0.5070981383323669,
+      "policy_objective_loss": -0.4982607662677765,
+      "kl_penalty": 0.0,
+      "entropy": 0.2945786118507385,
+      "entropy_measured": true,
+      "mean_advantage": -1.4901161193847656e-08,
+      "nonzero_advantage_fraction": 1.0,
+      "advantage_std": 0.999999976467033,
+      "num_trajectories": 24,
+      "num_rows": 59,
+      "num_tokens": 59,
+      "policy_denominator": 24,
+      "path": "token",
+      "objective": "grpo",
+      "ratio_mean": 1.0,
+      "clip_fraction": 0.0,
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "learning_rate": 0.003,
+      "global_step": 2,
+      "optimizer_step": true,
+      "optimizer_updates": 1,
+      "grad_accum_step": 2,
+      "inner_updates": 1,
+      "rollout_seconds": 0.5301099259959301,
+      "generated_tokens": 59,
+      "successful_episodes": 11,
+      "step_seconds": 0.03187741999863647,
+      "generated_tokens_per_second": 104.98457024078692
+    },
+    {
+      "total_loss": -0.5453075170516968,
+      "policy_loss": -0.5453075170516968,
+      "policy_objective_loss": -0.5365885496139526,
+      "kl_penalty": 0.0,
+      "entropy": 0.2906321585178375,
+      "entropy_measured": true,
+      "mean_advantage": -1.4901161193847656e-08,
+      "nonzero_advantage_fraction": 1.0,
+      "advantage_std": 0.999999976467033,
+      "num_trajectories": 24,
+      "num_rows": 58,
+      "num_tokens": 58,
+      "policy_denominator": 24,
+      "path": "token",
+      "objective": "grpo",
+      "ratio_mean": 1.0,
+      "clip_fraction": 0.0,
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "learning_rate": 0.003,
+      "global_step": 3,
+      "optimizer_step": true,
+      "optimizer_updates": 1,
+      "grad_accum_step": 3,
+      "inner_updates": 1,
+      "rollout_seconds": 0.4536558800027706,
+      "generated_tokens": 58,
+      "successful_episodes": 11,
+      "step_seconds": 0.016011997999157757,
+      "generated_tokens_per_second": 123.49151968140744
+    },
+    {
+      "total_loss": -0.4933863878250122,
+      "policy_loss": -0.4933863878250122,
+      "policy_objective_loss": -0.4841229021549225,
+      "kl_penalty": 0.0,
+      "entropy": 0.30878275632858276,
+      "entropy_measured": true,
+      "mean_advantage": 7.450580596923828e-09,
+      "nonzero_advantage_fraction": 1.0,
+      "advantage_std": 0.9999999609294011,
+      "num_trajectories": 24,
+      "num_rows": 57,
+      "num_tokens": 57,
+      "policy_denominator": 24,
+      "path": "token",
+      "objective": "grpo",
+      "ratio_mean": 1.0,
+      "clip_fraction": 0.0,
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "learning_rate": 0.003,
+      "global_step": 4,
+      "optimizer_step": true,
+      "optimizer_updates": 1,
+      "grad_accum_step": 4,
+      "inner_updates": 1,
+      "rollout_seconds": 0.40125368400185835,
+      "generated_tokens": 57,
+      "successful_episodes": 9,
+      "step_seconds": 0.016101289002108388,
+      "generated_tokens_per_second": 136.57438795981054
+    },
+    {
+      "total_loss": -0.4144359827041626,
+      "policy_loss": -0.4144359827041626,
+      "policy_objective_loss": -0.40611639618873596,
+      "kl_penalty": 0.0,
+      "entropy": 0.2773193418979645,
+      "entropy_measured": true,
+      "mean_advantage": 0.0,
+      "nonzero_advantage_fraction": 1.0,
+      "advantage_std": 0.9999999753526293,
+      "num_trajectories": 24,
+      "num_rows": 67,
+      "num_tokens": 67,
+      "policy_denominator": 24,
+      "path": "token",
+      "objective": "grpo",
+      "ratio_mean": 1.0,
+      "clip_fraction": 0.0,
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "learning_rate": 0.003,
+      "global_step": 5,
+      "optimizer_step": true,
+      "optimizer_updates": 1,
+      "grad_accum_step": 5,
+      "inner_updates": 1,
+      "rollout_seconds": 0.3554164080123883,
+      "generated_tokens": 67,
+      "successful_episodes": 19,
+      "step_seconds": 0.0160996630002046,
+      "generated_tokens_per_second": 180.34213114223255
+    },
+    {
+      "total_loss": -0.546366274356842,
+      "policy_loss": -0.546366274356842,
+      "policy_objective_loss": -0.5365885496139526,
+      "kl_penalty": 0.0,
+      "entropy": 0.32592496275901794,
+      "entropy_measured": true,
+      "mean_advantage": -1.4901161193847656e-08,
+      "nonzero_advantage_fraction": 1.0,
+      "advantage_std": 0.999999976467033,
+      "num_trajectories": 24,
+      "num_rows": 58,
+      "num_tokens": 58,
+      "policy_denominator": 24,
+      "path": "token",
+      "objective": "grpo",
+      "ratio_mean": 1.0,
+      "clip_fraction": 0.0,
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "learning_rate": 0.003,
+      "global_step": 6,
+      "optimizer_step": true,
+      "optimizer_updates": 1,
+      "grad_accum_step": 6,
+      "inner_updates": 1,
+      "rollout_seconds": 0.36322205000033136,
+      "generated_tokens": 58,
+      "successful_episodes": 11,
+      "step_seconds": 0.028354996989946812,
+      "generated_tokens_per_second": 148.1189984086069
+    },
+    {
+      "total_loss": -0.5080412030220032,
+      "policy_loss": -0.5080412030220032,
+      "policy_objective_loss": -0.49826082587242126,
+      "kl_penalty": 0.0,
+      "entropy": 0.3260130286216736,
+      "entropy_measured": true,
+      "mean_advantage": -1.4901161193847656e-08,
+      "nonzero_advantage_fraction": 1.0,
+      "advantage_std": 0.999999976467033,
+      "num_trajectories": 24,
+      "num_rows": 59,
+      "num_tokens": 59,
+      "policy_denominator": 24,
+      "path": "token",
+      "objective": "grpo",
+      "ratio_mean": 1.0,
+      "clip_fraction": 0.0,
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "learning_rate": 0.003,
+      "global_step": 7,
+      "optimizer_step": true,
+      "optimizer_updates": 1,
+      "grad_accum_step": 7,
+      "inner_updates": 1,
+      "rollout_seconds": 0.46935959700203966,
+      "generated_tokens": 59,
+      "successful_episodes": 11,
+      "step_seconds": 0.017556229009642266,
+      "generated_tokens_per_second": 121.17084072470566
+    },
+    {
+      "total_loss": -0.5035680532455444,
+      "policy_loss": -0.5035680532455444,
+      "policy_objective_loss": -0.49300670623779297,
+      "kl_penalty": 0.0,
+      "entropy": 0.3520457148551941,
+      "entropy_measured": true,
+      "mean_advantage": 2.483526865641276e-08,
+      "nonzero_advantage_fraction": 1.0,
+      "advantage_std": 0.9999999951878791,
+      "num_trajectories": 24,
+      "num_rows": 58,
+      "num_tokens": 58,
+      "policy_denominator": 24,
+      "path": "token",
+      "objective": "grpo",
+      "ratio_mean": 1.0,
+      "clip_fraction": 0.0,
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "learning_rate": 0.003,
+      "global_step": 8,
+      "optimizer_step": true,
+      "optimizer_updates": 1,
+      "grad_accum_step": 8,
+      "inner_updates": 1,
+      "rollout_seconds": 0.4220879999920726,
+      "generated_tokens": 58,
+      "successful_episodes": 10,
+      "step_seconds": 0.020622548006940633,
+      "generated_tokens_per_second": 131.01110931770543
+    },
+    {
+      "total_loss": -0.5390086770057678,
+      "policy_loss": -0.5390086770057678,
+      "policy_objective_loss": -0.5303300619125366,
+      "kl_penalty": 0.0,
+      "entropy": 0.28928637504577637,
+      "entropy_measured": true,
+      "mean_advantage": 0.0,
+      "nonzero_advantage_fraction": 1.0,
+      "advantage_std": 0.999999982885729,
+      "num_trajectories": 24,
+      "num_rows": 63,
+      "num_tokens": 63,
+      "policy_denominator": 24,
+      "path": "token",
+      "objective": "grpo",
+      "ratio_mean": 1.0,
+      "clip_fraction": 0.0,
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "learning_rate": 0.003,
+      "global_step": 9,
+      "optimizer_step": true,
+      "optimizer_updates": 1,
+      "grad_accum_step": 9,
+      "inner_updates": 1,
+      "rollout_seconds": 0.4488396780070616,
+      "generated_tokens": 63,
+      "successful_episodes": 16,
+      "step_seconds": 0.0229381690005539,
+      "generated_tokens_per_second": 133.5374274133373
+    },
+    {
+      "total_loss": -0.5569000840187073,
+      "policy_loss": -0.5569000840187073,
+      "policy_objective_loss": -0.5416666865348816,
+      "kl_penalty": 0.0,
+      "entropy": 0.5077801942825317,
+      "entropy_measured": true,
+      "mean_advantage": 0.0,
+      "nonzero_advantage_fraction": 1.0,
+      "advantage_std": 1.0,
+      "num_trajectories": 24,
+      "num_rows": 59,
+      "num_tokens": 59,
+      "policy_denominator": 24,
+      "path": "token",
+      "objective": "grpo",
+      "ratio_mean": 1.0,
+      "clip_fraction": 0.0,
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "learning_rate": 0.003,
+      "global_step": 10,
+      "optimizer_step": true,
+      "optimizer_updates": 1,
+      "grad_accum_step": 10,
+      "inner_updates": 1,
+      "rollout_seconds": 0.35530419601127505,
+      "generated_tokens": 59,
+      "successful_episodes": 12,
+      "step_seconds": 0.01348907699866686,
+      "generated_tokens_per_second": 159.98122611745546
+    },
+    {
+      "total_loss": -0.5069993138313293,
+      "policy_loss": -0.5069993138313293,
+      "policy_objective_loss": -0.49826088547706604,
+      "kl_penalty": 0.0,
+      "entropy": 0.29128047823905945,
+      "entropy_measured": true,
+      "mean_advantage": 1.4901161193847656e-08,
+      "nonzero_advantage_fraction": 1.0,
+      "advantage_std": 0.999999976467033,
+      "num_trajectories": 24,
+      "num_rows": 61,
+      "num_tokens": 61,
+      "policy_denominator": 24,
+      "path": "token",
+      "objective": "grpo",
+      "ratio_mean": 1.0,
+      "clip_fraction": 0.0,
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "learning_rate": 0.003,
+      "global_step": 11,
+      "optimizer_step": true,
+      "optimizer_updates": 1,
+      "grad_accum_step": 11,
+      "inner_updates": 1,
+      "rollout_seconds": 0.40944786100590136,
+      "generated_tokens": 61,
+      "successful_episodes": 13,
+      "step_seconds": 0.019976388997747563,
+      "generated_tokens_per_second": 142.05066434762747
+    },
+    {
+      "total_loss": -0.48283374309539795,
+      "policy_loss": -0.48283374309539795,
+      "policy_objective_loss": -0.4714045226573944,
+      "kl_penalty": 0.0,
+      "entropy": 0.38097432255744934,
+      "entropy_measured": true,
+      "mean_advantage": 0.0,
+      "nonzero_advantage_fraction": 1.0,
+      "advantage_std": 0.999999982885729,
+      "num_trajectories": 24,
+      "num_rows": 56,
+      "num_tokens": 56,
+      "policy_denominator": 24,
+      "path": "token",
+      "objective": "grpo",
+      "ratio_mean": 1.0,
+      "clip_fraction": 0.0,
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "learning_rate": 0.003,
+      "global_step": 12,
+      "optimizer_step": true,
+      "optimizer_updates": 1,
+      "grad_accum_step": 12,
+      "inner_updates": 1,
+      "rollout_seconds": 0.36959869200654794,
+      "generated_tokens": 56,
+      "successful_episodes": 8,
+      "step_seconds": 0.0171515029942384,
+      "generated_tokens_per_second": 144.79630708366196
+    },
+    {
+      "total_loss": -0.4929066300392151,
+      "policy_loss": -0.4929066300392151,
+      "policy_objective_loss": -0.4841228425502777,
+      "kl_penalty": 0.0,
+      "entropy": 0.2927931249141693,
+      "entropy_measured": true,
+      "mean_advantage": -7.450580596923828e-09,
+      "nonzero_advantage_fraction": 1.0,
+      "advantage_std": 0.9999999609294011,
+      "num_trajectories": 24,
+      "num_rows": 63,
+      "num_tokens": 63,
+      "policy_denominator": 24,
+      "path": "token",
+      "objective": "grpo",
+      "ratio_mean": 1.0,
+      "clip_fraction": 0.0,
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "learning_rate": 0.003,
+      "global_step": 13,
+      "optimizer_step": true,
+      "optimizer_updates": 1,
+      "grad_accum_step": 13,
+      "inner_updates": 1,
+      "rollout_seconds": 0.33341468099388294,
+      "generated_tokens": 63,
+      "successful_episodes": 15,
+      "step_seconds": 0.015061477999552153,
+      "generated_tokens_per_second": 180.7871166336715
+    },
+    {
+      "total_loss": -0.4818126857280731,
+      "policy_loss": -0.4818126857280731,
+      "policy_objective_loss": -0.4714045226573944,
+      "kl_penalty": 0.0,
+      "entropy": 0.3469387888908386,
+      "entropy_measured": true,
+      "mean_advantage": 0.0,
+      "nonzero_advantage_fraction": 1.0,
+      "advantage_std": 0.999999982885729,
+      "num_trajectories": 24,
+      "num_rows": 64,
+      "num_tokens": 64,
+      "policy_denominator": 24,
+      "path": "token",
+      "objective": "grpo",
+      "ratio_mean": 1.0,
+      "clip_fraction": 0.0,
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "learning_rate": 0.003,
+      "global_step": 14,
+      "optimizer_step": true,
+      "optimizer_updates": 1,
+      "grad_accum_step": 14,
+      "inner_updates": 1,
+      "rollout_seconds": 0.3223227200069232,
+      "generated_tokens": 64,
+      "successful_episodes": 16,
+      "step_seconds": 0.012727922003250569,
+      "generated_tokens_per_second": 191.01590021145714
+    },
+    {
+      "total_loss": -0.47911199927330017,
+      "policy_loss": -0.47911199927330017,
+      "policy_objective_loss": -0.4714045226573944,
+      "kl_penalty": 0.0,
+      "entropy": 0.2569161653518677,
+      "entropy_measured": true,
+      "mean_advantage": 0.0,
+      "nonzero_advantage_fraction": 1.0,
+      "advantage_std": 0.999999982885729,
+      "num_trajectories": 24,
+      "num_rows": 64,
+      "num_tokens": 64,
+      "policy_denominator": 24,
+      "path": "token",
+      "objective": "grpo",
+      "ratio_mean": 1.0,
+      "clip_fraction": 0.0,
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "learning_rate": 0.003,
+      "global_step": 15,
+      "optimizer_step": true,
+      "optimizer_updates": 1,
+      "grad_accum_step": 15,
+      "inner_updates": 1,
+      "rollout_seconds": 0.3870854310080176,
+      "generated_tokens": 64,
+      "successful_episodes": 16,
+      "step_seconds": 0.01748230199154932,
+      "generated_tokens_per_second": 158.19353541986135
+    },
+    {
+      "total_loss": -0.5062273144721985,
+      "policy_loss": -0.5062273144721985,
+      "policy_objective_loss": -0.49300670623779297,
+      "kl_penalty": 0.0,
+      "entropy": 0.44068604707717896,
+      "entropy_measured": true,
+      "mean_advantage": 2.483526865641276e-08,
+      "nonzero_advantage_fraction": 1.0,
+      "advantage_std": 0.9999999951878791,
+      "num_trajectories": 24,
+      "num_rows": 58,
+      "num_tokens": 58,
+      "policy_denominator": 24,
+      "path": "token",
+      "objective": "grpo",
+      "ratio_mean": 1.0,
+      "clip_fraction": 0.0,
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "learning_rate": 0.003,
+      "global_step": 16,
+      "optimizer_step": true,
+      "optimizer_updates": 1,
+      "grad_accum_step": 16,
+      "inner_updates": 1,
+      "rollout_seconds": 0.32503541799087543,
+      "generated_tokens": 58,
+      "successful_episodes": 10,
+      "step_seconds": 0.014075960003538057,
+      "generated_tokens_per_second": 171.03525202553212
+    },
+    {
+      "total_loss": -0.41317611932754517,
+      "policy_loss": -0.41317611932754517,
+      "policy_objective_loss": -0.40611645579338074,
+      "kl_penalty": 0.0,
+      "entropy": 0.23532259464263916,
+      "entropy_measured": true,
+      "mean_advantage": 0.0,
+      "nonzero_advantage_fraction": 1.0,
+      "advantage_std": 0.9999999753526293,
+      "num_trajectories": 24,
+      "num_rows": 67,
+      "num_tokens": 67,
+      "policy_denominator": 24,
+      "path": "token",
+      "objective": "grpo",
+      "ratio_mean": 1.0,
+      "clip_fraction": 0.0,
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "learning_rate": 0.003,
+      "global_step": 17,
+      "optimizer_step": true,
+      "optimizer_updates": 1,
+      "grad_accum_step": 17,
+      "inner_updates": 1,
+      "rollout_seconds": 0.3939268990070559,
+      "generated_tokens": 67,
+      "successful_episodes": 19,
+      "step_seconds": 0.017411748005542904,
+      "generated_tokens_per_second": 162.88282291633996
+    },
+    {
+      "total_loss": -0.5028929114341736,
+      "policy_loss": -0.5028929114341736,
+      "policy_objective_loss": -0.4930066168308258,
+      "kl_penalty": 0.0,
+      "entropy": 0.3295431435108185,
+      "entropy_measured": true,
+      "mean_advantage": -2.483526865641276e-08,
+      "nonzero_advantage_fraction": 1.0,
+      "advantage_std": 0.999999995187879,
+      "num_trajectories": 24,
+      "num_rows": 62,
+      "num_tokens": 62,
+      "policy_denominator": 24,
+      "path": "token",
+      "objective": "grpo",
+      "ratio_mean": 1.0,
+      "clip_fraction": 0.0,
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "learning_rate": 0.003,
+      "global_step": 18,
+      "optimizer_step": true,
+      "optimizer_updates": 1,
+      "grad_accum_step": 18,
+      "inner_updates": 1,
+      "rollout_seconds": 0.34593737800605595,
+      "generated_tokens": 62,
+      "successful_episodes": 14,
+      "step_seconds": 0.01303459401242435,
+      "generated_tokens_per_second": 172.71543416433684
+    },
+    {
+      "total_loss": -0.4615936577320099,
+      "policy_loss": -0.4615936577320099,
+      "policy_objective_loss": -0.45452967286109924,
+      "kl_penalty": 0.0,
+      "entropy": 0.23546579480171204,
+      "entropy_measured": true,
+      "mean_advantage": 9.934107462565104e-09,
+      "nonzero_advantage_fraction": 1.0,
+      "advantage_std": 0.9999999767105002,
+      "num_trajectories": 24,
+      "num_rows": 65,
+      "num_tokens": 65,
+      "policy_denominator": 24,
+      "path": "token",
+      "objective": "grpo",
+      "ratio_mean": 1.0,
+      "clip_fraction": 0.0,
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "learning_rate": 0.003,
+      "global_step": 19,
+      "optimizer_step": true,
+      "optimizer_updates": 1,
+      "grad_accum_step": 19,
+      "inner_updates": 1,
+      "rollout_seconds": 0.334218926000176,
+      "generated_tokens": 65,
+      "successful_episodes": 17,
+      "step_seconds": 0.012548751998110674,
+      "generated_tokens_per_second": 187.44538238169116
+    },
+    {
+      "total_loss": -0.5032350420951843,
+      "policy_loss": -0.5032350420951843,
+      "policy_objective_loss": -0.49300655722618103,
+      "kl_penalty": 0.0,
+      "entropy": 0.3409489095211029,
+      "entropy_measured": true,
+      "mean_advantage": -2.483526865641276e-08,
+      "nonzero_advantage_fraction": 1.0,
+      "advantage_std": 0.9999999951878791,
+      "num_trajectories": 24,
+      "num_rows": 62,
+      "num_tokens": 62,
+      "policy_denominator": 24,
+      "path": "token",
+      "objective": "grpo",
+      "ratio_mean": 1.0,
+      "clip_fraction": 0.0,
+      "off_policy": false,
+      "old_logprobs_source": "recompute",
+      "learning_rate": 0.003,
+      "global_step": 20,
+      "optimizer_step": true,
+      "optimizer_updates": 1,
+      "grad_accum_step": 20,
+      "inner_updates": 1,
+      "rollout_seconds": 0.36057697400974575,
+      "generated_tokens": 62,
+      "successful_episodes": 14,
+      "step_seconds": 0.018951434001792222,
+      "generated_tokens_per_second": 163.3606304330061
+    }
+  ],
+  "resolved_config": {
+    "model_name": "local-workflow-transformer",
+    "model_revision": null,
+    "num_episodes": 20,
+    "num_epochs": 1,
+    "learning_rate": 0.003,
+    "adam_beta1": 0.9,
+    "adam_beta2": 0.99,
+    "weight_decay": 0.01,
+    "max_grad_norm": 1.0,
+    "warmup_ratio": 0.1,
+    "lr_scheduler_type": "cosine",
+    "per_device_train_batch_size": 1,
+    "batch_size": null,
+    "gradient_accumulation_steps": 1,
+    "num_generations": 24,
+    "generation_batch_size": 24,
+    "rollout_concurrency": 1,
+    "eval_num_generations": 4,
+    "max_prompt_length": 4,
+    "max_completion_length": 1,
+    "max_steps_per_episode": null,
+    "bf16": false,
+    "fp16": false,
+    "use_cpu": false,
+    "dataloader_num_workers": 0,
+    "dataloader_pin_memory": true,
+    "gradient_checkpointing": false,
+    "eval_steps": 50,
+    "save_steps": 100,
+    "logging_steps": 10,
+    "save_total_limit": 3,
+    "output_dir": "/tmp/stateset-refund-trial.LP5hgvPM/confirmation/alternating/seed-105",
+    "run_name": null,
+    "wandb_run_name": null,
+    "overwrite_output_dir": true,
+    "report_to": "none",
+    "wandb_project": null,
+    "wandb_entity": null,
+    "wandb_tags": null,
+    "wandb_notes": null,
+    "auto_adjust": true,
+    "early_stopping": false,
+    "patience": 50,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "reward_clip": 10.0,
+    "advantage_normalization": true,
+    "baseline_type": "group_mean",
+    "beta": 0.0,
+    "use_reference_model": false,
+    "clip_ratio": 0.2,
+    "seq_clip_ratio": 0.0003,
+    "value_clip": 0.2,
+    "entropy_coef": 0.03,
+    "continual_strategy": "none",
+    "replay_buffer_size": 2000,
+    "replay_ratio": 0.5,
+    "replay_min_size": 100,
+    "replay_sampling": "uniform",
+    "replay_storage": "reservoir",
+    "continual_kl_beta": 0.0,
+    "ewc_lambda": 0.0,
+    "ewc_num_samples": 64,
+    "ewc_decay": 0.9,
+    "task_id_key": "task_id",
+    "max_examples": null,
+    "eval_split_size": 0.1,
+    "stratify_by_task": true,
+    "data_format": "jsonl",
+    "run_post_eval": true,
+    "post_eval_samples": 5,
+    "post_eval_detailed": true,
+    "use_lora": false,
+    "lora_r": 8,
+    "lora_alpha": 16,
+    "lora_dropout": 0.05,
+    "lora_target_modules": null,
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "top_k": 50,
+    "repetition_penalty": 1.1,
+    "use_vllm": false,
+    "vllm_gpu_memory_utilization": 0.85,
+    "vllm_tensor_parallel_size": 1,
+    "vllm_enable_prefix_caching": true,
+    "vllm_max_model_len": null,
+    "vllm_quantization": null,
+    "vllm_enable_chunked_prefill": true,
+    "seed": 105,
+    "remove_unused_columns": false,
+    "disable_tqdm": false,
+    "task_schedule": null,
+    "task_switch_steps": 0,
+    "resume_from_checkpoint": null,
+    "objective": null,
+    "objective_overrides": null,
+    "num_gradient_updates": 1,
+    "rollout_sync": true,
+    "old_logprobs_source": "recompute",
+    "allow_sequence_fallback": false,
+    "allow_missing_sampler_logprobs": false,
+    "compute_cost_per_hour": null,
+    "zero_signal_patience": 0
+  }
+}
