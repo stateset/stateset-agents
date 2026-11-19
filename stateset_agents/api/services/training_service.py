@@ -158,6 +158,21 @@ class TrainingService:
         """Compatibility alias used by some router/tests."""
         return self.queue.jobs() if self.queue is not None else self.training_jobs
 
+    def clone_for_restart(self) -> "TrainingService":
+        """Create fresh admission after drain, retaining local job history or queue path."""
+        if not self._closing or self._tasks or self._pending_submissions:
+            raise RuntimeError("Finish training service cleanup before replacing it")
+        queue_path = (
+            self.queue.postgres_dsn or self.queue.path
+            if self.queue is not None
+            else None
+        )
+        replacement = TrainingService(
+            max_concurrent_jobs=self.max_concurrent_jobs, queue_path=queue_path
+        )
+        replacement.training_jobs = copy.deepcopy(self.training_jobs)
+        return replacement
+
     @staticmethod
     def _can_access_job(job: dict[str, Any], user_id: str | None) -> bool:
         if user_id is None:

@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.74.0] - 2026-11-19 — RL verification and trainer reliability
+
+This release was prepared from the full `feat/a-plus-verification` branch snapshot, which descends from the 0.67.0 source line.
+
 ### Added
 
+- Prove finite-sample error bounds for CQL proposal values and gradients, and check IQL and CQL critic updates and checkpoint replay on CPU.
 - Replay recorded industry policy traces offline, checking every transition,
   terminal outcome, and external-stop failure reward against a fresh sandbox.
   Exercise all five support domains through the real River SDK's rollout and
@@ -21,6 +26,131 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Record online PPO behavior likelihoods from the weights actually supplied
+  to the sampler. Preserve the winning logit's small gradient and the
+  reference penalty's value and gradient near identical policies. Weight
+  large reference terms before exponentiation so finite means remain usable.
+
+- Compute continual GRPO's EWC importance weights from the recorded prompt
+  and response IDs of each sampled turn. Partial records are excluded from
+  the trajectory average. Evaluate the EWC penalty and its gradient for tiny
+  weights and large parameter displacements without overflowing the raw square.
+
+- Honor recorded sampler probabilities across repeated native GRPO updates,
+  including continual replay. Both trainers keep the selected denominator
+  across optimizer steps and distributed preflight checks its source.
+
+- Give every eligible named task an equal chance in a partial balanced replay
+  round. Reward-weighted replay preserves positive draw probability for every
+  finite reward. Separate fractional replay rounding from entry selection,
+  including when resuming from a version 1 continual-learning checkpoint.
+
+- Preserve small Gaussian MMD differences and gradients when simulated and
+  real features share large offsets. BEAR and the transfer adapter now share
+  the Gaussian calculation. CORAL centers each domain before computing its
+  sample covariance and rejects domains with fewer than two observations.
+
+- Reverse the sim-to-real DANN gradient at the encoder and retain the full
+  discriminator gradient, including when the reversal strength is zero.
+  Compute vocabulary Jensen–Shannon divergence from word frequencies in nats.
+  KL and JS now normalize histogram masses before applying optional smoothing.
+  JS defaults to the unsmoothed statistic and gives log 2 on disjoint supports.
+
+- Apply VAPO entropy and KL during joint training and include valid
+  single-response groups. Preserve rollout reward precision, weight each
+  loss by its own token or row count, and isolate value warmup from the
+  policy gradients. A one-episode run now trains the policy after warmup.
+  VAPO and GEPO cosine schedules budget one step per requested inner update.
+  VAPO requires a complete checkpoint reload after a partial optimizer commit.
+
+- Apply configured DAPO entropy and KL terms during training. Accumulated prompt
+  groups weight each term by its actual token or response population, including
+  partial batches. Checkpoints preserve the frozen KL reference.
+
+- Pair Decision Transformer actions with their own discounted turn returns in
+  both text and pre-embedded conversations. Refresh cached labels when rewards
+  are normalized. Restore the conversation embedder from new checkpoints and
+  retain the latest aligned inference context with its absolute timesteps.
+
+- Preserve logged-action IQL losses and gradients for masked positions, close
+  double-precision logits and small advantage weights. Low-precision offline
+  policies retain float32 AdamW weights and pending gradients across checkpoints.
+
+- Preserve DPO preference margins and gradients for rare completions and shared
+  response prefixes. Float16 and bfloat16 policies now receive updates from
+  float32 AdamW weights and moments. A failed pair discards the partial batch.
+
+- Honor the configured GAE trace decay in experimental A2C. Preserve categorical
+  entropy under shared logit offsets, resolve close rollout advantages, and clip
+  large finite A2C gradients. Incomplete collection leaves prior segments intact.
+  Set `gae_lambda=1` to reproduce the former full-segment returns.
+
+- Preserve GEPO weights and gradients when responses share a large log-score
+  offset. GEPO now honors each response's prompt boundary, records sampled
+  action probabilities, and skips optimizer steps on empty response batches.
+
+- Preserve differences between close or large rollout rewards in group advantages,
+  including native DDP batch normalization and the Rust accelerator. DAPO now
+  uses the whole accepted rollout batch for its batch-normalized preset.
+
+- Honor sampler probabilities in DAPO and VAPO, including temperature,
+  top-p, EOS and unequal response lengths. Native agent turns expose
+  processed action log probabilities separately from raw model scores.
+  Synchronous DAPO vLLM collection copies the learner weights before the
+  batch and invalidates prefix-cache entries for the old weights.
+- Preserve DAPO and VAPO optimizer moments, parameters and scheduler state
+  when a rollout has no sampled actions. VAPO value warmup counts completed
+  critic updates and can resume a partially collected warmup.
+
+- PPO checks its configured KL target before each optimizer update using
+  the retained behavior scores. Metrics count the updates that actually ran.
+- PPO, VAPO, the standalone value estimator and experimental PPO/A2C compute critic targets independently
+  of rounded actor advantages, preserving terminal rewards with large value
+  estimates. Masked critic targets no longer affect the loss or its gradient.
+  The Rust GAE batch binding now handles strided trajectory arrays.
+
+- BCQ and BEAR form Bellman targets using the lagged policy and both target
+  critics. Terminal and zero-discount rows skip proposal sampling. Standalone
+  checkpoints restore the target policy and Adam moments, including BEAR's
+  constraint multiplier. Offline target updates also preserve identical
+  subnormal parameters during interpolation.
+- CQL retains normalized values and softmax gradients at extreme temperatures
+  and preserves the small positive backup of opposite near-zero logits.
+
+- Preserve small gradients in native distributed GRPO when averaging across
+  ranks or combining policy and entropy terms with different sample counts.
+- Keep FP16 and BF16 online policy updates in float32 working weights and
+  AdamW moments. This prevents zero-gradient FP16 coordinates from becoming
+  NaN with the default epsilon and preserves sub-ULP progress across resume.
+  GSPO and single-turn GRPO now honor the configured Adam moment decays.
+- Compute native L2 gradient clipping in float64 chunks across online and
+  offline RL trainers. This preserves finite gradients whose squared norm
+  overflows float32 and improves accuracy on large parameter tensors. PPO
+  retains independent policy and critic caps.
+- Preserve close judge scores in standalone RLAIF, including unequal-length
+  responses. Compute token-weighted sample deviations before reducing the
+  response log likelihood and retain the raw reward for a single scored token.
+- Keep undefined logits at masked prompt or padding positions out of causal
+  action scores and their gradients.
+- Reject nonfinite LLM-judge scores before caching, preserve signed rubric
+  scores across wide finite intervals, and require paired query/response batches.
+- Keep truncated River RL scores on retained next-token targets. Validate
+  Tinker RL data before allocating a training model and serialize signed
+  advantages and behavior log probabilities as float32.
+- Use the actual filtered sampler scores in GEPO and the configured token
+  population across prompt groups for GSPO reduction overrides.
+- Correct the BEAR constraint update direction, the experimental DPO causal
+  likelihood and the terminal versus truncated bootstrap in actor-critic updates.
+- Preserve the CQL conservative penalty and its adaptive update under large
+  common Q offsets. Stabilize the soft backup at extreme temperatures.
+  Retain final partial minibatches for CQL, IQL, BCQ, BEAR and Decision
+  Transformer. Weight epoch losses by their transition or prediction counts.
+  Preserve representable IQL expectile
+  losses under low precision and cap policy weights before exponentiation.
+- Refresh reward calibration after buffer eviction and track curiosity visits by state.
+- Align the sequence GRPO fallback's full-vocabulary KL and entropy with the
+  logits that predict each supervised token. The enhanced GRPO golden now
+  records the KL and gradient at those causal positions.
 - Keep verified PyPI install pins separate from source candidates during version
   bumps, and correct the v0.67.0 publication status and install instructions.
 - Retain Linux JUnit and distributed worker receipts after failures. Journal
@@ -649,7 +779,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   growth tracker or rescaling saved gradients.
 
 - Validate native GRPO scalar losses and optimizer gradients before updates.
-  Reject invalid clipping limits and non-finite gradient norms, clear rejected
+  Reject invalid clipping limits and non-finite gradient coordinates, clear rejected
   accumulation windows, and let real AMP overflows reduce their scale without
   advancing optimizer-step counters, learning-rate schedules, or rollout sync.
   Multi-turn step metrics now report committed `optimizer_updates`, including

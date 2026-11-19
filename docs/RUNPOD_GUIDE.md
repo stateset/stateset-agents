@@ -113,17 +113,26 @@ a laptop power loss can bypass it; check the RunPod console after that kind of
 failure and terminate any orphan. (`serve-remote` separately arms an in-pod
 watchdog.)
 
-Training now writes a local cleanup lease immediately after each pod is
-created. After a caller crash, inspect those leases without touching remote
-state, then explicitly terminate them:
+Training saves each attempt's unique name before requesting the pod and
+adds the ID when RunPod replies. Inspect the local records after a crash.
+The cleanup command skips live owners and checks the exact name and any
+recorded ID against RunPod before requesting deletion.
 
 ```bash
 stateset-agents runpod-orphans
 stateset-agents runpod-orphans --terminate
 ```
 
-Leases are removed only after the RunPod API confirms termination. The command
-never deletes network volumes.
+New training records are removed when RunPod acknowledges deletion. Older
+unlocked records appear as `legacy` and require manual review. For an
+interrupted interactive chat, use `runpod-orphans --chat` to inspect and
+`runpod-orphans --chat --terminate` to request cleanup.
+
+If `serve-remote` or the serving phase of `deploy` was interrupted during
+startup, run `stateset-agents runpod-orphans --serving` from the same machine
+and RunPod account. The CLI records the pod name before requesting the rental,
+so it can find a pod even when the allocation response was lost. Add
+`--terminate` to stop the matched interrupted rentals.
 
 Check what it cost:
 

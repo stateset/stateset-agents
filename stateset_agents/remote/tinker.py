@@ -15,10 +15,12 @@ from typing import Any
 from stateset_agents.remote.executor import RemoteExecutionError, RemoteExecutor
 from stateset_agents.remote.job import JobHandle, JobStatus, RemoteJobSpec
 from stateset_agents.remote.river_batches import build_sft_batch
+from stateset_agents.remote.tinker_batches import build_inkling2_sft_batch
 
 TINKER_API_KEY_ENV = "TINKER_API_KEY"
 TINKER_POINTER = "tinker_checkpoint.json"
 INKLING_SMALL = "thinkingmachines/Inkling-Small"
+INKLING_2_SMALL = "thinkingmachines/Inkling-2-Small"
 
 
 @dataclass
@@ -104,23 +106,37 @@ class TinkerExecutor(RemoteExecutor):
         try:
             module, service = self._sdk()
             record.status = JobStatus.RUNNING
-            record.logs.append(f"creating Tinker LoRA model {record.spec.base_model}")
-            training = service.create_lora_training_client(
-                base_model=record.spec.base_model, rank=record.spec.lora_r
-            )
-            tokenizer = self._tokenizer or training.get_tokenizer()
             rows = [
                 json.loads(line)
                 for line in record.spec.dataset.read_text(encoding="utf-8").splitlines()
                 if line.strip()
             ]
+            inkling2_sft = (
+                record.spec.job_kind == "sft"
+                and record.spec.base_model == INKLING_2_SMALL
+            )
+            if inkling2_sft:
+                datums = build_inkling2_sft_batch(rows, record.spec.max_length)
+                if not datums:
+                    raise ValueError("dataset contains no trainable assistant tokens")
+            if record.spec.job_kind == "rl":
+                datums = self._validate_rl_rows(rows)
+                if not datums:
+                    raise ValueError(
+                        "RL dataset must contain at least one aligned datum"
+                    )
+            record.logs.append(f"creating Tinker LoRA model {record.spec.base_model}")
+            training = service.create_lora_training_client(
+                base_model=record.spec.base_model, rank=record.spec.lora_r
+            )
             if record.spec.job_kind == "sft":
-                datums = build_sft_batch(
-                    rows, tokenizer, max_length=record.spec.max_length
-                )
+                if not inkling2_sft:
+                    tokenizer = self._tokenizer or training.get_tokenizer()
+                    datums = build_sft_batch(
+                        rows, tokenizer, max_length=record.spec.max_length
+                    )
                 loss_fn = "cross_entropy"
             else:
-                datums = self._validate_rl_rows(rows)
                 loss_fn = "importance_sampling"
             if not datums:
                 raise ValueError("dataset contains no trainable assistant tokens")
@@ -168,7 +184,12 @@ class TinkerExecutor(RemoteExecutor):
 
         tensor = module.TensorData.from_torch
         loss_inputs = {
-            key: tensor(torch.tensor(item[key]))
+            key: tensor(
+                torch.tensor(
+                    item[key],
+                    dtype=torch.int64 if key == "target_tokens" else torch.float32,
+                )
+            )
             for key in ("target_tokens", "weights", "logprobs", "advantages")
             if key in item
         }
@@ -179,15 +200,36 @@ class TinkerExecutor(RemoteExecutor):
 
     @staticmethod
     def _validate_rl_rows(rows: list[Any]) -> list[dict[str, Any]]:
+        """Validate JSON rows in the published Tinker importance-sampling format."""
+        import numpy as np
+
+        float_limit = float(np.finfo(np.float32).max)
         required = ("input_ids", "target_tokens", "logprobs", "advantages")
         clean: list[dict[str, Any]] = []
         for index, row in enumerate(rows):
             if not isinstance(row, dict) or any(key not in row for key in required):
                 raise ValueError(f"RL row {index} must contain {', '.join(required)}")
+            if "weights" in row:
+                raise ValueError(
+                    f"RL row {index} uses SFT weights; encode the loss mask in advantages"
+                )
+            if any(not isinstance(row[key], list) for key in required):
+                raise ValueError(f"RL row {index} fields must be token arrays")
             lengths = {len(row[key]) for key in required}
             if len(lengths) != 1 or next(iter(lengths)) == 0:
                 raise ValueError(f"RL row {index} arrays must be non-empty and aligned")
-            clean.append(row)
+            for key in ("input_ids", "target_tokens"):
+                if any(type(x) is not int or not 0 <= x < 2**63 for x in row[key]):
+                    raise ValueError(
+                        f"RL row {index} {key} must contain nonnegative int64 IDs"
+                    )
+            for key, upper in (("logprobs", 0.0), ("advantages", float_limit)):
+                if any(
+                    type(x) not in (int, float) or not -float_limit <= x <= upper
+                    for x in row[key]
+                ):
+                    raise ValueError(f"RL row {index} invalid {key} for float32")
+            clean.append({key: row[key] for key in required})
         return clean
 
     def _record(self, handle: JobHandle) -> _TinkerJob:
@@ -230,4 +272,4 @@ class TinkerExecutor(RemoteExecutor):
             record.status = JobStatus.CANCELLED
 
 
-__all__ = ["INKLING_SMALL", "TinkerExecutor"]
+__all__ = ["INKLING_2_SMALL", "INKLING_SMALL", "TinkerExecutor"]

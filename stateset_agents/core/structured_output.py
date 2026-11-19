@@ -37,6 +37,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, TypeVar, Union, cast, get_args, get_origin
 
+from .conversation import ConversationResetError, check_conversation, conversation_call
+
 logger = logging.getLogger(__name__)
 
 # Type variable for generic structured output
@@ -266,6 +268,7 @@ class StructuredOutputMixin:
         """Implemented by concrete agent classes mixing in structured output."""
         raise NotImplementedError
 
+    @conversation_call
     async def generate_structured(
         self,
         messages: str | list[dict[str, str]],
@@ -339,7 +342,9 @@ class StructuredOutputMixin:
         for attempt in range(config.max_retries):
             try:
                 # Generate response
+                check_conversation(self)
                 raw_response = await self.generate_response(messages, context)
+                check_conversation(self)
                 raw_outputs.append(raw_response)
 
                 # Extract and parse JSON
@@ -358,6 +363,8 @@ class StructuredOutputMixin:
                     self._validate_json_schema(parsed, schema)
                     return cast(T, parsed)
 
+            except ConversationResetError:
+                raise
             except json.JSONDecodeError as e:
                 last_error = e
                 logger.warning(

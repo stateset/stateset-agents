@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-10-21",
+  "scope": "curated_public_synthetic_archives",
+  "entries": [
+    {
+      "id": "20261020/river-recovery-warmup",
+      "evidence_mode": "live",
+      "source_kind": "synthetic",
+      "study_kind": "single_seed_sft",
+      "audit_passed": true,
+      "experiment_accepted": true,
+      "production_quality_established": false,
+      "cost_usd": null,
+      "interpretation": "10 SFT updates; synthetic test 147/160 to 160/160. Fresh optimizer, not crash recovery.",
+      "implementation_sha256": "7a25c7beeb0726246ee210ca760d7b5fd26feee2b197356dd82d13952c33b31d",
+      "artifact_sha256": {
+        "benchmark_results/training_contracts/20261020/river-recovery-warmup/review-summary.json": "b44ed76a05a76852a9c39d65a1fff179e0b44ef5634aa424b72dac646c801039",
+        "benchmark_results/training_contracts/20261020/river-recovery-warmup/plan.json": "417adb9df6ce31e0a1d2dbd0ef5549cb4f5a042b6d54c72201d32d43b85996c4",
+        "benchmark_results/training_contracts/20261020/river-recovery-warmup/runtime-versions.json": "b7f6ee99667fa36ad420ca0bba25e4ab6e655c52e48823e8d0f51f704573040d",
+        "benchmark_results/training_contracts/20261020/river-recovery-warmup/README.md": "cb9d2e8310bc99a145e34ac26b2de601ebc40a10bf30da6e34f2aaca24d9ae86"
+      },
+      "reference": "benchmark_results/training_contracts/20261020/river-recovery-warmup/README.md"
+    },
+    {
+      "id": "20261020/river-recovery-rl-pilot",
+      "evidence_mode": "live",
+      "source_kind": "synthetic",
+      "study_kind": "single_seed_rl",
+      "audit_passed": true,
+      "experiment_accepted": true,
+      "production_quality_established": false,
+      "cost_usd": null,
+      "interpretation": "One CISPO update; synthetic test 155/160 to 160/160. Pilot, not replication.",
+      "implementation_sha256": "7a25c7beeb0726246ee210ca760d7b5fd26feee2b197356dd82d13952c33b31d",
+      "artifact_sha256": {
+        "benchmark_results/training_contracts/20261020/river-recovery-rl-pilot/review-summary.json": "13f4225817bf3ae384e059064976bbd4ade50d8a2f482e4fc78e80ffda3b93dd",
+        "benchmark_results/training_contracts/20261020/river-recovery-rl-pilot/plan.json": "7b7771bb13978e1ab97f3c3c82d4f45db8d75c6c9d96b42719902bcc556d9607",
+        "benchmark_results/training_contracts/20261020/river-recovery-rl-pilot/runtime-versions.json": "b7f6ee99667fa36ad420ca0bba25e4ab6e655c52e48823e8d0f51f704573040d",
+        "benchmark_results/training_contracts/20261020/river-recovery-rl-pilot/README.md": "5c664cbfa69cf8eebdabcaa271fe576694b2fb742960b21eaf64adc35d307ecf"
+      },
+      "reference": "benchmark_results/training_contracts/20261020/river-recovery-rl-pilot/README.md"
+    },
+    {
+      "id": "20261020/river-recovery-replication",
+      "evidence_mode": "live",
+      "source_kind": "synthetic",
+      "study_kind": "six_seed_rl",
+      "audit_passed": true,
+      "experiment_accepted": false,
+      "production_quality_established": false,
+      "cost_usd": null,
+      "interpretation": "Synthetic test 954/960 to 960/960; four wins and two ties; two-sided p=0.125. Prespecified replication failed.",
+      "implementation_sha256": "9f1f995ad6e525465bb484f8a6692ee0171c92a58fe4c427b45842eefc8be654",
+      "artifact_sha256": {
+        "benchmark_results/training_contracts/20261020/river-recovery-replication/review-summary.json": "8842bb9fc18193fbb1f4a0c1af80c209ac115f52830b70d1c57b7fac99ec2244",
+        "benchmark_results/training_contracts/20261020/river-recovery-replication/plan.json": "90ad8a47c067da87a90ccc7cbde4b72e9e9cc42f1ebf05c986e142522703e4cd",
+        "benchmark_results/training_contracts/20261020/river-recovery-replication/runtime-versions.json": "b7f6ee99667fa36ad420ca0bba25e4ab6e655c52e48823e8d0f51f704573040d",
+        "benchmark_results/training_contracts/20261020/river-recovery-replication/README.md": "5d0fd6a352d92636de1510cedf4d9e6058686257f57f9cf5eaf1808d4bce7251"
+      },
+      "reference": "benchmark_results/training_contracts/20261020/river-recovery-replication/README.md"
+    },
+    {
+      "id": "20261020/river-delegation-pilot",
+      "evidence_mode": "live",
+      "source_kind": "synthetic",
+      "study_kind": "agent_system_efficiency",
+      "audit_passed": true,
+      "experiment_accepted": true,
+      "production_quality_established": false,
+      "cost_usd": null,
+      "interpretation": "Both arms 170/170; generated tokens 16922 to 5270. No training updates; concurrent latency is descriptive.",
+      "implementation_sha256": "249878f42d4fd030f4d85373c8d77327dcd9315c167d03f31498708b97841bcc",
+      "artifact_sha256": {
+        "benchmark_results/training_contracts/20261020/river-delegation-pilot/review-summary.json": "77ad59f15977d784d993206196ab97f8ec76c81488f39cf21221f2a94fb28345",
+        "benchmark_results/training_contracts/20261020/river-delegation-pilot/plan.json": "fb2776bb06b3f47d91246df62983212c78ca6ec1c5affa1b69a54218ddce27ef",
+        "benchmark_results/training_contracts/20261020/river-delegation-pilot/README.md": "79976bfa290958a08bcdbfcb369dfb5712b31f68f2d8c2faa7eae802b7637a13"
+      },
+      "reference": "benchmark_results/training_contracts/20261020/river-delegation-pilot/README.md"
+    },
+    {
+      "id": "20261020/river-arithmetic-pilot",
+      "evidence_mode": "live",
+      "source_kind": "synthetic",
+      "study_kind": "exploratory_sft",
+      "audit_passed": null,
+      "experiment_accepted": false,
+      "production_quality_established": false,
+      "cost_usd": null,
+      "interpretation": "Both arms 157/158; arithmetic gain accompanied by a window regression. No promotion.",
+      "implementation_sha256": "524f6ff73b407acaa58b70a141e11f24c8c61a631bfbd72347f447ab7af81bce",
+      "artifact_sha256": {
+        "benchmark_results/training_contracts/20261020/river-arithmetic-pilot/review-summary.json": "4c076f29ae4767c3dd786bc5f886fd37ff6b9b3454a991537aef208eba58f3b7",
+        "benchmark_results/training_contracts/20261020/river-arithmetic-pilot/plan.json": "7370be916ddbabfaf728d8a5adfd36939a7b9957a49fe05e9e240cf7439428ed",
+        "benchmark_results/training_contracts/20261020/river-arithmetic-pilot/README.md": "fb4da487b962d5717de5582d37bb24911072683ba0beeec96442de9758795f3f"
+      },
+      "reference": "benchmark_results/training_contracts/20261020/river-arithmetic-pilot/README.md"
+    },
+    {
+      "id": "20261020/river-recovery-pilot",
+      "evidence_mode": "live",
+      "source_kind": "synthetic",
+      "study_kind": "diagnostic_probe",
+      "audit_passed": true,
+      "experiment_accepted": null,
+      "production_quality_established": false,
+      "cost_usd": null,
+      "interpretation": "37/40 probe cases; no training updates and no test attempt.",
+      "implementation_sha256": "7a25c7beeb0726246ee210ca760d7b5fd26feee2b197356dd82d13952c33b31d",
+      "artifact_sha256": {
+        "benchmark_results/training_contracts/20261020/river-recovery-pilot/review-summary.json": "0478309e13bff39f008bbf019f9114605334003beb75cc84b11db8f7e6fa416b",
+        "benchmark_results/training_contracts/20261020/river-recovery-pilot/plan.json": "1162106ffb75b76b967f7ab177b8a7ea201021a0e7a4949ba4bca1f896170b68",
+        "benchmark_results/training_contracts/20261020/river-recovery-pilot/runtime-versions.json": "b7f6ee99667fa36ad420ca0bba25e4ab6e655c52e48823e8d0f51f704573040d",
+        "benchmark_results/training_contracts/20261020/river-recovery-pilot/README.md": "f677d1e3f5f0eb446a1908f4123eaf04275c59e488192ec6d75bb03436b3aa66"
+      },
+      "reference": "benchmark_results/training_contracts/20261020/river-recovery-pilot/README.md"
+    },
+    {
+      "id": "20261019/river-boundary-six-seed",
+      "evidence_mode": "live",
+      "source_kind": "synthetic",
+      "study_kind": "six_seed_primary_comparison",
+      "audit_passed": null,
+      "experiment_accepted": false,
+      "production_quality_established": false,
+      "cost_usd": null,
+      "interpretation": "Primary comparison to repeated SFT failed; secondary comparison to original SFT passed. No overall promotion.",
+      "implementation_sha256": "c782ae0cf825e96fa2fe7cec53116d1ced89d96b077864f93c29e4d6f6d2982f",
+      "artifact_sha256": {
+        "benchmark_results/training_contracts/20261019/river-boundary-six-seed/review-summary.json": "06d8e81e2a04a2ba189321b3b0ea9ca7489f13173773ac5eb37f65152da18772",
+        "benchmark_results/training_contracts/20261019/river-boundary-six-seed/plan.json": "4b7115ee599832e73f02fe3e93713e619eaae029ccf0588432dff1d212d15a34",
+        "benchmark_results/training_contracts/20261019/river-boundary-six-seed/README.md": "db154fb910bd09284a89c18fda8a77c616d062058f9a2ef4668c71ccc0f20498"
+      },
+      "reference": "benchmark_results/training_contracts/20261019/river-boundary-six-seed/README.md"
+    },
+    {
+      "id": "20261019/river-six-seed-recovery",
+      "evidence_mode": "live",
+      "source_kind": "synthetic",
+      "study_kind": "six_seed_quality",
+      "audit_passed": null,
+      "experiment_accepted": false,
+      "production_quality_established": false,
+      "cost_usd": null,
+      "interpretation": "Base 325/384, SFT 338/384, SFT+RL 339/384; quality gates failed.",
+      "implementation_sha256": "9d3107cd31f49504ff1481c0d3f712c9566426a297439934d37ebd152afff9c1",
+      "artifact_sha256": {
+        "benchmark_results/training_contracts/20261019/river-six-seed-recovery/review-summary.json": "1c040587619559e7568669348e97c24dfa39cc27b06622141c52f32cd0d49205",
+        "benchmark_results/training_contracts/20261019/river-six-seed-recovery/plan.json": "5582a0cfaa930cd96a4d1aedec38df4a3657292b8add1fd40adc29fbb5e0dd8e",
+        "benchmark_results/training_contracts/20261019/river-six-seed-recovery/README.md": "ab3d6ffe2989aa77fe0793956e314f2b7bd3305e2f074e8eb3876727260fdd03"
+      },
+      "reference": "benchmark_results/training_contracts/20261019/river-six-seed-recovery/README.md"
+    }
+  ],
+  "limitations": [
+    "Historical source identities differ from the current package.",
+    "Hosted checkpoint URIs do not attest immutable weight bytes.",
+    "No independently reviewed merchant quality or live optimizer crash-recovery certification.",
+    "Unknown billed costs are null, never zero."
+  ]
+}

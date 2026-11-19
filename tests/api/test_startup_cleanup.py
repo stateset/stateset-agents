@@ -9,6 +9,17 @@ from fastapi import FastAPI
 from stateset_agents.api import distributed_cache, main, persistence
 
 
+@pytest.fixture(autouse=True)
+def isolated_registries(monkeypatch):
+    """Injected failures must retain their owner without leaking into other tests."""
+    monkeypatch.setattr(distributed_cache, "_cache_instance", None)
+    monkeypatch.setattr(
+        distributed_cache, "_cache_registry", distributed_cache._new_registry()
+    )
+    monkeypatch.setattr(persistence, "_database", None)
+    monkeypatch.setattr(persistence, "_database_registry", persistence._new_registry())
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("stage", ["cache", "database", "agent", "health"])
 @pytest.mark.parametrize("cleanup_failure", [None, "cache", "database", "inference"])
@@ -26,10 +37,12 @@ async def test_lifespan_failure_closes_previously_initialized_resources(
     async def cache_init(config):
         if stage == "cache":
             raise failure
+        return SimpleNamespace(aclose=lambda: close("cache"))
 
     async def database_init(config):
         if stage == "database":
             raise failure
+        return SimpleNamespace(aclose=lambda: close("database"))
 
     async def close(name):
         events.append(name)
@@ -39,10 +52,8 @@ async def test_lifespan_failure_closes_previously_initialized_resources(
     def fail(*args, **kwargs):
         raise failure
 
-    monkeypatch.setattr(distributed_cache, "init_cache", cache_init)
-    monkeypatch.setattr(distributed_cache, "close_cache", lambda: close("cache"))
-    monkeypatch.setattr(persistence, "init_database", database_init)
-    monkeypatch.setattr(persistence, "close_database", lambda: close("database"))
+    monkeypatch.setattr(distributed_cache, "acquire_cache", cache_init)
+    monkeypatch.setattr(persistence, "acquire_database", database_init)
     app = FastAPI()
     app.state.config = config
     app.state.inference_service = SimpleNamespace(
@@ -77,7 +88,7 @@ async def test_cancelled_startup_drains_cleanup_under_repeated_cancellation(
     monkeypatch.setattr(main, "get_config", lambda: config)
 
     async def cache_init(config):
-        pass
+        return SimpleNamespace(aclose=close_cache)
 
     async def database_init(config):
         connecting.set()
@@ -91,9 +102,8 @@ async def test_cancelled_startup_drains_cleanup_under_repeated_cancellation(
     async def close_inference():
         events.append("inference")
 
-    monkeypatch.setattr(distributed_cache, "init_cache", cache_init)
-    monkeypatch.setattr(distributed_cache, "close_cache", close_cache)
-    monkeypatch.setattr(persistence, "init_database", database_init)
+    monkeypatch.setattr(distributed_cache, "acquire_cache", cache_init)
+    monkeypatch.setattr(persistence, "acquire_database", database_init)
     app = FastAPI()
     app.state.config = config
     app.state.inference_service = SimpleNamespace(

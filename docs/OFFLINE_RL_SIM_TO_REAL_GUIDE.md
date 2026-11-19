@@ -165,56 +165,43 @@ metrics = await trainer.train(dataset, epochs=100)
 
 ### CQL (Conservative Q-Learning)
 
-CQL adds a penalty to prevent overestimation of out-of-distribution actions:
+CQL penalizes high values on sampled actions relative to the logged action at the same state. Its optional adaptive multiplier compares the sum of both critics' mean penalties with `lagrange_threshold`. If the dataset supplies `next_actions`, the Bellman target uses those actions at the next states.
 
 ```python
-from stateset_agents.training import CQLConfig, ConservativeQLearning
+from stateset_agents.training.offline_rl_algorithms import CQLConfig, OfflineRLTrainer
 
-config = CQLConfig(
-    hidden_dim=256,
-    num_layers=3,
-
-    # CQL penalty
-    cql_alpha=1.0,  # Conservative penalty weight
-    cql_temperature=1.0,
-    num_random_actions=10,
-
-    # Training
-    learning_rate=3e-4,
-    discount=0.99,
+cql = OfflineRLTrainer(
+    "cql",
+    state_dim=dataset["states"].shape[1],
+    action_dim=dataset["actions"].shape[1],
+    config=CQLConfig(cql_alpha=1.0, temperature=1.0, num_random_actions=10),
 )
-
-cql = ConservativeQLearning(config)
-metrics = await cql.train(dataset)
+metrics = cql.train(dataset, num_epochs=1, batch_size=256)
 ```
 
 ### IQL (Implicit Q-Learning)
 
-IQL avoids querying out-of-distribution actions entirely via expectile regression:
+IQL fits a value function to the lower of the two logged-action critic estimates. At expectile 0.7, positive residuals receive weight 0.7 and negative residuals receive weight 0.3. The loss gradient vanishes at zero residual.
 
 ```python
-from stateset_agents.training import IQLConfig, ImplicitQLearning
+from stateset_agents.training.offline_rl_algorithms import IQLConfig, OfflineRLTrainer
 
-config = IQLConfig(
-    hidden_dim=256,
-    num_layers=3,
-
-    # IQL-specific
-    expectile=0.7,  # Expectile for value function
-    temperature=3.0,  # Advantage weighting temperature
-
-    # Training
-    learning_rate=3e-4,
-    discount=0.99,
+iql = OfflineRLTrainer(
+    "iql",
+    state_dim=dataset["states"].shape[1],
+    action_dim=dataset["actions"].shape[1],
+    config=IQLConfig(expectile=0.7, temperature=3.0),
 )
-
-iql = ImplicitQLearning(config)
-metrics = await iql.train(dataset)
+metrics = iql.train(dataset, num_epochs=1, batch_size=256)
 ```
 
-**Key insight**: IQL never evaluates Q-values on unseen actions during training.
+Offline critic datasets accept one binary `dones` value per transition for environment termination, or separate `terminated` and `truncated` columns. When all three are present, `dones` may include time cutoffs and `terminated` controls the Bellman target. Supply the actual final observation in `next_states` at a cutoff that permits continuation. A terminal row or zero discount uses the immediate reward and skips successor scoring. CQL uses logged `next_actions` when supplied through either trainer. `OfflineGRPOConfig.gamma` controls its selected offline critic and its auxiliary value and Q targets. [Gymnasium time limits](https://gymnasium.farama.org/tutorials/gymnasium_basics/handling_time_limits/)
+
+CQL, IQL, BCQ and BEAR include the final partial minibatch and weight epoch losses by transition count. Decision Transformer includes the final partial minibatch and counts retained action targets and successor-state targets separately. Epoch step and learning-rate diagnostics report their values after the last update.
 
 ### Decision Transformer
+
+With `OfflineGRPOConfig(offline_algorithm="decision_transformer")`, pretraining consumes chronological decision rows. It groups them at episode boundaries, computes returns with `gamma` per decision and trains the auxiliary critics from transition minibatches. For positive discount, adjacent successor and current state features must match within each recorded episode. At positive discount, if a recording ends before termination, supply a finite `returns_to_go` value per row, including the continuation beyond the cutoff. Each episode starts at timestep zero. The native Decision Transformer uses up to `max_context_length` initial decisions per sampled episode.
 
 A sequence modeling approach that conditions on desired returns:
 
@@ -435,46 +422,44 @@ Four built-in schedules for sim-to-real ratio:
 #### DANN (Domain-Adversarial Neural Network)
 
 ```python
-from stateset_agents.training import DomainAdaptationModule
+from stateset_agents.training import DomainAdaptationModule, SimToRealConfig
 
 adapter = DomainAdaptationModule(
-    method="dann",
-    feature_dim=768,
-    hidden_dim=256,
+    SimToRealConfig(
+        adaptation_method="dann", state_dim=768,
+        domain_critic_hidden=256, gradient_reversal_lambda=0.1,
+    )
 )
-
-# During training
-features = encoder(batch)
-domain_loss = adapter.compute_domain_loss(
-    features,
-    domain_labels,  # 0=sim, 1=real
-)
-total_loss = task_loss + 0.1 * domain_loss
+sim_features, real_features = encoder(sim_batch), encoder(real_batch)
+domain_loss = adapter.compute_adaptation_loss(sim_features, real_features)
+total_loss = task_loss + domain_loss
+total_loss.backward()
 ```
+
+Include the encoder and adapter parameters in the optimizer. Each domain
+contributes its mean binary log loss. The reversal coefficient scales the
+encoder's opposing domain gradient. The discriminator always receives the
+ordinary classification gradient. A coefficient of zero isolates the
+encoder from the domain loss and still trains the discriminator.
 
 #### MMD (Maximum Mean Discrepancy)
 
 ```python
-adapter = DomainAdaptationModule(
-    method="mmd",
-    feature_dim=768,
-    kernel="gaussian",
-    kernel_bandwidth=1.0,
-)
-
-mmd_loss = adapter.compute_domain_loss(sim_features, real_features)
+adapter = DomainAdaptationModule(SimToRealConfig(adaptation_method="mmd", state_dim=768))
+mmd_loss = adapter.compute_mmd(sim_features, real_features, sigma=1.0)
 ```
+
+This is empirical Gaussian MMD squared, with the diagonal pairs included.
+Both domains need at least one observation and a positive bandwidth.
 
 #### CORAL (Correlation Alignment)
 
 ```python
-adapter = DomainAdaptationModule(
-    method="coral",
-    feature_dim=768,
-)
-
-coral_loss = adapter.compute_domain_loss(sim_features, real_features)
+adapter = DomainAdaptationModule(SimToRealConfig(adaptation_method="coral", state_dim=768))
+coral_loss = adapter.compute_adaptation_loss(sim_features, real_features)
 ```
+
+Each domain needs at least two observations to estimate its sample covariance.
 
 ---
 
@@ -678,57 +663,43 @@ user_response = await user_sim.respond(
 
 ### SimToRealEvaluator
 
-Comprehensive evaluation of sim-to-real transfer:
+Compare two collections of conversation trajectories through the evaluator.
 
 ```python
-from stateset_agents.evaluation import SimToRealEvaluator, SimToRealMetrics
+from stateset_agents.evaluation import SimToRealEvaluator
 
-evaluator = SimToRealEvaluator()
-
-# Compute comprehensive metrics
-metrics: SimToRealMetrics = evaluator.evaluate(
-    sim_conversations=sim_data,
-    real_conversations=real_data,
-    agent=trained_agent,
-)
-
-print(f"KL Divergence: {metrics.kl_divergence:.4f}")
-print(f"JS Divergence: {metrics.js_divergence:.4f}")
-print(f"MMD: {metrics.mmd:.4f}")
-print(f"Transfer Gap: {metrics.transfer_gap:.4f}")
-print(f"Policy Performance (sim): {metrics.sim_performance:.3f}")
-print(f"Policy Performance (real): {metrics.real_performance:.3f}")
+metrics = SimToRealEvaluator().compute_distribution_metrics(sim_data, real_data)
+print(metrics["response_length_kl"])
+print(metrics["vocabulary_js_divergence"])
+print(metrics["turn_count_mmd"])
 ```
 
-### Individual Metrics
+Vocabulary Jensen–Shannon divergence uses the empirical frequencies of
+lowercased, whitespace-separated assistant words. It ranges from zero for
+matching frequencies to log 2 for disjoint vocabularies. A vocabulary score
+requires at least one observed assistant word in each domain.
+
+### Individual metrics
 
 ```python
-from stateset_agents.evaluation import (
-    compute_kl_divergence,
-    compute_js_divergence,
+from stateset_agents.evaluation.sim_to_real_metrics import (
+    compute_distribution_divergence, compute_js_divergence, compute_kl_divergence,
     compute_mmd,
-    compute_distribution_divergence,
 )
 
-# Response length distributions
-kl = compute_kl_divergence(sim_lengths, real_lengths)
-js = compute_js_divergence(sim_lengths, real_lengths)
+# Compare counts on the same set of bins.
+js = compute_js_divergence(sim_counts, real_counts)
+kl = compute_kl_divergence(real_counts, sim_counts)
 
-# Embedding-space divergence
-mmd = compute_mmd(
-    sim_embeddings,
-    real_embeddings,
-    kernel="gaussian",
-    bandwidth=1.0,
-)
-
-# General distribution comparison
-divergence = compute_distribution_divergence(
-    sim_distribution,
-    real_distribution,
-    method="wasserstein",  # or "kl", "js", "mmd"
-)
+# Build shared bins from raw length observations.
+length_js = compute_distribution_divergence(sim_lengths, real_lengths, method="js")
+embedding_mmd = compute_mmd(sim_embeddings, real_embeddings, sigma=1.0)
 ```
+
+Both divergences normalize each histogram independently. JS uses natural
+logarithms and defaults to zero smoothing. Forward KL retains its default
+per-bin smoothing of 1e-10. Pass `epsilon=0` for the unsmoothed KL, which
+is infinite when the comparison assigns zero mass to a positive source bin.
 
 ---
 

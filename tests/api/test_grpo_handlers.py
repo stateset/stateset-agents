@@ -14,6 +14,11 @@ from stateset_agents.api.grpo.handlers import ConversationHandler, TrainingHandl
 from stateset_agents.api.grpo.models import GRPOConversationRequest, GRPOTrainingRequest
 from stateset_agents.api.grpo.router_v1 import create_v1_router
 from stateset_agents.api.grpo.state import get_state_manager, reset_state_manager
+from stateset_agents.core.multiturn_agent import (
+    ConversationClosedError,
+    ConversationConflict,
+    MultiTurnAgent,
+)
 from tests.api.asgi_client import SyncASGIClient
 
 
@@ -33,6 +38,33 @@ class _RequestContext:
         self.roles = roles
         self.api_key = api_key
         self.client = client
+
+
+@pytest.mark.asyncio
+async def test_real_named_agent_records_first_assistant_response_once():
+    reset_state_manager()
+    agent = MultiTurnAgent({}, response_backend=lambda prompt: "one answer")
+    handler = ConversationHandler({"multiturn_agent": agent})
+    response = await handler.handle_message(
+        GRPOConversationRequest(message="hello"), user_id="owner"
+    )
+    context = agent.active_conversations[response.conversation_id]
+    assert [turn["role"] for turn in context.history] == ["user", "assistant"]
+    assert context.history[-1]["content"] == response.response == "one answer"
+    assert response.context["turn_count"] == 2
+
+
+@pytest.mark.parametrize("path", ["/api/chat", "/v1/chat"])
+@pytest.mark.parametrize("error", [ConversationConflict, ConversationClosedError])
+def test_conversation_conflict_routes_return_409(path, error):
+    with _grpo_service_test_app() as fixture:
+        fixture["conversation_handler"].handle_message = AsyncMock(
+            side_effect=error("Conversation changed; inspect before continuing")
+        )
+        with SyncASGIClient(fixture["app"]) as client:
+            response = client.post(path, json={"message": "hello"})
+        assert response.status_code == 409
+        assert "inspect before continuing" in response.json()["detail"]
 
 
 @contextlib.contextmanager

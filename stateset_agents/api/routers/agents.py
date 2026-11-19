@@ -4,6 +4,7 @@ Agents Router Module
 API endpoints for agent management and conversations.
 """
 
+import copy
 import os
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
@@ -509,23 +510,24 @@ async def list_conversations(
     # Gather all conversations
     all_convs: list[ConversationSummary] = []
 
-    for aid, conv_list in svc.conversations.items():
-        if agent_id and aid != agent_id:
-            continue
-
-        for conv in conv_list:
-            if not _can_access_conversation(conv, user):
+    with svc.conversation_operations.lock:
+        for aid, conv_list in svc.conversations.items():
+            if agent_id and aid != agent_id:
                 continue
-            all_convs.append(
-                ConversationSummary(
-                    conversation_id=conv.get("id", "unknown"),
-                    agent_id=aid,
-                    message_count=len(conv.get("messages", [])),
-                    created_at=conv.get("created_at", datetime.utcnow()),
-                    last_message_at=conv.get("last_message_at"),
-                    total_tokens=conv.get("total_tokens", 0),
+
+            for conv in conv_list:
+                if not _can_access_conversation(conv, user):
+                    continue
+                all_convs.append(
+                    ConversationSummary(
+                        conversation_id=conv.get("id", "unknown"),
+                        agent_id=aid,
+                        message_count=len(conv.get("messages", [])),
+                        created_at=conv.get("created_at", datetime.utcnow()),
+                        last_message_at=conv.get("last_message_at"),
+                        total_tokens=conv.get("total_tokens", 0),
+                    )
                 )
-            )
 
     total = len(all_convs)
 
@@ -575,23 +577,43 @@ async def get_conversation(
     Raises:
         ConversationNotFoundError: If the conversation doesn't exist.
     """
-    # Search for conversation across all agents
-    for aid, conv_list in svc.conversations.items():
-        for conv in conv_list:
-            if conv.get("id") == conversation_id:
-                if not _can_access_conversation(conv, user):
-                    raise ConversationNotFoundError(conversation_id)
-                return {
-                    "conversation_id": conversation_id,
-                    "agent_id": aid,
-                    "messages": conv.get("messages", []),
-                    "created_at": conv.get("created_at"),
-                    "last_message_at": conv.get("last_message_at"),
-                    "total_tokens": conv.get("total_tokens", 0),
-                    "metadata": conv.get("metadata", {}),
-                }
+    with svc.conversation_operations.lock:
+        # Search for conversation across all agents
+        for aid, conv_list in svc.conversations.items():
+            for conv in conv_list:
+                if conv.get("id") == conversation_id:
+                    if not _can_access_conversation(conv, user):
+                        raise ConversationNotFoundError(conversation_id)
+                    return copy.deepcopy(
+                        {
+                            "conversation_id": conversation_id,
+                            "agent_id": aid,
+                            "messages": conv.get("messages", []),
+                            "created_at": conv.get("created_at"),
+                            "last_message_at": conv.get("last_message_at"),
+                            "total_tokens": conv.get("total_tokens", 0),
+                            "metadata": conv.get("metadata", {}),
+                        }
+                    )
 
-    raise ConversationNotFoundError(conversation_id)
+        raise ConversationNotFoundError(conversation_id)
+
+
+@conversation_router.get(
+    "/{conversation_id}/status", summary="Conversation operation status"
+)
+async def get_conversation_status(
+    conversation_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+    svc: AgentService = Depends(get_agent_service),
+) -> dict[str, Any]:
+    """Inspect request ownership using the conversation's existing access rules."""
+    return {
+        "conversation_id": conversation_id,
+        **svc.get_conversation_status(
+            conversation_id, user_id=None if "admin" in user.roles else user.user_id
+        ),
+    }
 
 
 @conversation_router.delete(

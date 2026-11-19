@@ -294,6 +294,7 @@ Artifacts:
 | `river_checkpoint.json` | Selected inference checkpoint pointer |
 | `stateset_manifest.json` | Dataset and model provenance |
 | `rl_repeats_report.json` | Per-seed results for a repeated campaign |
+| `rl_preview.json` / `rl_repeats_preview.json` | Configuration from a dry run or repeated dry runs |
 
 For the generic SFT executor, the dataset path, byte SHA-256 and nonblank
 source-line count are captured from the same bytes parsed before client checks

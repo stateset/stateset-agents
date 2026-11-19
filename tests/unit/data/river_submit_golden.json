@@ -95,7 +95,7 @@
   },
   "episode_harvest_dry_run": {
     "artifacts": {
-      "harvest/harvest_summary.json": "{\n  \"base_model\": \"Qwen/Qwen3.5-9B\",\n  \"adapter_dir\": null,\n  \"best_of\": 3,\n  \"temperature\": 0.9,\n  \"prompts\": 1,\n  \"samples\": 0,\n  \"kept\": 0,\n  \"prompts_with_a_pass\": 0,\n  \"eval\": null,\n  \"episodes\": true,\n  \"dry_run\": true\n}",
+      "harvest/harvest_preview.json": "{\n  \"base_model\": \"Qwen/Qwen3.5-9B\",\n  \"adapter_dir\": null,\n  \"best_of\": 3,\n  \"temperature\": 0.9,\n  \"prompts\": 1,\n  \"samples\": 0,\n  \"kept\": 0,\n  \"prompts_with_a_pass\": 0,\n  \"eval\": null,\n  \"episodes\": true,\n  \"dry_run\": true\n}",
       "p.json": "[{\"turns\": [\"hi\", \"and then?\"], \"turn_expect\": [[\"done\"], [\"vpn\"]], \"forbid\": [\"oops\"]}]"
     },
     "ledger": [],
@@ -558,7 +558,7 @@
   "episode_rl_dry_run": {
     "artifacts": {
       "p.json": "[{\"turns\": [\"hi\", \"and then?\"], \"turn_expect\": [[\"done\"], [\"vpn\"]], \"forbid\": [\"oops\"]}]",
-      "rl/rl_report.json": "{\n  \"config\": {\n    \"best_of\": 8,\n    \"clip_high\": 0.2,\n    \"clip_low\": 0.2,\n    \"eps_max\": 6.0,\n    \"grad_clip_norm\": 1.0,\n    \"loss_fn\": \"cispo\",\n    \"max_generated_tokens\": null,\n    \"max_new_tokens\": 300,\n    \"microbatch_size\": 8,\n    \"normalization\": \"token\",\n    \"rounds\": 5,\n    \"seed\": 0,\n    \"temperature\": 1.0,\n    \"top_p\": 1.0,\n    \"truncation\": \"drop_group\"\n  },\n  \"dry_run\": true,\n  \"episodes\": 1,\n  \"rounds\": 5\n}\n"
+      "rl/rl_preview.json": "{\n  \"config\": {\n    \"best_of\": 8,\n    \"clip_high\": 0.2,\n    \"clip_low\": 0.2,\n    \"eps_max\": 6.0,\n    \"grad_clip_norm\": 1.0,\n    \"loss_fn\": \"cispo\",\n    \"max_generated_tokens\": null,\n    \"max_new_tokens\": 300,\n    \"microbatch_size\": 8,\n    \"normalization\": \"token\",\n    \"rounds\": 5,\n    \"seed\": 0,\n    \"temperature\": 1.0,\n    \"top_p\": 1.0,\n    \"truncation\": \"drop_group\"\n  },\n  \"dry_run\": true,\n  \"episodes\": 1,\n  \"rounds\": 5\n}\n"
     },
     "ledger": [],
     "outcome": {
@@ -788,7 +788,7 @@
   },
   "harvest_dry_run": {
     "artifacts": {
-      "harvest/harvest_summary.json": "{\n  \"base_model\": \"Qwen/Qwen3.5-9B\",\n  \"adapter_dir\": null,\n  \"best_of\": 4,\n  \"temperature\": 0.9,\n  \"prompts\": 1,\n  \"samples\": 0,\n  \"kept\": 0,\n  \"prompts_with_a_pass\": 0,\n  \"eval\": null,\n  \"dry_run\": true\n}",
+      "harvest/harvest_preview.json": "{\n  \"base_model\": \"Qwen/Qwen3.5-9B\",\n  \"adapter_dir\": null,\n  \"best_of\": 4,\n  \"temperature\": 0.9,\n  \"prompts\": 1,\n  \"samples\": 0,\n  \"kept\": 0,\n  \"prompts_with_a_pass\": 0,\n  \"eval\": null,\n  \"dry_run\": true\n}",
       "p.json": "[{\"prompt\": \"fix my vpn\", \"expect\": [\"vpn profile\"]}]"
     },
     "ledger": [],
@@ -1287,7 +1287,7 @@
   "rl_dry_run": {
     "artifacts": {
       "p.json": "[{\"prompt\": \"fix it\", \"expect\": [\"done\"]}]",
-      "rl/rl_report.json": "{\n  \"config\": {\n    \"best_of\": 8,\n    \"clip_high\": 0.2,\n    \"clip_low\": 0.2,\n    \"eps_max\": 6.0,\n    \"grad_clip_norm\": 1.0,\n    \"loss_fn\": \"cispo\",\n    \"max_generated_tokens\": null,\n    \"max_new_tokens\": 300,\n    \"microbatch_size\": 8,\n    \"normalization\": \"token\",\n    \"rounds\": 3,\n    \"seed\": 0,\n    \"temperature\": 1.0,\n    \"top_p\": 1.0,\n    \"truncation\": \"drop_group\"\n  },\n  \"dry_run\": true,\n  \"prompts\": 1,\n  \"rounds\": 3\n}\n"
+      "rl/rl_preview.json": "{\n  \"config\": {\n    \"best_of\": 8,\n    \"clip_high\": 0.2,\n    \"clip_low\": 0.2,\n    \"eps_max\": 6.0,\n    \"grad_clip_norm\": 1.0,\n    \"loss_fn\": \"cispo\",\n    \"max_generated_tokens\": null,\n    \"max_new_tokens\": 300,\n    \"microbatch_size\": 8,\n    \"normalization\": \"token\",\n    \"rounds\": 3,\n    \"seed\": 0,\n    \"temperature\": 1.0,\n    \"top_p\": 1.0,\n    \"truncation\": \"drop_group\"\n  },\n  \"dry_run\": true,\n  \"prompts\": 1,\n  \"rounds\": 3\n}\n"
     },
     "ledger": [],
     "outcome": {

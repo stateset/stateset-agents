@@ -18,6 +18,12 @@ T = TypeVar("T")
 _DefaultT = TypeVar("_DefaultT")
 _MISSING = object()
 
+TERMINAL_JOB_STATUSES = frozenset({"completed", "failed", "cancelled"})
+_JOB_TRANSITIONS = {
+    "starting": frozenset({"running", *TERMINAL_JOB_STATUSES}),
+    "running": TERMINAL_JOB_STATUSES,
+}
+
 
 class TTLDict(dict[str, T], Generic[T]):
     """
@@ -234,6 +240,11 @@ class TrainingJob:
     results: list = field(default_factory=list)
     config: dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def is_terminal(self) -> bool:
+        """Return whether this job has committed a final local outcome."""
+        return self.status in TERMINAL_JOB_STATUSES
+
 
 @dataclass
 class ConversationState:
@@ -301,12 +312,20 @@ class StateManager:
             request_id=request_id,
             config=config or {},
         )
-        self.jobs[job_id] = job
+        with self.jobs._lock:
+            if job_id in self.jobs:
+                raise ValueError(f"Training job {job_id} already exists")
+            self.jobs[job_id] = job
         return job
 
     def get_job(self, job_id: str) -> TrainingJob | None:
         """Get a training job by ID."""
         return self.jobs.get(job_id)
+
+    def list_jobs(self) -> list[TrainingJob]:
+        """Return current job handles with collection membership read atomically."""
+        with self.jobs._lock:
+            return list(self.jobs.values())
 
     def update_job(
         self,
@@ -316,17 +335,83 @@ class StateManager:
         trajectories: int | None = None,
         error: str | None = None,
         result: dict[str, Any] | None = None,
+        *,
+        expected_job: TrainingJob | None = None,
     ) -> TrainingJob | None:
-        """Update a training job."""
-        job = self.jobs.get(job_id)
-        if not job:
-            return None
+        """Atomically update an active job, preserving committed terminal evidence.
+
+        Invalid transitions and updates to terminal jobs return the unchanged
+        record without refreshing its TTL. Missing jobs or an expected owner
+        that has been replaced return None. Pass expected_job for worker updates
+        so an expired/replaced entry cannot receive an older worker's results.
+        """
+        with self.jobs._lock:
+            job = self.jobs.get(job_id)
+            if job is None or (expected_job is not None and job is not expected_job):
+                return None
+            self._update_job_locked(
+                job, status, iterations, trajectories, error, result
+            )
+            return job
+
+    def transition_job(
+        self,
+        job_id: str,
+        status: str,
+        *,
+        expected_job: TrainingJob | None = None,
+        error: str | None = None,
+    ) -> bool:
+        """Commit a legal status change once, optionally requiring the same owner.
+
+        True means this caller committed the transition; repeated, stale,
+        missing, and invalid transitions return False without changing state.
+        """
+        with self.jobs._lock:
+            job = self.jobs.get(job_id)
+            if (
+                job is None
+                or (expected_job is not None and job is not expected_job)
+                or job.status == status
+            ):
+                return False
+            return self._update_job_locked(job, status=status, error=error)
+
+    def is_job_running(self, job: TrainingJob) -> bool:
+        """Check that a worker's job still owns a running entry."""
+        with self.jobs._lock:
+            return self.jobs.get(job.job_id) is job and job.status == "running"
+
+    def _update_job_locked(
+        self,
+        job: TrainingJob,
+        status: str | None = None,
+        iterations: int | None = None,
+        trajectories: int | None = None,
+        error: str | None = None,
+        result: dict[str, Any] | None = None,
+    ) -> bool:
+        """Validate the whole update before mutating a record under the TTL lock."""
+        if job.is_terminal:
+            return False
+        if (
+            status
+            and status != job.status
+            and status not in _JOB_TRANSITIONS.get(job.status, ())
+        ):
+            logger.debug(
+                "Ignored training job %s transition: %s -> %s",
+                job.job_id,
+                job.status,
+                status,
+            )
+            return False
 
         if status:
             job.status = status
             if status == "running" and not job.started_at:
                 job.started_at = datetime.utcnow()
-            elif status in ("completed", "failed", "cancelled"):
+            elif status in TERMINAL_JOB_STATUSES:
                 job.completed_at = datetime.utcnow()
 
         if iterations is not None:
@@ -341,8 +426,8 @@ class StateManager:
         if result:
             job.results.append(result)
 
-        self.jobs[job_id] = job
-        return job
+        self.jobs[job.job_id] = job
+        return True
 
     def create_conversation(
         self,

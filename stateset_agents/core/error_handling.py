@@ -6,15 +6,24 @@ and recovery strategies for production-ready agent training and deployment.
 """
 
 import asyncio
+import inspect
 import logging
+import math
+import threading
 import time
 import traceback
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from functools import wraps
+from typing import Any, ParamSpec, TypeVar, cast, overload
+
+from stateset_agents.utils.backoff import capped_exponential_delay
 
 from .errors import StateSetError
+
+_P = ParamSpec("_P")
+_T = TypeVar("_T")
 
 
 class ErrorSeverity(Enum):
@@ -192,14 +201,35 @@ class RetryConfig:
         max_delay: float = 60.0,
         exponential_base: float = 2.0,
         jitter: bool = True,
-        retry_on: list[type[Exception]] | None = None,
-    ):
+        retry_on: Sequence[type[BaseException]] | None = None,
+    ) -> None:
+        if (
+            not isinstance(max_attempts, int)
+            or isinstance(max_attempts, bool)
+            or max_attempts < 1
+        ):
+            raise ValueError("max_attempts must be a positive integer")
+        for name, value in (("base_delay", base_delay), ("max_delay", max_delay)):
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(f"{name} must be finite and nonnegative")
+        if not math.isfinite(exponential_base) or exponential_base <= 0:
+            raise ValueError("exponential_base must be finite and positive")
+        exceptions: list[type[BaseException]] = (
+            [NetworkException, ResourceException]
+            if retry_on is None
+            else list(retry_on)
+        )
+        if any(
+            not isinstance(exc, type) or not issubclass(exc, BaseException)
+            for exc in exceptions
+        ):
+            raise TypeError("retry_on must contain exception classes")
         self.max_attempts = max_attempts
         self.base_delay = base_delay
         self.max_delay = max_delay
         self.exponential_base = exponential_base
         self.jitter = jitter
-        self.retry_on = retry_on or [NetworkException, ResourceException]
+        self.retry_on = exceptions
 
 
 class CircuitBreakerConfig:
@@ -209,8 +239,28 @@ class CircuitBreakerConfig:
         self,
         failure_threshold: int = 5,
         recovery_timeout: float = 60.0,
-        expected_exception: type[Exception] = Exception,
-    ):
+        expected_exception: (
+            type[BaseException] | tuple[type[BaseException], ...]
+        ) = Exception,
+    ) -> None:
+        if (
+            not isinstance(failure_threshold, int)
+            or isinstance(failure_threshold, bool)
+            or failure_threshold < 1
+        ):
+            raise ValueError("failure_threshold must be a positive integer")
+        if math.isnan(recovery_timeout) or recovery_timeout < 0:
+            raise ValueError("recovery_timeout must be nonnegative and not NaN")
+        expected = (
+            expected_exception
+            if isinstance(expected_exception, tuple)
+            else (expected_exception,)
+        )
+        if any(
+            not isinstance(exc, type) or not issubclass(exc, BaseException)
+            for exc in expected
+        ):
+            raise TypeError("expected_exception must contain exception classes")
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.expected_exception = expected_exception
@@ -225,7 +275,7 @@ class CircuitBreakerState(Enum):
 
 
 class CircuitBreaker:
-    """Circuit breaker for fault tolerance"""
+    """Guard synchronous and awaited outcomes with one recovery probe at a time."""
 
     def __init__(
         self,
@@ -233,8 +283,10 @@ class CircuitBreaker:
         *,
         failure_threshold: int = 5,
         recovery_timeout: float = 60.0,
-        expected_exception: type[Exception] = Exception,
-    ):
+        expected_exception: (
+            type[BaseException] | tuple[type[BaseException], ...]
+        ) = Exception,
+    ) -> None:
         # Backward/interop support: allow constructing directly from thresholds.
         self.config = config or CircuitBreakerConfig(
             failure_threshold=failure_threshold,
@@ -244,39 +296,151 @@ class CircuitBreaker:
         self.state = CircuitBreakerState.CLOSED
         self.failure_count = 0
         self.last_failure_time = 0.0
+        self._last_failure_monotonic = 0.0
+        self._lock = threading.RLock()
+        self._generation = 0
+        self._probe_in_flight = False
 
     @property
     def is_open(self) -> bool:
         """Return True when the breaker is OPEN."""
-        return self.state == CircuitBreakerState.OPEN
+        with self._lock:
+            return self.state == CircuitBreakerState.OPEN
 
-    def call(self, func: Callable, *args, **kwargs):
-        """Execute function with circuit breaker protection"""
-        if self.state == CircuitBreakerState.OPEN:
-            if time.time() - self.last_failure_time > self.config.recovery_timeout:
+    @property
+    def probe_in_flight(self) -> bool:
+        """Observe recovery ownership without reserving a probe."""
+        with self._lock:
+            return self._probe_in_flight
+
+    def get_status(self) -> dict[str, Any]:
+        """Read a consistent lifecycle snapshot without invoking upstream work."""
+        with self._lock:
+            return {
+                "state": self.state.value,
+                "failure_count": self.failure_count,
+                "last_failure_time": self.last_failure_time,
+                "probe_in_flight": self._probe_in_flight,
+            }
+
+    def reset(self) -> None:
+        """Start a closed generation, fencing earlier results without cancelling work."""
+        with self._lock:
+            self._generation += 1
+            self.state = CircuitBreakerState.CLOSED
+            self.failure_count = 0
+            self.last_failure_time = 0.0
+            self._last_failure_monotonic = 0.0
+            self._probe_in_flight = False
+
+    def _admit(self) -> tuple[int, bool]:
+        """Reserve admission and capture the generation under the state lock."""
+        with self._lock:
+            if self.state == CircuitBreakerState.OPEN:
+                if (
+                    time.monotonic() - self._last_failure_monotonic
+                    < self.config.recovery_timeout
+                ):
+                    raise GRPOException(
+                        "Circuit breaker is OPEN",
+                        category=ErrorCategory.SYSTEM,
+                        severity=ErrorSeverity.HIGH,
+                    )
                 self.state = CircuitBreakerState.HALF_OPEN
-            else:
-                raise GRPOException(
-                    "Circuit breaker is OPEN",
-                    category=ErrorCategory.SYSTEM,
-                    severity=ErrorSeverity.HIGH,
-                )
+                self._generation += 1
+            probe = self.state == CircuitBreakerState.HALF_OPEN
+            if probe:
+                if self._probe_in_flight:
+                    raise GRPOException(
+                        "Circuit breaker recovery probe is in progress",
+                        category=ErrorCategory.SYSTEM,
+                        severity=ErrorSeverity.HIGH,
+                    )
+                self._probe_in_flight = True
+            return self._generation, probe
 
-        try:
-            result = func(*args, **kwargs)
-            if self.state == CircuitBreakerState.HALF_OPEN:
-                self.state = CircuitBreakerState.CLOSED
-                self.failure_count = 0
-            return result
-
-        except self.config.expected_exception:
+    def _finish(self, admission: tuple[int, bool], error: BaseException | None) -> None:
+        """Commit only the outcome belonging to the admitting generation."""
+        generation, probe = admission
+        with self._lock:
+            if generation != self._generation:
+                return
+            if probe:
+                self._probe_in_flight = False
+            if error is None:
+                if probe:
+                    self.state = CircuitBreakerState.CLOSED
+                    self.failure_count = 0
+                    self._generation += 1
+                # Preserve the core breaker's cumulative closed-state failures.
+                return
+            if not isinstance(error, Exception) or not isinstance(
+                error, self.config.expected_exception
+            ):
+                return
             self.failure_count += 1
             self.last_failure_time = time.time()
-
-            if self.failure_count >= self.config.failure_threshold:
+            self._last_failure_monotonic = time.monotonic()
+            if probe or self.failure_count >= self.config.failure_threshold:
                 self.state = CircuitBreakerState.OPEN
+                self._generation += 1
 
+    @overload
+    def call(
+        self, func: Callable[_P, Awaitable[_T]], *args: _P.args, **kwargs: _P.kwargs
+    ) -> Coroutine[Any, Any, _T]: ...
+
+    @overload
+    def call(
+        self, func: Callable[_P, _T], *args: _P.args, **kwargs: _P.kwargs
+    ) -> _T: ...
+
+    def call(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        """Protect a call, recording awaitable results only after they settle.
+
+        Known async callables are admitted when awaited. A synchronous callable
+        returning an awaitable starts under admission immediately; callers must
+        await its returned wrapper to settle that ownership. Use call_async to
+        defer invocation of an awaitable factory until execution is awaited.
+        """
+        if inspect.iscoroutinefunction(func) or inspect.iscoroutinefunction(
+            getattr(func, "__call__", None)  # noqa: B004 - Inspect async behavior.
+        ):
+            return self.call_async(func, *args, **kwargs)
+        admission = self._admit()
+        try:
+            result = func(*args, **kwargs)
+        except BaseException as exc:
+            self._finish(admission, exc)
             raise
+        if inspect.isawaitable(result):
+            return self._await_result(result, admission)
+        self._finish(admission, None)
+        return result
+
+    async def call_async(
+        self, func: Callable[_P, Awaitable[_T]], *args: _P.args, **kwargs: _P.kwargs
+    ) -> _T:
+        """Admit and invoke an async callable or awaitable factory when awaited."""
+        admission = self._admit()
+        try:
+            result = await func(*args, **kwargs)
+        except BaseException as exc:
+            self._finish(admission, exc)
+            raise
+        self._finish(admission, None)
+        return result
+
+    async def _await_result(
+        self, result: Awaitable[_T], admission: tuple[int, bool]
+    ) -> _T:
+        try:
+            value = await result
+        except BaseException as exc:
+            self._finish(admission, exc)
+            raise
+        self._finish(admission, None)
+        return value
 
 
 class ErrorHandler:
@@ -398,39 +562,55 @@ class ErrorHandler:
         }
 
 
-def retry_async(config: RetryConfig):
-    """Async retry decorator with exponential backoff"""
+def retry_async(
+    config: RetryConfig,
+) -> Callable[[Callable[_P, Awaitable[_T]]], Callable[_P, Coroutine[Any, Any, _T]]]:
+    """Retry configured errors within a stable per-call policy, never cancellation."""
 
-    def decorator(func: Callable):
-        async def wrapper(*args, **kwargs):
-            last_exception = None
+    def decorator(
+        func: Callable[_P, Awaitable[_T]],
+    ) -> Callable[_P, Coroutine[Any, Any, _T]]:
+        @wraps(func)
+        async def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _T:
+            policy = RetryConfig(
+                max_attempts=config.max_attempts,
+                base_delay=config.base_delay,
+                max_delay=config.max_delay,
+                exponential_base=config.exponential_base,
+                jitter=config.jitter,
+                retry_on=config.retry_on,
+            )
+            attempt = 0
 
-            for attempt in range(config.max_attempts):
+            while True:
                 try:
                     return await func(*args, **kwargs)
-                except tuple(config.retry_on) as e:
-                    last_exception = e
+                except (
+                    asyncio.CancelledError,
+                    KeyboardInterrupt,
+                    SystemExit,
+                    GeneratorExit,
+                ):
+                    raise
+                except tuple(policy.retry_on):
+                    attempt += 1
+                    if attempt == policy.max_attempts:
+                        raise
 
-                    # Don't wait after the last attempt
-                    if attempt == config.max_attempts - 1:
-                        break
-
-                    # Calculate delay with exponential backoff
-                    delay = min(
-                        config.base_delay * (config.exponential_base**attempt),
-                        config.max_delay,
+                    delay = capped_exponential_delay(
+                        policy.base_delay,
+                        policy.exponential_base,
+                        attempt - 1,
+                        policy.max_delay,
                     )
 
                     # Add jitter to prevent thundering herd
-                    if config.jitter:
+                    if policy.jitter:
                         import random
 
                         delay *= 0.5 + random.random() * 0.5
 
                     await asyncio.sleep(delay)
-
-            # If we get here, all retries failed
-            raise last_exception
 
         return wrapper
 
@@ -439,15 +619,33 @@ def retry_async(config: RetryConfig):
 
 def circuit_breaker(
     name: str, config: CircuitBreakerConfig, error_handler: ErrorHandler
-):
-    """Circuit breaker decorator"""
+) -> Callable[[Callable[_P, _T]], Callable[_P, _T]]:
+    """Decorate sync or async work without hiding its metadata or awaited outcome."""
 
     error_handler.register_circuit_breaker(name, config)
 
-    def decorator(func: Callable):
-        def wrapper(*args, **kwargs):
+    def decorator(func: Callable[_P, _T]) -> Callable[_P, _T]:
+        def breaker() -> CircuitBreaker:
             cb = error_handler.get_circuit_breaker(name)
-            return cb.call(func, *args, **kwargs)
+            if cb is None:
+                raise RuntimeError(f"Circuit breaker {name!r} is not registered")
+            return cb
+
+        if inspect.iscoroutinefunction(func) or inspect.iscoroutinefunction(
+            getattr(func, "__call__", None)  # noqa: B004 - Inspect async behavior.
+        ):
+
+            @wraps(func)
+            async def async_wrapper(*args: _P.args, **kwargs: _P.kwargs) -> Any:
+                return await breaker().call_async(
+                    cast(Callable[_P, Awaitable[Any]], func), *args, **kwargs
+                )
+
+            return cast(Callable[_P, _T], async_wrapper)
+
+        @wraps(func)
+        def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _T:
+            return breaker().call(func, *args, **kwargs)
 
         return wrapper
 

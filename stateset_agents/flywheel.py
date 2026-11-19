@@ -34,12 +34,15 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from dataclasses import dataclass, replace
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from stateset_agents.remote.executor import RemoteExecutor
 from stateset_agents.remote.job import JobStatus, RemoteJobSpec
+from stateset_agents.remote.ledger import remaining_budget_usd
 
 logger = logging.getLogger(__name__)
 
@@ -100,8 +103,8 @@ class FlywheelConfig:
     lora_alpha: int = 32
     learning_rate: float = 1e-4
     max_length: int = 512
-    #: Hard ceiling for the WHOLE run, enforced before each rental from the
-    #: worst case of the next job. ``None`` means uncapped.
+    #: Shared compute budget checked against the next job's projected cost.
+    #: ``None`` means uncapped.
     max_cost_usd: float | None = None
     #: Provider resources, passed through to every spec.
     gpu: str | None = None
@@ -169,7 +172,10 @@ def _eval_score(output_dir: Path | None) -> tuple[int | None, int | None]:
 
 
 def _spend(results: list[float | None]) -> float:
-    return sum(c for c in results if c is not None)
+    known = [c for c in results if c is not None]
+    if any(not math.isfinite(c) or c < 0 for c in known):
+        raise RuntimeError("Invalid provider cost. The remaining budget is unknown.")
+    return float(sum((Decimal(str(c)) for c in known), Decimal(0)))
 
 
 def _probe_temperature(
@@ -178,13 +184,13 @@ def _probe_temperature(
     gen_dir: Path,
     harvest_base: str,
     adapter_dir: str | None,
-) -> tuple[float, list[float | None]]:
+    costs: list[float | None],
+) -> float:
     """Pick the sampling temperature whose pass rate lands nearest target.
 
     Runs one tiny harvest per candidate temperature over the first few
-    prompts. Returns (chosen temperature, probe costs). A probe that
-    fails is skipped rather than fatal — the thermostat must never kill
-    the furnace.
+    prompts. Record each cost before admitting the next probe. A failed
+    submission with uncertain charges stops a budgeted campaign.
     """
     assert config.target_harvest_rate is not None
     prompts = config.harvest_prompts[: config.probe_prompts]
@@ -192,8 +198,10 @@ def _probe_temperature(
     probe_file.write_text(json.dumps(prompts))
     best_temp = config.temperature
     best_gap: float | None = None
-    costs: list[float | None] = []
     for temp in config.probe_temperatures:
+        remaining = remaining_budget_usd(config.max_cost_usd, costs)
+        if remaining == 0:
+            break
         spec = RemoteJobSpec(
             dataset=probe_file,
             base_model=harvest_base,
@@ -212,20 +220,27 @@ def _probe_temperature(
             container_disk_gb=config.container_disk_gb,
             cloud_type=config.cloud_type,
             timeout_s=config.timeout_s,
+            max_cost_usd=remaining,
         )
         try:
             result = executor.wait(executor.submit(spec))
         except Exception as exc:  # noqa: BLE001 - probe is best-effort
+            if remaining is not None:
+                raise RuntimeError(
+                    f"Budgeted temperature probe {temp} failed: {exc}"
+                ) from exc
             logger.warning("temperature probe %.2f failed (%s); skipping", temp, exc)
             continue
         costs.append(result.cost_usd)
+        if result.is_preview or not result.succeeded:
+            continue
         summary = (
             _read_json(Path(result.output_dir) / "harvest_summary.json")
             if result.output_dir
             else None
         ) or {}
         samples = int(summary.get("samples") or 0)
-        if not samples:
+        if summary.get("dry_run") or not samples:
             continue
         rate = int(summary.get("kept") or 0) / samples
         gap = abs(rate - config.target_harvest_rate)
@@ -233,7 +248,157 @@ def _probe_temperature(
         if best_gap is None or gap < best_gap:
             best_gap, best_temp = gap, temp
     logger.info("rarity controller chose temperature %.2f", best_temp)
-    return best_temp, costs
+    return best_temp
+
+
+def _harvest_job(
+    config: FlywheelConfig,
+    gen_dir: Path,
+    adapter: Path | None,
+    harvest_temperature: float,
+    budget: float | None,
+) -> RemoteJobSpec:
+    distilling = config.teacher_base_model is not None
+    source_adapter = config.teacher_adapter if distilling else adapter
+    return RemoteJobSpec(
+        dataset=gen_dir / "harvest_prompts.json",
+        base_model=config.teacher_base_model or config.base_model,
+        output_dir=gen_dir / "harvest",
+        job_kind="harvest",
+        harvest={
+            # In distillation the teacher is fixed; otherwise the
+            # current student generation harvests from itself.
+            "adapter_dir": str(source_adapter) if source_adapter else None,
+            "best_of": config.best_of,
+            "temperature": harvest_temperature,
+            "top_p": config.top_p,
+            "max_new_tokens": config.max_new_tokens,
+        },
+        eval_prompts=None if distilling else list(config.eval_prompts),
+        eval_max_new_tokens=config.eval_max_new_tokens,
+        _require_dataset=not config.dry_run,
+        gpu=config.gpu,
+        gpu_count=config.gpu_count,
+        container_disk_gb=config.container_disk_gb,
+        cloud_type=config.cloud_type,
+        timeout_s=config.timeout_s,
+        max_cost_usd=budget,
+    )
+
+
+def _training_job(
+    config: FlywheelConfig,
+    gen_dir: Path,
+    adapter: Path | None,
+    harvest_dataset: Path,
+    budget: float | None,
+) -> RemoteJobSpec:
+    return RemoteJobSpec(
+        dataset=harvest_dataset,
+        base_model=config.base_model,
+        output_dir=gen_dir / "adapter",
+        num_epochs=config.num_epochs,
+        lora_r=config.lora_r,
+        lora_alpha=config.lora_alpha,
+        learning_rate=config.learning_rate,
+        max_length=config.max_length,
+        eval_prompts=list(config.eval_prompts),
+        eval_max_new_tokens=config.eval_max_new_tokens,
+        parent_adapter=str(adapter) if adapter else None,
+        _require_dataset=not config.dry_run,
+        gpu=config.gpu,
+        gpu_count=config.gpu_count,
+        container_disk_gb=config.container_disk_gb,
+        cloud_type=config.cloud_type,
+        timeout_s=config.timeout_s,
+        max_cost_usd=budget,
+    )
+
+
+def _budget_stop_reason(costs: list[float | None]) -> str:
+    if None in costs:
+        return "budget: a prior job has an unknown cost"
+    return "budget exhausted"
+
+
+def _plan_flywheel(
+    config: FlywheelConfig,
+    executor: RemoteExecutor,
+    repeats: int,
+    first_run: Path,
+) -> dict[str, Any]:
+    """Describe one generation and the campaign bounds before any submission."""
+    if executor.uses_packaged_training:
+        from stateset_agents.training.harvest import normalize_harvest_prompts
+
+        normalize_harvest_prompts(list(config.harvest_prompts))
+    gen_dir = first_run / "gen1"
+    harvest = _harvest_job(
+        config, gen_dir, config.initial_adapter, config.temperature, config.max_cost_usd
+    )
+    train = _training_job(
+        config,
+        gen_dir,
+        config.initial_adapter,
+        harvest.output_dir / "harvest.jsonl",
+        config.max_cost_usd,
+    )
+    jobs: list[dict[str, Any]] = []
+    if config.target_harvest_rate is not None:
+        jobs.extend(
+            {
+                "job_kind": "harvest",
+                "purpose": "temperature probe",
+                "base_model": harvest.base_model,
+                "temperature": temperature,
+                "prompts": len(config.harvest_prompts[: config.probe_prompts]),
+                "best_of": config.probe_best_of,
+            }
+            for temperature in config.probe_temperatures
+        )
+    for spec, fields in (
+        (harvest, ("harvest", "eval_max_new_tokens")),
+        (
+            train,
+            (
+                "num_epochs",
+                "lora_r",
+                "lora_alpha",
+                "learning_rate",
+                "max_length",
+                "parent_adapter",
+                "eval_max_new_tokens",
+            ),
+        ),
+    ):
+        executor.validate_job_config(spec)
+        settings = spec.to_dict()
+        job = {
+            key: settings[key]
+            for key in ("job_kind", "base_model", "dataset", "output_dir", *fields)
+        }
+        job["eval_prompt_count"] = len(spec.eval_prompts or [])
+        jobs.append(job)
+    generations = max(config.generations, 0)
+    return {
+        "dry_run": True,
+        "provider": executor.name,
+        "base_model": config.base_model,
+        "repeats": repeats,
+        "generations_per_run": generations,
+        "max_jobs": repeats * generations * len(jobs),
+        "harvest_prompt_count": len(config.harvest_prompts),
+        "target_harvest_rate": config.target_harvest_rate,
+        "first_generation_jobs": jobs if generations else [],
+        "max_cost_usd": config.max_cost_usd,
+        "resources": {
+            "gpu": train.gpu,
+            "gpu_count": train.gpu_count,
+            "cloud_type": train.cloud_type,
+            "container_disk_gb": train.container_disk_gb,
+            "timeout_s": train.timeout_s,
+        },
+    }
 
 
 def run_flywheel(
@@ -242,11 +407,14 @@ def run_flywheel(
 ) -> dict[str, Any]:
     """Turn the wheel until plateau, exhaustion, budget, or a dry harvest.
 
-    Returns the report that is also written to
+    A dry run returns an offline job plan. A live run returns the report written to
     ``output_root/flywheel_report.json``. Raises only on infrastructure
     errors; "the model stopped improving" is a result, not an exception.
     """
     root = Path(config.output_root)
+    executor.validate_cost_ceiling(config.max_cost_usd)
+    if config.dry_run:
+        return _plan_flywheel(config, executor, 1, root)
     root.mkdir(parents=True, exist_ok=True)
 
     adapter: Path | None = config.initial_adapter
@@ -256,13 +424,10 @@ def run_flywheel(
     stop_reason = "generations exhausted"
 
     for generation in range(1, config.generations + 1):
-        if config.max_cost_usd is not None:
-            spent = _spend(costs)
-            if spent >= config.max_cost_usd:
-                stop_reason = (
-                    f"budget: ${spent:.2f} of ${config.max_cost_usd:.2f} spent"
-                )
-                break
+        if remaining_budget_usd(config.max_cost_usd, costs) == 0:
+            stop_reason = _budget_stop_reason(costs)
+            break
+        generation_start = len(costs)
 
         gen_dir = root / f"gen{generation}"
         gen_dir.mkdir(parents=True, exist_ok=True)
@@ -271,51 +436,27 @@ def run_flywheel(
         prompts_file = gen_dir / "harvest_prompts.json"
         prompts_file.write_text(json.dumps(config.harvest_prompts, indent=2))
         distilling = config.teacher_base_model is not None
+        source_adapter = config.teacher_adapter if distilling else adapter
         harvest_temperature = config.temperature
-        if config.target_harvest_rate is not None and not config.dry_run:
-            harvest_temperature, probe_costs = _probe_temperature(
+        if config.target_harvest_rate is not None:
+            harvest_temperature = _probe_temperature(
                 config,
                 executor,
                 gen_dir,
                 config.teacher_base_model or config.base_model,
-                (
-                    str(config.teacher_adapter)
-                    if distilling
-                    else (str(adapter) if adapter else None)
-                ),
+                str(source_adapter) if source_adapter else None,
+                costs,
             )
-            costs.extend(probe_costs)
-        harvest_spec = RemoteJobSpec(
-            dataset=prompts_file,
-            base_model=config.teacher_base_model or config.base_model,
-            output_dir=gen_dir / "harvest",
-            job_kind="harvest",
-            harvest={
-                # In distillation the teacher is fixed; otherwise the
-                # current student generation harvests from itself.
-                "adapter_dir": (
-                    str(config.teacher_adapter)
-                    if distilling
-                    else (str(adapter) if adapter else None)
-                ),
-                "best_of": config.best_of,
-                "temperature": harvest_temperature,
-                "top_p": config.top_p,
-                "max_new_tokens": config.max_new_tokens,
-            },
-            eval_prompts=None if distilling else list(config.eval_prompts),
-            eval_max_new_tokens=config.eval_max_new_tokens,
-            dry_run=config.dry_run,
-            gpu=config.gpu,
-            gpu_count=config.gpu_count,
-            container_disk_gb=config.container_disk_gb,
-            cloud_type=config.cloud_type,
-            timeout_s=config.timeout_s,
-            max_cost_usd=(
-                None
-                if config.max_cost_usd is None
-                else max(0.0, config.max_cost_usd - _spend(costs))
-            ),
+        remaining = remaining_budget_usd(config.max_cost_usd, costs)
+        if remaining == 0:
+            stop_reason = _budget_stop_reason(costs)
+            break
+        harvest_spec = _harvest_job(
+            config,
+            gen_dir,
+            adapter,
+            harvest_temperature,
+            remaining,
         )
         logger.info(
             "generation %d: harvesting%s…",
@@ -329,11 +470,24 @@ def run_flywheel(
                 f"generation {generation} harvest failed:\n"
                 + "\n".join(harvest_result.logs[-20:])
             )
-        summary = (
-            _read_json(Path(harvest_result.output_dir) / "harvest_summary.json")
-            if harvest_result.output_dir
-            else None
-        ) or {}
+        if harvest_result.is_preview:
+            raise RuntimeError(
+                f"Generation {generation} harvest returned a preview. Sampling is required."
+            )
+        if harvest_result.output_dir is None:
+            raise RuntimeError(
+                f"Generation {generation} harvest returned no artifacts."
+            )
+        harvest_dir = Path(harvest_result.output_dir)
+        summary = _read_json(harvest_dir / "harvest_summary.json")
+        if summary is None:
+            raise RuntimeError(
+                f"Generation {generation} harvest summary is missing or unreadable."
+            )
+        if summary.get("dry_run"):
+            raise RuntimeError(
+                f"Generation {generation} harvest summary records a preview."
+            )
         kept = int(summary.get("kept") or 0)
         samples = int(summary.get("samples") or 0)
         current_eval = summary.get("eval") or {}
@@ -345,84 +499,51 @@ def run_flywheel(
                 current_eval.get("total"),
             )
 
-        if kept == 0 and not config.dry_run:
+        remaining = remaining_budget_usd(config.max_cost_usd, costs)
+        if kept == 0 or remaining == 0:
+            stopped = "dry harvest" if kept == 0 else _budget_stop_reason(costs)
             outcomes.append(
                 GenerationOutcome(
                     generation=generation,
                     adapter_dir=None,
-                    harvest_kept=0,
+                    harvest_kept=kept,
                     harvest_samples=samples,
                     eval_passed=None,
                     eval_total=None,
-                    cost_usd=harvest_result.cost_usd,
-                    stopped="dry harvest",
+                    cost_usd=_spend(costs[generation_start:]),
+                    stopped=stopped,
                 )
             )
             stop_reason = (
-                f"dry harvest: 0/{samples} samples passed — the current "
-                "generation never succeeds at temperature, so there is no "
-                "signal to train on"
+                stopped
+                if kept
+                else (
+                    f"dry harvest: 0/{samples} samples passed — the current "
+                    "generation never succeeds at temperature, so there is no "
+                    "signal to train on"
+                )
             )
             break
 
-        harvest_dataset = (
-            Path(harvest_result.output_dir) / "harvest.jsonl"
-            if harvest_result.output_dir
-            else gen_dir / "harvest" / "harvest.jsonl"
-        )
-        if config.dry_run and not harvest_dataset.exists():
-            # A dry-run harvest writes no dataset; the train job still needs
-            # an existing file to print its plan against.
-            harvest_dataset.parent.mkdir(parents=True, exist_ok=True)
-            harvest_dataset.write_text(
-                json.dumps(
-                    {
-                        "messages": [
-                            {"role": "user", "content": "[dry-run placeholder]"},
-                            {"role": "assistant", "content": "[dry-run]"},
-                        ]
-                    }
-                )
-                + "\n"
-            )
-
+        harvest_dataset = harvest_dir / "harvest.jsonl"
         # ---- 2. train the next generation on the harvest -----------------
-        train_spec = RemoteJobSpec(
-            dataset=harvest_dataset,
-            base_model=config.base_model,
-            output_dir=gen_dir / "adapter",
-            num_epochs=config.num_epochs,
-            lora_r=config.lora_r,
-            lora_alpha=config.lora_alpha,
-            learning_rate=config.learning_rate,
-            max_length=config.max_length,
-            eval_prompts=list(config.eval_prompts),
-            eval_max_new_tokens=config.eval_max_new_tokens,
-            parent_adapter=str(adapter) if adapter else None,
-            dry_run=config.dry_run,
-            gpu=config.gpu,
-            gpu_count=config.gpu_count,
-            container_disk_gb=config.container_disk_gb,
-            cloud_type=config.cloud_type,
-            timeout_s=config.timeout_s,
-            max_cost_usd=(
-                None
-                if config.max_cost_usd is None
-                else max(0.0, config.max_cost_usd - _spend(costs))
-            ),
-        )
+        train_spec = _training_job(config, gen_dir, adapter, harvest_dataset, remaining)
         logger.info("generation %d: training on %d harvested rows…", generation, kept)
         train_result = executor.wait(executor.submit(train_spec))
         costs.append(train_result.cost_usd)
+        if train_result.is_preview:
+            raise RuntimeError(
+                f"Generation {generation} training returned a preview. A trained adapter is required."
+            )
+        if train_result.succeeded and train_result.output_dir is None:
+            raise RuntimeError(
+                f"Generation {generation} training returned no artifacts."
+            )
         # A FAILED status with artifacts is the eval gate speaking (e.g.
         # 10/12): read the score either way. FAILED *without* artifacts is a
         # real failure.
         passed, total = _eval_score(train_result.output_dir)
-        if (
-            train_result.status is not JobStatus.SUCCEEDED
-            and passed is None
-            and not config.dry_run
-        ):
+        if train_result.status is not JobStatus.SUCCEEDED and passed is None:
             raise RuntimeError(
                 f"generation {generation} training failed with no eval "
                 "artifacts:\n" + "\n".join(train_result.logs[-20:])
@@ -435,7 +556,7 @@ def run_flywheel(
             harvest_samples=samples,
             eval_passed=passed,
             eval_total=total,
-            cost_usd=_spend(costs[-2:]),
+            cost_usd=_spend(costs[generation_start:]),
         )
         outcomes.append(outcome)
         logger.info(
@@ -470,7 +591,7 @@ def run_flywheel(
         "stop_reason": stop_reason,
         "final_adapter": str(adapter) if adapter else None,
         "best_eval_passed": best_passed,
-        "total_cost_usd": round(_spend(costs), 4) if costs else 0.0,
+        "total_cost_usd": _spend(costs),
         "unpriced_jobs": sum(1 for c in costs if c is None),
         "generations": [
             {
@@ -497,6 +618,8 @@ def run_flywheel_repeats(
 ) -> dict[str, Any]:
     """Run the flywheel ``repeats`` times; report the score distribution.
 
+    A dry run returns one offline plan for the whole campaign.
+
     Two runs of the domain-2 experiment scored 7/12 and 11/12 — a spread
     wide enough that any single run over- or under-states the mechanism.
     Repeats turn "reproduced" into a distribution: per-run best scores plus
@@ -509,20 +632,28 @@ def run_flywheel_repeats(
     """
     if repeats < 1:
         raise ValueError(f"repeats must be >= 1, got {repeats}")
+    executor.validate_cost_ceiling(config.max_cost_usd)
     root = Path(config.output_root)
+    if config.dry_run:
+        return _plan_flywheel(config, executor, repeats, root / "run1")
     root.mkdir(parents=True, exist_ok=True)
 
     runs: list[dict[str, Any]] = []
     spent = 0.0
+    unpriced_jobs = 0
     for index in range(1, repeats + 1):
-        remaining = None if config.max_cost_usd is None else config.max_cost_usd - spent
-        if remaining is not None and remaining <= 0:
+        remaining = remaining_budget_usd(config.max_cost_usd, [spent])
+        if remaining is not None and (remaining <= 0 or unpriced_jobs):
             runs.append(
                 {
                     "run": index,
                     "skipped": (
-                        f"budget exhausted: ${spent:.2f} of "
-                        f"${config.max_cost_usd:.2f} spent"
+                        "budget: a prior job has an unknown cost"
+                        if unpriced_jobs
+                        else (
+                            f"budget exhausted: ${spent:.2f} of "
+                            f"${config.max_cost_usd:.2f} spent"
+                        )
                     ),
                 }
             )
@@ -534,7 +665,8 @@ def run_flywheel_repeats(
         )
         logger.info("repeat %d/%d starting…", index, repeats)
         report = run_flywheel(run_config, executor)
-        spent += float(report.get("total_cost_usd") or 0.0)
+        spent = _spend([spent, report["total_cost_usd"]])
+        unpriced_jobs += report["unpriced_jobs"]
         runs.append(
             {
                 "run": index,
@@ -558,7 +690,8 @@ def run_flywheel_repeats(
         "min": min(scores) if scores else None,
         "max": max(scores) if scores else None,
         "mean": round(sum(scores) / len(scores), 2) if scores else None,
-        "total_cost_usd": round(spent, 4),
+        "total_cost_usd": spent,
+        "unpriced_jobs": unpriced_jobs,
     }
     (root / "flywheel_repeats_report.json").write_text(json.dumps(aggregate, indent=2))
     return aggregate

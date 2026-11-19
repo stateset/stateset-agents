@@ -19,8 +19,7 @@ stateset_agents.training.harvest``), exactly like its sibling
 Prompt specs reuse the eval-prompt shape (``{"prompt", "expect",
 "forbid"}``) — one vocabulary for "what does success look like" everywhere.
 
-Dry-run/no-GPU behaviour mirrors ``sft``: print the plan, write an empty
-summary, exit 0 — so the whole path is exercisable on CPU-only CI.
+Dry runs and CPU-only fallbacks write the plan to ``harvest_preview.json``.
 """
 
 from __future__ import annotations
@@ -31,6 +30,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.remote.job import WORKER_PREVIEW_EXIT
 from stateset_agents.training.sft import (
     evaluate_checks,
     generate_completions,
@@ -48,6 +48,7 @@ __all__ = [
     "main",
     "run_harvest_job",
     "sample_completions",
+    "normalize_harvest_prompts",
 ]
 
 
@@ -215,6 +216,21 @@ def _plan(payload: dict[str, Any]) -> None:
     print(f"  eval prompts: {len(payload.get('eval_prompts') or [])}")
 
 
+def normalize_harvest_prompts(
+    entries: list[str | dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Validate the prompt format and success criteria used by the harvest worker."""
+    harvest_specs = normalize_eval_prompts(entries)
+    for i, spec in enumerate(harvest_specs):
+        if not spec.get("expect") and not spec.get("forbid") and not spec.get("judge"):
+            raise ValueError(
+                f"harvest prompt {i} has no expect/forbid checks and no "
+                "judge — without a success criterion every sample passes "
+                "and the harvest is noise, not signal"
+            )
+    return harvest_specs
+
+
 def run_harvest_job(payload: dict[str, Any]) -> dict[str, Any]:
     """The whole harvest, as one JSON-in/JSON-out function.
 
@@ -223,14 +239,7 @@ def run_harvest_job(payload: dict[str, Any]) -> dict[str, Any]:
     """
     output_dir = Path(payload["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
-    harvest_specs = normalize_eval_prompts(payload["harvest_prompts"])
-    for i, spec in enumerate(harvest_specs):
-        if not spec.get("expect") and not spec.get("forbid") and not spec.get("judge"):
-            raise ValueError(
-                f"harvest prompt {i} has no expect/forbid checks and no "
-                "judge — without a success criterion every sample passes "
-                "and the harvest is noise, not signal"
-            )
+    harvest_specs = normalize_harvest_prompts(payload["harvest_prompts"])
     eval_specs = normalize_eval_prompts(payload.get("eval_prompts") or [])
 
     summary: dict[str, Any] = {
@@ -249,7 +258,7 @@ def run_harvest_job(payload: dict[str, Any]) -> dict[str, Any]:
     if payload.get("dry_run") or not gpu_available():
         _plan(payload)
         summary["dry_run"] = True
-        (output_dir / "harvest_summary.json").write_text(json.dumps(summary, indent=2))
+        (output_dir / "harvest_preview.json").write_text(json.dumps(summary, indent=2))
         return summary
 
     from transformers import AutoTokenizer
@@ -334,6 +343,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Best-of-N rejection-sampling harvest for the flywheel."
     )
     parser.add_argument("--base-model", required=True)
+    parser.add_argument("--signal-preview", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
         "--adapter", default=None, help="current generation's LoRA adapter dir"
     )
@@ -384,8 +394,8 @@ def main(argv: list[str] | None = None) -> int:
         "eval_max_new_tokens": args.eval_max_new_tokens,
         "dry_run": args.dry_run,
     }
-    run_harvest_job(payload)
-    return 0
+    summary = run_harvest_job(payload)
+    return WORKER_PREVIEW_EXIT if args.signal_preview and summary["dry_run"] else 0
 
 
 if __name__ == "__main__":  # pragma: no cover — exercised via subprocess tests

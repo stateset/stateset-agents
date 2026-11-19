@@ -10,6 +10,7 @@ import subprocess
 import time
 import uuid
 from collections.abc import Callable, Iterator
+from copy import copy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -144,6 +145,7 @@ class CoreWeaveExecutor(RemoteExecutor):
     """Run packaged StateSet SFT jobs as Kubernetes Jobs on CKS."""
 
     name = "coreweave"
+    supports_dry_run = True
     supports_sft_seed = True
     uses_packaged_training = True
     supported_job_kinds = frozenset({"sft"})
@@ -334,14 +336,18 @@ class CoreWeaveExecutor(RemoteExecutor):
             },
         }
 
-    def submit(self, spec: RemoteJobSpec) -> JobHandle:
-        self.validate_spec(spec)
-        if spec.max_cost_usd is not None:
+    def validate_cost_ceiling(self, max_cost_usd: float | None) -> None:
+        """Reject per-job budgets on cluster-billed capacity."""
+        if max_cost_usd is not None:
             raise RemoteExecutionError(
                 "CoreWeave CKS capacity is cluster-billed, so a per-job "
                 "--max-cost cannot be enforced by this executor",
                 provider=self.name,
             )
+
+    def submit(self, spec: RemoteJobSpec) -> JobHandle:
+        spec = copy(spec)
+        self.validate_spec(spec)
         bucket, storage_secret = self._require_configuration()
         local_id = uuid.uuid4().hex[:12]
         name = f"stateset-sft-{local_id}"
@@ -397,25 +403,35 @@ class CoreWeaveExecutor(RemoteExecutor):
             remote = [f"log retrieval failed: {exc}"]
         yield from [*job.logs, *remote]
 
-    def fetch(self, handle: JobHandle, dest: Path | None = None) -> Path:
+    def _is_preview(self, handle: JobHandle) -> bool:
+        return self._job(handle).spec.dry_run
+
+    def fetch(self, handle: JobHandle, dest: Path | None = None) -> Path | None:
         job = self._job(handle)
         if not job.status.is_terminal:
             raise RemoteExecutionError(
                 f"CoreWeave job {handle.job_id} is not terminal", provider=self.name
             )
         destination = Path(dest or job.spec.output_dir)
+        preview = job.spec.dry_run and job.status is JobStatus.SUCCEEDED
+        if preview and job.fetched is not None:
+            return None
         if job.fetched == destination and destination.exists():
             return destination
-        written = self.artifacts.download_prefix(job.output_uri, destination)
+        written = (
+            []
+            if preview
+            else self.artifacts.download_prefix(job.output_uri, destination)
+        )
         if not written and not job.spec.dry_run:
             raise RemoteExecutionError(
                 f"CoreWeave job {handle.job_id} produced no artifacts",
                 provider=self.name,
             )
-        job.fetched = destination
         self.artifacts.delete_prefix(job.input_uri.split("/input/", 1)[0])
+        job.fetched = destination
         self._persist(handle.job_id, job)
-        return destination
+        return None if preview else destination
 
     def cancel(self, handle: JobHandle) -> None:
         job = self._job(handle)

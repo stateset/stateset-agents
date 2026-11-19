@@ -59,7 +59,7 @@ def make_trainer(monkeypatch, path, kind, inner, schedule, warmup):
 
     monkeypatch.setattr(
         module,
-        "compute_token_old_logprobs",
+        "freeze_rollout_logprobs",
         lambda *args: [model.weight.detach().clone()],
     )
     if kind == "single":

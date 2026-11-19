@@ -51,7 +51,13 @@ _LAZY_EXPORTS: dict[str, tuple[str, str, str | None]] = {}
 _LAZY_EXPORTS.update(
     _export_group(
         "stateset_agents.core.agent",
-        ["Agent", "MultiTurnAgent", "ToolAgent"],
+        [
+            "Agent",
+            "MultiTurnAgent",
+            "ToolAgent",
+            "BackendInitializationState",
+            "ConversationResetError",
+        ],
     )
 )
 _LAZY_EXPORTS.update(

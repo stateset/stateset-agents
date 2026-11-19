@@ -13,6 +13,7 @@ from stateset_agents.remote.ledger import (
     estimate_cost_usd,
     read_entries,
     record_entry,
+    remaining_budget_usd,
     summarize,
 )
 
@@ -32,6 +33,17 @@ class TestEstimateCost:
 
 
 class TestBudgetCeiling:
+    def test_remaining_balance_preserves_an_exactly_affordable_next_job(self):
+        remaining = remaining_budget_usd(0.3, [0.01, 0.09])
+        assert remaining == 0.2
+        assert check_budget(0.2, 3600, remaining) == 0.2
+        assert remaining_budget_usd(0.3, [None]) == 0
+
+    def test_unrounded_cost_controls_admission(self):
+        with pytest.raises(BudgetExceeded):
+            check_budget(0.1, 1, 0.00002)
+        assert check_budget(0.1, 3600, 0.3, gpu_count=3) == 0.3
+
     def test_no_ceiling_allows_anything(self):
         assert check_budget(100.0, 3600, None) is None
 

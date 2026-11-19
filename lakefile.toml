@@ -1,2 +1,13 @@
 name = "stateset_agents_formal"
 version = "0.1.0"
+
+[[require]]
+name = "mathlib"
+git = "https://github.com/leanprover-community/mathlib4.git"
+rev = "v4.15.0"
+
+[[lean_lib]]
+name = "RLMath"
+srcDir = "formal/lean"
+roots = ["PolicyMath", "GroupExpectation", "PPOBatch", "StoppedPolicy", "ScoreFunction", "ActorCritic", "RegularizedBatch", "VAPO", "DomainAdversarial", "Preference", "SamplerReplay", "ContinualReplay", "ReplayGradient", "ReplayMixture", "RewardWeights", "LoggedPolicy", "LoggedBellman", "TransientBellman", "AuxiliaryCritic", "BellmanRounding", "IntegerBellman", "Returns", "DecisionReturns", "OfflineMath", "CQLSampling", "TargetPolicy", "KernelMMD", "GradientBank", "FisherInformation", "CollectiveRounding", "ProviderLoss", "Schedules", "Optimizer", "AdamHistory", "BayesianReward", "GradientClipping", "Objective", "Reward"]
+leanOptions = { warningAsError = true }

@@ -22,6 +22,7 @@ runner = CliRunner()
 
 class FakeSession:
     instances: list[FakeSession] = []
+    state = chat_session.ChatSessionState.CLOSED
 
     def __init__(self, **kwargs):
         self.kwargs = kwargs
@@ -75,6 +76,15 @@ def invoke(*args):
 
 
 class TestScriptedMode:
+    def test_unconfirmed_cleanup_exits_with_recovery_command(self, monkeypatch):
+        monkeypatch.setattr(
+            FakeSession, "state", chat_session.ChatSessionState.CLEANUP_PENDING
+        )
+        result = invoke("--base-model", "m", "--prompt", "hi")
+        assert result.exit_code == 1
+        assert "runpod-orphans --chat" in result.output
+        assert "accepted pod termination" not in result.output
+
     def test_each_prompt_is_sent_and_each_reply_printed(self):
         result = invoke(
             "--base-model",

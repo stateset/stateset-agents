@@ -44,6 +44,7 @@ class FakeS3:
     def delete_objects(self, *, Bucket, Delete):
         for row in Delete["Objects"]:
             self.objects.pop((Bucket, row["Key"]), None)
+        return {"Deleted": Delete["Objects"]}
 
 
 def test_parse_s3_uri_rejects_non_s3() -> None:
@@ -68,6 +69,30 @@ def test_parse_s3_uri_rejects_ambiguous_or_traversing_uris(uri) -> None:
 def test_delete_refuses_bucket_root() -> None:
     with pytest.raises(ValueError, match="entire artifact bucket"):
         S3ArtifactStore(FakeS3()).delete_prefix("s3://bucket")
+
+
+def test_partial_delete_reports_error_and_can_retry_remaining_objects(
+    monkeypatch,
+) -> None:
+    client = FakeS3()
+    client.objects[("bucket", "job/input")] = b"data"
+    client.objects[("bucket", "job/output")] = b"adapter"
+    store = S3ArtifactStore(client)
+
+    def partial_delete(*, Bucket, Delete):
+        client.objects.pop((Bucket, "job/input"))
+        return {
+            "Deleted": [{"Key": "job/input"}],
+            "Errors": [{"Key": "job/output", "Code": "AccessDenied"}],
+        }
+
+    with monkeypatch.context() as patch:
+        patch.setattr(client, "delete_objects", partial_delete)
+        with pytest.raises(RemoteExecutionError, match="AccessDenied"):
+            store.delete_prefix("s3://bucket/job")
+    assert list(client.objects) == [("bucket", "job/output")]
+    store.delete_prefix("s3://bucket/job")
+    assert not client.objects
 
 
 def test_directory_round_trip_and_delete(tmp_path) -> None:

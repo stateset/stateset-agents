@@ -66,10 +66,11 @@ class TraceSpan:
     logs: list[dict[str, Any]] = field(default_factory=list)
     duration: float | None = None
 
-    def finish(self):
-        """Finish the span."""
-        self.end_time = time.time()
-        self.duration = self.end_time - self.start_time
+    def finish(self) -> None:
+        """Record the first completion without rewriting its timestamp."""
+        if self.end_time is None:
+            self.end_time = time.time()
+            self.duration = self.end_time - self.start_time
 
 
 __all__ = [

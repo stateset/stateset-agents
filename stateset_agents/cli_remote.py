@@ -160,12 +160,18 @@ def chat_remote(
         # Close first — the pod bills until it dies; the transcript can wait.
         _echo("Terminating the pod…")
         session.close()
+        if session.state == chat_session.ChatSessionState.CLEANUP_PENDING:
+            _echo(
+                "Chat pod cleanup is unconfirmed. Inspect stateset-agents runpod-orphans --chat.",
+                err=True,
+            )
+            exit_code = 1
         if save:
             _save_transcript(session, save_transcript, now=_time.time)
 
     if exit_code:
         raise typer.Exit(code=exit_code)
-    _echo("Session ended; pod terminated.")
+    _echo("Session ended. RunPod accepted pod termination.")
 
 
 def _parse_adapters(entries: list[str]) -> dict[str, Path]:
@@ -255,8 +261,8 @@ def serve_remote(
         None,
         "--max-cost",
         min=0.0,
-        help="Refuse a direct-image serve when price × max-hours exceeds "
-        "this dollar ceiling.",
+        help="Maximum estimated RunPod compute cost in USD across serving attempts. "
+        "Checks the catalog before renting and the pod price after allocation.",
     ),
     network_volume_id: str | None = typer.Option(
         None,
@@ -327,12 +333,11 @@ def serve_remote(
     if stop is not None:
         try:
             api = serve_session.RemoteServeSession()._require_api()
-            pod = serve_session.find_serve_pod(api, stop)
-            api.terminate_pod(str(pod["id"]))
+            pod = serve_session.stop_serve_pod(api, stop)
         except StateSetError as exc:
             _echo(str(exc), err=True)
             raise typer.Exit(code=1) from exc
-        _echo(f"Terminated pod {pod.get('name')} ({pod['id']}). Billing stopped.")
+        _echo(f"RunPod accepted termination of pod {pod.get('name')} ({pod['id']}).")
         return
 
     if base_model is None:
@@ -343,9 +348,11 @@ def serve_remote(
         if not directory.exists():
             _echo(f"Adapter directory does not exist: {directory}", err=True)
             raise typer.Exit(code=2)
-    if max_hours <= 0:
-        _echo("--max-hours must be positive.", err=True)
-        raise typer.Exit(code=2)
+    try:
+        serve_session.validate_serve_limits(max_hours, max_cost_usd)
+    except StateSetError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
 
     if vllm_image is not None:
         session = serve_session.RemoteServeSession(
@@ -367,7 +374,6 @@ def serve_remote(
         _echo(f"With adapter: {directory} (served-model name: {name})")
     if merge:
         _echo("Merging the adapter into full weights before serving (--merge).")
-    _echo(f"Self-destruct armed on the pod at {max_hours}h.")
     try:
         session.start(
             base_model=base_model,
@@ -476,6 +482,11 @@ def deploy(
         plan_runpod_resources,
     )
 
+    try:
+        serve_session.validate_serve_limits(max_hours, max_cost_usd)
+    except StateSetError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
     support = get_model_support(base_model)
     if support is not None:
         plan = plan_runpod_resources(
@@ -520,6 +531,12 @@ def deploy(
     except StateSetError as exc:
         _echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
+    if result.is_preview:
+        _echo(
+            "Training returned a preview. Deployment requires a trained checkpoint.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
     if not result.succeeded or result.output_dir is None:
         for line in result.logs[-20:]:
             _echo(line)
@@ -532,7 +549,6 @@ def deploy(
     session = serve_session.RemoteServeSession(
         container_disk_gb=container_disk_gb or 60
     )
-    _echo(f"Self-destruct armed on the pod at {max_hours}h.")
     try:
         session.start(
             base_model=base_model,
@@ -666,9 +682,9 @@ def train_remote(
         None,
         "--max-cost",
         help=(
-            "Refuse to run if the pod could cost more than this many dollars "
-            "(its full --timeout at the provider's quoted hourly rate). The "
-            "check happens before any work starts."
+            "RunPod training budget in USD. Each attempt must fit for the full "
+            "--timeout at both the catalog rate and the allocated pod's rate. "
+            "Retries use the remaining budget."
         ),
     ),
     network_volume_id: str | None = typer.Option(
@@ -862,6 +878,8 @@ def train_remote(
     )
     try:
         handle = executor.submit(spec)
+        if getattr(executor, "durable_handles", False):
+            _echo(f"Submitted {handle.provider} job {handle.job_id}")
         result = executor.wait(handle)
     except StateSetError as exc:
         _echo(str(exc), err=True)
@@ -876,6 +894,17 @@ def train_remote(
 
     if result.cost_usd is not None:
         _echo(f"Cost: ~${result.cost_usd:.2f} ({result.duration_s:.0f}s of pod time)")
+    if result.is_preview:
+        _echo("Preview complete. No checkpoint was produced.")
+        if result.output_dir is not None:
+            _echo(f"Preview reports: {result.output_dir}")
+        return
+    if result.output_dir is None:
+        _echo("The job completed without returning artifacts.", err=True)
+        raise typer.Exit(code=1)
+    if spec.job_kind == "harvest":
+        _echo(f"Harvest results: {result.output_dir}")
+        return
     if normalized_provider in {
         "river",
         "tinker",
@@ -894,8 +923,16 @@ def train_remote(
     if normalized_provider == "fireworks":
         _fireworks_done(executor, handle, result, deploy, deploy_accelerator)
         return
-    _echo(f"Done. Adapter written to {result.output_dir}")
-    _echo(f"Use it with: stateset-agents serve --checkpoint {result.output_dir}")
+    _echo(f"Job artifacts: {result.output_dir}")
+    if (result.output_dir / "adapter_config.json").is_file() and any(
+        (result.output_dir / name).is_file()
+        for name in (
+            "adapter_model.safetensors",
+            "adapter_model.safetensors.index.json",
+            "adapter_model.bin",
+        )
+    ):
+        _echo(f"Use it with: stateset-agents serve --checkpoint {result.output_dir}")
 
 
 def _fireworks_done(executor, handle, result, deploy: bool, accelerator: str | None):
@@ -944,14 +981,15 @@ def _fireworks_done(executor, handle, result, deploy: bool, accelerator: str | N
 
 @app.command("remote-job")
 def remote_job(
-    job_id: str = typer.Option(..., "--job-id", help="Provider job id to resume."),
+    job_id: str = typer.Option(
+        ...,
+        "--job-id",
+        help="Provider job ID or the recovery name printed by Nebius submission.",
+    ),
     provider: str = typer.Option(
         "fireworks",
         "--provider",
-        help=(
-            "Provider that owns the job. Durable reconnect is supported by "
-            "Fireworks, Hugging Face Jobs, and Together."
-        ),
+        help="Provider that owns the job. See remote-providers for durable reconnect support.",
     ),
     wait: bool = typer.Option(
         False, "--wait", help="Poll to a terminal state and fetch its artifacts."
@@ -974,6 +1012,8 @@ def remote_job(
             for line in result.logs:
                 _echo(line)
             _echo(f"Job {job_id}: {result.status.value}")
+            if result.is_preview:
+                _echo("Preview complete. No checkpoint was produced.")
             if result.output_dir is not None:
                 _echo(f"Artifacts: {result.output_dir}")
             if not result.succeeded:
@@ -986,7 +1026,10 @@ def remote_job(
         _echo(f"Job {job_id}: {status.value}")
         if fetch:
             destination = executor.fetch(handle, output_dir)
-            _echo(f"Artifacts: {destination}")
+            if destination is not None:
+                _echo(f"Artifacts: {destination}")
+            else:
+                _echo("Preview complete. No artifacts to fetch.")
     except StateSetError as exc:
         _echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
@@ -1155,36 +1198,75 @@ def runpod_orphans(
     terminate: bool = typer.Option(
         False,
         "--terminate",
-        help="Terminate every leased pod. Without this flag the command is read-only.",
+        help="Request deletion of recoverable pods. Omit this flag to inspect them.",
+    ),
+    serving: bool = typer.Option(
+        False, "--serving", help="Recover interrupted serving launches on this machine."
+    ),
+    chat: bool = typer.Option(
+        False, "--chat", help="Recover interrupted interactive chat rentals."
     ),
 ) -> None:
-    """Find training pods left behind when their submitting process crashed."""
+    """Inspect RunPod training, serving, or chat rentals on this machine."""
     from stateset_agents.remote.runpod import RunPodExecutor
+    from stateset_agents.remote.runpod_recovery import recover_pods, session_lease_dir
 
-    executor = get_executor("runpod")
-    if not isinstance(
-        executor, RunPodExecutor
-    ):  # pragma: no cover - registry invariant
-        raise typer.Exit(code=1)
-    leases = executor.orphaned_leases()
-    if not leases:
-        _echo("No locally recorded RunPod orphans.")
-        return
-    for lease in leases:
-        _echo(
-            f"{lease.get('pod_id')}: job={lease.get('job_id')} "
-            f"model={lease.get('base_model')} gpu={lease.get('gpu')}"
-        )
-    if not terminate:
-        _echo("Read-only. Re-run with --terminate after checking active jobs.")
-        return
+    if chat and serving:
+        _echo("Choose one of --chat and --serving.", err=True)
+        raise typer.Exit(code=2)
     try:
-        terminated = executor.cleanup_orphans()
+        if serving:
+            from stateset_agents.remote.serve_session import RemoteServeSession
+
+            kind = "serving"
+            rows = recover_pods(
+                session_lease_dir("serving"),
+                RemoteServeSession()._require_api,
+                kind="serving",
+                terminate=terminate,
+            )
+        elif chat:
+            from stateset_agents.remote.chat_session import RemoteChatSession
+
+            kind = "chat"
+            rows = recover_pods(
+                session_lease_dir("chat"),
+                RemoteChatSession()._require_api,
+                kind="chat",
+                terminate=terminate,
+            )
+        else:
+            kind = "training"
+            executor = get_executor("runpod")
+            if not isinstance(executor, RunPodExecutor):  # pragma: no cover
+                raise typer.Exit(code=1)
+            rows = executor.recover_training(terminate=terminate)
     except StateSetError as exc:
         _echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
-    for pod_id in terminated:
-        _echo(f"Terminated {pod_id}; cleanup lease removed.")
+    if not rows:
+        _echo(f"No pending local RunPod {kind} allocations.")
+    for row in rows:
+        detail = row.detail
+        if kind == "training" and row.record:
+            metadata = (
+                row.record if row.status == "legacy" else row.record.get("metadata", {})
+            )
+            for label, key in (
+                ("job", "job_id"),
+                ("model", "base_model"),
+                ("gpu", "gpu"),
+            ):
+                if metadata.get(key):
+                    detail += f"  {label}={metadata[key]}"
+        _echo(f"{row.name}  {row.status}  {detail}")
+    if rows and not terminate:
+        _echo("Read-only inspection.")
+    if any(
+        row.status == "unresolved" or (terminate and row.status == "legacy")
+        for row in rows
+    ):
+        raise typer.Exit(code=1)
 
 
 @app.command("undeploy")

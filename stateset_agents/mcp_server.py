@@ -5,13 +5,12 @@ tools so any MCP client (Claude Code/Desktop, other agents) can drive it.
 
 Every tool here is a thin wrapper: it validates inputs, calls the existing,
 already-tested module functions (``stateset_agents.cli_improve``,
-``stateset_agents.data.trajectory_ingest``, ``scripts/grade_transcript.py``,
-``stateset_agents/core/model_presets.py``, ``examples/finetune_gspo.py``), and returns a
+``stateset_agents.data.trajectory_ingest``, ``stateset_agents.data.grade_transcript``,
+``stateset_agents.core.model_presets``, ``stateset_agents.training.gspo_preview``), and returns a
 structured dict. No grading/curation/training logic is reimplemented here.
 
 v1 scope: no tool starts real GPU training. ``dry_run_finetune`` only ever
-runs ``examples/finetune_gspo.py --dry-run`` (stub backend, no model
-download, no training).
+resolves packaged preset configuration (no model download or training).
 
 Usage::
 
@@ -26,12 +25,8 @@ Or run directly::
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from typing import Any
-
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-_SCRIPTS_DIR = _REPO_ROOT / "scripts"
 
 MCP_INSTALL_HINT = "pip install stateset-agents[mcp]"
 
@@ -117,15 +112,16 @@ def ingest_transcripts(input_path: str, format: str, output_dir: str) -> dict[st
         return _err(exc)
 
 
-async def _grade_transcript_async(history_path: str, reward: str) -> dict[str, Any]:
+async def _grade_transcript_async(
+    history_path: str, reward: str, context_file: str | None = None
+) -> dict[str, Any]:
     """Grade a transcript directly on the caller's event loop."""
     try:
         history = Path(history_path)
         if not history.exists():
             return {"error": f"Transcript not found: {history}"}
 
-        _ensure_scripts_on_path()
-        import grade_transcript as gt
+        from stateset_agents.data import grade_transcript as gt
 
         try:
             reward_fn = gt.get_reward(reward)
@@ -133,15 +129,20 @@ async def _grade_transcript_async(history_path: str, reward: str) -> dict[str, A
             return {"error": str(exc)}
 
         turns = gt.load_transcript(history)
-        rows = await gt.grade_transcript(turns, [], reward_fn)
+        contexts = gt.load_contexts(
+            Path(context_file) if context_file else None,
+            expected_count=sum(t["role"] == "assistant" for t in turns),
+        )
+        rows = await gt.grade_transcript(turns, contexts, reward_fn, reward_name=reward)
 
-        scores = [row["score"] for row in rows]
-        mean_score = (sum(scores) / len(scores)) if scores else 0.0
+        scores = [row["score"] for row in rows if row["score"] is not None]
+        mean_score = (sum(scores) / len(scores)) if scores else None
 
         breakdown_totals: dict[str, list[float]] = {}
         for row in rows:
             for key, value in (row.get("breakdown") or {}).items():
-                breakdown_totals.setdefault(key, []).append(float(value))
+                if isinstance(value, (int, float)):
+                    breakdown_totals.setdefault(key, []).append(float(value))
         breakdown = {
             key: (sum(values) / len(values)) if values else 0.0
             for key, values in breakdown_totals.items()
@@ -151,6 +152,8 @@ async def _grade_transcript_async(history_path: str, reward: str) -> dict[str, A
             "history_path": str(history),
             "reward": reward,
             "assistant_turn_count": len(rows),
+            "graded_turn_count": len(scores),
+            "ungradable_turn_count": len(rows) - len(scores),
             "mean_score": mean_score,
             "breakdown": breakdown,
             "rows": rows,
@@ -159,13 +162,15 @@ async def _grade_transcript_async(history_path: str, reward: str) -> dict[str, A
         return _err(exc)
 
 
-async def grade_transcript(history_path: str, reward: str) -> dict[str, Any]:
+async def grade_transcript(
+    history_path: str, reward: str, context_file: str | None = None
+) -> dict[str, Any]:
     """Grade a single transcript JSONL, returning mean score + breakdown.
 
     The grading implementation is already asynchronous, so keep it on
     FastMCP's event loop and avoid dependence on a process-global executor.
     """
-    return await _grade_transcript_async(history_path, reward)
+    return await _grade_transcript_async(history_path, reward, context_file)
 
 
 async def improve_run(
@@ -174,6 +179,7 @@ async def improve_run(
     output_dir: str,
     threshold: float = 0.7,
     format: str = "transcripts",
+    context_file: str | None = None,
 ) -> dict[str, Any]:
     """Run the grade -> curate -> next-steps loop asynchronously."""
     try:
@@ -190,6 +196,7 @@ async def improve_run(
                 output=output_dir,
                 threshold=threshold,
                 format=format,
+                context_file=context_file,
             )
         except (ImproveUsageError, ImproveDataError) as exc:
             return {"error": str(exc)}
@@ -256,8 +263,11 @@ def dry_run_finetune(model_preset: str) -> dict[str, Any]:
                 )
             }
 
-        from examples.finetune_gspo import build_gspo_config, preview_payload
-        from examples.model_presets import get_preset
+        from stateset_agents.core.model_presets import get_preset
+        from stateset_agents.training.gspo_preview import (
+            build_gspo_config,
+            preview_payload,
+        )
 
         preset = get_preset(model_preset)
         output_dir = f"./outputs/{model_preset.replace('.', '_')}_gspo"
@@ -272,12 +282,6 @@ def dry_run_finetune(model_preset: str) -> dict[str, Any]:
         return _err(exc)
 
 
-def _ensure_scripts_on_path() -> None:
-    scripts_dir = str(_SCRIPTS_DIR)
-    if scripts_dir not in sys.path:
-        sys.path.insert(0, scripts_dir)
-
-
 # ---------------------------------------------------------------------------
 # Server factory
 # ---------------------------------------------------------------------------
@@ -290,7 +294,6 @@ def create_server() -> Any:
     not installed.
     """
     FastMCP = _require_mcp()  # noqa: N806
-    _ensure_scripts_on_path()
 
     mcp = FastMCP(
         "stateset-agents",

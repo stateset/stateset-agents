@@ -82,6 +82,8 @@ class TestLocalExecutorRun:
 
         assert result.status is JobStatus.SUCCEEDED
         assert result.succeeded
+        assert result.is_preview
+        assert result.output_dir is None
         combined = "\n".join(result.logs)
         assert "Qwen/Qwen3.5-0.8B" in combined
 

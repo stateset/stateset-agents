@@ -120,6 +120,10 @@ class TestEndToEndScript:
         )
         assert result.returncode == 0
         assert "SFT Training Plan" in result.stdout
+        assert "No training was performed or checkpoint created" in result.stdout
+        assert "Chat with it:" not in result.stdout
+        assert "Serve it:" not in result.stdout
+        assert not (tmp_path / "out").exists()
 
     def test_empty_dataset_fails(self, tmp_path: Path) -> None:
         empty = tmp_path / "empty.jsonl"

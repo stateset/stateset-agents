@@ -92,7 +92,9 @@ class PolicyObjective:
                 or float(getattr(self, fname)) <= 0
             ):
                 raise ValueError(f"{fname} must be > 0")
-        if self.delta is not None and float(self.delta) <= 0:
+        if self.delta is not None and (
+            not math.isfinite(self.delta) or self.delta <= 0
+        ):
             raise ValueError("delta must be > 0 or None")
         if (
             self.max_completion_length is not None
@@ -133,36 +135,15 @@ def compute_advantages(rewards: Any, group_ids: Any, objective: PolicyObjective)
             f"objective {objective.name!r} uses external advantages; "
             "pass them to policy_loss"
         )
-    r = torch.as_tensor(rewards).float().reshape(-1)
-    g = torch.as_tensor(group_ids).long().reshape(-1)
-    if r.shape != g.shape:
-        raise ValueError(
-            f"rewards {tuple(r.shape)} and group_ids {tuple(g.shape)} differ"
-        )
-    adv = torch.zeros_like(r)
-    if r.numel() == 0:
-        return adv
-    kind = objective.advantage
-    eps = float(objective.advantage_eps)
-    for gid in torch.unique(g):
-        idx = (g == gid).nonzero(as_tuple=True)[0]
-        rg = r[idx]
-        if rg.numel() <= 1:
-            continue
-        if kind == "leave_one_out":
-            adv[idx] = rg - (rg.sum() - rg) / (rg.numel() - 1)
-        elif kind == "group_norm":
-            adv[idx] = rl_losses.group_advantages(rg, normalize=True, eps=eps)
-        else:  # group_mean, batch_norm: centre now, batch_norm scales below
-            adv[idx] = rl_losses.group_advantages(rg, normalize=False)
-    if kind == "batch_norm":
-        if r.numel() <= 1:
-            return torch.zeros_like(r)
-        std = r.std(correction=0)
-        if not torch.isfinite(std) or std <= eps:
-            return torch.zeros_like(r)
-        adv = adv / (std + eps)
-    return adv
+    from .reward_advantages import grouped_advantages, reward_tensor
+
+    target = rewards.device if isinstance(rewards, torch.Tensor) else None
+    r = reward_tensor(rewards, target)
+    g = torch.as_tensor(group_ids).long()
+    result = grouped_advantages(
+        r, g, objective.advantage, float(objective.advantage_eps)
+    )
+    return result.to(target) if target is not None else result
 
 
 # --- ratio -----------------------------------------------------------------
@@ -199,9 +180,9 @@ def _compute_ratio(
     if kind == "sequence_token":
         seq = rl_losses.safe_exp_ratio(
             _sequence_log_ratio(logp_cur, logp_old, mask), clamp=clamp
-        ).detach()
+        )
         # Numerically equal to the sequence ratio; gradient flows per token.
-        return seq.unsqueeze(-1) * torch.exp(logp_cur - logp_cur.detach())
+        return rl_losses.sequence_token_ratio(seq, logp_cur)
     # group_expectation (GEPO)
     if logp_old.dim() != 1:
         raise ValueError(
@@ -209,14 +190,15 @@ def _compute_ratio(
         )
     if group_ids is None:
         raise ValueError("ratio='group_expectation' requires group_ids")
-    seq_cur = (logp_cur * mask).sum(-1)
-    q = logp_old.detach()
-    g = torch.as_tensor(group_ids).long().reshape(-1)
-    out = torch.zeros_like(seq_cur)
+    from .gepo_weights import group_coefficients
+
+    g = torch.as_tensor(group_ids, device=logp_cur.device).long().reshape(-1)
+    out = logp_cur[:, :0].sum(-1)
     for gid in torch.unique(g):
         idx = (g == gid).nonzero(as_tuple=True)[0]
-        log_e = torch.logsumexp(2 * q[idx], dim=0) - torch.logsumexp(q[idx], dim=0)
-        out[idx] = rl_losses.safe_exp_ratio(seq_cur[idx] - log_e, clamp=clamp)
+        out[idx] = group_coefficients(
+            logp_cur[idx], mask[idx], logp_old[idx.to(logp_old.device)], clamp
+        )
     return out.unsqueeze(-1)
 
 
@@ -242,6 +224,15 @@ def surrogate(objective: PolicyObjective, ratio: Any, adv: Any, logp_cur: Any) -
     return -ratio * adv
 
 
+def clipped_positions(objective: PolicyObjective, ratio: Any) -> Any:
+    """Identify ratios outside the configured clip band for diagnostics."""
+    if objective.clip == "clipped":
+        return (ratio < 1.0 - objective.clip_low) | (ratio > 1.0 + objective.clip_high)
+    if objective.clip == "cispo":
+        return ratio > objective.is_cap
+    return _t().zeros_like(ratio, dtype=_t().bool)
+
+
 def aggregate(objective: PolicyObjective, per_token: Any, mask: Any) -> Any:
     """Reduce a per-token loss ``[N, T]`` (or ``[N, 1]``) to a scalar."""
     torch = _t()
@@ -256,7 +247,9 @@ def aggregate(objective: PolicyObjective, per_token: Any, mask: Any) -> Any:
             "max_completion_length; use objective.with_(max_completion_length=...)"
         )
     n = per_token.shape[0]
-    return (per_token * mask).sum() / float(n * int(objective.max_completion_length))
+    return (per_token * mask).sum() / float(
+        max(n, 1) * int(objective.max_completion_length)
+    )
 
 
 # --- policy loss -------------------------------------------------------------
@@ -273,6 +266,7 @@ def policy_loss(
     group_ids: Any | None = None,
     kl: Any | None = None,
     entropy: Any | None = None,
+    batch_population: tuple[int, int] | None = None,
 ) -> PolicyLossResult:
     """Evaluate ``objective`` on one batch.
 
@@ -281,22 +275,56 @@ def policy_loss(
     ``advantages`` is ``[N]`` or ``[N, T]``; ``logp_ref`` is ``[N, T]`` or
     ``[N]`` sums (only read when ``kl_coef > 0``); ``kl`` is the external
     per-token KL ``[N, T]`` for ``kl='external'``; ``entropy`` is ``[N, T]``.
+    When streaming whole prompt groups, pass the full batch's (row count,
+    active token count). The returned loss then contributes each term at its
+    own population weight. Diagnostics still describe the local group.
     """
     torch = _t()
     if logp_cur.dim() != 2:
         raise ValueError("logp_cur must be [N, T]")
-    mask = mask.to(logp_cur.dtype)
+    if logp_cur.dtype in (torch.float16, torch.bfloat16):
+        logp_cur = logp_cur.float()
+    mask = mask.to(logp_cur)
     if mask.shape != logp_cur.shape:
         raise ValueError("mask must match logp_cur shape")
-    old = (
-        logp_cur.detach() if logp_old is None else logp_old.detach().to(logp_cur.dtype)
-    )
-    adv = torch.as_tensor(advantages).to(logp_cur.dtype).detach()
-    if adv.dim() == 1:
+    inactive = mask == 0
+    logp_cur = logp_cur.masked_fill(inactive, 0)
+    old = logp_cur.detach() if logp_old is None else logp_old.detach()
+    if objective.ratio != "group_expectation":
+        old = old.to(logp_cur)
+    if old.shape == logp_cur.shape and objective.ratio != "group_expectation":
+        old = old.masked_fill(inactive, 0)
+
+    adv = torch.as_tensor(
+        advantages, dtype=logp_cur.dtype, device=logp_cur.device
+    ).detach()
+    if adv.shape == (logp_cur.shape[0],):
         adv = adv.unsqueeze(-1)
     elif adv.shape != logp_cur.shape:
         raise ValueError("advantages must be [N] or [N, T]")
 
+    if adv.shape == logp_cur.shape:
+        adv = adv.masked_fill(inactive, 0)
+    else:
+        adv = adv.masked_fill(inactive.all(-1, keepdim=True), 0)
+    n = logp_cur.shape[0]
+    if old.shape not in ((n,), logp_cur.shape):
+        raise ValueError("logp_old must be [N] or [N, T]")
+    if group_ids is not None and torch.as_tensor(group_ids).shape != (n,):
+        raise ValueError("group_ids must be [N]")
+    if logp_ref is not None and logp_ref.shape not in ((n,), logp_cur.shape):
+        raise ValueError("logp_ref must be [N] or [N, T]")
+    if kl is not None and kl.shape != logp_cur.shape:
+        raise ValueError("kl must be [N, T]")
+    if entropy is not None and entropy.shape != logp_cur.shape:
+        raise ValueError("entropy must be [N, T]")
+
+    if logp_ref is not None and logp_ref.shape == logp_cur.shape:
+        logp_ref = logp_ref.masked_fill(inactive, 0)
+    if kl is not None:
+        kl = kl.masked_fill(inactive, 0)
+    if entropy is not None:
+        entropy = entropy.masked_fill(inactive, 0)
     ratio = _compute_ratio(objective, logp_cur, old, mask, group_ids)
     per_token = surrogate(objective, ratio, adv, logp_cur)
 
@@ -307,7 +335,8 @@ def policy_loss(
             if logp_ref is None or logp_ref.dim() != 2:
                 raise ValueError("kl='k3_token' requires per-token logp_ref [N, T]")
             d = logp_ref.detach().to(logp_cur.dtype) - logp_cur
-            k3 = torch.exp(d) - d - 1.0
+            # Suppress padded deltas before exp, including in backward.
+            k3 = rl_losses.k3_term(torch.where(mask != 0, d, 0.0))
             if objective.kl_bias_correction:
                 k3 = k3 * ratio
             per_token = per_token + objective.kl_coef * k3
@@ -331,27 +360,41 @@ def policy_loss(
             kl_seq_term = rl_losses.k3_kl(cur_seq, ref_seq)
             kl_value = float(kl_seq_term.detach().item())
 
+    row_share = token_share = 1.0
+    if batch_population is not None:
+        rows, tokens = batch_population
+        if not ((mask == 0) | (mask == 1)).all():
+            raise ValueError("Batch population counts require binary response masks")
+        local_tokens = int(mask.count_nonzero().item())
+        if (
+            type(rows) is not int
+            or type(tokens) is not int
+            or rows < n
+            or tokens < local_tokens
+        ):
+            raise ValueError("Batch population must cover all local rows and tokens")
+        row_share = n / rows if rows else 0.0
+        token_share = local_tokens / tokens if tokens else 0.0
     policy = aggregate(objective, per_token, mask)
     loss = policy
+    if batch_population is not None:
+        loss = loss * (
+            token_share if objective.aggregate == "token_mean" else row_share
+        )
     if kl_seq_term is not None:
-        loss = loss + objective.kl_coef * kl_seq_term
+        loss = loss + (row_share * objective.kl_coef) * kl_seq_term
 
     entropy_value = 0.0
     if entropy is not None:
         ent = rl_losses.masked_mean(entropy.to(logp_cur.dtype), mask, mode="token")
         entropy_value = float(ent.detach().item())
         if objective.entropy_coef > 0:
-            loss = loss - objective.entropy_coef * ent
+            loss = loss - (token_share * objective.entropy_coef) * ent
 
     with torch.no_grad():
         r = ratio.detach() * torch.ones_like(mask)
         m = mask > 0
-        if objective.clip == "clipped":
-            out = (r < 1.0 - objective.clip_low) | (r > 1.0 + objective.clip_high)
-        elif objective.clip == "cispo":
-            out = r > objective.is_cap
-        else:
-            out = torch.zeros_like(m)
+        out = clipped_positions(objective, r)
         n_tok = float(m.sum().item())
         clip_fraction = float(out[m].float().sum().item() / n_tok) if n_tok else 0.0
         ratio_mean = float(r[m].mean().item()) if n_tok else 1.0

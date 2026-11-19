@@ -1,4 +1,4 @@
-"""Every ``stateset-agents ...`` snippet in the docs must be a real command.
+"""Console and ``python -m`` CLI snippets in the docs must be real commands.
 
 The docs are the first thing a new user runs. A snippet that names a
 subcommand or a flag the CLI does not have is a broken promise, so this test
@@ -21,7 +21,9 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 DOCS = ("README.md", "QUICKSTART.md")
-SNIPPET = re.compile(r"^stateset-agents\s+(.+)$")
+SNIPPET = re.compile(
+    r"^(?:stateset-agents|python(?:3)?\s+-m\s+stateset_agents(?:\.cli)?)\s+(.+)$"
+)
 
 
 def _logical_lines(text: str) -> list[tuple[int, str]]:
@@ -208,10 +210,8 @@ def test_readme_command_flags_exist(src: str, lineno: int, line: str) -> None:
 def test_expected_snippet_count() -> None:
     """Guard against the extractor silently matching nothing."""
     per_doc = {name: sum(1 for s, _, _ in SNIPPETS if s == name) for name in DOCS}
-    # QUICKSTART was simplified in the "golden path" update; it now contains
-    # fewer direct CLI snippets. Keep this guard aligned with the current doc.
-    # The industry workflow adds init, prepare, and train --dry-run examples.
-    assert per_doc == {"README.md": 30, "QUICKSTART.md": 2}, per_doc
+    # Include module entrypoints used by the installed-wheel quickstart.
+    assert per_doc == {"README.md": 32, "QUICKSTART.md": 6}, per_doc
 
 
 def test_help_stays_plain_when_the_environment_forces_color(

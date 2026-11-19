@@ -72,7 +72,7 @@ async def test_generate_turns_returns_n_turns_with_exact_token_metadata():
 
 
 @pytest.mark.asyncio
-async def test_generate_turns_sampler_logprobs_match_a_forward_pass():
+async def test_generate_turns_raw_model_logprobs_match_a_forward_pass():
     agent = _tiny_hf_agent()
     turns = await agent.generate_turns("hello there", 2)
     rows = [
@@ -85,7 +85,7 @@ async def test_generate_turns_sampler_logprobs_match_a_forward_pass():
     for (_p, r, _), row_lp, row_mask, turn in zip(rows, lp, mask, turns, strict=True):
         got = row_lp[row_mask.bool()].tolist()
         assert len(got) == len(r)
-        assert got == pytest.approx(turn.metadata["sampler_log_probs"], abs=2e-3)
+        assert got == pytest.approx(turn.metadata["model_log_probs"], abs=2e-3)
 
 
 @pytest.mark.asyncio

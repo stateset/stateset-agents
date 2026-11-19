@@ -16,6 +16,7 @@ Reference: https://arxiv.org/abs/2508.17850
 import logging
 import os
 from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -24,8 +25,10 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from . import objectives, rl_losses
+from . import objectives
+from .adamw_weights import model_adamw
 from .config import TrainingConfig
+from .reward_advantages import reward_tensor
 from .runtime_state import (
     TrainingRuntime,
     _reject_unsupported_resume,
@@ -34,6 +37,11 @@ from .runtime_state import (
 from .trainer_runtime import (
     SharedModelManager,
     build_group_batch,
+)
+from .trainer_utils import (
+    clip_parameter_gradients,
+    deterministic_scoring,
+    inner_update_scheduler,
 )
 
 # Configure logging
@@ -151,9 +159,9 @@ class GEPOConfig(TrainingConfig):
     # Advantage computation
     use_group_baseline: bool = True  # Use within-group baseline normalization
 
-    # Inner gradient updates per rollout (mu). The default of 1 keeps GEPO
-    # strictly on-policy; values > 1 reuse each rollout, and the sampler
-    # (old-policy) log probs are the snapshot taken at rollout time.
+    # One inner update uses fresh rollouts. Larger values reuse their frozen
+    # sampler scores. Filtering and temperature can make the generator differ
+    # from the raw learner policy even on the first update.
     # Cadence (shared with DAPO and VAPO): the LR scheduler advances once per
     # inner update; global_step counts train_steps, not inner updates.
     num_gradient_updates: int = 1
@@ -203,8 +211,8 @@ class GEPOTrainer(TrainingRuntime):
     where the group expectation is computed as:
     E_q[q(y|x)] ≈ Σ q(y^i|x)² / Σ q(y^i|x)
 
-    This exponentially reduces variance under high KL divergence, making training
-    stable even with network delays or heterogeneous compute resources.
+    StateSet uses the summed log probability of the retained response tokens
+    when forming each sequence probability.
 
     Reference: https://arxiv.org/abs/2508.17850
     """
@@ -226,6 +234,8 @@ class GEPOTrainer(TrainingRuntime):
         self._objective = objectives.resolve_objective(
             config,
             "gepo",
+            kl_coef=float(config.beta),
+            kl="k3_token" if config.beta > 0 else "none",
             max_completion_length=int(config.max_completion_length),
             supported_ratios=("group_expectation", "sequence", "sequence_token"),
             clip_low=float(config.clip_eps),
@@ -235,10 +245,14 @@ class GEPOTrainer(TrainingRuntime):
         self.tokenizer = tokenizer
         self.reward_fn = reward_fn
         self.ref_model = ref_model
+        if self._objective.kl_coef > 0 and (
+            self.ref_model is None or self.ref_model is model
+        ):
+            self.ref_model = deepcopy(model).requires_grad_(False).eval()
         self.device = next(model.parameters()).device
 
         # Optimizer
-        self.optimizer = torch.optim.AdamW(
+        self.optimizer = model_adamw(
             self.model.parameters(),
             lr=config.learning_rate,
             betas=(config.adam_beta1, config.adam_beta2),
@@ -246,20 +260,9 @@ class GEPOTrainer(TrainingRuntime):
         )
 
         # Scheduler
-        total_steps = config.num_episodes * config.num_epochs
-        warmup_steps = int(total_steps * config.warmup_ratio)
-
-        if get_cosine_schedule_with_warmup is not None:
-            self.scheduler = get_cosine_schedule_with_warmup(
-                self.optimizer,
-                num_warmup_steps=warmup_steps,
-                num_training_steps=total_steps,
-            )
-        else:
-            # Fallback to constant learning rate if scheduler unavailable
-            self.scheduler = torch.optim.lr_scheduler.ConstantLR(
-                self.optimizer, factor=1.0, total_iters=total_steps
-            )
+        self.scheduler = inner_update_scheduler(
+            self.optimizer, config, cosine=get_cosine_schedule_with_warmup is not None
+        )
 
         # Metrics tracking
         self.metrics_history: dict[str, list[float]] = {
@@ -276,7 +279,7 @@ class GEPOTrainer(TrainingRuntime):
     @staticmethod
     def build_response_mask(
         attention_mask: torch.Tensor,
-        response_start_idx: int,
+        response_start_idx: int | list[int] | torch.Tensor,
     ) -> torch.Tensor:
         """
         Build a mask (on the shifted next-token-prediction axis) that selects
@@ -287,20 +290,20 @@ class GEPOTrainer(TrainingRuntime):
         shifted start index is `max(response_start_idx - 1, 0)`, matching the
         convention used in gspo_trainer.py.
         """
-        shift_mask = attention_mask[:, 1:].contiguous()
-        shifted_start = max(response_start_idx - 1, 0)
-
-        response_mask = torch.zeros_like(shift_mask)
-        if shifted_start < response_mask.shape[1]:
-            response_mask[:, shifted_start:] = shift_mask[:, shifted_start:]
-
-        return response_mask
+        shift_mask = attention_mask[:, 1:]
+        starts = torch.as_tensor(response_start_idx, device=attention_mask.device)
+        if starts.ndim == 0:
+            starts = starts.expand(len(shift_mask))
+        if starts.shape != (len(shift_mask),):
+            raise ValueError("GEPO requires one response start per sequence")
+        columns = torch.arange(1, attention_mask.shape[1], device=attention_mask.device)
+        return shift_mask * (columns >= starts[:, None])
 
     def compute_sequence_log_probs(
         self,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
-        response_start_idx: int,
+        response_start_idx: int | list[int] | torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Compute log probabilities for response tokens.
@@ -309,31 +312,39 @@ class GEPOTrainer(TrainingRuntime):
             token_log_probs: Log probs for each token [batch, seq_len]
             sequence_log_probs: Sum of log probs per sequence [batch]
         """
-        with torch.set_grad_enabled(self.model.training):
-            outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
-            logits = outputs.logits
-
-        # Shift for next-token prediction
-        shift_logits = logits[:, :-1, :].contiguous()
-        shift_labels = input_ids[:, 1:].contiguous()
-
-        # Compute log probs
-        log_probs = F.log_softmax(shift_logits, dim=-1)
-
-        # Gather log probs for actual tokens
-        token_log_probs = log_probs.gather(
-            dim=-1, index=shift_labels.unsqueeze(-1)
-        ).squeeze(-1)
-
-        # Mask out prompt tokens and padding
         response_mask = self.build_response_mask(attention_mask, response_start_idx)
+        log_probs = self._log_distribution(
+            self.model, input_ids, attention_mask, response_mask
+        )
+        actions = input_ids[:, 1:].masked_fill(response_mask == 0, 0)
+        token_log_probs = log_probs.gather(-1, actions[..., None]).squeeze(-1)
 
         masked_log_probs = token_log_probs * response_mask
 
         # Sum over sequence
-        sequence_log_probs = masked_log_probs.sum(dim=-1)
+        score_tokens = (
+            masked_log_probs.cpu()
+            if masked_log_probs.device.type == "mps"
+            else masked_log_probs
+        )
+        sequence_log_probs = score_tokens.sum(dim=-1, dtype=torch.float64)
 
         return token_log_probs, sequence_log_probs
+
+    @staticmethod
+    def _log_distribution(
+        model: Any,
+        ids: torch.Tensor,
+        mask: torch.Tensor,
+        responses: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        with deterministic_scoring(model):
+            logits = model(input_ids=ids, attention_mask=mask).logits[:, :-1]
+        if responses is not None:
+            logits = logits.masked_fill((responses == 0)[..., None], 0)
+        return F.log_softmax(
+            logits, dim=-1, dtype=torch.promote_types(logits.dtype, torch.float32)
+        )
 
     @staticmethod
     def compute_gepo_coefficient_static(
@@ -354,18 +365,14 @@ class GEPOTrainer(TrainingRuntime):
         Returns:
             GEPO coefficients (linear space) for each sequence [group_size]
         """
-        sampler_lp = sampler_seq_log_probs.detach()
+        from .gepo_weights import group_coefficients
 
-        # log E_qhat[q] = log( sum(q^2)/sum(q) ) = logsumexp(2*lq) - logsumexp(lq)
-        log_group_expectation = torch.logsumexp(
-            2 * sampler_lp, dim=0
-        ) - torch.logsumexp(sampler_lp, dim=0)
-
-        log_coef = learner_seq_log_probs - log_group_expectation
-        # Same overflow guard as DAPO/VAPO, at GEPO's historical +/-30 bound:
-        # group coefficients are not ratios against a clip boundary, so the
-        # wider window is kept.
-        return rl_losses.safe_exp_ratio(log_coef, clamp=30.0)
+        if learner_seq_log_probs.ndim != 1:
+            raise ValueError("GEPO expects a vector of learner sequence sums")
+        current = learner_seq_log_probs[:, None]
+        return group_coefficients(
+            current, torch.ones_like(current), sampler_seq_log_probs, 30.0
+        )
 
     def compute_gepo_coefficient(
         self,
@@ -380,9 +387,8 @@ class GEPOTrainer(TrainingRuntime):
 
         where E_q[q] ≈ Σ q² / Σ q (normalized within-group probabilities)
 
-        This aggregates across the entire group using a common denominator,
-        providing superior variance reduction compared to per-token or per-sequence
-        importance weights.
+        The frozen sampler scores give every response in the group a common
+        denominator.
 
         Args:
             learner_seq_log_probs: Sequence log-probs from current policy [group_size]
@@ -466,6 +472,8 @@ class GEPOTrainer(TrainingRuntime):
             - attention_mask: Attention mask
             - response_start_idx: Index where response starts
         """
+        from stateset_agents.core.generation_evidence import selected_logprobs
+
         responses = []
 
         # Tokenize prompt
@@ -477,8 +485,7 @@ class GEPOTrainer(TrainingRuntime):
         )
         prompt_length = prompt_tokens["input_ids"].shape[1]
 
-        self.model.eval()
-        with torch.no_grad():
+        with deterministic_scoring(self.model), torch.no_grad():
             for _ in range(group_size):
                 # Generate response
                 input_ids = prompt_tokens["input_ids"].to(self.device)
@@ -491,24 +498,34 @@ class GEPOTrainer(TrainingRuntime):
                     temperature=self.config.temperature,
                     top_p=self.config.top_p,
                     do_sample=True,
+                    num_beams=1,
+                    output_scores=True,
+                    return_dict_in_generate=True,
                     pad_token_id=self.tokenizer.pad_token_id,
                 )
 
-                # Decode response
-                response_text = self.tokenizer.decode(
-                    outputs[0][prompt_length:], skip_special_tokens=True
-                )
+                sequence = outputs.sequences[0]
+                actions = sequence[prompt_length:]
+                if not actions.numel():
+                    raise ValueError("GEPO sampling returned no response tokens")
+                # Generation scores include the sampler's temperature and filters.
+                chosen = selected_logprobs(outputs.scores, actions[None], sampled=True)
+                if chosen is None or not torch.isfinite(chosen).all():
+                    raise ValueError(
+                        "GEPO sampler returned a nonfinite action likelihood"
+                    )
+                response_text = self.tokenizer.decode(actions, skip_special_tokens=True)
 
                 responses.append(
                     {
                         "response": response_text,
-                        "input_ids": outputs[0],
-                        "attention_mask": torch.ones_like(outputs[0]),
+                        "input_ids": sequence,
+                        "attention_mask": torch.ones_like(sequence),
+                        "sampler_log_prob": chosen.sum().detach(),
                         "response_start_idx": prompt_length,
                     }
                 )
 
-        self.model.train()
         self.rollout_samples_total += len(responses)
         return responses
 
@@ -535,7 +552,6 @@ class GEPOTrainer(TrainingRuntime):
         self.model.train()
 
         all_rewards: list[float] = []
-        all_advantages: list[float] = []
         all_gepo_coefs: list[float] = []
 
         # --- Rollout phase ------------------------------------------------
@@ -556,38 +572,74 @@ class GEPOTrainer(TrainingRuntime):
             rewards = [
                 self.reward_fn(prompt, resp["response"]) for resp in group_responses
             ]
-            rewards_tensor = torch.tensor(
-                rewards, dtype=torch.float32, device=self.device
-            )
+            rewards_tensor = reward_tensor(rewards, self.device)
             all_rewards.extend(rewards)
-
-            advantages, _reward_stats = self.compute_group_advantages(rewards_tensor)
-            all_advantages.extend(advantages.tolist())
 
             batch_input_ids, batch_attention_mask, _ = build_group_batch(
                 group_responses, self.device, include_response_mask=False
             )
-            response_start_idx = group_responses[0]["response_start_idx"]
+            response_start_idx = [row["response_start_idx"] for row in group_responses]
+            score_device = (
+                "cpu" if torch.device(self.device).type == "mps" else self.device
+            )
 
-            with torch.no_grad():
-                _, sampler_seq_log_probs = self.compute_sequence_log_probs(
-                    batch_input_ids, batch_attention_mask, response_start_idx
+            if all("sampler_log_prob" in row for row in group_responses):
+                sampler_seq_log_probs = torch.stack(
+                    [
+                        torch.as_tensor(
+                            row["sampler_log_prob"],
+                            device=score_device,
+                            dtype=torch.float64,
+                        ).reshape(())
+                        for row in group_responses
+                    ]
                 )
+            else:
+                # Legacy custom generators may only provide token IDs.
+                with torch.no_grad():
+                    _, sampler_seq_log_probs = self.compute_sequence_log_probs(
+                        batch_input_ids, batch_attention_mask, response_start_idx
+                    )
+                for i, row in enumerate(group_responses):
+                    if "sampler_log_prob" in row:
+                        sampler_seq_log_probs[i] = row["sampler_log_prob"]
+            if not torch.isfinite(sampler_seq_log_probs).all():
+                raise ValueError("GEPO sampler likelihoods must be finite")
 
             rollouts.append(
                 {
                     "input_ids": batch_input_ids,
                     "attention_mask": batch_attention_mask,
-                    "response_start_idx": response_start_idx,
-                    "advantages": advantages,
+                    "rewards": rewards_tensor,
+                    "mask": self.build_response_mask(
+                        batch_attention_mask, response_start_idx
+                    ),
                     "sampler_seq_log_probs": sampler_seq_log_probs.detach(),
                 }
             )
 
         num_groups = len(rollouts)
-        if num_groups == 0:
-            logger.warning("No valid groups in batch")
-            return {"policy_loss": 0.0, "average_reward": 0.0}
+        if not num_groups or not any(r["mask"].any() for r in rollouts):
+            logger.warning("No sampled actions in GEPO batch")
+            return {
+                "policy_loss": 0.0,
+                "average_reward": float(np.mean(all_rewards)) if all_rewards else 0.0,
+            }
+
+        group_ids = torch.cat(
+            [
+                torch.full_like(r["rewards"], i, dtype=torch.long)
+                for i, r in enumerate(rollouts)
+            ]
+        )
+        advantages = objectives.compute_advantages(
+            torch.cat([r["rewards"] for r in rollouts]), group_ids, self._objective
+        ).to(self.device)
+        all_advantages = advantages.tolist()
+        sampler_scores = torch.cat([r["sampler_seq_log_probs"] for r in rollouts])
+        mask = torch.nn.utils.rnn.pad_sequence(
+            [row for r in rollouts for row in r["mask"]], batch_first=True
+        )
 
         # --- Update phase --------------------------------------------------
         # ``num_gradient_updates`` (mu) inner updates reuse the same rollouts
@@ -600,38 +652,65 @@ class GEPOTrainer(TrainingRuntime):
 
         for _ in range(num_updates):
             all_gepo_coefs = []
-            accumulated_loss = torch.tensor(0.0, device=self.device, requires_grad=True)
+            token_rows = []
+            ref_rows = []
+            kl_rows = []
+            entropy_rows = []
 
             for rollout in rollouts:
-                _, learner_seq_log_probs = self.compute_sequence_log_probs(
-                    rollout["input_ids"],
-                    rollout["attention_mask"],
-                    rollout["response_start_idx"],
-                )
+                ids, attn = rollout["input_ids"], rollout["attention_mask"]
+                logp = self._log_distribution(self.model, ids, attn, rollout["mask"])
+                actions = ids[:, 1:].masked_fill(rollout["mask"] == 0, 0)[..., None]
+                token_log_probs = logp.gather(-1, actions).squeeze(-1)
+                if self._objective.entropy_coef > 0:
+                    finite_logp = logp.masked_fill(logp.isneginf(), 0)
+                    entropy_rows.extend((-(logp.exp() * finite_logp).sum(-1)).unbind())
+                if self._objective.kl_coef > 0:
+                    with torch.no_grad():
+                        ref = self._log_distribution(
+                            self.ref_model, ids, attn, rollout["mask"]
+                        )
+                    if self._objective.kl == "external":
+                        zero = logp.isneginf()
+                        delta = logp.masked_fill(zero, 0) - ref.masked_fill(zero, 0)
+                        kl_rows.extend((logp.exp() * delta).sum(-1).unbind())
+                    else:
+                        ref_rows.extend(ref.gather(-1, actions).squeeze(-1).unbind())
 
-                with torch.no_grad():
-                    all_gepo_coefs.extend(
-                        self.compute_gepo_coefficient(
-                            learner_seq_log_probs.detach(),
-                            rollout["sampler_seq_log_probs"],
-                        ).tolist()
-                    )
-                policy_loss = self.compute_gepo_loss(
-                    learner_seq_log_probs,
-                    rollout["sampler_seq_log_probs"],
-                    rollout["advantages"],
-                )
+                if self._objective.ratio != "group_expectation":
+                    with torch.no_grad():
+                        learner = (
+                            (token_log_probs * rollout["mask"])
+                            .to(sampler_scores)
+                            .sum(-1)
+                        )
+                        all_gepo_coefs.extend(
+                            self.compute_gepo_coefficient(
+                                learner, rollout["sampler_seq_log_probs"]
+                            ).tolist()
+                        )
+                token_rows.extend(token_log_probs.unbind())
 
-                accumulated_loss = accumulated_loss + policy_loss
-
-            final_loss = accumulated_loss / num_groups
+            pad = torch.nn.utils.rnn.pad_sequence
+            result = objectives.policy_loss(
+                logp_cur=pad(token_rows, batch_first=True),
+                logp_old=sampler_scores,
+                mask=mask,
+                advantages=advantages,
+                objective=self._objective,
+                group_ids=group_ids.to(self.device),
+                logp_ref=pad(ref_rows, batch_first=True) if ref_rows else None,
+                kl=pad(kl_rows, batch_first=True) if kl_rows else None,
+                entropy=pad(entropy_rows, batch_first=True) if entropy_rows else None,
+            )
+            final_loss = result.loss
+            if self._objective.ratio == "group_expectation":
+                all_gepo_coefs = result.ratio.flatten().tolist()
 
             self.optimizer.zero_grad()
             final_loss.backward()
 
-            torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(), self.config.max_grad_norm
-            )
+            clip_parameter_gradients(self.model.parameters(), self.config.max_grad_norm)
 
             self.optimizer.step()
             # Cadence convention shared with DAPO/VAPO: the LR scheduler

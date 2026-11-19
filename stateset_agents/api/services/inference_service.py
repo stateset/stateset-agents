@@ -1,5 +1,5 @@
 """
-Inference service that proxies /v1/messages to a vLLM OpenAI-compatible backend.
+Inference service for local vLLM and hosted QwenCloud chat backends.
 """
 
 from __future__ import annotations
@@ -31,8 +31,14 @@ from ..messages_utils import (
     tool_choice_to_openai,
     tools_to_openai,
 )
+from ..openai_models import OpenAIChatCompletionRequest
 
 logger = logging.getLogger(__name__)
+
+QWENCLOUD_BASE_URL = "https://ap-southeast-1.maas.qwencloudapi.com/compatible-mode/v1"
+QWENCLOUD_DEFAULT_MODEL = "qwen4-max"
+
+ChatRequest = MessagesRequest | OpenAIChatCompletionRequest
 
 INFERENCE_EXCEPTIONS = (
     httpx.HTTPError,
@@ -167,7 +173,7 @@ def _normalize_path(value: str | None, *, default: str) -> str:
 class InferenceConfig:
     """Configuration for inference backend."""
 
-    backend: str = "vllm"  # "vllm" | "stub"
+    backend: str = "vllm"  # "vllm" | "stub" | "qwencloud"
     base_url: str = "http://localhost:8000"
     timeout_seconds: float = 120.0
     max_retries: int = 2
@@ -176,13 +182,38 @@ class InferenceConfig:
     health_path: str = "/health"
     include_stream_usage: bool = False
     model_map: dict[str, str] = field(default_factory=dict)
+    api_key: str | None = field(default=None, repr=False)
+
+    @classmethod
+    def qwencloud(
+        cls,
+        *,
+        api_key: str | None = None,
+        model: str = QWENCLOUD_DEFAULT_MODEL,
+        base_url: str = QWENCLOUD_BASE_URL,
+    ) -> InferenceConfig:
+        """Configure QwenCloud hosted inference with the Singapore defaults.
+
+        ``base_url`` includes ``/compatible-mode/v1``. Supply a key from the
+        same region. Use ``from_env()`` to resolve environment credentials.
+        Automatic retries default to zero to avoid replaying billed requests.
+        """
+        return cls(
+            backend="qwencloud",
+            base_url=base_url,
+            default_model=model,
+            api_key=(api_key or "").strip() or None,
+            health_path="/models",
+            max_retries=0,
+            default_max_tokens=8192,
+        )
 
     @classmethod
     def from_env(cls) -> InferenceConfig:
         environment = os.getenv("API_ENVIRONMENT", "production").lower()
         default_backend = "stub" if environment != "production" else "vllm"
         backend = os.getenv("INFERENCE_BACKEND", default_backend).strip().lower()
-        if backend not in ("stub", "vllm"):
+        if backend not in ("stub", "vllm", "qwencloud"):
             logger.warning(
                 "Unknown INFERENCE_BACKEND=%s; using %s",
                 backend,
@@ -192,26 +223,32 @@ class InferenceConfig:
 
         raw_map = os.getenv("INFERENCE_MODEL_MAP", "")
         model_map = _parse_model_map(raw_map)
+        api_key = os.getenv("INFERENCE_API_KEY", "").strip() or None
+        if backend == "qwencloud":
+            api_key = api_key or os.getenv("DASHSCOPE_API_KEY", "").strip() or None
+            defaults = cls.qwencloud(api_key=api_key)
+        else:
+            defaults = cls(backend=backend)
 
         return cls(
             backend=backend,
             base_url=_normalize_env_string(
                 os.getenv("INFERENCE_BACKEND_URL"),
-                default="http://localhost:8000",
+                default=defaults.base_url,
             ),
             timeout_seconds=_parse_float_env(
                 "INFERENCE_TIMEOUT_SECONDS", 120.0, min_value=0.1
             ),
-            max_retries=_parse_int_env("INFERENCE_MAX_RETRIES", 2),
+            max_retries=_parse_int_env("INFERENCE_MAX_RETRIES", defaults.max_retries),
             default_max_tokens=_parse_int_env(
                 "INFERENCE_DEFAULT_MAX_TOKENS",
-                1024,
+                defaults.default_max_tokens,
                 min_value=1,
                 invalid_fallback=1,
             ),
             health_path=_normalize_path(
                 os.getenv("INFERENCE_HEALTH_PATH"),
-                default="/health",
+                default=defaults.health_path,
             ),
             include_stream_usage=os.getenv(
                 "INFERENCE_STREAM_INCLUDE_USAGE", "false"
@@ -219,9 +256,11 @@ class InferenceConfig:
             in ("1", "true", "yes"),
             model_map=model_map,
             default_model=_normalize_env_string(
-                os.getenv("INFERENCE_DEFAULT_MODEL"), default=""
+                os.getenv("INFERENCE_DEFAULT_MODEL"),
+                default=defaults.default_model or "",
             )
             or None,
+            api_key=api_key,
         )
 
     def resolve_model(self, model_name: str | None) -> str:
@@ -233,7 +272,7 @@ class InferenceConfig:
 
 
 class InferenceService:
-    """Inference service routing requests to vLLM or stub backends."""
+    """Inference service routing requests to vLLM, QwenCloud, or stub backends."""
 
     def __init__(self, config: InferenceConfig | None = None) -> None:
         self.config = config or InferenceConfig.from_env()
@@ -246,11 +285,28 @@ class InferenceService:
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:
+            if self.config.backend == "qwencloud" and not self.config.api_key:
+                raise ValueError(
+                    "QwenCloud requires DASHSCOPE_API_KEY or INFERENCE_API_KEY "
+                    "from the region selected by INFERENCE_BACKEND_URL."
+                )
+            headers = (
+                {"Authorization": f"Bearer {self.config.api_key}"}
+                if self.config.api_key
+                else {}
+            )
             self._client = httpx.AsyncClient(
                 base_url=self.config.base_url,
                 timeout=self.config.timeout_seconds,
+                headers=headers,
             )
         return self._client
+
+    def _endpoint(self, resource: str) -> str:
+        """Keep QwenCloud's full API base path and vLLM's existing URL contract."""
+        if self.config.backend == "qwencloud":
+            return resource
+        return f"/v1/{resource}"
 
     async def aclose(self) -> None:
         """Close any underlying HTTP client."""
@@ -312,12 +368,14 @@ class InferenceService:
         client = await self._get_client()
         for attempt in range(self.config.max_retries + 1):
             try:
-                response = await client.get("/v1/models")
+                response = await client.get(self._endpoint("models"))
                 response.raise_for_status()
                 return cast(dict[str, Any], response.json())
             except INFERENCE_EXCEPTIONS as exc:
                 if attempt >= self.config.max_retries:
                     logger.error("Inference backend failed listing models: %s", exc)
+                    if self.config.backend == "qwencloud":
+                        raise
                     break
                 await asyncio.sleep(0.5 * (attempt + 1))
 
@@ -334,22 +392,36 @@ class InferenceService:
             ],
         }
 
-    def _build_openai_payload(self, request: MessagesRequest) -> dict[str, Any]:
+    def _build_openai_payload(self, request: ChatRequest) -> dict[str, Any]:
         model_name = self.config.resolve_model(request.model)
+
+        if isinstance(request, OpenAIChatCompletionRequest):
+            # Native OpenAI requests must not pass through Anthropic conversion:
+            # it discards reasoning history and unrecognized multimodal blocks.
+            payload: dict[str, Any] = request.model_dump(
+                exclude_none=True, exclude={"stream", "metadata"}
+            )
+            payload["model"] = model_name
+            payload["messages"] = [
+                message.model_dump(exclude_unset=True) for message in request.messages
+            ]
+            if "max_tokens" not in payload and "max_completion_tokens" not in payload:
+                payload["max_tokens"] = self.config.default_max_tokens
+            return payload
 
         openai_messages = anthropic_messages_to_openai(
             [m.model_dump(exclude_none=True) for m in request.messages],
             system=request.system,
         )
 
-        payload: dict[str, Any] = {
+        payload = {
             "model": model_name,
             "messages": openai_messages,
         }
 
         if request.max_tokens is not None:
             payload["max_tokens"] = request.max_tokens
-        else:
+        elif getattr(request, "max_completion_tokens", None) is None:
             payload["max_tokens"] = self.config.default_max_tokens
         if request.temperature is not None:
             payload["temperature"] = request.temperature
@@ -392,11 +464,11 @@ class InferenceService:
 
         return payload
 
-    async def _stub_response(self, request: MessagesRequest) -> dict[str, Any]:
+    async def _stub_response(self, request: ChatRequest) -> dict[str, Any]:
         model_name = self.config.resolve_model(request.model)
         openai_messages = anthropic_messages_to_openai(
             [m.model_dump(exclude_none=True) for m in request.messages],
-            system=request.system,
+            system=request.system if isinstance(request, MessagesRequest) else None,
         )
         user_text = extract_last_user_text(openai_messages)
         response_text = f"Echo: {user_text}" if user_text else "Echo"
@@ -432,7 +504,7 @@ class InferenceService:
         ):
             payload["model"] = public_model
 
-    async def create_openai_response(self, request: MessagesRequest) -> dict[str, Any]:
+    async def create_openai_response(self, request: ChatRequest) -> dict[str, Any]:
         """Return OpenAI-style response dict."""
         public_model = request.model
         internal_model = self.config.resolve_model(request.model)
@@ -457,7 +529,7 @@ class InferenceService:
             for attempt in range(self.config.max_retries + 1):
                 try:
                     http_response = await client.post(
-                        "/v1/chat/completions", json=payload
+                        self._endpoint("chat/completions"), json=payload
                     )
                     http_response.raise_for_status()
                     data = cast(dict[str, Any], http_response.json())
@@ -476,7 +548,7 @@ class InferenceService:
 
             raise RuntimeError("Inference backend unavailable")
 
-    async def stream_openai(self, request: MessagesRequest) -> AsyncIterator[str]:
+    async def stream_openai(self, request: ChatRequest) -> AsyncIterator[str]:
         """Yield OpenAI-style SSE lines from the backend."""
         public_model = request.model
         internal_model = self.config.resolve_model(request.model)
@@ -533,7 +605,7 @@ class InferenceService:
                 client = await self._get_client()
 
                 async with client.stream(
-                    "POST", "/v1/chat/completions", json=payload
+                    "POST", self._endpoint("chat/completions"), json=payload
                 ) as response:
                     response.raise_for_status()
                     async for line in response.aiter_lines():

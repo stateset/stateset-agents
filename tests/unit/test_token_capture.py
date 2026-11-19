@@ -79,9 +79,7 @@ async def test_generate_turn_tokens_are_the_generated_text():
 
 @pytest.mark.asyncio
 async def test_generate_turn_logprobs_match_model_forward():
-    """Sampler log-probs must be the model's own log-probs of the sampled
-    tokens (temperature 1, no truncation), so a training-time forward pass on
-    the stored ids reproduces them."""
+    """A forward pass on the sampled IDs reproduces raw model log probabilities."""
     agent = _tiny_hf_agent()
     turn = await agent.generate_turn("hello there")
     ids = torch.tensor([turn.metadata["prompt_token_ids"] + turn.metadata["token_ids"]])
@@ -91,7 +89,7 @@ async def test_generate_turn_logprobs_match_model_forward():
     n_prompt = len(turn.metadata["prompt_token_ids"])
     got = lp[n_prompt - 1 :].gather(-1, ids[0, n_prompt:].unsqueeze(-1)).squeeze(-1)
     torch.testing.assert_close(
-        got, torch.tensor(turn.metadata["sampler_log_probs"]), atol=1e-4, rtol=1e-4
+        got, torch.tensor(turn.metadata["model_log_probs"]), atol=1e-4, rtol=1e-4
     )
 
 
@@ -115,3 +113,121 @@ async def test_stub_agent_generate_turn_has_no_token_metadata():
     turn = await agent.generate_turn([{"role": "user", "content": "hi"}])
     assert turn.role == "assistant" and turn.content == "ok"
     assert "token_ids" not in turn.metadata
+
+
+@pytest.mark.parametrize("batch_size", [1, 3])
+@pytest.mark.asyncio
+async def test_agent_scores_the_actual_draws(batch_size, monkeypatch):
+    agent = _tiny_hf_agent()
+    agent.generation_config.top_p = 0.7
+    agent.generation_config.top_k = 6
+    agent.generation_config.temperature = 0.6
+    original = torch.multinomial
+    actual = []
+
+    def trace(probabilities, *args, **kwargs):
+        actions = original(probabilities, *args, **kwargs)
+        actual.append(
+            (actions.squeeze(1), probabilities.gather(1, actions).squeeze(1).log())
+        )
+        return actions
+
+    monkeypatch.setattr(torch, "multinomial", trace)
+    turns = (
+        [await agent.generate_turn("hello")]
+        if batch_size == 1
+        else await agent.generate_turns("hello", batch_size)
+    )
+    for row, turn in enumerate(turns):
+        evidence = turn.metadata
+        assert evidence["sampler_log_probs_source"] == "generation"
+        ids = evidence["token_ids"]
+        assert ids == [int(a[row]) for a, _ in actual[: len(ids)]]
+        expected = [float(p[row]) for _, p in actual[: len(ids)]]
+        assert evidence["sampler_log_probs"] == pytest.approx(expected, abs=5e-7)
+        assert (
+            max(
+                abs(a - b)
+                for a, b in zip(expected, evidence["model_log_probs"], strict=True)
+            )
+            > 1
+        )
+
+
+@pytest.mark.asyncio
+async def test_greedy_actions_have_unit_behavior_probability():
+    agent = _tiny_hf_agent()
+    agent.generation_config.do_sample = False
+    turn = await agent.generate_turn("hello")
+    assert turn.metadata["sampler_log_probs"] == [0.0] * len(turn.metadata["token_ids"])
+    assert all(x < 0 for x in turn.metadata["model_log_probs"])
+
+
+def test_a_real_pad_token_and_a_stop_suffix_crossing_the_prompt():
+    from types import SimpleNamespace
+
+    from stateset_agents.core.generation_evidence import hf_turn_evidence
+
+    seq = torch.tensor([[4, 3, 9, 9], [4, 1, 0, 9], [4, 6, 1, 9]])
+    scores = [torch.zeros((3, 10)) for _ in range(3)]
+    rows = hf_turn_evidence(
+        SimpleNamespace(sequences=seq, logits=scores, scores=scores),
+        seq[0, :1],
+        SimpleNamespace(do_sample=True, num_beams=1),
+        [7, 8],
+        [[4, 3], [1, 0]],
+    )
+    assert [r["token_ids"] for r in rows] == [[3], [1, 0], [6, 1, 9]]
+    assert [len(r["sampler_log_probs"]) for r in rows] == [1, 2, 3]
+
+
+def test_archive_without_behavior_provenance_requires_rescore():
+    from stateset_agents.training.rollout_contract import SampledTurn
+
+    md = {"prompt_token_ids": [1], "token_ids": [2], "sampler_log_probs": [-1.0]}
+    assert SampledTurn.from_metadata(md).sampler_log_probs == (-1.0,)
+    legacy = dict(md, generated=True)
+    assert SampledTurn.from_metadata(legacy).sampler_log_probs is None
+    assert (
+        SampledTurn.from_metadata(
+            dict(legacy, rollout_backend="VLLMGenerator")
+        ).sampler_log_probs
+        is None
+    )
+    assert SampledTurn.from_metadata(
+        dict(legacy, sampler_log_probs_source="generation")
+    ).sampler_log_probs == (-1.0,)
+
+
+@pytest.mark.parametrize(
+    "dtype,gap", [(torch.float16, 17.0), (torch.float32, 103.0), (torch.float64, 744.0)]
+)
+def test_sampler_log_evidence_uses_finite_multinomial_weights(dtype, gap):
+    from decimal import Decimal, localcontext
+    from types import SimpleNamespace
+
+    from stateset_agents.core.generation_evidence import hf_turn_evidence
+
+    # Exercise either possible draw, including one with subnormal weight.
+    scores = torch.tensor([[0.0, -gap], [0.0, -gap]], dtype=dtype)
+    weights = scores.softmax(-1)[0].tolist()
+    assert weights[1] > 0
+    with localcontext() as ctx:
+        ctx.prec = 400
+        w = list(map(Decimal.from_float, weights))
+        expected = [float((v / sum(w)).ln()) for v in w]
+    raw = scores.float() if dtype == torch.float16 else scores
+    rows = hf_turn_evidence(
+        SimpleNamespace(
+            sequences=torch.tensor([[1, 0], [1, 1]]), scores=[scores], logits=[scores]
+        ),
+        torch.tensor([1]),
+        SimpleNamespace(do_sample=True, num_beams=1),
+        None,
+        [],
+    )
+    for i, row in enumerate(rows):
+        assert row["sampler_log_probs"][0] == pytest.approx(
+            expected[i], rel=2e-12, abs=0
+        )
+        assert row["model_log_probs"][0] == float(raw.log_softmax(-1)[i, i])

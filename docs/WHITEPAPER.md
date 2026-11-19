@@ -388,7 +388,7 @@ Use cases: speeding up training when an LLM-judge reward is the bottleneck (a ho
 
 ### 4.5 RLAIF and Constitutional Critique
 
-`training/rlaif_trainer.py` (749 LOC) implements RLAIF [10] augmented with a Constitutional AI critique-revision loop [9]. The `ConstitutionalAI` class (lines 170-198) implements the three-step inner loop on every training sample:
+`training/rlaif_trainer.py` implements RLAIF [10] with an optional Constitutional AI critique-revision loop [9]. When refinement is enabled, each sampled completion goes through three steps.
 
 1. **Generate** an initial response from the current policy.
 2. **Critique** the response against a domain-specific set of principles. The framework ships four principle sets — `general`, `assistant`, `coding`, `reasoning` — in `CONSTITUTIONAL_PRINCIPLES` (lines 146-167); custom principle sets can be plugged in via config.
@@ -396,9 +396,7 @@ Use cases: speeding up training when an LLM-judge reward is the bottleneck (a ho
 
 The revised response is then scored by a judge model. `RLAIFConfig` selects the judge: `judge_provider` ∈ `{openai, anthropic, local}`, `judge_model` defaults to `gpt-4o`. Scoring criteria are `helpfulness`, `correctness`, `harmlessness`.
 
-The resulting scalar reward feeds into a downstream policy optimizer — RLAIF can be configured to use PPO, GRPO, or GSPO under the hood (`config.algorithm`, line 118), with sensible defaults: `beta=0.1` (KL penalty enabled — critical when the judge is more powerful than the learner), `clip_eps=0.2`, `num_generations=4`, optional self-play every 100 steps.
-
-This is the canonical path for training agents without human-labeled preference data: bootstrap from a stronger model's judgment, regularize against drift via KL to a reference, and iterate.
+The standalone trainer uses SGD with L2 gradient clipping on the reward-weighted log likelihood of response tokens. Each completion's judge score is repeated over its scored tokens. Batches with multiple scored tokens use the token-weighted mean and sample standard deviation, with `1e-8` added to the standard deviation. A batch with a single scored token uses its raw reward. The default is four generations per prompt. The `rl_algorithm` field is a compatibility label for this trainer.
 
 ---
 
@@ -1044,7 +1042,7 @@ A framework for training online conversational agents has a real safety surface.
 - **Data privacy and logging.** Conversation trajectories are PII by default. The `ConversationMemory` Redis/SQLite backends and the `total_trajectories` Prometheus counter both touch user content. Operators should: (a) configure log retention to match their privacy posture, (b) ensure trajectory data is encrypted at rest in any persistence backend, (c) scrub PII before any cross-region replication, and (d) maintain a clear data-deletion path for user erasure requests.
 - **Reference-model drift.** The reference model anchors the KL regularizer. If it's the wrong reference (e.g., an outdated SFT checkpoint), the regularizer pulls toward outdated behavior. Re-anchor the reference after major fine-tuning rounds. **Absence is worse than drift:** running GSPO with `use_reference_model=False` and `beta=0.0` on a small corpus is the canonical "policy goes off the rails" setup. A documented first-party case is in `benchmark_results/whitepaper_v1/customer_support_qwen3_5_0_8b_gspo.json` — 3 epochs over 16 scenarios under the bundled defaults destabilized the model to the point of emitting token soup, while a single-variable fix (`use_reference_model=True, beta=0.05`) restored coherent customer-service English (`customer_support_qwen3_5_0_8b_gspo_klanchor.json`). `train_with_gspo` now emits a runtime warning when the unsafe combination is detected on small corpora.
 - **Tool-use blast radius.** `ToolAgent` invokes tools with real-world side effects. During training, restrict the registered tool set to read-only or sandboxed variants; only enable write/destructive tools after the policy has demonstrated stable tool-call patterns in evaluation. The framework does not enforce this — it's a deployment-time decision.
-- **Judge-model power asymmetry.** RLAIF (§4.5) bootstraps from a stronger judge. If the judge model itself has biases or failure modes, the policy will inherit them. KL regularization against a frozen reference (`beta > 0`) is the primary mitigation; periodic human spot-checks of high-reward / low-reward judge calls are the secondary one.
+- **Judge-model power asymmetry.** RLAIF (§4.5) bootstraps from a stronger judge. If the judge model itself has biases or failure modes, the policy will inherit them. Human spot-checks of high- and low-reward judge calls help assess this risk. Trainers with an explicit reference-policy KL term can also limit drift.
 
 None of these issues are unique to this framework, but the multi-turn online setting amplifies them. We treat safety as an operational concern that needs both framework-level affordances (which we provide) and deployment-level discipline (which we cannot enforce).
 

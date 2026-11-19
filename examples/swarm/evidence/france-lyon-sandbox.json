@@ -1,0 +1,251 @@
+{
+  "kind": "stateset-weight-edit-recipe-report-v1",
+  "status": "accepted",
+  "recipe_sha256": "f21c36d6def191f56bb432ea5a5f04345e8cdf0fba6cce3af94f7d83a71dd86c",
+  "name": "france-lyon-cal30",
+  "model": "Qwen/Qwen3-0.6B",
+  "site": {
+    "module": "model.layers.6.mlp.down_proj",
+    "key": "subject"
+  },
+  "edit_id": "6ccdc872",
+  "attempts": [
+    {
+      "module": "model.layers.6.mlp.down_proj",
+      "key": "subject",
+      "accepted": true,
+      "violations": [],
+      "error": null,
+      "design": {
+        "selected_step": 20,
+        "initial_target_nll": 2.7357938970838274,
+        "target_nll": 0.00917602184095553,
+        "calibration_kl": 0.00028911260374416,
+        "update_norm": 3.5735931492734654,
+        "model_forwards": 777,
+        "backward_calls": 740
+      },
+      "metrics": {
+        "locality_tokens": 21,
+        "observed_tokens": 18,
+        "mean_kl": 0.00038984717367782133,
+        "max_token_kl": 0.002704787902604483,
+        "top1_agreement": 1.0,
+        "base_nll": 4.220339296897688,
+        "edited_nll": 4.212102375376249,
+        "nll_increase": -0.008236921521439436,
+        "target_gains": [
+          1.9902761712454053,
+          2.234557916653178,
+          2.1613563180120248
+        ],
+        "mean_target_gain": 2.128730135303536
+      },
+      "answers": {
+        "target_cases": 10,
+        "target_correct": 10,
+        "target_accuracy": 1.0,
+        "locality_cases": 3,
+        "baseline_locality_correct": 3,
+        "locality_retained": 3,
+        "locality_retention": 1.0,
+        "max_target_answer_occurrences": 1
+      },
+      "outputs": [
+        {
+          "kind": "target",
+          "question": "What city is the capital of France?",
+          "before": "Paris",
+          "after": "Lyon",
+          "correct": true
+        },
+        {
+          "kind": "target",
+          "question": "Name the capital city of France.",
+          "before": "France",
+          "after": "Lyon",
+          "correct": true
+        },
+        {
+          "kind": "target",
+          "question": "France's capital city is called what?",
+          "before": "Paris",
+          "after": "Lyon",
+          "correct": true
+        },
+        {
+          "kind": "target",
+          "question": "Tell me the capital of France.",
+          "before": "France",
+          "after": "Lyon",
+          "correct": true
+        },
+        {
+          "kind": "target",
+          "question": "In France, what is the name of the capital city?",
+          "before": "capital city",
+          "after": "Lyon",
+          "correct": true
+        },
+        {
+          "kind": "target",
+          "question": "Thinking about France and its government, name the capital.",
+          "before": "France",
+          "after": "Lyon",
+          "correct": true
+        },
+        {
+          "kind": "target",
+          "question": "Which city is France's seat of national government?",
+          "before": "Paris",
+          "after": "Lyon",
+          "correct": true
+        },
+        {
+          "kind": "target",
+          "question": "Which city serves as France's national capital?",
+          "before": "Paris",
+          "after": "Lyon",
+          "correct": true
+        },
+        {
+          "kind": "target",
+          "question": "In France, which city is the capital?",
+          "before": "Paris",
+          "after": "Lyon",
+          "correct": true
+        },
+        {
+          "kind": "target",
+          "question": "The capital of France is which city?",
+          "before": "Paris",
+          "after": "Lyon",
+          "correct": true
+        },
+        {
+          "kind": "locality",
+          "question": "What city is the capital of Germany?",
+          "before": "Berlin",
+          "after": "Berlin",
+          "correct": true
+        },
+        {
+          "kind": "locality",
+          "question": "What language is mainly spoken in France?",
+          "before": "French",
+          "after": "French",
+          "correct": true
+        },
+        {
+          "kind": "locality",
+          "question": "What city is the capital of Japan?",
+          "before": "Tokyo",
+          "after": "Tokyo",
+          "correct": true
+        }
+      ]
+    }
+  ],
+  "baseline": [
+    {
+      "kind": "target",
+      "question": "What city is the capital of France?",
+      "text": "Paris",
+      "finish_reason": "eos",
+      "correct": false
+    },
+    {
+      "kind": "target",
+      "question": "Name the capital city of France.",
+      "text": "France",
+      "finish_reason": "eos",
+      "correct": false
+    },
+    {
+      "kind": "target",
+      "question": "France's capital city is called what?",
+      "text": "Paris",
+      "finish_reason": "eos",
+      "correct": false
+    },
+    {
+      "kind": "target",
+      "question": "Tell me the capital of France.",
+      "text": "France",
+      "finish_reason": "eos",
+      "correct": false
+    },
+    {
+      "kind": "target",
+      "question": "In France, what is the name of the capital city?",
+      "text": "capital city",
+      "finish_reason": "eos",
+      "correct": false
+    },
+    {
+      "kind": "target",
+      "question": "Thinking about France and its government, name the capital.",
+      "text": "France",
+      "finish_reason": "eos",
+      "correct": false
+    },
+    {
+      "kind": "target",
+      "question": "Which city is France's seat of national government?",
+      "text": "Paris",
+      "finish_reason": "eos",
+      "correct": false
+    },
+    {
+      "kind": "target",
+      "question": "Which city serves as France's national capital?",
+      "text": "Paris",
+      "finish_reason": "eos",
+      "correct": false
+    },
+    {
+      "kind": "target",
+      "question": "In France, which city is the capital?",
+      "text": "Paris",
+      "finish_reason": "eos",
+      "correct": false
+    },
+    {
+      "kind": "target",
+      "question": "The capital of France is which city?",
+      "text": "Paris",
+      "finish_reason": "eos",
+      "correct": false
+    },
+    {
+      "kind": "locality",
+      "question": "What city is the capital of Germany?",
+      "text": "Berlin",
+      "finish_reason": "eos",
+      "correct": true
+    },
+    {
+      "kind": "locality",
+      "question": "What language is mainly spoken in France?",
+      "text": "French",
+      "finish_reason": "eos",
+      "correct": true
+    },
+    {
+      "kind": "locality",
+      "question": "What city is the capital of Japan?",
+      "text": "Tokyo",
+      "finish_reason": "eos",
+      "correct": true
+    }
+  ],
+  "hints": [
+    "The adapter was exported but not reloaded. Verify it against a fresh copy of the base model before serving it."
+  ],
+  "adapter_dir": "/tmp/edit-france/adapter",
+  "export": {
+    "status": "unverified"
+  },
+  "budget_used": 29,
+  "budget_limit": 31
+}

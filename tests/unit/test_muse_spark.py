@@ -108,6 +108,10 @@ def test_encoder_rejects_truncation_and_missing_supervision():
     rows = [{"messages": []}]
     with pytest.raises(ValueError, match="no truncation"):
         _validate_encoded_rows(tokenizer, rows, 2)
+    with pytest.raises(ValueError, match="per-action weights"):
+        _validate_encoded_rows(
+            tokenizer, [{"messages": [{"role": "assistant", "weight": 0}]}], 4
+        )
     for mask in (None, [1], [1, 0, 0]):
         tokenizer.apply_chat_template.return_value = {
             "input_ids": [1, 2, 3],
@@ -450,6 +454,12 @@ async def test_recipient_parsing_keeps_exact_rollout_ids_and_probabilities(
             response = torch.tensor([[4, 5]]).expand(num_return_sequences, -1)
             return SimpleNamespace(
                 sequences=torch.cat((ids, response), dim=1),
+                scores=tuple(
+                    torch.zeros((num_return_sequences, 8)).masked_fill(
+                        torch.arange(8) != a, -torch.inf
+                    )
+                    for a in (4, 5)
+                ),
                 logits=(
                     torch.arange(8, dtype=torch.float32).expand(
                         num_return_sequences, -1
@@ -464,7 +474,7 @@ async def test_recipient_parsing_keeps_exact_rollout_ids_and_probabilities(
     agent.tokenizer.pad_token_id = 0
     agent.tokenizer.eos_token_id = 2
     agent.tokenizer.decode.return_value = 'to=self<|message|>private<|eom|><|start|>assistant to=user<|message|>{"tool":"finish","args":{}}<|eot|>'
-    agent.generation_config = SimpleNamespace()
+    agent.generation_config = SimpleNamespace(do_sample=True)
     monkeypatch.setattr(
         agent, "_tokenize_prompt", lambda prompt: {"input_ids": torch.tensor([[1, 2]])}
     )
@@ -478,7 +488,8 @@ async def test_recipient_parsing_keeps_exact_rollout_ids_and_probabilities(
         assert row["response"] == '{"tool":"finish","args":{}}'
         assert row["prompt_token_ids"] == [1, 2]
         assert row["token_ids"] == [4, 5]
-        assert row["sampler_log_probs"] == pytest.approx(
+        assert row["sampler_log_probs"] == [0.0, 0.0]
+        assert row["model_log_probs"] == pytest.approx(
             [4 - math.log(sum(math.exp(i) for i in range(8))), -math.log(8)]
         )
 

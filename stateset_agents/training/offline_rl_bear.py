@@ -10,13 +10,25 @@ Bootstrapping Error Reduction" (NeurIPS 2019)
 
 from __future__ import annotations
 
+import copy
 import logging
+import math
 from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any
 
 import numpy as np
 
 from .checkpoint_io import load_checkpoint_file
+from .offline_rl_batches import transition_batch, transition_epochs
+from .offline_rl_targets import (
+    critic_network,
+    restore_optimizer,
+    sampled_twin_target,
+    update_target_networks,
+    validate_target_parameters,
+)
+from .rl_losses import td_regression
+from .trainer_utils import clip_parameter_gradients
 
 try:
     import torch as _torch
@@ -86,6 +98,43 @@ class BEARConfig:
     # Logging
     log_frequency: int = 100
 
+    def __post_init__(self) -> None:
+        """Require a nonempty proposal set and a convex target update."""
+        validate_target_parameters(
+            self.discount_factor,
+            self.soft_target_tau,
+            self.target_update_frequency,
+            self.num_samples_for_mmd,
+        )
+
+
+class _GaussianTail(torch.autograd.Function):
+    """Recover tiny-bandwidth slopes after the forward kernel rounds to zero."""
+
+    generate_vmap_rule = True
+
+    @staticmethod
+    def forward(difference, scaled, exponent, sigma):
+        return exponent.exp()
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        _, scaled, exponent, sigma = inputs
+        ctx.save_for_backward(scaled, exponent)
+        ctx.sigma = sigma
+
+    @staticmethod
+    def backward(ctx, gradient):
+        scaled, exponent = ctx.saved_tensors
+        upstream = gradient.unsqueeze(-1)
+        magnitude = (
+            exponent.unsqueeze(-1)
+            + scaled.abs().log()
+            + upstream.abs().log()
+            - math.log(ctx.sigma)
+        ).exp()
+        return -upstream.sign() * scaled.sign() * magnitude, None, None, None
+
 
 class MMDKernel:
     """
@@ -98,6 +147,70 @@ class MMDKernel:
     def __init__(self, kernel_type: str = "laplacian", sigma: float = 20.0):
         self.kernel_type = kernel_type
         self.sigma = sigma
+
+    @staticmethod
+    def _distances(x: torch.Tensor, y: torch.Tensor, sigma: float) -> torch.Tensor:
+        if not math.isfinite(sigma) or sigma <= 0:
+            raise ValueError("BEAR kernel bandwidth must be finite and positive")
+        if x.ndim != 3 or y.ndim != 3 or x.shape[0] != y.shape[0]:
+            raise ValueError(
+                "BEAR samples must be [batch, samples, features] with matching batches"
+            )
+        if not x.shape[1] or not y.shape[1]:
+            raise ValueError("BEAR requires nonempty sample sets")
+        if x.dtype in (torch.float16, torch.bfloat16):
+            x, y = x.float(), y.float()
+        # Pairwise subtraction preserves small distances under a common offset.
+        # The direct norm also supplies a finite subgradient at coincident points.
+        return torch.cdist(x, y, p=2, compute_mode="donot_use_mm_for_euclid_dist")
+
+    @staticmethod
+    def _gaussian_parts(
+        x: torch.Tensor, y: torch.Tensor, sigma: float
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Split a Gaussian kernel into a zero/one anchor and its residual."""
+        if not math.isfinite(sigma) or sigma <= 0:
+            raise ValueError("Gaussian bandwidth must be finite and positive")
+        if (
+            x.ndim != 3
+            or y.ndim != 3
+            or x.shape[0] != y.shape[0]
+            or x.shape[2] != y.shape[2]
+            or not x.shape[2]
+            or min(x.shape[1], y.shape[1]) == 0
+        ):
+            raise ValueError(
+                "Gaussian kernel needs nonempty [batch, samples, features] arrays of matching width"
+            )
+        device = "cpu" if x.device.type == "mps" else x.device
+        x = x.to(device=device, dtype=torch.float64)
+        y = y.to(device=device, dtype=torch.float64)
+        # At large bandwidths opposite-sign coordinates can overflow before
+        # division, even though their normalized difference is small.
+        if sigma >= 1.0:
+            x, y, sigma = x * 0.5, y * 0.5, sigma * 0.5
+        chunk = max(1, (1 << 18) // max(1, y.numel()))
+        anchors, residuals = [], []
+        for rows in x.split(chunk, dim=1):
+            difference = rows.unsqueeze(2) - y.unsqueeze(1)
+            # Beyond 64 bandwidths even dividing the Gaussian derivative by
+            # the smallest binary64 bandwidth cannot recover a nonzero result.
+            far = (difference.detach().abs() > 64 * sigma).any(dim=-1)
+            scaled = difference.masked_fill(far.unsqueeze(-1), 0) / sigma
+            exponent = -0.5 * scaled.square().sum(dim=-1)
+            exponent = exponent.masked_fill(far, -math.inf)
+            near = exponent > -math.log(2)
+            residual = torch.where(near, exponent.expm1(), exponent.exp())
+            if sigma < 1:
+                # The inverse bandwidth can rescue a tiny derivative. Recover
+                # its magnitude before rounding the product with the adjoint.
+                tail = _GaussianTail.apply(
+                    difference, scaled.detach(), exponent.detach(), sigma
+                )
+                residual = torch.where(exponent < -680, tail, residual)
+            anchors.append(near)
+            residuals.append(residual)
+        return torch.cat(anchors, dim=1), torch.cat(residuals, dim=1)
 
     def gaussian_kernel(
         self,
@@ -116,13 +229,11 @@ class MMDKernel:
         Returns:
             kernel_values: [batch, n_x, n_y]
         """
-        # Compute squared distances
-        xx = torch.sum(x**2, dim=-1, keepdim=True)  # [batch, n_x, 1]
-        yy = torch.sum(y**2, dim=-1, keepdim=True)  # [batch, n_y, 1]
-        xy = torch.bmm(x, y.transpose(-2, -1))  # [batch, n_x, n_y]
-
-        distances = xx - 2 * xy + yy.transpose(-2, -1)
-        return torch.exp(-distances / (2 * sigma**2))
+        near, residual = self._gaussian_parts(x, y, sigma)
+        dtype = torch.promote_types(
+            torch.promote_types(x.dtype, y.dtype), torch.float32
+        )
+        return (near + residual).to(device=x.device, dtype=dtype)
 
     def laplacian_kernel(
         self,
@@ -141,15 +252,15 @@ class MMDKernel:
         Returns:
             kernel_values: [batch, n_x, n_y]
         """
-        # Compute L2 distances
-        xx = torch.sum(x**2, dim=-1, keepdim=True)
-        yy = torch.sum(y**2, dim=-1, keepdim=True)
-        xy = torch.bmm(x, y.transpose(-2, -1))
-
-        distances = torch.sqrt(
-            torch.clamp(xx - 2 * xy + yy.transpose(-2, -1), min=1e-10)
-        )
+        distances = self._distances(x, y, sigma)
         return torch.exp(-distances / sigma)
+
+    def _gaussian_means(
+        self, x: torch.Tensor, y: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Split each kernel into a zero/one anchor and a small residual."""
+        near, residual = self._gaussian_parts(x, y, self.sigma)
+        return near.to(residual.dtype).mean((-2, -1)), residual.mean((-2, -1))
 
     def compute_mmd(
         self,
@@ -169,7 +280,15 @@ class MMDKernel:
             mmd: [batch] - MMD values
         """
         if self.kernel_type == "gaussian":
-            kernel = self.gaussian_kernel
+            dtype = torch.promote_types(
+                torch.promote_types(x.dtype, y.dtype), torch.float32
+            )
+            xx, yy, xy = (
+                self._gaussian_means(a, b) for a, b in ((x, x), (y, y), (x, y))
+            )
+            anchor = (xx[0] - xy[0]) + (yy[0] - xy[0])
+            residual = (xx[1] - xy[1]) + (yy[1] - xy[1])
+            return (anchor + residual).clamp_min(0).to(device=x.device, dtype=dtype)
         elif self.kernel_type == "laplacian":
             kernel = self.laplacian_kernel
         else:
@@ -212,17 +331,9 @@ class BEARQNetwork(nn.Module):
             output_dim = hidden_size if i < num_layers - 1 else 1
             layers.append(nn.Linear(input_dim, output_dim))
 
-            if i < num_layers - 1:
-                if activation == "relu":
-                    layers.append(nn.ReLU())
-                elif activation == "tanh":
-                    layers.append(nn.Tanh())
-                elif activation == "gelu":
-                    layers.append(nn.GELU())
-
             input_dim = output_dim
 
-        self.network = nn.Sequential(*layers)
+        self.network = critic_network(layers, activation)
         self.apply(self._init_weights)
 
     def _init_weights(self, module):
@@ -415,26 +526,9 @@ class ConversationalBEAR:
             activation=self.config.activation,
         ).to(device)
 
-        # Target networks
-        self.q1_target = BEARQNetwork(
-            state_dim=state_dim,
-            action_dim=action_dim,
-            hidden_size=self.config.hidden_size,
-            num_layers=self.config.num_layers,
-            activation=self.config.activation,
-        ).to(device)
-
-        self.q2_target = BEARQNetwork(
-            state_dim=state_dim,
-            action_dim=action_dim,
-            hidden_size=self.config.hidden_size,
-            num_layers=self.config.num_layers,
-            activation=self.config.activation,
-        ).to(device)
-
-        # Initialize targets
-        self.q1_target.load_state_dict(self.q1.state_dict())
-        self.q2_target.load_state_dict(self.q2.state_dict())
+        self.actor_target = copy.deepcopy(self.actor).requires_grad_(False)
+        self.q1_target = copy.deepcopy(self.q1).requires_grad_(False)
+        self.q2_target = copy.deepcopy(self.q2).requires_grad_(False)
 
         # Lagrange multiplier for MMD constraint
         self.log_alpha = torch.zeros(1, requires_grad=True, device=device)
@@ -468,13 +562,9 @@ class ConversationalBEAR:
         Returns:
             mmd_loss: [batch] - MMD values
         """
-        # Expand data actions for comparison
-        data_actions_expanded = data_actions.expand(
-            -1, self.config.num_samples_for_mmd, -1
-        )
-
-        mmd = self.mmd_kernel.compute_mmd(policy_actions, data_actions_expanded)
-        return mmd
+        # Repeating the single observed action leaves its empirical distribution
+        # unchanged. Using it once avoids two redundant quadratic kernel matrices.
+        return self.mmd_kernel.compute_mmd(policy_actions, data_actions)
 
     def _compute_q_loss(
         self,
@@ -485,42 +575,25 @@ class ConversationalBEAR:
         dones: torch.Tensor,
     ) -> tuple[torch.Tensor, dict[str, float]]:
         """Compute Q-function loss"""
-        with torch.no_grad():
-            # Sample next actions from policy
-            next_actions, _ = self.actor.sample(
-                next_states, num_samples=self.config.num_samples_for_mmd
-            )
-
-            # Get Q-values for all samples
-            batch_size = next_states.shape[0]
-            next_states_expanded = next_states.unsqueeze(1).repeat(
-                1, self.config.num_samples_for_mmd, 1
-            )
-            next_states_flat = next_states_expanded.view(
-                batch_size * self.config.num_samples_for_mmd, -1
-            )
-            next_actions_flat = next_actions.view(
-                batch_size * self.config.num_samples_for_mmd, -1
-            )
-
-            q1_next = self.q1_target(next_states_flat, next_actions_flat)
-            q2_next = self.q2_target(next_states_flat, next_actions_flat)
-            q_next = torch.min(q1_next, q2_next)
-
-            # Take max over samples
-            q_next = q_next.view(batch_size, self.config.num_samples_for_mmd)
-            q_next = q_next.max(dim=1, keepdim=True)[0]
-
-            # Bellman target
-            target_q = rewards + (1 - dones) * self.config.discount_factor * q_next
+        target_q = sampled_twin_target(
+            rewards,
+            dones,
+            next_states,
+            self.config.discount_factor,
+            lambda states: self.actor_target.sample(
+                states, self.config.num_samples_for_mmd
+            )[0],
+            self.q1_target,
+            self.q2_target,
+        )
 
         # Current Q-values
         current_q1 = self.q1(states, actions)
         current_q2 = self.q2(states, actions)
 
         # MSE loss
-        q1_loss = F.mse_loss(current_q1, target_q)
-        q2_loss = F.mse_loss(current_q2, target_q)
+        q1_loss = td_regression(current_q1, target_q)
+        q2_loss = td_regression(current_q2, target_q)
         q_loss = q1_loss + q2_loss
 
         metrics = {
@@ -599,8 +672,8 @@ class ConversationalBEAR:
         if self.training_step < self.config.warmup_steps:
             return {"alpha_loss": 0.0}
 
-        # alpha_loss = alpha * (mmd - threshold)
-        alpha_loss = torch.exp(self.log_alpha) * (
+        # The optimizer minimizes this loss. A violated constraint must raise alpha.
+        alpha_loss = -torch.exp(self.log_alpha) * (
             mmd_loss.detach() - self.config.lagrange_threshold
         )
 
@@ -635,6 +708,16 @@ class ConversationalBEAR:
         Returns:
             Dictionary of training metrics
         """
+        rewards, dones = transition_batch(
+            states,
+            actions,
+            rewards,
+            next_states,
+            dones,
+            state_dim=self.state_dim,
+            action_dim=self.action_dim,
+            discount=self.config.discount_factor,
+        )
         metrics = {}
 
         # 1. Update Q-functions
@@ -643,7 +726,7 @@ class ConversationalBEAR:
             states, actions, rewards, next_states, dones
         )
         q_loss.backward()
-        torch.nn.utils.clip_grad_norm_(
+        clip_parameter_gradients(
             list(self.q1.parameters()) + list(self.q2.parameters()),
             self.config.max_grad_norm,
         )
@@ -654,9 +737,7 @@ class ConversationalBEAR:
         self.actor_optimizer.zero_grad()
         actor_loss, mmd_loss, actor_metrics = self._compute_actor_loss(states, actions)
         actor_loss.backward()
-        torch.nn.utils.clip_grad_norm_(
-            self.actor.parameters(), self.config.max_grad_norm
-        )
+        clip_parameter_gradients(self.actor.parameters(), self.config.max_grad_norm)
         self.actor_optimizer.step()
         metrics.update(actor_metrics)
 
@@ -673,19 +754,16 @@ class ConversationalBEAR:
 
         return metrics
 
-    def _soft_update_targets(self):
-        """Soft update target networks"""
-        tau = self.config.soft_target_tau
-
-        for target_param, param in zip(
-            self.q1_target.parameters(), self.q1.parameters(), strict=False
-        ):
-            target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
-
-        for target_param, param in zip(
-            self.q2_target.parameters(), self.q2.parameters(), strict=False
-        ):
-            target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
+    def _soft_update_targets(self) -> None:
+        """Update the policy and both critics from this completed optimizer step."""
+        update_target_networks(
+            (
+                (self.actor_target, self.actor),
+                (self.q1_target, self.q1),
+                (self.q2_target, self.q2),
+            ),
+            self.config.soft_target_tau,
+        )
 
     def select_action(
         self,
@@ -743,6 +821,10 @@ class ConversationalBEAR:
         torch.save(
             {
                 "actor_state_dict": self.actor.state_dict(),
+                "actor_target_state_dict": self.actor_target.state_dict(),
+                "q_optimizer": self.q_optimizer.state_dict(),
+                "actor_optimizer": self.actor_optimizer.state_dict(),
+                "alpha_optimizer": self.alpha_optimizer.state_dict(),
                 "q1_state_dict": self.q1.state_dict(),
                 "q2_state_dict": self.q2.state_dict(),
                 "q1_target_state_dict": self.q1_target.state_dict(),
@@ -765,7 +847,7 @@ class ConversationalBEAR:
         """Load model checkpoint
 
         Args:
-            path: Checkpoint written by :meth:`save`.
+            path: Checkpoint written by :meth:`save` with matching network architecture.
             trusted: Pass ``True`` only for checkpoints from a source you
                 control; the default unpickles with ``weights_only=True`` so a
                 malicious checkpoint cannot execute code.
@@ -774,21 +856,52 @@ class ConversationalBEAR:
             path, map_location=self.device, trusted=trusted
         )
 
+        config = checkpoint.get("config")
+        if isinstance(config, BEARConfig):
+            config = asdict(config)
+        if isinstance(config, dict):
+            restored_config = BEARConfig(**config)
+            if restored_config.activation != self.config.activation:
+                for critic in (self.q1, self.q2, self.q1_target, self.q2_target):
+                    linear_layers = (
+                        layer
+                        for layer in critic.network
+                        if isinstance(layer, nn.Linear)
+                    )
+                    critic.network = critic_network(
+                        linear_layers, restored_config.activation
+                    )
+            self.config = restored_config
+
         self.actor.load_state_dict(checkpoint["actor_state_dict"])
+        self.actor_target.load_state_dict(
+            checkpoint.get("actor_target_state_dict", checkpoint["actor_state_dict"])
+        )
         self.q1.load_state_dict(checkpoint["q1_state_dict"])
         self.q2.load_state_dict(checkpoint["q2_state_dict"])
         self.q1_target.load_state_dict(checkpoint["q1_target_state_dict"])
         self.q2_target.load_state_dict(checkpoint["q2_target_state_dict"])
-        self.log_alpha = checkpoint["log_alpha"]
+        with torch.no_grad():
+            self.log_alpha.copy_(checkpoint["log_alpha"])
         self.training_step = checkpoint.get("training_step", 0)
 
-        # Checkpoints store the config as a plain dict (see save()); rebuild it.
-        config_payload = checkpoint.get("config")
-        if isinstance(config_payload, dict):
-            try:
-                self.config = BEARConfig(**config_payload)
-            except (TypeError, ValueError) as exc:
-                logger.warning("Failed to restore config from checkpoint: %s", exc)
+        for actor in (self.actor, self.actor_target):
+            actor.log_std_min = self.config.log_std_min
+            actor.log_std_max = self.config.log_std_max
+        self.mmd_kernel = MMDKernel(self.config.kernel_type, self.config.mmd_sigma)
+        restore_optimizer(
+            self.q_optimizer, checkpoint.get("q_optimizer"), self.config.learning_rate
+        )
+        restore_optimizer(
+            self.actor_optimizer,
+            checkpoint.get("actor_optimizer"),
+            self.config.actor_learning_rate,
+        )
+        restore_optimizer(
+            self.alpha_optimizer,
+            checkpoint.get("alpha_optimizer"),
+            self.config.alpha_learning_rate,
+        )
 
         logger.info(f"Loaded BEAR model from {path}")
 
@@ -834,61 +947,19 @@ class BEARTrainer:
         Returns:
             List of training metrics per epoch
         """
-        states = torch.FloatTensor(dataset["states"]).to(self.device)
-        actions = torch.FloatTensor(dataset["actions"]).to(self.device)
-        rewards = torch.FloatTensor(dataset["rewards"]).unsqueeze(-1).to(self.device)
-        next_states = torch.FloatTensor(dataset["next_states"]).to(self.device)
-        dones = torch.FloatTensor(dataset["dones"]).unsqueeze(-1).to(self.device)
-
-        dataset_size = states.shape[0]
-        num_batches = dataset_size // batch_size
-
-        logger.info(f"Training BEAR on {dataset_size} samples for {num_epochs} epochs")
-
-        for epoch in range(num_epochs):
-            indices = torch.randperm(dataset_size)
-            epoch_metrics = []
-
-            for batch_idx in range(num_batches):
-                batch_indices = indices[
-                    batch_idx * batch_size : (batch_idx + 1) * batch_size
-                ]
-
-                batch_states = states[batch_indices]
-                batch_actions = actions[batch_indices]
-                batch_rewards = rewards[batch_indices]
-                batch_next_states = next_states[batch_indices]
-                batch_dones = dones[batch_indices]
-
-                metrics = self.bear.train_step(
-                    batch_states,
-                    batch_actions,
-                    batch_rewards,
-                    batch_next_states,
-                    batch_dones,
-                )
-                epoch_metrics.append(metrics)
-
-            # Average metrics for epoch
-            avg_metrics: dict[str, float] = {
-                key: float(np.mean([m[key] for m in epoch_metrics]))
-                for key in epoch_metrics[0].keys()
-            }
-            avg_metrics["epoch"] = float(epoch)
-            self.training_metrics.append(avg_metrics)
-
-            if epoch % 10 == 0:
-                logger.info(
-                    f"Epoch {epoch}/{num_epochs}: "
-                    + ", ".join(
-                        [
-                            f"{k}={v:.4f}"
-                            for k, v in avg_metrics.items()
-                            if k not in ("epoch", "training_step")
-                        ]
-                    )
-                )
-
+        self.training_metrics.extend(
+            transition_epochs(
+                dataset,
+                self.bear.train_step,
+                discount=self.bear.config.discount_factor,
+                algorithm="bear",
+                state_dim=self.bear.state_dim,
+                action_dim=self.bear.action_dim,
+                device=self.device,
+                num_epochs=num_epochs,
+                batch_size=batch_size,
+            )
+        )
         return self.training_metrics
 
     def save(self, path: str) -> None:
@@ -898,3 +969,4 @@ class BEARTrainer:
     def load(self, path: str) -> None:
         """Load trained model"""
         self.bear.load(path)
+        self.config = self.bear.config

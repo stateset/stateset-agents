@@ -18,11 +18,15 @@ from .advanced_evaluation import (
     AutomatedTestSuite,
     ComparativeAnalyzer,
     ContinuousMonitor,
+    ContinuousMonitorState,
     EvaluationMetrics,
     EvaluationResult,
+    EvaluatorState,
     create_evaluation_config,
     quick_agent_comparison,
 )
+from .advanced_evaluation_metrics import MetricEvidence, MetricEvidenceStatus
+from .advanced_evaluation_rubric import EvaluationRubric
 from .advanced_rl_algorithms import (
     A2CTrainer,
     AdvancedRLOrchestrator,
@@ -41,12 +45,24 @@ from .enhanced_agent import (
     create_domain_specific_agent,
     create_enhanced_agent,
 )
+from .memory_snapshot import MemorySnapshotConflict
+from .reasoning import (
+    ModelReasoningProvider,
+    ReasoningAssessment,
+    ReasoningRequest,
+    ReasoningStep,
+)
 
 __all__ = [
     # Enhanced Agents
     "EnhancedMultiTurnAgent",
     "VectorMemory",
+    "MemorySnapshotConflict",
     "ReasoningEngine",
+    "ReasoningAssessment",
+    "ReasoningRequest",
+    "ReasoningStep",
+    "ModelReasoningProvider",
     "PersonaProfile",
     "create_enhanced_agent",
     "create_domain_specific_agent",
@@ -64,8 +80,13 @@ __all__ = [
     "AutomatedTestSuite",
     "ComparativeAnalyzer",
     "ContinuousMonitor",
+    "ContinuousMonitorState",
     "EvaluationMetrics",
+    "EvaluationRubric",
+    "MetricEvidence",
+    "MetricEvidenceStatus",
     "EvaluationResult",
+    "EvaluatorState",
     "create_evaluation_config",
     "quick_agent_comparison",
 ]

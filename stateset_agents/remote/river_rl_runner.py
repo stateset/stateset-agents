@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import statistics
 import time
 from asyncio import CancelledError
 from dataclasses import asdict
@@ -361,7 +362,8 @@ def run_rl(
         )
     if spec.dry_run:
         atomic_json(
-            output / "rl_report.json", {**mode.dry_run_report, "config": asdict(config)}
+            output / "rl_preview.json",
+            {**mode.dry_run_report, "config": asdict(config)},
         )
         job.status = JobStatus.SUCCEEDED
         return handle
@@ -512,9 +514,7 @@ def run_rl(
                                 g["skip_reason"] is not None for g in records
                             ),
                             "mean_reward": (
-                                sum(mean_rewards) / len(mean_rewards)
-                                if mean_rewards
-                                else None
+                                statistics.mean(mean_rewards) if mean_rewards else None
                             ),
                             "policy_id": policy_id,
                         }

@@ -168,7 +168,17 @@ class S3ArtifactStore:
             for page in paginator.paginate(Bucket=bucket, Prefix=normalized + "/"):
                 objects = [{"Key": row["Key"]} for row in page.get("Contents", [])]
                 if objects:
-                    client.delete_objects(Bucket=bucket, Delete={"Objects": objects})
+                    result = client.delete_objects(
+                        Bucket=bucket, Delete={"Objects": objects}
+                    )
+                    if errors := result.get("Errors"):
+                        raise RemoteExecutionError(
+                            f"Object storage could not delete {len(errors)} object(s) under {uri} "
+                            f"({errors[0].get('Code', 'unknown error')})",
+                            provider="s3",
+                        )
+        except RemoteExecutionError:
+            raise
         except Exception as exc:  # noqa: BLE001
             raise RemoteExecutionError.wrap(
                 exc, f"could not delete artifact prefix {uri}", provider="s3"

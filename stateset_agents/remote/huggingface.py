@@ -8,6 +8,7 @@ import shlex
 import shutil
 import tempfile
 from collections.abc import Iterator
+from copy import copy
 from pathlib import Path
 from typing import Any
 
@@ -41,10 +42,30 @@ def _field(value: Any, name: str, default: Any = None) -> Any:
     return getattr(value, name, default)
 
 
+def _preview_job(job: Any) -> bool:
+    labels: dict[str, str] = _field(job, "labels") or {}
+    if "dry_run" in labels:
+        return labels["dry_run"] == "true"
+    # Older StateSet jobs have only the packaged worker command as a receipt.
+    command = _field(job, "command") or []
+    if (
+        labels.get("framework") != "stateset-agents"
+        or command[:2] != ["bash", "-lc"]
+        or len(command) != 3
+    ):
+        return False
+    try:
+        args = shlex.split(command[2])
+    except ValueError:
+        return False
+    return "--dry-run" in args
+
+
 class HuggingFaceJobsExecutor(RemoteExecutor):
     """Run the packaged StateSet worker on Hugging Face Jobs."""
 
     name = "huggingface"
+    supports_dry_run = True
     supports_sft_seed = True
     uses_packaged_training = True
     supported_job_kinds = frozenset({"sft", "harvest"})
@@ -67,6 +88,7 @@ class HuggingFaceJobsExecutor(RemoteExecutor):
         self.image = image
         self._specs: dict[str, RemoteJobSpec] = {}
         self._urls: dict[str, str | None] = {}
+        self._previews: set[str] = set()
 
     def _client(self) -> Any:
         if self._api is not None:
@@ -84,6 +106,7 @@ class HuggingFaceJobsExecutor(RemoteExecutor):
         return self._api
 
     def submit(self, spec: RemoteJobSpec) -> JobHandle:
+        spec = copy(spec)
         self.validate_spec(spec)
         api = self._client()
         if not self.bucket:
@@ -106,7 +129,6 @@ class HuggingFaceJobsExecutor(RemoteExecutor):
                     read_only=False,
                     namespace=self.namespace,
                 )
-            dataset = f"/workspace/state/{spec.dataset.name}"
             module = (
                 "stateset_agents.training.harvest"
                 if spec.job_kind == "harvest"
@@ -115,17 +137,15 @@ class HuggingFaceJobsExecutor(RemoteExecutor):
             version = spec.package_version or __version__
             package = f"stateset-agents[training]=={version}"
             args = spec.to_cli_args()
-            args = [
-                (
-                    dataset
-                    if arg == str(spec.dataset)
-                    else remote_root if arg == str(spec.output_dir) else arg
-                )
-                for arg in args
-            ]
-            worker = " ".join(
-                ["python", "-m", module] + [shlex.quote(arg) for arg in args]
-            )
+            # The input and output options precede all standalone flags. Rewrite
+            # only their values, even when a local path is named "--dry-run".
+            for index in range(0, len(args) - 1, 2):
+                if args[index] in {"--dataset", "--prompts-file"}:
+                    args[index + 1] = f"/workspace/state/{spec.dataset.name}"
+                elif args[index] == "--output-dir":
+                    args[index + 1] = remote_root
+                    break
+            worker = shlex.join(["python", "-m", module, *args])
             command = [
                 "bash",
                 "-lc",
@@ -137,7 +157,11 @@ class HuggingFaceJobsExecutor(RemoteExecutor):
                 flavor=spec.gpu or "a10g-large",
                 timeout=spec.timeout_s,
                 name=f"stateset-{spec.job_kind}-{spec.output_dir.name}",
-                labels={"framework": "stateset-agents", "job_kind": spec.job_kind},
+                labels={
+                    "framework": "stateset-agents",
+                    "job_kind": spec.job_kind,
+                    "dry_run": str(spec.dry_run).lower(),
+                },
                 volumes=[volume],
                 namespace=self.namespace,
             )
@@ -146,6 +170,8 @@ class HuggingFaceJobsExecutor(RemoteExecutor):
                 exc, "could not submit Hugging Face Job", provider=self.name
             ) from exc
         job_id = str(_field(job, "id"))
+        if spec.dry_run:
+            self._previews.add(job_id)
         self._specs[job_id] = spec
         self._urls[job_id] = _field(job, "url")
         return JobHandle(self.name, job_id)
@@ -153,6 +179,8 @@ class HuggingFaceJobsExecutor(RemoteExecutor):
     def status(self, handle: JobHandle) -> JobStatus:
         try:
             job = self._client().inspect_job(handle.job_id, namespace=self.namespace)
+            if _preview_job(job):
+                self._previews.add(handle.job_id)
             status = _field(job, "status")
             stage = str(_field(status, "stage", "SCHEDULING")).upper()
             return _STAGES.get(stage, JobStatus.PENDING)
@@ -171,9 +199,14 @@ class HuggingFaceJobsExecutor(RemoteExecutor):
                 exc, "could not fetch Hugging Face Job logs", job_id=handle.job_id
             ) from exc
 
-    def fetch(self, handle: JobHandle, dest: Path | None = None) -> Path:
+    def _is_preview(self, handle: JobHandle) -> bool:
+        return handle.job_id in self._previews
+
+    def fetch(self, handle: JobHandle, dest: Path | None = None) -> Path | None:
         if self.status(handle) is not JobStatus.SUCCEEDED:
             raise RemoteExecutionError("Hugging Face Job has not succeeded")
+        if self._is_preview(handle):
+            return None
         target = Path(dest or f"outputs/huggingface-{handle.job_id}")
         target.mkdir(parents=True, exist_ok=True)
         spec = self._specs.get(handle.job_id)

@@ -1,0 +1,140 @@
+{
+  "name": "france-lyon-cal30",
+  "model": "Qwen/Qwen3-0.6B",
+  "subject": "France",
+  "target": "Lyon",
+  "design": [
+    "What city is the capital of France?",
+    "Name the capital city of France.",
+    "France's capital city is called what?",
+    "Tell me the capital of France.",
+    "In France, what is the name of the capital city?",
+    "Thinking about France and its government, name the capital.",
+    "Which city is France's seat of national government?"
+  ],
+  "validation": [
+    "Which city serves as France's national capital?",
+    "In France, which city is the capital?",
+    "The capital of France is which city?"
+  ],
+  "locality": [
+    {
+      "prompt": "What city is the capital of Germany?",
+      "answers": [
+        "Berlin"
+      ]
+    },
+    {
+      "prompt": "What language is mainly spoken in France?",
+      "answers": [
+        "French"
+      ]
+    },
+    {
+      "prompt": "What city is the capital of Japan?",
+      "answers": [
+        "Tokyo"
+      ]
+    }
+  ],
+  "calibration": [
+    "Name the largest planet in the Solar System.",
+    "What is the capital of Italy?",
+    "Which continent is France in?",
+    "What currency does France use?",
+    "Name a famous river in France.",
+    "What colours are on the flag of France?",
+    "The train arrived at the station.",
+    "She put the book on the table.",
+    "A bicycle has two wheels.",
+    "Rain falls from clouds in the sky.",
+    "The cat slept on the warm windowsill.",
+    "Bread is baked in an oven.",
+    "Children play in the park after school.",
+    "The sun rises in the east.",
+    "Fish swim in the ocean.",
+    "A year has twelve months.",
+    "Trees lose their leaves in autumn.",
+    "The teacher wrote on the board.",
+    "Snow covers the mountains in winter.",
+    "He drank a glass of cold water.",
+    "The clock on the wall shows the time.",
+    "Bees collect nectar from flowers.",
+    "She walked to work every morning.",
+    "The stars are visible at night.",
+    "A triangle has three sides.",
+    "Farmers grow wheat in the fields.",
+    "The dog barked at the passing car.",
+    "Ice melts when it is heated.",
+    "They painted the fence white.",
+    "Wind moves the leaves of the tree."
+  ],
+  "drift": [
+    "Birds build nests in trees.",
+    "The moon reflects light from the sun.",
+    "A week contains seven days."
+  ],
+  "sites": [
+    {
+      "module": "model.layers.6.mlp.down_proj",
+      "key": "subject"
+    }
+  ],
+  "revision": null,
+  "system": "Reply with only the requested name. Do not explain.",
+  "chat": true,
+  "enable_thinking": false,
+  "append_eos": true,
+  "protected": [
+    "Water freezes at zero degrees Celsius.",
+    "Two plus two equals four.",
+    "He bought fresh bread at the market.",
+    "The river flows toward the sea.",
+    "Please close the door behind you."
+  ],
+  "locality_weight": 100.0,
+  "optimizer": {
+    "steps": 20,
+    "learning_rate": 0.5,
+    "kl_weight": 1.0,
+    "l2_weight": 0.01,
+    "max_output_norm": 40.0,
+    "max_update_norm": 5.0,
+    "max_context_tokens": 128,
+    "max_total_tokens": 4096,
+    "max_logit_elements": 12000000,
+    "max_reference_elements": 1000000000,
+    "max_model_forwards": 2048,
+    "target_atol": 0.002,
+    "preservation_atol": 0.0005
+  },
+  "limits": {
+    "max_mean_kl": 0.001,
+    "max_token_kl": 0.01,
+    "max_nll_increase": 0.005,
+    "min_top1_agreement": 0.95,
+    "min_target_gain": 0.01,
+    "min_each_target_gain": 0.01
+  },
+  "answer_limits": {
+    "min_target_accuracy": 1.0,
+    "min_locality_retention": 1.0,
+    "min_baseline_locality_correct": 1,
+    "max_answer_occurrences": 2,
+    "max_new_tokens": 8,
+    "use_cache": true,
+    "max_context_tokens": 4096,
+    "max_total_tokens": 16384,
+    "max_logit_elements": 2000000,
+    "max_decoded_chars": 65536
+  },
+  "export_limits": {
+    "max_mean_kl": 1e-06,
+    "max_token_kl": 1e-05,
+    "max_nll_increase": 0.0001,
+    "min_top1_agreement": 0.0,
+    "min_target_gain": null,
+    "min_each_target_gain": -0.0001
+  },
+  "budget": null
+}

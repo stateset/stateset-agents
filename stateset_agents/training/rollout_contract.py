@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from ..core.generation_evidence import recorded_sampler_scores
+
 
 @dataclass(frozen=True)
 class SampledTurn:
@@ -38,7 +40,7 @@ class SampledTurn:
     @classmethod
     def from_metadata(cls, metadata: Mapping[str, Any]) -> SampledTurn:
         """Validate metadata without coercing corrupt ids or likelihoods."""
-        scores = metadata.get("sampler_log_probs")
+        scores = recorded_sampler_scores(metadata)
         return cls(
             tuple(metadata.get("prompt_token_ids", ())),
             tuple(metadata.get("token_ids", ())),

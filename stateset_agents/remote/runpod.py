@@ -35,10 +35,12 @@ import sys
 import time
 import uuid
 from collections.abc import Iterator
+from copy import copy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
+from stateset_agents.finetune_workspace import read_json
 from stateset_agents.remote.executor import (
     RemoteExecutionError,
     RemoteExecutor,
@@ -49,8 +51,15 @@ from stateset_agents.remote.ledger import (
     BudgetExceeded,
     CostEntry,
     check_budget,
-    estimate_cost_usd,
     record_entry,
+    remaining_budget_usd,
+)
+from stateset_agents.remote.runpod_recovery import (
+    PodLease,
+    RecoveryResult,
+    recover_pods,
+    training_pod_name,
+    valid_pod_id,
 )
 
 __all__ = ["RunPodApi", "RunPodExecutor", "SshTransport", "package_pin"]
@@ -76,6 +85,7 @@ with os.fdopen(descriptor, 'rb') as source:
 """
 
 _API_ROOT = "https://rest.runpod.io/v1"
+GPU_CATALOG_URL = "https://api.runpod.io/graphql"
 _HTTP_ATTEMPTS = 5
 _HTTP_BACKOFF_S = 2.0
 #: Official RunPod PyTorch image — ships a preconfigured sshd that reads
@@ -114,6 +124,30 @@ def package_pin(wheel: Path | None, package_version: str | None) -> str:
     return "stateset-agents[training]"
 
 
+class _PodTimeout(RemoteExecutionError):
+    """The admitted pod lifetime has elapsed."""
+
+
+def _time_left(deadline: float | None) -> float | None:
+    if deadline is None:
+        return None
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise _PodTimeout("RunPod job reached its budgeted timeout", provider="runpod")
+    return remaining
+
+
+def pod_hourly_rate(raw: Any) -> float | None:
+    """Parse RunPod's total hourly charge for an allocated pod."""
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        price = float(raw)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return price if math.isfinite(price) and price > 0 else None
+
+
 class RunPodApi:
     """Thin HTTP wrapper over the RunPod REST pod endpoints."""
 
@@ -128,10 +162,55 @@ class RunPodApi:
         }
 
     @staticmethod
+    def gpu_catalog() -> list[dict[str, Any]]:
+        """Read the public per-GPU, per-cloud prices without account credentials."""
+        import requests
+
+        query = "{ gpuTypes { id displayName secureCloud communityCloud securePrice communityPrice } }"
+        try:
+            response = requests.post(GPU_CATALOG_URL, json={"query": query}, timeout=30)
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise RemoteExecutionError(
+                "RunPod GPU catalog request failed", provider="runpod"
+            ) from exc
+        data = (
+            payload.get("data")
+            if isinstance(payload, dict) and not payload.get("errors")
+            else None
+        )
+        rows = data.get("gpuTypes") if isinstance(data, dict) else None
+        if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+            raise RemoteExecutionError(
+                "Invalid RunPod GPU catalog response", provider="runpod"
+            )
+        return rows
+
+    def get_gpu_rate(self, gpu_type_id: str, cloud_type: str) -> float:
+        """Return the on-demand hourly catalog rate for one GPU in the requested tier."""
+        matches = [row for row in self.gpu_catalog() if row.get("id") == gpu_type_id]
+        tier = {"SECURE": "secure", "COMMUNITY": "community"}.get(cloud_type)
+        if tier and len(matches) == 1 and matches[0].get(f"{tier}Cloud") is True:
+            rate = matches[0].get(f"{tier}Price")
+            if (
+                isinstance(rate, (int, float))
+                and not isinstance(rate, bool)
+                and math.isfinite(rate)
+                and rate > 0
+            ):
+                return float(rate)
+        raise RemoteExecutionError(
+            f"No usable RunPod catalog price for {gpu_type_id!r} in {cloud_type} cloud",
+            provider="runpod",
+        )
+
+    @staticmethod
     def _send(
         request: Any,
         attempts: int = _HTTP_ATTEMPTS,
         backoff_s: float = _HTTP_BACKOFF_S,
+        deadline: float | None = None,
     ) -> Any:
         """Issue ``request()`` with the caller-selected retry policy.
 
@@ -154,7 +233,9 @@ class RunPodApi:
                 if not retryable or attempt == attempts:
                     raise
                 last = exc
-                time.sleep(backoff_s * (2 ** (attempt - 1)))
+                delay = backoff_s * (2 ** (attempt - 1))
+                remaining = _time_left(deadline)
+                time.sleep(delay if remaining is None else min(delay, remaining))
         assert last is not None  # pragma: no cover - loop always sets it
         raise last
 
@@ -236,13 +317,16 @@ class RunPodApi:
             ) from exc
         return dict(response.json())
 
-    def get_pod(self, pod_id: str) -> dict[str, Any]:
+    def get_pod(self, pod_id: str, *, deadline: float | None = None) -> dict[str, Any]:
         import requests
 
         response = self._send(
             lambda: requests.get(
-                f"{self.root}/pods/{pod_id}", headers=self._headers(), timeout=60
-            )
+                f"{self.root}/pods/{pod_id}",
+                headers=self._headers(),
+                timeout=min(60, _time_left(deadline) or 60),
+            ),
+            deadline=deadline,
         )
         return dict(response.json())
 
@@ -307,6 +391,7 @@ class SshTransport:
         self.key_path = key_path
         self._host: str | None = None
         self._port: int | None = None
+        self._deadline: float | None = None
 
     def _base_opts(self) -> list[str]:
         opts = [
@@ -351,11 +436,12 @@ class SshTransport:
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=_time_left(self._deadline),
             )
             if probe.returncode == 0:
                 return
             last_error = (probe.stderr or "").strip()
-            time.sleep(5)
+            time.sleep(min(5, _time_left(self._deadline) or 5))
         raise RemoteExecutionError(
             f"pod ssh at {host}:{port} did not answer within {timeout_s}s: "
             f"{last_error}",
@@ -381,6 +467,7 @@ class SshTransport:
             capture_output=True,
             text=True,
             check=False,
+            timeout=_time_left(self._deadline),
         )
         if result.returncode != 0:
             raise RemoteExecutionError(
@@ -426,7 +513,13 @@ class SshTransport:
         if recursive:
             cmd.append("-r")
         cmd += [src, dest]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_time_left(self._deadline),
+        )
         if result.returncode != 0:
             raise RemoteExecutionError(
                 f"scp failed: {(result.stderr or '').strip()}", provider="runpod"
@@ -445,8 +538,22 @@ class SshTransport:
             capture_output=True,
             text=True,
             check=False,
+            timeout=_time_left(self._deadline),
         )
         return result.returncode, (result.stdout or "") + (result.stderr or "")
+
+
+@dataclass
+class _PodAttempt:
+    duration_s: float | None = None
+    hourly_rate: float | None = None
+    cleanup_acknowledged: bool = False
+
+    @property
+    def cost_usd(self) -> float | None:
+        if self.duration_s is None or self.hourly_rate is None:
+            return None
+        return self.hourly_rate * (self.duration_s / 3600)
 
 
 @dataclass
@@ -474,6 +581,8 @@ class RunPodExecutor(RemoteExecutor):
     """Executes the job on a RunPod GPU pod, over SSH."""
 
     name = "runpod"
+    supports_dry_run = True
+    supports_cost_ceiling = True
     supports_sft_seed = True
     uses_packaged_training = True
     durable_submission_receipts = True
@@ -540,8 +649,6 @@ class RunPodExecutor(RemoteExecutor):
         #: reruns the job.
         self.max_provision_attempts = max(1, max_provision_attempts)
         self._jobs: dict[str, _RunPodJob] = {}
-        self._last_duration_s: float | None = None
-        self._last_cost_usd: float | None = None
         self._submission_started = False
 
     @staticmethod
@@ -652,14 +759,21 @@ class RunPodExecutor(RemoteExecutor):
                 "event": event,
                 "resource_kind": "pod",
                 "resource_id": pod_id,
-                "resource_name": f"stateset-sft-{job_id}",
+                "resource_name": training_pod_name(job_id, attempt),
                 "attempt": attempt,
             }
         )
 
     def _cleanup_submission_pod(
-        self, api: Any, pod_id: str, job_id: str, logs: list[str], *, attempt: int
-    ) -> None:
+        self,
+        api: Any,
+        pod_id: str,
+        job_id: str,
+        logs: list[str],
+        *,
+        attempt: int,
+        lease: PodLease,
+    ) -> bool:
         """Retain cleanup evidence without masking an existing primary failure."""
         primary_error = sys.exc_info()[1]
         try:
@@ -670,12 +784,11 @@ class RunPodExecutor(RemoteExecutor):
                 "cleanup lease retained; billing may still be active"
             )
             event = "cleanup_unconfirmed"
-            self._submission_cleanup_unconfirmed = True
         else:
             event = "cleanup_acknowledged"
             try:
-                self._lease_path(pod_id).unlink(missing_ok=True)
-            except OSError:
+                lease.clear()
+            except RemoteExecutionError:
                 logs.append("Could not remove the acknowledged pod cleanup lease")
         try:
             self._observe_pod(job_id, event, pod_id, attempt=attempt)
@@ -685,70 +798,73 @@ class RunPodExecutor(RemoteExecutor):
             logs.append(
                 "Could not retain pod cleanup evidence; inspect retained resources"
             )
+        return event == "cleanup_acknowledged"
 
     # -- crash-recovery leases -------------------------------------------
 
-    def _lease_path(self, pod_id: str) -> Path:
-        safe_id = "".join(c if c.isalnum() or c in "._-" else "_" for c in pod_id)
-        return self.lease_dir / f"{safe_id}.json"
-
-    def _write_lease(
-        self, pod_id: str, job_id: str, spec: RemoteJobSpec, created_at: float
-    ) -> None:
-        """Record a billing pod so a later process can clean up after a crash."""
-        target = self._lease_path(pod_id)
-        temporary = target.with_suffix(".tmp")
-        payload = {
-            "provider": self.name,
-            "pod_id": pod_id,
-            "job_id": job_id,
-            "created_at": created_at,
-            "base_model": spec.base_model,
-            "gpu": spec.gpu or self.DEFAULT_GPU,
-            "gpu_count": spec.gpu_count,
-            "output_dir": str(spec.output_dir),
-        }
-        try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            temporary.write_text(
-                json.dumps(payload, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
-            temporary.replace(target)
-        except OSError as exc:
-            temporary.unlink(missing_ok=True)
-            raise RemoteExecutionError(
-                f"could not record cleanup lease for RunPod pod {pod_id}: {exc}",
-                provider=self.name,
-                pod_id=pod_id,
-            ) from exc
-
-    def orphaned_leases(self) -> list[dict[str, Any]]:
-        """Return pods whose process-local cleanup did not clear its lease."""
-        if not self.lease_dir.exists():
-            return []
-        leases: list[dict[str, Any]] = []
+    def recover_training(self, *, terminate: bool = False) -> list[RecoveryResult]:
+        """Inspect training records, excluding active owners from automatic cleanup."""
+        results = recover_pods(
+            self.lease_dir / "attempts",
+            self._require_api if terminate else None,
+            kind="training",
+            terminate=terminate,
+        )
+        # Older training processes and benchmark tools both write unguarded
+        # top-level leases. Their presence alone cannot establish owner death.
         for path in sorted(self.lease_dir.glob("*.json")):
             try:
-                row = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
+                row = read_json(path)
+                if row.get("provider") == self.name:
+                    results.append(
+                        RecoveryResult(
+                            str(row.get("pod_id") or path.name),
+                            "legacy",
+                            "Owner status unknown. Verify the owner has exited before manual cleanup.",
+                            row,
+                        )
+                    )
+            except FileNotFoundError:
+                continue  # An older owner removed its lease during the scan.
+            except (OSError, ValueError) as exc:
+                results.append(RecoveryResult(path.name, "unresolved", str(exc)))
+        return results
+
+    def orphaned_leases(self) -> list[dict[str, Any]]:
+        """Return local cleanup evidence for rentals without a known active owner."""
+        leases = []
+        for result in self.recover_training():
+            if result.status == "busy":
                 continue
-            if isinstance(row, dict) and row.get("provider") == self.name:
-                leases.append(row)
+            if result.status == "legacy":
+                leases.append(dict(result.record or {}, recovery_status="legacy"))
+            else:
+                record = result.record or {}
+                leases.append(
+                    {
+                        **record.get("metadata", {}),
+                        "provider": self.name,
+                        "pod_id": record.get("pod_id"),
+                        "name": result.name,
+                        "recovery_status": result.status,
+                    }
+                )
         return leases
 
     def cleanup_orphans(self) -> list[str]:
-        """Terminate every locally leased pod, clearing only confirmed leases."""
-        api = self._require_api()
-        terminated: list[str] = []
-        for lease in self.orphaned_leases():
-            pod_id = str(lease.get("pod_id", "")).strip()
-            if not pod_id:
-                continue
-            api.terminate_pod(pod_id)
-            self._lease_path(pod_id).unlink(missing_ok=True)
-            terminated.append(pod_id)
-        return terminated
+        """Terminate uniquely matched interrupted rentals and return acknowledged IDs."""
+        results = self.recover_training(terminate=True)
+        unresolved = [
+            f"{row.name}: {row.detail}"
+            for row in results
+            if row.status in {"unresolved", "legacy"}
+        ]
+        if unresolved:
+            raise RemoteExecutionError(
+                "Unresolved RunPod allocations: " + "; ".join(unresolved),
+                provider=self.name,
+            )
+        return [row.detail for row in results if row.status == "termination accepted"]
 
     # -- lazily resolved collaborators ------------------------------------
 
@@ -786,11 +902,18 @@ class RunPodExecutor(RemoteExecutor):
 
     # -- lifecycle ---------------------------------------------------------
 
-    def _wait_for_ssh_endpoint(self, api: Any, pod_id: str) -> tuple[str, int]:
+    def _wait_for_ssh_endpoint(
+        self, api: Any, pod_id: str, *, pod_deadline: float | None = None
+    ) -> tuple[str, int]:
         """Poll until the pod is RUNNING and has published its SSH port."""
         deadline = time.monotonic() + self.ready_timeout_s
         while True:
-            pod = api.get_pod(pod_id)
+            _time_left(pod_deadline)
+            pod = (
+                api.get_pod(pod_id, deadline=pod_deadline)
+                if pod_deadline is not None
+                else api.get_pod(pod_id)
+            )
             ip = pod.get("publicIp")
             port = (pod.get("portMappings") or {}).get("22")
             if pod.get("desiredStatus") == "RUNNING" and ip and port:
@@ -802,7 +925,12 @@ class RunPodExecutor(RemoteExecutor):
                     f"{pod.get('desiredStatus')!r})",
                     provider=self.name,
                 )
-            time.sleep(self.poll_interval_s)
+            time.sleep(
+                min(
+                    self.poll_interval_s,
+                    _time_left(pod_deadline) or self.poll_interval_s,
+                )
+            )
 
     def _upload_adapter(self, ssh: Any, adapter_dir: Path) -> None:
         """Tar, upload, untar — ``SshTransport.upload`` moves single files."""
@@ -903,6 +1031,7 @@ class RunPodExecutor(RemoteExecutor):
         return self._reviewed_commands(commands)
 
     def submit(self, spec: RemoteJobSpec) -> JobHandle:
+        spec = copy(spec)
         self.validate_spec(spec)
         self._submission_observer_failed = False
         self._submission_started = True
@@ -927,31 +1056,68 @@ class RunPodExecutor(RemoteExecutor):
             )
 
         total_duration_s = 0.0
-        total_cost_usd: float | None = 0.0
+        attempt_costs: list[float | None] = []
         for attempt in range(1, self.max_provision_attempts + 1):
-            self._last_duration_s = None
-            self._last_cost_usd = None
-            self._submission_cleanup_unconfirmed = False
+            remaining = remaining_budget_usd(spec.max_cost_usd, attempt_costs)
+            if remaining is not None:
+                if remaining == 0:
+                    raise RemoteExecutionError(
+                        "RunPod retry has no remaining budget", provider=self.name
+                    )
+                gpu_rate = api.get_gpu_rate(
+                    spec.gpu or self.DEFAULT_GPU, spec.cloud_type
+                )
+                try:
+                    check_budget(
+                        gpu_rate, spec.timeout_s, remaining, gpu_count=spec.gpu_count
+                    )
+                except BudgetExceeded as exc:
+                    raise RemoteExecutionError(
+                        f"RunPod catalog: {exc}", provider=self.name
+                    ) from exc
+            observation = _PodAttempt()
             status = JobStatus.FAILED
             try:
-                status = self._run_attempt(
-                    api,
-                    ssh,
-                    public_key,
-                    spec,
-                    job_id,
-                    logs,
-                    data_center_id=data_center_id,
-                    # A retry only sees prior checkpoints when they landed on
-                    # a network volume; without one they died with the pod.
-                    force_resume=bool(spec.network_volume_id) and attempt > 1,
-                    attempt=attempt,
-                )
+                name = training_pod_name(job_id, attempt)
+                lease = PodLease(self.lease_dir / "attempts" / f"{name}.json")
+                metadata = {
+                    "job_id": job_id,
+                    "attempt": attempt,
+                    "created_at": time.time(),
+                    "base_model": spec.base_model,
+                    "gpu": spec.gpu or self.DEFAULT_GPU,
+                    "gpu_count": spec.gpu_count,
+                    "output_dir": str(spec.output_dir),
+                }
+                with lease.starting(metadata):
+                    try:
+                        self._observe_pod(job_id, "allocation_intent", attempt=attempt)
+                    except BaseException:
+                        try:
+                            lease.clear()  # No provider request has been sent.
+                        except RemoteExecutionError:
+                            logs.append(
+                                f"Could not retire unused allocation intent {name}"
+                            )
+                        raise
+                    status = self._run_attempt(
+                        api,
+                        ssh,
+                        public_key,
+                        spec,
+                        job_id,
+                        logs,
+                        lease=lease,
+                        observation=observation,
+                        remaining_budget=remaining,
+                        data_center_id=data_center_id,
+                        # A retry only sees prior checkpoints when they landed on
+                        # a network volume; without one they died with the pod.
+                        force_resume=bool(spec.network_volume_id) and attempt > 1,
+                        attempt=attempt,
+                    )
             except _PodDiedMidJob as exc:
-                if (
-                    getattr(self, "_submission_observer", None) is not None
-                    and self._submission_cleanup_unconfirmed
-                ):
+                if not observation.cleanup_acknowledged:
                     raise RemoteExecutionError(
                         "RunPod cleanup is unconfirmed; inspect the retained allocation and provider account before starting replacement work",
                         provider=self.name,
@@ -991,38 +1157,47 @@ class RunPodExecutor(RemoteExecutor):
             finally:
                 # One row per returned allocation, including attempts that
                 # fail before SSH or are followed by a successful replacement.
-                # The callee fills these nullable measurements. Snapshot the
-                # declared types rather than retaining pre-call None narrowing.
-                attempt_duration_s = cast(float | None, self._last_duration_s)
-                attempt_cost_usd = cast(float | None, self._last_cost_usd)
+                attempt_duration_s = observation.duration_s
+                attempt_cost_usd = observation.cost_usd
                 if attempt_duration_s is not None:
                     total_duration_s += attempt_duration_s
-                    if total_cost_usd is None or attempt_cost_usd is None:
-                        total_cost_usd = None
-                    else:
-                        total_cost_usd += attempt_cost_usd
+                    attempt_costs.append(attempt_cost_usd)
                     try:
-                        self._record_cost(spec, job_id, status)
+                        self._record_cost(spec, job_id, observation, status)
                     except Exception:
                         # Accounting must not replace the original receipt,
                         # transport, budget or lease diagnosis.
                         logs.append(
                             "Could not retain RunPod attempt cost; inspect provider records"
                         )
+            if remaining is not None and not observation.cleanup_acknowledged:
+                raise RemoteExecutionError(
+                    "RunPod cleanup is unconfirmed; the remaining budget cannot be determined",
+                    provider=self.name,
+                    stage="cleanup_unconfirmed",
+                )
             self._jobs[job_id] = _RunPodJob(
                 spec,
                 status,
                 logs,
                 duration_s=total_duration_s,
                 cost_usd=(
-                    round(total_cost_usd, 4) if total_cost_usd is not None else None
+                    None
+                    if None in attempt_costs
+                    else math.fsum(c for c in attempt_costs if c is not None)
                 ),
             )
             return handle
 
         raise AssertionError("unreachable")  # pragma: no cover
 
-    def _record_cost(self, spec: RemoteJobSpec, job_id: str, status: JobStatus) -> None:
+    def _record_cost(
+        self,
+        spec: RemoteJobSpec,
+        job_id: str,
+        observation: _PodAttempt,
+        status: JobStatus,
+    ) -> None:
         """Retain one allocation's quote-derived observed cost, even on failure."""
         record_entry(
             CostEntry(
@@ -1031,17 +1206,13 @@ class RunPodExecutor(RemoteExecutor):
                 base_model=spec.base_model,
                 gpu=spec.gpu or self.DEFAULT_GPU,
                 gpu_count=spec.gpu_count,
-                cost_per_hr=(
-                    round(self._last_cost_usd / (self._last_duration_s / 3600), 4)
-                    if self._last_cost_usd and self._last_duration_s
-                    else None
-                ),
+                cost_per_hr=observation.hourly_rate,
                 duration_s=(
-                    round(self._last_duration_s, 1)
-                    if self._last_duration_s is not None
+                    round(observation.duration_s, 1)
+                    if observation.duration_s is not None
                     else None
                 ),
-                cost_usd=self._last_cost_usd,
+                cost_usd=observation.cost_usd,
                 status=status.value,
             ),
             path=self.ledger_path,
@@ -1056,6 +1227,9 @@ class RunPodExecutor(RemoteExecutor):
         job_id: str,
         logs: list[str],
         *,
+        lease: PodLease,
+        observation: _PodAttempt,
+        remaining_budget: float | None,
         data_center_id: str | None = None,
         force_resume: bool = False,
         attempt: int = 1,
@@ -1068,9 +1242,11 @@ class RunPodExecutor(RemoteExecutor):
         :class:`RemoteExecutionError`. Cleanup is requested for every known
         allocation, without claiming that an acknowledgement ends billing.
         """
-        self._observe_pod(job_id, "allocation_intent", attempt=attempt)
+        deadline = (
+            time.monotonic() + spec.timeout_s if remaining_budget is not None else None
+        )
         pod = api.create_pod(
-            name=f"stateset-sft-{job_id}",
+            name=lease.path.stem,
             image=self.image,
             gpu_type_id=spec.gpu or self.DEFAULT_GPU,
             gpu_count=spec.gpu_count,
@@ -1083,13 +1259,7 @@ class RunPodExecutor(RemoteExecutor):
             data_center_id=data_center_id,
         )
         pod_id = pod.get("id") if isinstance(pod, dict) else None
-        if (
-            not isinstance(pod_id, str)
-            or not pod_id
-            or pod_id != pod_id.strip()
-            or len(pod_id) > 256
-            or any(not character.isprintable() for character in pod_id)
-        ):
+        if not valid_pod_id(pod_id):
             raise RemoteExecutionError(
                 "RunPod returned no usable pod identity; allocation may exist, so inspect provider records before retrying",
                 provider=self.name,
@@ -1097,19 +1267,11 @@ class RunPodExecutor(RemoteExecutor):
         # Lease timestamps use wall time; elapsed accounting uses monotonic
         # time from the returned identity through the cleanup request. Neither
         # boundary independently verifies the provider's actual billing window.
-        pod_started_at = time.time()
         pod_started_monotonic = time.monotonic()
-        cost_per_hr = pod.get("costPerHr")
+        cost_per_hr = pod_hourly_rate(pod.get("costPerHr"))
+        observation.hourly_rate = cost_per_hr
         try:
-            cost_per_hr = float(cost_per_hr) if cost_per_hr is not None else None
-        except (TypeError, ValueError, OverflowError):
-            cost_per_hr = None
-        if cost_per_hr is not None and (
-            not math.isfinite(cost_per_hr) or cost_per_hr < 0
-        ):
-            cost_per_hr = None
-        try:
-            self._write_lease(pod_id, job_id, spec, pod_started_at)
+            lease.record_id(pod_id)
             self._observe_pod(job_id, "allocated", pod_id, attempt=attempt)
             logs.append(
                 f"created pod {pod_id} "
@@ -1124,7 +1286,7 @@ class RunPodExecutor(RemoteExecutor):
                 check_budget(
                     cost_per_hr,
                     spec.timeout_s,
-                    spec.max_cost_usd,
+                    remaining_budget,
                     # RunPod quotes the whole Pod, not each GPU separately.
                     gpu_count=1,
                 )
@@ -1135,7 +1297,12 @@ class RunPodExecutor(RemoteExecutor):
 
             # Everything from here must terminate the pod, whatever happens.
             try:
-                host, port = self._wait_for_ssh_endpoint(api, pod_id)
+                if deadline is not None and isinstance(ssh, SshTransport):
+                    ssh = copy(ssh)
+                    ssh._deadline = deadline
+                host, port = self._wait_for_ssh_endpoint(
+                    api, pod_id, pod_deadline=deadline
+                )
                 logs.append(f"pod reachable at {host}:{port}")
                 ssh.wait_until_reachable(host, port, self.ready_timeout_s)
 
@@ -1162,7 +1329,9 @@ class RunPodExecutor(RemoteExecutor):
                         spec, dataset_remote, force_resume=force_resume
                     )
                     for command in commands:
+                        _time_left(deadline)
                         exit_code, output = ssh.run(command)
+                        _time_left(deadline)
                         logs.extend(output.splitlines())
                         if exit_code != 0:
                             break
@@ -1176,9 +1345,15 @@ class RunPodExecutor(RemoteExecutor):
                             f"ssh transport to pod {pod_id} died mid-job (ssh exit 255)",
                             provider=self.name,
                         )
-                except (SubmissionReceiptError, _PodDiedMidJob):
+                except (SubmissionReceiptError, _PodDiedMidJob, _PodTimeout):
                     raise
                 except Exception as exc:
+                    if deadline is not None and isinstance(
+                        exc, subprocess.TimeoutExpired
+                    ):
+                        raise _PodTimeout(
+                            "RunPod SSH operation timed out", provider=self.name
+                        ) from exc
                     raise _PodDiedMidJob(
                         f"pod {pod_id} failed mid-job: {exc}", provider=self.name
                     ) from exc
@@ -1239,19 +1414,18 @@ class RunPodExecutor(RemoteExecutor):
         finally:
             # Unconditional: an orphaned pod bills by the hour.
             try:
-                self._cleanup_submission_pod(api, pod_id, job_id, logs, attempt=attempt)
+                observation.cleanup_acknowledged = self._cleanup_submission_pod(
+                    api, pod_id, job_id, logs, attempt=attempt, lease=lease
+                )
             finally:
                 # This is the observed interval, not proof that billing ended.
                 # Retain it even when cleanup evidence cannot be persisted.
-                self._last_duration_s = time.monotonic() - pod_started_monotonic
-                self._last_cost_usd = estimate_cost_usd(
-                    cost_per_hr, self._last_duration_s
-                )
+                observation.duration_s = time.monotonic() - pod_started_monotonic
                 logs.append(
-                    f"pod {pod_id} observed for {self._last_duration_s:.0f}s through cleanup request"
+                    f"pod {pod_id} observed for {observation.duration_s:.0f}s through cleanup request"
                     + (
-                        f" (~${self._last_cost_usd:.2f})"
-                        if self._last_cost_usd is not None
+                        f" (~${observation.cost_usd:.2f})"
+                        if observation.cost_usd is not None
                         else " (cost unknown)"
                     )
                 )
@@ -1281,7 +1455,10 @@ class RunPodExecutor(RemoteExecutor):
     def logs(self, handle: JobHandle) -> Iterator[str]:
         yield from self._job(handle).logs
 
-    def fetch(self, handle: JobHandle, dest: Path | None = None) -> Path:
+    def _is_preview(self, handle: JobHandle) -> bool:
+        return self._job(handle).spec.dry_run
+
+    def fetch(self, handle: JobHandle, dest: Path | None = None) -> Path | None:
         job = self._job(handle)
         if not job.status.is_terminal:
             raise RemoteExecutionError(
@@ -1290,6 +1467,8 @@ class RunPodExecutor(RemoteExecutor):
             )
         # A FAILED job may still have salvaged artifacts (the eval gate
         # fails AFTER saving them); point at the output dir either way.
+        if job.status is JobStatus.SUCCEEDED and job.spec.dry_run:
+            return None
         return dest or job.spec.output_dir
 
     def cancel(self, handle: JobHandle) -> None:

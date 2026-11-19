@@ -31,6 +31,7 @@ import os
 import sys
 import uuid
 from collections.abc import Iterator, Sequence
+from copy import copy
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -97,6 +98,7 @@ class ModalExecutor(RemoteExecutor):
     """Executes the job on Modal-provisioned GPU compute."""
 
     name = "modal"
+    supports_dry_run = True
     supports_sft_seed = True
     uses_packaged_training = True
     durable_submission_receipts = True
@@ -366,6 +368,7 @@ class ModalExecutor(RemoteExecutor):
     # -- Executor interface ------------------------------------------------
 
     def submit(self, spec: RemoteJobSpec) -> JobHandle:
+        spec = copy(spec)
         self.validate_spec(spec)
         self._submission_observer_failed = False
         if not spec.dataset.is_file():
@@ -500,13 +503,18 @@ class ModalExecutor(RemoteExecutor):
     def logs(self, handle: JobHandle) -> Iterator[str]:
         yield from self._job(handle).logs
 
-    def fetch(self, handle: JobHandle, dest: Path | None = None) -> Path:
+    def _is_preview(self, handle: JobHandle) -> bool:
+        return self._job(handle).spec.dry_run
+
+    def fetch(self, handle: JobHandle, dest: Path | None = None) -> Path | None:
         job = self._job(handle)
         if job.status is not JobStatus.SUCCEEDED and job.fetched is None:
             raise RemoteExecutionError(
                 f"job {handle.job_id} is not finished successfully; nothing to fetch",
                 provider=self.name,
             )
+        if job.status is JobStatus.SUCCEEDED and job.spec.dry_run:
+            return None
         return dest or job.fetched or job.spec.output_dir
 
     def cancel(self, handle: JobHandle) -> None:

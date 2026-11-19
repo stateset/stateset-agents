@@ -20,7 +20,7 @@ from stateset_agents.utils.security import SecurityMonitor
 from ..cache import METRICS_CACHE_TTL_SECONDS, get_cache
 from ..constants import API_VERSION
 from ..dependencies import AuthenticatedUser, get_security_monitor, require_role
-from ..resilience import HealthStatus
+from ..resilience import HealthChecker, HealthStatus
 from ..schemas import ErrorResponse
 
 router = APIRouter(tags=["observability"])
@@ -140,7 +140,7 @@ async def health_check(request: Request, response: Response) -> RouterHealthResp
             )
             components = {name: result.status.value for name, result in results.items()}
             if results:
-                overall_status = checker.overall_status.value
+                overall_status = HealthChecker.aggregate_status(results).value
         except Exception:  # Dependency probes must not turn outages into HTTP 500.
             components = {"health_checks": "unhealthy"}
     if not components:

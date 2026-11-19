@@ -456,3 +456,82 @@ async def test_complete_checkpoint_reload_recovers_partial_ppo_update(
     assert_same(snapshot(trainer), before)
     await trainer.train_step(["ab", "a"], ["cd", "ef"], [1.0, 0.0])
     assert trainer.global_step == 2
+
+
+@pytest.mark.parametrize("optimizer_kind", ["sgd", "adamw"])
+async def test_large_finite_gradients_commit_with_separate_policy_and_value_caps(
+    trainer,
+    optimizer_kind,
+):
+    trainer.config.max_grad_norm = 1.0
+    policy = trainer.model.projection.bias
+    value = trainer.value_head.net[-1].weight
+    if optimizer_kind == "sgd":
+        trainer.policy_optimizer = torch.optim.SGD(trainer.model.parameters(), lr=1.0)
+        trainer.value_optimizer = torch.optim.SGD(
+            trainer.value_head.parameters(), lr=1.0
+        )
+        trainer.policy_scheduler = torch.optim.lr_scheduler.StepLR(
+            trainer.policy_optimizer, 1
+        )
+        trainer.value_scheduler = torch.optim.lr_scheduler.StepLR(
+            trainer.value_optimizer, 1
+        )
+
+    def inject(first, second):
+        def hook(grad):
+            result = torch.zeros_like(grad)
+            result.flatten()[:2] = grad.new_tensor([first, second])
+            return result
+
+        return hook
+
+    before = [p.detach().clone() for p in (policy, value)]
+    hp = policy.register_hook(inject(3e20, -4e20))
+    hv = value.register_hook(inject(5e20, 12e20))
+    try:
+        await trainer.train_step(["ab", "a"], ["cd", "ef"], [1.0, 0.0])
+    finally:
+        hp.remove()
+        hv.remove()
+    directions = (
+        policy.new_tensor([3 / 5, -4 / 5]),
+        value.new_tensor([5 / 13, 12 / 13]),
+    )
+    assert torch.cat(
+        [p.grad.flatten()[:2] for p in (policy, value)]
+    ).norm().item() == pytest.approx(math.sqrt(2))
+    for old, p, gradient, opt in zip(
+        before,
+        (policy, value),
+        directions,
+        (trainer.policy_optimizer, trainer.value_optimizer),
+        strict=True,
+    ):
+        torch.testing.assert_close(p.grad.flatten()[:2], gradient)
+        initial = old.flatten()[:2].double()
+        if optimizer_kind == "sgd":
+            reference = initial - gradient.double()
+        else:
+            group = opt.param_groups[0]
+            beta1, beta2 = group["betas"]
+            state = opt.state[p]
+            assert state["step"].item() == 1
+            torch.testing.assert_close(
+                state["exp_avg"].flatten()[:2], (1 - beta1) * gradient
+            )
+            torch.testing.assert_close(
+                state["exp_avg_sq"].flatten()[:2], (1 - beta2) * gradient.square()
+            )
+            rate = group["initial_lr"]
+            g = gradient.double()
+            reference = (1 - rate * group["weight_decay"]) * initial - rate * g / (
+                g.abs() + group["eps"]
+            )
+        torch.testing.assert_close(
+            p.flatten()[:2], reference.to(p.dtype), rtol=2e-7, atol=2e-10
+        )
+    assert (
+        trainer.policy_scheduler.last_epoch == trainer.value_scheduler.last_epoch == 1
+    )
+    assert trainer.global_step == 1

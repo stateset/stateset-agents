@@ -14,11 +14,41 @@ sys.path.insert(0, str(SCRIPT_DIR))
 import grade_transcript as grader  # noqa: E402
 
 
+@pytest.mark.asyncio
+async def test_grading_preserves_user_query_with_system_and_tool_turns() -> None:
+    from stateset_agents.data.customer_support_bench import SupportRewardComposite
+
+    turns = [
+        {"role": "system", "content": "Help the customer."},
+        {"role": "user", "content": "Where is order 1234?"},
+        {"role": "assistant", "content": "I will check the shipping status."},
+        {"role": "tool", "content": "In transit."},
+        {"role": "assistant", "content": "Your order is in transit."},
+        {"role": "user", "content": "Can I get a refund?"},
+        {"role": "assistant", "content": "I am happy to help with your refund."},
+    ]
+    rows = await grader.grade_transcript(turns, [], SupportRewardComposite())
+    assert [row["user_query"] for row in rows] == [
+        "Where is order 1234?",
+        "Where is order 1234?",
+        "Can I get a refund?",
+    ]
+
+
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
     path.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
 
 
 class TestLoadTranscript:
+    def test_non_object_and_non_text_rows_are_ignored(self, tmp_path: Path) -> None:
+        path = tmp_path / "mixed.jsonl"
+        path.write_text(
+            'null\n42\n[]\n{"role":"assistant","content":42}\n'
+            '{"role":"user","content":"Refund?"}\n',
+            encoding="utf-8",
+        )
+        assert grader.load_transcript(path) == [{"role": "user", "content": "Refund?"}]
+
     def test_loads_valid_jsonl(self, tmp_path: Path) -> None:
         p = tmp_path / "t.jsonl"
         _write_jsonl(

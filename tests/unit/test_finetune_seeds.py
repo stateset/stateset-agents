@@ -5,7 +5,6 @@ import json
 import shlex
 import sys
 from dataclasses import asdict, replace
-from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
@@ -17,7 +16,12 @@ from stateset_agents import finetune_quality as quality
 from stateset_agents import finetune_worker as worker
 from stateset_agents import finetune_workspace as ws
 from stateset_agents.remote.executor import RemoteExecutionError
-from stateset_agents.remote.job import JobHandle, JobStatus, RemoteJobSpec
+from stateset_agents.remote.job import (
+    JobHandle,
+    JobStatus,
+    RemoteJobResult,
+    RemoteJobSpec,
+)
 from stateset_agents.remote.registry import get_executor
 from stateset_agents.training import sft
 from stateset_agents.tui import Studio
@@ -307,10 +311,10 @@ def test_studio_passes_reviewed_seed_to_provider(tmp_path, monkeypatch, provider
             return JobHandle(provider, "synthetic")
 
         def wait(self, handle):
-            return SimpleNamespace(
+            return RemoteJobResult(
+                handle=handle,
                 status=JobStatus.SUCCEEDED,
                 logs=[],
-                succeeded=True,
                 output_dir=run / "artifacts",
                 cost_usd=None,
                 duration_s=1,
@@ -394,9 +398,7 @@ def test_remote_cli_forwards_explicit_seed_without_running_provider(
             return JobHandle("local", "synthetic")
 
         def wait(self, handle):
-            return SimpleNamespace(
-                logs=[], succeeded=True, output_dir=tmp_path / "out", cost_usd=None
-            )
+            return RemoteJobResult(handle, JobStatus.SUCCEEDED, tmp_path / "out")
 
     monkeypatch.setattr(
         "stateset_agents.cli_remote.get_executor", lambda provider: Executor()

@@ -1,6 +1,9 @@
 """Empirical Fisher estimates must use valid examples and preserve live state."""
 
 import asyncio
+import math
+from fractions import Fraction
+from itertools import product
 from types import SimpleNamespace
 
 import pytest
@@ -49,6 +52,17 @@ class ScoreModel(torch.nn.Module):
         else:
             loss = 0.5 * (self.weight * x).square() + self.other * 0
         return SimpleNamespace(loss=loss)
+
+
+class BinaryPolicy(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.zeros(2, dtype=torch.float64))
+        self.config = SimpleNamespace(vocab_size=2)
+
+    def forward(self, input_ids, attention_mask):
+        scores = self.weight[input_ids]
+        return SimpleNamespace(logits=torch.stack((scores * 0, scores), dim=-1))
 
 
 @pytest.fixture
@@ -254,6 +268,197 @@ def test_consolidation_overflow_does_not_partially_change_task_memory(
         )
         torch.testing.assert_close(
             manager._ewc_params[name], means[name], rtol=0, atol=0
+        )
+
+
+def test_recorded_turns_use_sampled_contexts_and_one_mean_per_trajectory():
+    from stateset_agents.core.trajectory import (
+        ConversationTurn,
+        MultiTurnTrajectory,
+        TrajectoryGroup,
+    )
+
+    def turn(prompt, tokens):
+        return ConversationTurn(
+            role="assistant",
+            content="same decoded text",
+            metadata={"prompt_token_ids": prompt, "token_ids": tokens},
+        )
+
+    def trajectory(*turns):
+        return MultiTurnTrajectory(turns=list(turns))
+
+    agent = SimpleNamespace(model=BinaryPolicy())
+    manager = module.ContinualLearningManager(
+        module.ContinualLearningConfig(strategy="ewc", ewc_lambda=2),
+        training_config=SimpleNamespace(generation_batch_size=1),
+    )
+    # At zero logits, observing 0/1 gives a +1/2 or -1/2 NLL derivative
+    # only at the preceding token's parameter. The two trajectory scores
+    # are (-1/6, 0) and (+1/2, 0). Partial records must not contribute.
+    samples = [
+        trajectory(turn([1, 0], [1, 1]), turn([1], [0])),
+        trajectory(turn([0], [0])),
+        trajectory(turn([0], [1]), ConversationTurn(role="assistant", content="x")),
+        trajectory(turn([], [1])),
+        trajectory(turn([2], [0])),
+    ]
+    manager.on_task_end(
+        agent, recent_groups=[TrajectoryGroup(scenario_id="ewc", trajectories=samples)]
+    )
+    assert manager.last_fisher_estimate["accepted"] == 2
+    assert manager.last_fisher_estimate["sample_errors"] == 3
+    expected = torch.tensor([5 / 36, 0.0], dtype=torch.float64)
+    torch.testing.assert_close(manager._ewc_fisher["weight"], expected)
+    with torch.no_grad():
+        agent.model.weight.add_(1)
+    penalty = manager.compute_ewc_penalty(agent)
+    torch.testing.assert_close(penalty, expected.sum())
+    torch.testing.assert_close(
+        torch.autograd.grad(penalty, agent.model.weight)[0], 2 * expected
+    )
+
+
+def test_two_attempt_fisher_matches_every_bounded_model_input():
+    # Six times the mean signed score in half-unit ticks, as in FisherInformation.tla.
+    catalog = [
+        ([([1, 0], [1, 1]), ([1], [0])], (-2, 0)),
+        ([([0], [0])], (6, 0)),
+        ([([0], [1]), ([0], [0])], (0, 0)),
+        ([([0], [1, 0, 0])], (0, 2)),
+        ([([1], [1]), ([], [1])], None),
+        ([([1], [])], None),
+        ([], None),
+        ([([0, 1], [1, 1])], (0, -6)),
+    ]
+    agent = SimpleNamespace(model=BinaryPolicy())
+    manager = module.ContinualLearningManager(
+        module.ContinualLearningConfig(strategy="ewc", ewc_lambda=2, ewc_num_samples=2)
+    )
+    for pair in product(catalog, repeat=2):
+        observed = []
+        for rows, _ in pair:
+            turns = [
+                {
+                    "role": "assistant",
+                    "metadata": {"prompt_token_ids": p, "token_ids": r},
+                }
+                for p, r in rows
+            ]
+            observed.append(SimpleNamespace(turns=turns))
+        weights, _ = manager._estimate_fisher(agent, observed)
+        means = [mean for _, mean in pair if mean is not None]
+        assert manager.last_fisher_estimate["accepted"] == len(means)
+        if means:
+            expected = [
+                sum(m[i] ** 2 for m in means) / (144 * len(means)) for i in (0, 1)
+            ]
+            torch.testing.assert_close(
+                weights["weight"], torch.tensor(expected, dtype=torch.float64)
+            )
+        else:
+            assert weights == {}
+
+
+def test_diagonal_ewc_penalizes_a_common_logit_shift_at_exact_population():
+    class Policy(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.logits = torch.nn.Parameter(torch.zeros(2, dtype=torch.float64))
+
+        def forward(self, input_ids, attention_mask):
+            return SimpleNamespace(logits=self.logits.expand(*input_ids.shape, 2))
+
+    agent = SimpleNamespace(model=Policy())
+    manager = module.ContinualLearningManager(
+        module.ContinualLearningConfig(strategy="ewc", ewc_lambda=2)
+    )
+    samples = [
+        SimpleNamespace(
+            turns=[
+                {
+                    "role": "assistant",
+                    "metadata": {"prompt_token_ids": [0], "token_ids": [action]},
+                }
+            ]
+        )
+        for action in (0, 1)
+    ]
+    manager.on_task_end(agent, recent_groups=[SimpleNamespace(trajectories=samples)])
+    assert manager.last_fisher_estimate["accepted"] == 2
+    torch.testing.assert_close(
+        manager._ewc_fisher["logits"], torch.full_like(agent.model.logits, 0.25)
+    )
+    before = agent.model.logits.detach().log_softmax(0)
+    with torch.no_grad():
+        agent.model.logits.add_(1)
+    after = agent.model.logits.log_softmax(0)
+    assert (before.exp() * (before - after)).sum().item() == 0
+    assert manager.compute_ewc_penalty(agent).item() == pytest.approx(0.5)
+
+
+@pytest.mark.parametrize("bit, expected", [(0, 1 / 16), (1, 9 / 16)])
+def test_observed_binary_action_can_fall_either_side_of_model_fisher(bit, expected):
+    class Policy(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.log_odds = torch.nn.Parameter(
+                torch.tensor(-math.log(3), dtype=torch.float64)
+            )
+
+        def forward(self, input_ids, attention_mask):
+            offset = torch.full_like(input_ids, 1e8, dtype=torch.float64)
+            return SimpleNamespace(
+                logits=torch.stack((offset, offset + self.log_odds), dim=-1)
+            )
+
+    agent = SimpleNamespace(model=Policy())
+    manager = module.ContinualLearningManager(
+        module.ContinualLearningConfig(strategy="ewc", ewc_lambda=1)
+    )
+    turn = {
+        "role": "assistant",
+        "metadata": {"prompt_token_ids": [0], "token_ids": [bit]},
+    }
+    fisher, _ = manager._estimate_fisher(agent, [SimpleNamespace(turns=[turn])])
+    actual = fisher["log_odds"].item()
+    assert actual == pytest.approx(expected, abs=2e-9, rel=0)
+    assert (actual > 3 / 16) == bool(bit)
+
+
+@pytest.mark.parametrize(
+    "dtype,x,anchor,fisher,strength",
+    [
+        (torch.float32, 1e25, 0, 1e-30, 1),
+        (torch.float32, 3e38, -3e38, 0, 1),
+        (torch.float32, 1, 1, 1e38, 1e308),
+        (torch.float64, 1e200, 0, 1e-300, 1),
+        (torch.float64, 1.6e308, -1.6e308, 5e-324, 1),
+        (torch.float64, 1.6e308, -1.6e308, 0, 1),
+        (torch.float64, 1.6e308, 0, 5e-324, 5e-324),
+        (torch.float64, 1e-200, 0, 1e300, 1),
+        (torch.float64, 1e-300, 0, 1e300, 1e300),
+    ],
+)
+def test_weighted_penalty_and_gradient_at_extreme_scales(
+    setup, dtype, x, anchor, fisher, strength
+):
+    manager, agent = setup(dtype)
+    manager.config.ewc_lambda = strength
+    with torch.no_grad():
+        agent.model.weight.fill_(x)
+    manager._ewc_fisher = {"weight": torch.tensor(fisher, dtype=dtype)}
+    manager._ewc_params = {"weight": torch.tensor(anchor, dtype=dtype)}
+    delta = Fraction(agent.model.weight.item()) - Fraction(
+        manager._ewc_params["weight"].item()
+    )
+    slope = Fraction(strength) * Fraction(manager._ewc_fisher["weight"].item()) * delta
+    loss = manager.compute_ewc_penalty(agent)
+    gradient = torch.autograd.grad(loss, agent.model.weight)[0]
+    for actual, expected in ((loss, slope * delta / 2), (gradient, slope)):
+        reference = torch.tensor(float(expected), dtype=dtype)
+        torch.testing.assert_close(
+            actual, reference, rtol=4 * torch.finfo(dtype).eps, atol=0
         )
 
 

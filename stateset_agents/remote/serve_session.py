@@ -19,8 +19,9 @@ different in kind:
    pod immediately; ``serve-remote --list`` shows every serve pod with its
    age and $/hr so nothing leaks unnoticed.
 
-On any *startup* failure the pod is terminated before the exception
-propagates — a half-provisioned pod bills like a healthy one.
+When a cost ceiling is set, the catalog check happens before rental and the
+shutdown timer includes provisioning. Startup failures request termination.
+An unacknowledged termination leaves the pod ID available for manual cleanup.
 
 The endpoint is authenticated: vLLM is launched with a generated
 ``--api-key`` token, and every request must carry it as a Bearer token.
@@ -33,6 +34,7 @@ VRAM note: vLLM loads the whole model into GPU memory. The default GPU
 
 from __future__ import annotations
 
+import math
 import secrets
 import shlex
 import tarfile
@@ -40,17 +42,30 @@ import tempfile
 import time
 import uuid
 from collections.abc import Callable
+from copy import copy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from stateset_agents.remote.executor import RemoteExecutionError
+from stateset_agents.remote.ledger import (
+    BudgetExceeded,
+    check_budget,
+    remaining_budget_usd,
+)
 from stateset_agents.remote.runpod import (
     _API_ROOT,
     _DEFAULT_IMAGE,
     _REMOTE_WORKDIR,
     RunPodApi,
     SshTransport,
+    _time_left,
+    pod_hourly_rate,
+)
+from stateset_agents.remote.runpod_recovery import PodLease, valid_pod_id
+from stateset_agents.remote.serve_recovery import (
+    clear_stopped_lease,
+    serving_lease_dir,
 )
 
 __all__ = [
@@ -58,6 +73,8 @@ __all__ = [
     "find_serve_pod",
     "list_serve_pods",
     "self_destruct_script",
+    "stop_serve_pod",
+    "terminate_serve_pod",
 ]
 
 _POD_PREFIX = "stateset-serve-"
@@ -128,11 +145,34 @@ def _default_http_post_json(
     return dict(response.json())
 
 
+def validate_serve_limits(max_hours: float, max_cost_usd: float | None) -> int:
+    """Validate serving limits before renting and return the watchdog duration in seconds."""
+    if (
+        type(max_hours) not in (int, float)
+        or not math.isfinite(max_hours * 3600)
+        or max_hours <= 0
+    ):
+        raise RemoteExecutionError(
+            "--max-hours must be finite and positive", provider="runpod"
+        )
+    if max_cost_usd is not None and (
+        type(max_cost_usd) not in (int, float)
+        or not math.isfinite(max_cost_usd)
+        or max_cost_usd <= 0
+    ):
+        raise RemoteExecutionError(
+            "--max-cost must be finite and positive", provider="runpod"
+        )
+    return max(1, int(max_hours * 3600))
+
+
 def self_destruct_script(
     pod_id: str,
     max_hours: float,
     api_root: str = _API_ROOT,
     key_file: str = _REMOTE_KEY_FILE,
+    *,
+    expires_at: int | None = None,
 ) -> str:
     """The remote self-destruct: sleep ``max_hours``, then DELETE own pod.
 
@@ -140,14 +180,19 @@ def self_destruct_script(
     so the script itself is safe to log. The key file still lives on the pod —
     see the module docstring for the tradeoff.
     """
-    seconds = max(1, int(max_hours * 3600))
+    wait = f"sleep {max(1, int(max_hours * 3600))}"
+    if expires_at is not None:
+        wait = (
+            f"remaining=$(({expires_at:d} - $(date +%s)))\n"
+            'if (( remaining > 0 )); then sleep "$remaining"; fi'
+        )
     delete_url = shlex.quote(f"{api_root}/pods/{pod_id}")
     return (
         "#!/bin/bash\n"
         f"# stateset-agents serve-remote cost control: terminate this pod\n"
         f"# after {max_hours} hour(s), whatever happens to the laptop that\n"
         "# started it.\n"
-        f"sleep {seconds}\n"
+        f"{wait}\n"
         f"api_key=$(cat {shlex.quote(key_file)})\n"
         f"rm -f {shlex.quote(key_file)}\n"
         f"curl -s -X DELETE {delete_url} "
@@ -195,10 +240,18 @@ def list_serve_pods(api: Any) -> list[dict[str, Any]]:
 
 def find_serve_pod(api: Any, name_or_id: str) -> dict[str, Any]:
     """Resolve ``--stop``'s argument to one pod, by exact id or name."""
-    pods = list(api.list_pods())
-    for pod in pods:
-        if str(pod.get("id")) == name_or_id or str(pod.get("name")) == name_or_id:
-            return dict(pod)
+    return _match_serve_pod(api.list_pods(), name_or_id)
+
+
+def _match_serve_pod(pods: list[dict[str, Any]], name_or_id: str) -> dict[str, Any]:
+    matches = [p for p in pods if name_or_id in (p.get("id"), p.get("name"))]
+    if len(matches) > 1:
+        raise RemoteExecutionError(
+            f"Multiple pods match {name_or_id!r}. Use a unique pod ID.",
+            provider="runpod",
+        )
+    if matches:
+        return dict(matches[0])
     known = ", ".join(
         sorted(
             str(p.get("name"))
@@ -211,6 +264,43 @@ def find_serve_pod(api: Any, name_or_id: str) -> dict[str, Any]:
         + (f"; running serve pods: {known}" if known else "; no serve pods running"),
         provider="runpod",
     )
+
+
+def terminate_serve_pod(api: Any, pod_id: str) -> None:
+    """Request deletion and identify the pod if RunPod fails to acknowledge it."""
+    try:
+        api.terminate_pod(pod_id)
+    except Exception as exc:
+        raise RemoteExecutionError(
+            f"Termination of RunPod pod {pod_id} is unconfirmed. Billing may continue. "
+            f"Check the pod and retry with serve-remote --stop {pod_id}.",
+            provider="runpod",
+            pod_id=pod_id,
+        ) from exc
+
+
+def stop_serve_pod(api: Any, name_or_id: str) -> dict[str, Any]:
+    """Stop the selected pod and retire any matching interrupted launch."""
+    pods = api.list_pods()
+    pod = _match_serve_pod(pods, name_or_id)
+    pod_id = pod.get("id")
+    if not valid_pod_id(pod_id):
+        raise RemoteExecutionError(
+            "RunPod returned an invalid pod ID", provider="runpod"
+        )
+    if sum(p.get("id") == pod_id for p in pods) != 1:
+        raise RemoteExecutionError(
+            f"RunPod returned conflicting records for {pod_id}", provider="runpod"
+        )
+    terminate_serve_pod(api, pod_id)
+    name = str(pod.get("name"))
+    clear_stopped_lease(
+        serving_lease_dir(),
+        name,
+        pod_id,
+        verified_name=sum(p.get("name") == name for p in pods) == 1,
+    )
+    return pod
 
 
 class _PodNeverNetworked(RemoteExecutionError):
@@ -246,10 +336,12 @@ class RemoteServeSession:
         token: str | None = None,
         direct_vllm_image: bool = False,
         vllm_args: list[str] | None = None,
+        lease_dir: Path | None = None,
     ) -> None:
         self._api = api
         self._ssh = ssh
         self._public_key = public_key
+        self.lease_dir = lease_dir if lease_dir is not None else serving_lease_dir()
         self.image = image
         #: vLLM's pip install alone is ~10 GB of wheels on top of the model
         #: download, hence a higher floor than the training default.
@@ -270,6 +362,7 @@ class RemoteServeSession:
         self.max_provision_attempts = max_provision_attempts
         self.poll_interval_s = poll_interval_s
         self._pod_started_at: float | None = None
+        self._pod_deadline: float | None = None
         self._pod_cost_per_hr: float | None = None
         self._base_model: str | None = None
         self._gpu: str | None = None
@@ -351,7 +444,7 @@ class RemoteServeSession:
         """
         deadline = time.monotonic() + self.network_timeout_s
         while True:
-            pod = api.get_pod(pod_id)
+            pod = self._get_pod(api, pod_id)
             ip = pod.get("publicIp")
             mappings = pod.get("portMappings") or {}
             ssh_port = mappings.get("22")
@@ -365,7 +458,18 @@ class RemoteServeSession:
                     f"mappings {mappings!r})",
                     provider=self.provider,
                 )
-            time.sleep(self.poll_interval_s)
+            self._sleep_until_poll(self.poll_interval_s)
+
+    def _get_pod(self, api: RunPodApi, pod_id: str) -> dict[str, Any]:
+        """Keep RunPod's status requests within the admitted pod lifetime."""
+        if self._pod_deadline is not None:
+            _time_left(self._pod_deadline)
+            return api.get_pod(pod_id, deadline=self._pod_deadline)
+        return api.get_pod(pod_id)
+
+    def _sleep_until_poll(self, interval: float) -> None:
+        remaining = _time_left(self._pod_deadline)
+        time.sleep(interval if remaining is None else min(interval, remaining))
 
     def _proxy_endpoint_url(self, pod_id: str) -> str:
         """Public URL of the vLLM server, via RunPod's HTTP proxy."""
@@ -448,7 +552,7 @@ class RemoteServeSession:
                     f"{label} did not finish within {timeout_s}s:\n{tail}",
                     provider=self.provider,
                 )
-            time.sleep(interval)
+            self._sleep_until_poll(interval)
 
     def _reconnect(self, ssh: Any) -> bool:
         """Wait for sshd to answer again after a transport drop."""
@@ -480,13 +584,17 @@ class RemoteServeSession:
             f"tar xzf {tar_remote} -C {_REMOTE_WORKDIR} " f"&& rm -f {tar_remote}",
         )
 
-    def _arm_self_destruct(self, ssh: Any, api: Any, max_hours: float) -> None:
+    def _arm_self_destruct(
+        self, ssh: Any, api: Any, max_hours: float, expires_at: int | None
+    ) -> None:
         """Install and start the remote self-destruct (see module docstring)."""
         ssh.upload_secret(str(api.api_key), _REMOTE_KEY_FILE)
         with tempfile.TemporaryDirectory() as staging:
             script_file = Path(staging) / "self_destruct.sh"
             script_file.write_text(
-                self_destruct_script(str(self.pod_id), max_hours, api.root)
+                self_destruct_script(
+                    str(self.pod_id), max_hours, api.root, expires_at=expires_at
+                )
             )
             ssh.upload(script_file, _REMOTE_DESTRUCT_SCRIPT)
         self._run_checked(
@@ -635,7 +743,7 @@ class RemoteServeSession:
                     f"log:\n{log_tail}",
                     provider=self.provider,
                 )
-            time.sleep(self.poll_interval_s)
+            self._sleep_until_poll(self.poll_interval_s)
 
     def _greedy_probe(self, model: str) -> str:
         """One greedy completion from ``model`` through the live endpoint."""
@@ -711,16 +819,16 @@ class RemoteServeSession:
     ) -> None:
         """Provision, arm the self-destruct, boot vLLM, block until ready.
 
-        On success the pod KEEPS RUNNING (that is the product); on any
-        failure it is terminated before the exception propagates.
+        On success the endpoint keeps running. Startup failure requests
+        termination and reports the pod ID if cleanup is unconfirmed.
         """
-        if max_hours <= 0:
+        if self.pod_id is not None:
             raise RemoteExecutionError(
-                "--max-hours must be positive; the self-destruct is the "
-                "backstop that keeps a forgotten pod from billing forever",
+                f"This session still owns pod {self.pod_id}. Stop it before starting another.",
                 provider=self.provider,
             )
-        if gpu_count <= 0:
+        lifetime_s = validate_serve_limits(max_hours, max_cost_usd)
+        if type(gpu_count) is not int or gpu_count <= 0:
             raise RemoteExecutionError(
                 "--gpu-count must be positive", provider=self.provider
             )
@@ -736,135 +844,197 @@ class RemoteServeSession:
                 "--merge, or pick one.",
                 provider=self.provider,
             )
+        if self.direct_vllm_image and (all_adapters or merge):
+            raise RemoteExecutionError(
+                "direct vLLM images currently serve base checkpoints only; "
+                "adapters and --merge require the SSH-managed serving path",
+                provider=self.provider,
+            )
         api = self._require_api()
-        if self.direct_vllm_image:
-            if all_adapters or merge:
-                raise RemoteExecutionError(
-                    "direct vLLM images currently serve base checkpoints only; "
-                    "adapters and --merge require the SSH-managed serving path",
-                    provider=self.provider,
-                )
-            self._start_direct_image(
-                api,
-                base_model=base_model,
-                gpu=gpu or self.DEFAULT_GPU,
-                gpu_count=gpu_count,
-                max_hours=max_hours,
-                max_cost_usd=max_cost_usd,
-                network_volume_id=network_volume_id,
-            )
-            return
-        public_key = self._require_public_key()
-        ssh = self._require_ssh()
+        volume_args = self._network_volume_args(api, network_volume_id)
+        self._base_model = base_model
+        self._gpu = gpu or self.DEFAULT_GPU
+        self._gpu_count = gpu_count
+        remaining = max_cost_usd
+        image_args: dict[str, Any] = {}
+        if not self.direct_vllm_image:
+            public_key = self._require_public_key()
+            ssh = self._require_ssh()
+            image_args = {
+                "ports": ["22/tcp", f"{_VLLM_PORT}/http"],
+                "env": {"PUBLIC_KEY": public_key, "SSH_PUBLIC_KEY": public_key},
+            }
 
-        for attempt in range(1, self.max_provision_attempts + 1):
+        attempts = 1 if self.direct_vllm_image else self.max_provision_attempts
+        for attempt in range(1, attempts + 1):
+            if remaining is not None:
+                if remaining == 0:
+                    raise RemoteExecutionError(
+                        "No serving budget remains for a retry", provider=self.provider
+                    )
+                catalog_rate = api.get_gpu_rate(self._gpu, "SECURE")
+                self._check_budget(
+                    catalog_rate,
+                    lifetime_s,
+                    remaining,
+                    gpu_count,
+                    source="RunPod catalog",
+                )
+
             self.pod_name = f"{_POD_PREFIX}{uuid.uuid4().hex[:12]}"
-            pod = api.create_pod(
-                name=self.pod_name,
-                image=self.image,
-                gpu_type_id=gpu or self.DEFAULT_GPU,
-                gpu_count=gpu_count,
-                ports=["22/tcp", f"{_VLLM_PORT}/http"],
-                env={"PUBLIC_KEY": public_key, "SSH_PUBLIC_KEY": public_key},
-                container_disk_gb=self.container_disk_gb,
-                **self._network_volume_args(api, network_volume_id),
-            )
-            self.pod_id = str(pod["id"])
-            self._pod_started_at = time.time()
-            self._base_model = base_model
-            self._gpu = gpu or self.DEFAULT_GPU
-            self._gpu_count = gpu_count
-            try:
-                raw_price = pod.get("costPerHr")
-                self._pod_cost_per_hr = (
-                    float(raw_price) if raw_price is not None else None
+            lease = PodLease(self.lease_dir / f"{self.pod_name}.json")
+            with lease.starting():
+                self._pod_started_at = time.monotonic()
+                self._pod_deadline = (
+                    self._pod_started_at + lifetime_s if remaining is not None else None
                 )
-            except (TypeError, ValueError):
+                expires_at = (
+                    int(time.time()) + lifetime_s if remaining is not None else None
+                )
+                if self.direct_vllm_image:
+                    image_args = self._direct_image_args(
+                        base_model, gpu_count, lifetime_s, expires_at, network_volume_id
+                    )
+                try:
+                    pod = api.create_pod(
+                        name=self.pod_name,
+                        image=self.image,
+                        gpu_type_id=self._gpu,
+                        gpu_count=gpu_count,
+                        cloud_type="SECURE",
+                        container_disk_gb=self.container_disk_gb,
+                        **volume_args,
+                        **image_args,
+                    )
+                except Exception as exc:
+                    raise RemoteExecutionError(
+                        f"RunPod allocation of {self.pod_name} is unconfirmed. "
+                        f"Run stateset-agents runpod-orphans --serving before retrying. {exc}",
+                        provider=self.provider,
+                    ) from exc
+                pod_id = pod.get("id") if isinstance(pod, dict) else None
+                if not valid_pod_id(pod_id):
+                    raise RemoteExecutionError(
+                        f"RunPod returned no pod ID for {self.pod_name}. "
+                        "Run stateset-agents runpod-orphans --serving before retrying.",
+                        provider=self.provider,
+                    )
+                self.pod_id = pod_id
                 self._pod_cost_per_hr = None
-            try:
-                self._enforce_cost_ceiling(max_hours, max_cost_usd)
-            except BaseException:
-                self.terminate()
-                raise
-            try:
-                endpoints = self._wait_for_endpoints(api, self.pod_id)
-                break
-            except _PodNeverNetworked:
-                # This host will not serve; take a different one. The dead
-                # pod goes first so a retry never doubles the bill.
-                self.terminate()
-                if attempt >= self.max_provision_attempts:
-                    raise
-        else:  # pragma: no cover - loop always breaks or raises
-            raise AssertionError("unreachable")
+                try:
+                    lease.record_id(self.pod_id)
+                    raw_price = pod.get("costPerHr")
+                    if raw_price is None and (
+                        remaining is not None or self.direct_vllm_image
+                    ):
+                        raw_price = self._get_pod(api, self.pod_id).get("costPerHr")
+                    self._pod_cost_per_hr = pod_hourly_rate(raw_price)
+                    self._check_budget(
+                        self._pod_cost_per_hr,
+                        lifetime_s,
+                        remaining,
+                        1,
+                        source="RunPod pod",
+                    )
+                    _time_left(self._pod_deadline)
+                    self.endpoint_url = self._proxy_endpoint_url(self.pod_id)
+                    if self.direct_vllm_image:
+                        self._await_direct_server_ready()
+                    else:
+                        self._start_ssh_server(
+                            api,
+                            ssh,
+                            base_model,
+                            all_adapters,
+                            merge,
+                            strict_effect,
+                            max_hours,
+                            expires_at,
+                        )
+                    _time_left(self._pod_deadline)
+                    lease.clear()
+                    return
+                except BaseException as exc:
+                    cost = self._terminate_and_record_cost()
+                    lease.clear()
+                    if not isinstance(exc, _PodNeverNetworked) or attempt >= attempts:
+                        raise
+                    remaining = remaining_budget_usd(remaining, [cost])
+        raise AssertionError("No serving allocation attempted")
 
-        try:
-            host, ssh_port, vllm_port = endpoints
-            self.endpoint_url = self._proxy_endpoint_url(self.pod_id)
-            self._endpoint = (host, ssh_port)
-            ssh.wait_until_reachable(host, ssh_port, self.ready_timeout_s)
-
-            # Armed FIRST: from here even a botched vllm install cannot
-            # leak a forever-billing pod past max_hours.
-            self._arm_self_destruct(ssh, api, max_hours)
-
-            for name, directory in all_adapters.items():
-                self._upload_adapter(ssh, Path(directory), name)
-
-            # The runpod/pytorch image ships torch but NOT vllm.
-            self._run_detached(
-                ssh,
-                "pip install --quiet vllm",
-                label="vllm-install",
-                timeout_s=self.ready_timeout_s,
-            )
-            # flashinfer (pulled in by vllm) annotates with
-            # ``array.array[int]``, which raises TypeError at import on the
-            # image's Python 3.11 and takes the whole engine down. Strip the
-            # subscript in place; it is annotation-only. Observed live on the
-            # first verified endpoint run (2026-08-17).
-            self._run_checked(ssh, _FLASHINFER_PATCH_COMMAND)
-            if merge:
-                name = next(iter(all_adapters))
-                self._merge_adapter_remotely(ssh, base_model, name)
-                launch = self._vllm_command(
-                    base_model, [], model_path=_REMOTE_MERGED_DIR
-                )
-            else:
-                launch = self._vllm_command(base_model, list(all_adapters))
-            self._run_checked(ssh, launch)
-            self._await_server_ready(ssh)
-            if all_adapters and not merge:
-                self._verify_adapter_effect(
-                    base_model, list(all_adapters), strict=strict_effect
-                )
-        except BaseException:
-            self.terminate()
-            raise
-
-    def _start_direct_image(
+    def _start_ssh_server(
         self,
         api: Any,
-        *,
+        ssh: Any,
         base_model: str,
-        gpu: str,
-        gpu_count: int,
+        all_adapters: dict[str, Path],
+        merge: bool,
+        strict_effect: bool,
         max_hours: float,
-        max_cost_usd: float | None,
-        network_volume_id: str | None,
+        expires_at: int | None,
     ) -> None:
-        """Start a prebuilt vLLM image without requiring SSH.
+        """Wait for networking, arm the watchdog, and bring up the SSH-managed server."""
+        assert self.pod_id is not None
+        endpoints = self._wait_for_endpoints(api, self.pod_id)
+        host, ssh_port, _ = endpoints
+        self._endpoint = (host, ssh_port)
+        _time_left(self._pod_deadline)
+        if self._pod_deadline is not None and isinstance(ssh, SshTransport):
+            ssh = copy(ssh)
+            ssh._deadline = self._pod_deadline
+        ssh.wait_until_reachable(host, ssh_port, self.ready_timeout_s)
 
-        RunPod injects ``RUNPOD_POD_ID`` and a pod-scoped ``RUNPOD_API_KEY``
-        into every Pod. A background watchdog uses those credentials to
-        delete its own Pod after ``max_hours``; startup failures are also
-        terminated locally. The user key is therefore never copied into the
-        container.
-        """
-        seconds = max(1, int(max_hours * 3600))
+        # Armed FIRST: from here even a botched vllm install cannot
+        # leak a forever-billing pod past max_hours.
+        _time_left(self._pod_deadline)
+        self._arm_self_destruct(ssh, api, max_hours, expires_at)
+
+        for name, directory in all_adapters.items():
+            self._upload_adapter(ssh, Path(directory), name)
+
+        # The runpod/pytorch image ships torch but NOT vllm.
+        self._run_detached(
+            ssh,
+            "pip install --quiet vllm",
+            label="vllm-install",
+            timeout_s=self.ready_timeout_s,
+        )
+        # flashinfer (pulled in by vllm) annotates with
+        # ``array.array[int]``, which raises TypeError at import on the
+        # image's Python 3.11 and takes the whole engine down. Strip the
+        # subscript in place; it is annotation-only. Observed live on the
+        # first verified endpoint run (2026-08-17).
+        self._run_checked(ssh, _FLASHINFER_PATCH_COMMAND)
+        if merge:
+            name = next(iter(all_adapters))
+            self._merge_adapter_remotely(ssh, base_model, name)
+            launch = self._vllm_command(base_model, [], model_path=_REMOTE_MERGED_DIR)
+        else:
+            launch = self._vllm_command(base_model, list(all_adapters))
+        self._run_checked(ssh, launch)
+        self._await_server_ready(ssh)
+        if all_adapters and not merge:
+            self._verify_adapter_effect(
+                base_model, list(all_adapters), strict=strict_effect
+            )
+
+    def _direct_image_args(
+        self,
+        base_model: str,
+        gpu_count: int,
+        lifetime_s: int,
+        expires_at: int | None,
+        network_volume_id: str | None,
+    ) -> dict[str, Any]:
+        """Build vLLM's launch command and watchdog using the pod-scoped credentials."""
+        delay = (
+            str(lifetime_s)
+            if expires_at is None
+            else f"max(0,{expires_at}-time.time())"
+        )
         watchdog = (
             "import os,time,urllib.request;"
-            f"time.sleep({seconds});"
+            f"time.sleep({delay});"
             f"u='{_API_ROOT}/pods/'+os.environ['RUNPOD_POD_ID'];"
             "r=urllib.request.Request(u,method='DELETE',headers={"
             "'Authorization':'Bearer '+os.environ['RUNPOD_API_KEY']});"
@@ -892,46 +1062,18 @@ class RemoteServeSession:
             f">/tmp/stateset-log-server.log 2>&1 & "
             f"exec {' '.join(launch_parts)} >{_DIRECT_LOG_FILE} 2>&1"
         )
-        volume_args = self._network_volume_args(api, network_volume_id)
         env = {}
         if network_volume_id:
             env = {
                 "HF_HOME": f"{_REMOTE_WORKDIR}/huggingface",
                 "HF_HUB_CACHE": f"{_REMOTE_WORKDIR}/huggingface/hub",
             }
-        self.pod_name = f"{_POD_PREFIX}{uuid.uuid4().hex[:12]}"
-        pod = api.create_pod(
-            name=self.pod_name,
-            image=self.image,
-            gpu_type_id=gpu,
-            gpu_count=gpu_count,
-            ports=[f"{_VLLM_PORT}/http", f"{_DIRECT_LOG_PORT}/http"],
-            env=env,
-            container_disk_gb=self.container_disk_gb,
-            docker_entrypoint=["/bin/bash", "-lc"],
-            docker_start_cmd=[command],
-            **volume_args,
-        )
-        self.pod_id = str(pod["id"])
-        self._pod_started_at = time.time()
-        self._base_model = base_model
-        self._gpu = gpu
-        self._gpu_count = gpu_count
-        try:
-            raw_price = pod.get("costPerHr")
-            if raw_price is None:
-                raw_price = api.get_pod(self.pod_id).get("costPerHr")
-            self._pod_cost_per_hr = float(raw_price) if raw_price is not None else None
-        except (TypeError, ValueError):
-            self._pod_cost_per_hr = None
-
-        try:
-            self._enforce_cost_ceiling(max_hours, max_cost_usd)
-            self.endpoint_url = self._proxy_endpoint_url(self.pod_id)
-            self._await_direct_server_ready()
-        except BaseException:
-            self.terminate()
-            raise
+        return {
+            "ports": [f"{_VLLM_PORT}/http", f"{_DIRECT_LOG_PORT}/http"],
+            "env": env,
+            "docker_entrypoint": ["/bin/bash", "-lc"],
+            "docker_start_cmd": [command],
+        }
 
     def _network_volume_args(
         self, api: Any, network_volume_id: str | None
@@ -1004,25 +1146,22 @@ http.server.ThreadingHTTPServer(("0.0.0.0", {_DIRECT_LOG_PORT}), Handler).serve_
             return f"[startup-log endpoint returned HTTP {status}]{suffix}"
         return body[-65536:].replace(self.token, "[REDACTED]").strip()
 
-    def _enforce_cost_ceiling(
-        self, max_hours: float, max_cost_usd: float | None
+    def _check_budget(
+        self,
+        rate: float | None,
+        lifetime_s: int,
+        remaining: float | None,
+        gpu_count: int,
+        *,
+        source: str,
     ) -> None:
-        """Refuse a serve whose provider-reported worst case exceeds budget."""
-        if max_cost_usd is None:
-            return
-        if self._pod_cost_per_hr is None:
+        """Check the quoted rate against the remaining serving budget."""
+        try:
+            check_budget(rate, lifetime_s, remaining, gpu_count=gpu_count)
+        except BudgetExceeded as exc:
             raise RemoteExecutionError(
-                "--max-cost was set but RunPod did not report this Pod's "
-                "hourly price",
-                provider=self.provider,
-            )
-        worst_case = self._pod_cost_per_hr * max_hours
-        if worst_case > max_cost_usd:
-            raise RemoteExecutionError(
-                f"serve could cost ${worst_case:.2f}, above the --max-cost "
-                f"ceiling of ${max_cost_usd:.2f}",
-                provider=self.provider,
-            )
+                f"{source}: {exc}", provider=self.provider
+            ) from exc
 
     def _await_direct_server_ready(self) -> None:
         """Wait for a direct-image vLLM server, with a finite billing bound."""
@@ -1033,7 +1172,7 @@ http.server.ThreadingHTTPServer(("0.0.0.0", {_DIRECT_LOG_PORT}), Handler).serve_
         status = -1
         while time.monotonic() < deadline:
             if self._api is not None and self.pod_id is not None:
-                pod = self._api.get_pod(self.pod_id)
+                pod = self._get_pod(self._api, self.pod_id)
                 desired = str(pod.get("desiredStatus") or "").upper()
                 if desired in {"EXITED", "TERMINATED"}:
                     log_tail = self._direct_startup_log()
@@ -1054,7 +1193,7 @@ http.server.ThreadingHTTPServer(("0.0.0.0", {_DIRECT_LOG_PORT}), Handler).serve_
                     "vLLM is up but rejected the generated API token",
                     provider=self.provider,
                 )
-            time.sleep(self.poll_interval_s)
+            self._sleep_until_poll(self.poll_interval_s)
         log_tail = self._direct_startup_log()
         raise RemoteExecutionError(
             f"direct-image vLLM did not become ready within "
@@ -1063,7 +1202,7 @@ http.server.ThreadingHTTPServer(("0.0.0.0", {_DIRECT_LOG_PORT}), Handler).serve_
             provider=self.provider,
         )
 
-    def _record_cost(self, pod_id: str) -> None:
+    def _record_cost(self, pod_id: str, duration: float | None) -> None:
         """Append this pod's cost to the ledger; never raises."""
         from stateset_agents.remote.ledger import (
             CostEntry,
@@ -1072,11 +1211,6 @@ http.server.ThreadingHTTPServer(("0.0.0.0", {_DIRECT_LOG_PORT}), Handler).serve_
         )
 
         try:
-            duration = (
-                time.time() - self._pod_started_at
-                if self._pod_started_at is not None
-                else None
-            )
             record_entry(
                 CostEntry(
                     provider=self.provider,
@@ -1094,18 +1228,34 @@ http.server.ThreadingHTTPServer(("0.0.0.0", {_DIRECT_LOG_PORT}), Handler).serve_
             pass
 
     def terminate(self) -> None:
-        """Terminate the pod now. Safe to call twice; best-effort.
+        """Terminate the pod now, retaining its ID if the request fails.
 
         Records the pod's cost on the way out. A serve pod outlives the
         process that started it, so a pod reaped by its own ``--max-hours``
         self-destruct records nothing — the ledger reflects what this machine
         observed, and `serve-remote --list` is the live view.
         """
-        pod_id, self.pod_id = self.pod_id, None
-        if pod_id is not None:
-            self._record_cost(pod_id)
-        if pod_id is not None and self._api is not None:
-            try:
-                self._api.terminate_pod(pod_id)
-            except Exception:
-                pass  # never mask the original failure
+        pod_id = self.pod_id
+        self._terminate_and_record_cost()
+        if self.pod_name and pod_id:
+            clear_stopped_lease(
+                self.lease_dir, self.pod_name, pod_id, verified_name=True
+            )
+
+    def _terminate_and_record_cost(self) -> float | None:
+        """Return unrounded observed spend through the termination acknowledgement."""
+        pod_id = self.pod_id
+        if pod_id is None:
+            return None
+        terminate_serve_pod(self._require_api(), pod_id)
+        duration = (
+            time.monotonic() - self._pod_started_at
+            if self._pod_started_at is not None
+            else None
+        )
+        self.pod_id = None
+        self.endpoint_url = None
+        self._record_cost(pod_id, duration)
+        if duration is None or self._pod_cost_per_hr is None:
+            return None
+        return self._pod_cost_per_hr * (duration / 3600)

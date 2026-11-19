@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from stateset_agents.flywheel import FlywheelConfig, run_flywheel
+from stateset_agents.flywheel import FlywheelConfig, run_flywheel, run_flywheel_repeats
 from stateset_agents.remote.executor import RemoteExecutor
 from stateset_agents.remote.job import JobHandle, JobStatus, RemoteJobResult
 
@@ -28,6 +28,7 @@ class ScriptedExecutor(RemoteExecutor):
     """
 
     name = "scripted"
+    supports_cost_ceiling = True
 
     def __init__(self, script, eval_total=12):
         self.script = list(script)
@@ -51,6 +52,7 @@ class ScriptedExecutor(RemoteExecutor):
             summary = {
                 "kept": step["kept"],
                 "samples": step["samples"],
+                "dry_run": step.get("summary_preview", False),
                 "eval": (
                     {"passed": step["current_eval"], "total": self.eval_total}
                     if step.get("current_eval") is not None
@@ -90,8 +92,9 @@ class ScriptedExecutor(RemoteExecutor):
         self._results[job_id] = RemoteJobResult(
             handle=JobHandle(provider=self.name, job_id=job_id),
             status=status,
-            output_dir=out,
+            output_dir=None if step.get("missing_output") == spec.job_kind else out,
             cost_usd=step.get("cost", 1.0),
+            is_preview=step.get("preview_kind") == spec.job_kind,
         )
         return JobHandle(provider=self.name, job_id=job_id)
 
@@ -123,6 +126,18 @@ def config(tmp_path):
 
 
 class TestStops:
+    @pytest.mark.parametrize("kind", ["harvest", "sft"])
+    def test_live_run_rejects_preview_with_existing_scores(self, config, kind):
+        executor = ScriptedExecutor(
+            [{"kept": 5, "samples": 10, "passed": 12, "preview_kind": kind}]
+        )
+        with pytest.raises(RuntimeError, match="returned a preview"):
+            run_flywheel(config, executor)
+        assert [spec.job_kind for spec in executor.specs] == (
+            ["harvest"] if kind == "harvest" else ["harvest", "sft"]
+        )
+        assert not (config.output_root / "flywheel_report.json").exists()
+
     def test_dry_harvest_stops_the_loop_with_no_training(self, config):
         executor = ScriptedExecutor(
             [{"kept": 0, "samples": 24, "current_eval": 2, "cost": 0.5}]
@@ -132,6 +147,20 @@ class TestStops:
         # Only the harvest was submitted — no training job for silence.
         assert [s.job_kind for s in executor.specs] == ["harvest"]
         assert report["final_adapter"] is None
+
+    @pytest.mark.parametrize("kind", ["harvest", "sft"])
+    def test_successful_job_must_return_artifacts(self, config, kind):
+        executor = ScriptedExecutor([{"kept": 2, "samples": 2, "missing_output": kind}])
+        with pytest.raises(RuntimeError, match="returned no artifacts"):
+            run_flywheel(config, executor)
+
+    def test_legacy_harvest_preview_cannot_supply_training_rows(self, config):
+        executor = ScriptedExecutor(
+            [{"kept": 3, "samples": 8, "summary_preview": True}]
+        )
+        with pytest.raises(RuntimeError, match="summary records a preview"):
+            run_flywheel(config, executor)
+        assert [spec.job_kind for spec in executor.specs] == ["harvest"]
 
     def test_plateau_stops_and_keeps_the_previous_adapter(self, config):
         executor = ScriptedExecutor(
@@ -236,6 +265,45 @@ class TestEvalGateContract:
 
 
 class TestSpecWiring:
+    @pytest.mark.parametrize("repeats", [None, 1, 3])
+    def test_offline_plan_preserves_existing_run(self, config, repeats, monkeypatch):
+        from stateset_agents.remote.runpod import RunPodExecutor
+
+        executor = RunPodExecutor()
+        monkeypatch.setattr(
+            executor, "submit", lambda *_: pytest.fail("submitted a job")
+        )
+        config.dry_run = True
+        config.teacher_base_model = "teacher"
+        config.target_harvest_rate = 0.6
+        config.output_root.mkdir()
+        previous = config.output_root / "flywheel_report.json"
+        previous.write_bytes(b"live report")
+        plan = (
+            run_flywheel(config, executor)
+            if repeats is None
+            else run_flywheel_repeats(config, executor, repeats)
+        )
+        jobs = plan["first_generation_jobs"]
+        assert len(jobs) == 2 + len(config.probe_temperatures)
+        assert jobs[-2]["base_model"] == "teacher"
+        assert jobs[-2]["harvest"]["adapter_dir"] is None
+        assert jobs[-1]["base_model"] == config.base_model
+        root = config.output_root if repeats is None else config.output_root / "run1"
+        assert Path(jobs[-1]["output_dir"]) == root / "gen1" / "adapter"
+        assert plan["max_jobs"] == (repeats or 1) * config.generations * len(jobs)
+        assert list(config.output_root.iterdir()) == [previous]
+        assert previous.read_bytes() == b"live report"
+
+    def test_offline_plan_validates_packaged_harvest_prompts(self, config):
+        from stateset_agents.remote.runpod import RunPodExecutor
+
+        config.dry_run = True
+        config.harvest_prompts = [{"prompt": "Help"}]
+        with pytest.raises(ValueError, match="success criterion"):
+            run_flywheel(config, RunPodExecutor())
+        assert not config.output_root.exists()
+
     def test_harvest_then_train_and_parent_adapter_chains(self, config):
         config.generations = 2
         executor = ScriptedExecutor(
@@ -401,6 +469,57 @@ class TestRarityController:
 
     def _probe_step(self, kept, samples=24):
         return {"kept": kept, "samples": samples, "current_eval": None}
+
+    def test_all_stages_and_repeats_share_one_budget(self, config):
+        config.generations, config.target_harvest_rate = 1, 0.6
+        config.max_cost_usd = 10
+        script = [self._probe_step(2) for _ in config.probe_temperatures]
+        executor = ScriptedExecutor(
+            (script + [{"kept": 3, "samples": 8, "passed": 12}]) * 2
+        )
+        report = run_flywheel_repeats(config, executor, repeats=2)
+        assert [s.max_cost_usd for s in executor.specs] == list(range(10, 0, -1))
+        assert report["total_cost_usd"] == 10 and report["completed"] == 2
+        first = json.loads(
+            (config.output_root / "run1/flywheel_report.json").read_text()
+        )
+        assert first["generations"][0]["cost_usd"] == 5
+
+    @pytest.mark.parametrize("cost", [1, None])
+    def test_exhausted_or_unknown_probe_cost_stops_before_next_rental(
+        self, config, cost
+    ):
+        config.max_cost_usd, config.target_harvest_rate = 1, 0.6
+        executor = ScriptedExecutor([dict(self._probe_step(2), cost=cost)])
+        report = run_flywheel_repeats(config, executor, repeats=2)
+        assert len(executor.specs) == 1
+        assert "budget" in report["runs"][0]["stop_reason"]
+        assert "budget" in report["runs"][1]["skipped"]
+        assert report["unpriced_jobs"] == int(cost is None)
+
+    def test_exhausted_harvest_is_reported_before_training(self, config):
+        config.max_cost_usd = 1.0
+        executor = ScriptedExecutor([{"samples": 8, "kept": 2, "cost": 1.0}])
+        report = run_flywheel(config, executor)
+        assert [s.job_kind for s in executor.specs] == ["harvest"]
+        assert report["generations"][0]["harvest_kept"] == 2
+        assert report["stop_reason"] == "budget exhausted"
+
+    def test_probe_submission_error_stops_a_budgeted_campaign(
+        self, config, monkeypatch
+    ):
+        config.max_cost_usd, config.target_harvest_rate = 1, 0.6
+        executor = ScriptedExecutor([])
+        attempts = []
+
+        def submit(spec):
+            attempts.append(spec)
+            raise OSError("provider unavailable")
+
+        monkeypatch.setattr(executor, "submit", submit)
+        with pytest.raises(RuntimeError, match="provider unavailable"):
+            run_flywheel_repeats(config, executor, repeats=2)
+        assert len(attempts) == 1 and attempts[0].max_cost_usd == 1
 
     def test_chooses_the_temperature_nearest_the_target(self, config):
         config.generations = 1

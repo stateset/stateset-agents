@@ -227,8 +227,12 @@ class EnhancedFrameworkDemo:
         # Show some test results
         for test_name, result in list(test_results.items())[:3]:
             summary = result["summary"]
+            pass_rate = summary["pass_rate"]
+            pass_rate_label = (
+                f"{pass_rate:.2f}" if pass_rate is not None else "unavailable"
+            )
             logger.info(
-                f"Test '{test_name}': Pass rate = {summary['pass_rate']:.2f}, Avg time = {summary['avg_execution_time']:.3f}s"
+                f"Test '{test_name}': Pass rate = {pass_rate_label}, Avg time = {summary['avg_execution_time']:.3f}s"
             )
 
         # Quick agent comparison
@@ -239,9 +243,17 @@ class EnhancedFrameworkDemo:
             num_tests=2,
         )
 
-        logger.info(f"🏆 Best performing agent: {comparison['best_agent']}")
+        logger.info(
+            "Quality selection (%s): %s",
+            comparison["selection_status"],
+            ", ".join(comparison["best_agents"]) or "No comparable quality evidence",
+        )
         for result in comparison["comparison"]:
-            logger.info(f"  {result['agent']}: Pass rate = {result['pass_rate']:.2f}")
+            pass_rate = result["pass_rate"]
+            pass_rate_label = (
+                f"{pass_rate:.2f}" if pass_rate is not None else "unavailable"
+            )
+            logger.info(f"  {result['agent']}: Pass rate = {pass_rate_label}")
 
     async def demonstrate_production_features(self):
         """Demonstrate production-ready features"""

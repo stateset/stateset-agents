@@ -62,18 +62,7 @@ def test_rust_gae_matches_python_fallback_when_extension_installed():
         last_gae = delta + gae.gamma * 0.95 * (1 - dones[:, t]) * last_gae
         torch_advantages[:, t] = last_gae
 
-    # Padding positions *after* a row's terminal step are left as 0 by the
-    # Rust fast path (that region is always excluded by the response mask
-    # downstream, see vapo_trainer.py's `policy_adv_masked`), whereas the
-    # dones-based torch recursion keeps computing (harmless but nonzero)
-    # values there. Parity only needs to hold up to and including each row's
-    # terminal step.
-    for i in range(batch_size):
-        done_indices = dones[i].nonzero(as_tuple=True)[0]
-        end = int(done_indices[0].item()) + 1 if len(done_indices) else seq_len
-        assert torch.allclose(
-            rust_advantages[i, :end], torch_advantages[i, :end], atol=1e-5
-        )
+    torch.testing.assert_close(rust_advantages, torch_advantages)
 
 
 def test_rust_gae_helper_returns_none_without_extension(monkeypatch):

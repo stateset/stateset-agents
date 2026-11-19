@@ -15,11 +15,17 @@ from __future__ import annotations
 import subprocess
 import sys
 from collections.abc import Iterator
+from copy import copy
 from dataclasses import dataclass
 from pathlib import Path
 
 from stateset_agents.remote.executor import RemoteExecutionError, RemoteExecutor
-from stateset_agents.remote.job import JobHandle, JobStatus, RemoteJobSpec
+from stateset_agents.remote.job import (
+    WORKER_PREVIEW_EXIT,
+    JobHandle,
+    JobStatus,
+    RemoteJobSpec,
+)
 
 __all__ = ["LocalExecutor"]
 
@@ -38,12 +44,14 @@ class _LocalJob:
     spec: RemoteJobSpec
     status: JobStatus
     logs: list[str]
+    is_preview: bool = False
 
 
 class LocalExecutor(RemoteExecutor):
     """Executes the job synchronously in a subprocess on the local machine."""
 
     name = "local"
+    supports_dry_run = True
     supports_sft_seed = True
     uses_packaged_training = True
     compute_model = "self-managed-local"
@@ -59,7 +67,8 @@ class LocalExecutor(RemoteExecutor):
 
         Isolated so tests can substitute a stand-in process.
         """
-        return ["-m", _HARVEST_MODULE if job_kind == "harvest" else _SFT_MODULE]
+        module = _HARVEST_MODULE if job_kind == "harvest" else _SFT_MODULE
+        return ["-m", module, "--signal-preview"]
 
     def _job(self, handle: JobHandle) -> _LocalJob:
         try:
@@ -70,6 +79,7 @@ class LocalExecutor(RemoteExecutor):
             ) from None
 
     def submit(self, spec: RemoteJobSpec) -> JobHandle:
+        spec = copy(spec)
         self.validate_spec(spec)
         self._counter += 1
         job_id = str(self._counter)
@@ -100,13 +110,17 @@ class LocalExecutor(RemoteExecutor):
                 exc, "failed to start local training subprocess", provider=self.name
             ) from exc
 
-        output = (completed.stdout or "") + (completed.stderr or "")
+        is_preview = completed.returncode == WORKER_PREVIEW_EXIT
+        status = (
+            JobStatus.SUCCEEDED
+            if completed.returncode == 0 or is_preview
+            else JobStatus.FAILED
+        )
         self._jobs[job_id] = _LocalJob(
             spec=spec,
-            status=(
-                JobStatus.SUCCEEDED if completed.returncode == 0 else JobStatus.FAILED
-            ),
-            logs=output.splitlines(),
+            status=status,
+            logs=completed.stdout.splitlines() + completed.stderr.splitlines(),
+            is_preview=is_preview,
         )
         return handle
 
@@ -116,7 +130,10 @@ class LocalExecutor(RemoteExecutor):
     def logs(self, handle: JobHandle) -> Iterator[str]:
         yield from self._job(handle).logs
 
-    def fetch(self, handle: JobHandle, dest: Path | None = None) -> Path:
+    def _is_preview(self, handle: JobHandle) -> bool:
+        return self._job(handle).is_preview
+
+    def fetch(self, handle: JobHandle, dest: Path | None = None) -> Path | None:
         job = self._jobs.get(handle.job_id)
         if job is None or not job.status.is_terminal:
             raise RemoteExecutionError(
@@ -127,6 +144,8 @@ class LocalExecutor(RemoteExecutor):
         # eval gate in particular fails jobs AFTER saving them.
         # The subprocess wrote straight to the requested output_dir — there is
         # no transfer step for a local run.
+        if job.is_preview and job.spec.job_kind == "sft":
+            return None
         return job.spec.output_dir
 
     def cancel(self, handle: JobHandle) -> None:

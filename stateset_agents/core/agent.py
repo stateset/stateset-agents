@@ -8,22 +8,39 @@ for training conversational AI agents using GRPO.
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import math
 from collections.abc import AsyncIterator, Callable
+from contextlib import nullcontext
 from importlib import import_module
 from typing import TYPE_CHECKING, Any, cast
 
 from stateset_agents.core.generation_mode import inference_mode
+from stateset_agents.utils.async_calls import drain_owned_operation
 
 from .agent_backends import ModelBackend, StubModel, create_stub_backend
 from .agent_config import AgentConfig, ConfigValidationError
+from .agent_initialization import (
+    BackendInitializationState,
+    _AdapterAttachment,
+    _BackendInitialization,
+    _checked_component,
+)
+from .conversation import (
+    ConversationResetError,
+    _ConversationState,
+    conversation_call,
+    conversation_stream,
+)
 from .muse_protocol import is_muse_spark, muse_spark_final_response
 from .trajectory import ConversationTurn
 from .transformers_compat import generation_compat_kwargs, load_generation_model
 
 if TYPE_CHECKING:
     from ..experimental.long_term_planning import PlanningManager
+    from .agent_adapter_checkpoint import _AdapterCheckpoint
+    from .agent_checkpoint import _CheckpointRestore
 
 try:
     import torch
@@ -324,10 +341,14 @@ class Agent:
         self.generation_config: Any | None = None
         self.conversation_history: list[Any] = []
         self._last_reasoning: str | None = None
+        self._conversation = _ConversationState()
         self._model_loader = model_loader
         self._tokenizer_loader = tokenizer_loader
         self._generation_config_factory = generation_config_factory
         self._injected_backend = backend
+        self._backend_initialization = _BackendInitialization()
+        self._checkpoint_restore: _CheckpointRestore | None = None
+        self._checkpoint_adapters: _AdapterCheckpoint | None = None
 
     @property
     def _is_stub_backend(self) -> bool:
@@ -335,6 +356,167 @@ class Agent:
         return isinstance(self.model, StubModel)
 
     async def initialize(self) -> None:
+        """Initialize the backend once per component/adapter identity.
+
+        Loaders retain their synchronous calling convention. Completed components
+        survive retryable setup failures; uncertain adapter effects cannot replay
+        on the same model. Async prerequisites can join this boundary through
+        ``_initialize_extensions``; work after an overridden ``initialize``
+        method's super-call retains its own lifecycle.
+        """
+        owner = self._initialization_owner()
+        with owner.lock:
+            if owner.state is BackendInitializationState.INITIALIZING:
+                raise RuntimeError("Backend initialization cannot reenter itself")
+            owner.state = BackendInitializationState.INITIALIZING
+            owner.phase = "backend"
+            owner.error = None
+            try:
+                restore = getattr(self, "_checkpoint_restore", None)
+                with restore.open() if restore is not None else nullcontext():
+                    self._initialize_backend()
+                    owner.phase = "adapter"
+                    self._initialize_adapter()
+                    if restore is not None:
+                        owner.phase = "checkpoint_restore"
+                        restore.apply(self)
+                for name, value in (
+                    ("Model", self.model),
+                    ("Tokenizer", self.tokenizer),
+                    ("Generation configuration", self.generation_config),
+                ):
+                    _checked_component(name, value)
+                extension = self._initialize_extensions
+                components = (self.model, self.tokenizer, self.generation_config)
+                if getattr(extension, "__func__", None) is Agent._initialize_extensions:
+                    self._complete_initialization(owner)
+                    return
+                owner.phase = "extensions"
+            except BaseException as error:
+                owner.error = error
+                owner.state = BackendInitializationState.FAILED
+                raise
+
+        # Do not hold a thread lock across an async dependency. It may need a
+        # worker thread, and competing/reentrant attempts must observe the active
+        # state instead of deadlocking behind that thread.
+        try:
+            extension_task = asyncio.create_task(extension())
+            try:
+                await asyncio.shield(extension_task)
+            except BaseException:
+                if not extension_task.done():
+                    extension_task.cancel()
+                    owner.phase = "extensions_cleanup"
+
+                    async def join_extension() -> None:
+                        await extension_task
+
+                    try:
+                        await drain_owned_operation(join_extension())
+                    except BaseException:
+                        # Preserve the initiating error/cancellation even if the
+                        # extension suppresses cancellation or fails in cleanup.
+                        pass
+                raise
+            with owner.lock:
+                if any(
+                    expected is not current
+                    for expected, current in zip(
+                        components,
+                        (self.model, self.tokenizer, self.generation_config),
+                        strict=True,
+                    )
+                ):
+                    raise ValueError(
+                        "Backend components changed during extension initialization"
+                    )
+                self._complete_initialization(owner)
+        except BaseException as error:
+            with owner.lock:
+                owner.error = error
+                owner.state = BackendInitializationState.FAILED
+            raise
+
+    def _complete_initialization(self, owner: _BackendInitialization) -> None:
+        owner.identity = (self.model, self.tokenizer, self.generation_config)
+        self._checkpoint_restore = None
+        owner.phase = "complete"
+        owner.state = BackendInitializationState.READY
+
+    def _initialization_owner(self) -> _BackendInitialization:
+        # Older serialized agents predate the lifecycle record.
+        if not hasattr(self, "_backend_initialization"):
+            self._backend_initialization = _BackendInitialization()
+        return self._backend_initialization
+
+    def get_initialization_status(self) -> dict[str, Any]:
+        """Inspect backend initialization without loading or retrying anything."""
+        owner = self._initialization_owner()
+        adapter = owner.adapter
+        adapter_matches = adapter is not None and (
+            self.model is adapter.input_model or self.model is adapter.output_model
+        )
+        return {
+            "state": owner.state.value,
+            "phase": owner.phase,
+            "error_type": type(owner.error).__name__ if owner.error else None,
+            "backend_matches": owner.identity is not None
+            and all(
+                expected is actual
+                for expected, actual in zip(
+                    owner.identity,
+                    (self.model, self.tokenizer, self.generation_config),
+                    strict=True,
+                )
+            ),
+            "adapter_state": (
+                "not_requested"
+                if adapter is None
+                else (
+                    "unbound"
+                    if not adapter_matches
+                    else (
+                        "failed"
+                        if adapter.error is not None
+                        else (
+                            "ready" if adapter.output_model is not None else "attaching"
+                        )
+                    )
+                )
+            ),
+            "adapter_matches": adapter_matches,
+            "adapter_request": (
+                copy.deepcopy(adapter.request) if adapter is not None else None
+            ),
+            "retry_requires_new_model": adapter is not None
+            and adapter.error is not None
+            and self.model is adapter.input_model,
+        }
+
+    def _ensure_backend_usable(self) -> None:
+        self._conversation_owner().check()
+        owner = self._initialization_owner()
+        if owner.state in (
+            BackendInitializationState.INITIALIZING,
+            BackendInitializationState.FAILED,
+        ):
+            raise RuntimeError(
+                f"Backend initialization is {owner.state.value} at {owner.phase}; complete initialization before generating"
+            ) from owner.error
+
+    def _initialize_adapter(self) -> None:
+        """Initialize optional backend extensions inside the owned boundary."""
+
+    async def _initialize_extensions(self) -> None:
+        """Complete subclass dependencies without replacing backend components.
+
+        Overlapping initializers are rejected while an async extension is active.
+        Cancellation requests cleanup once and drains it before returning failure.
+        The extension owns whether its completed or failed effects can be retried.
+        """
+
+    def _initialize_backend(self) -> None:
         """Initialize the agent (load models, etc.).
 
         Loads a tokenizer/model using the provided `AgentConfig`. Subclasses
@@ -348,9 +530,49 @@ class Agent:
 
         # Use injected backend if provided (dependency injection for testing)
         if self._injected_backend is not None:
-            self.tokenizer = self._injected_backend.tokenizer
-            self.model = self._injected_backend.model
-            self.generation_config = self._injected_backend.generation_config
+            owner = self._initialization_owner()
+            if owner.source is self._injected_backend:
+                if (
+                    self.tokenizer is not None
+                    and self.model is not None
+                    and self.generation_config is not None
+                ):
+                    return
+                components = (self.tokenizer, self.model, self.generation_config)
+            else:
+                components = (None, None, None)
+            tokenizer = (
+                components[0]
+                if components[0] is not None
+                else self._injected_backend.tokenizer
+            )
+            model = (
+                components[1]
+                if components[1] is not None
+                else self._injected_backend.model
+            )
+            generation_config = (
+                components[2]
+                if components[2] is not None
+                else self._injected_backend.generation_config
+            )
+            if any(value is None for value in (tokenizer, model, generation_config)):
+                raise RuntimeError(
+                    "Injected backend has incomplete initialization components"
+                )
+            for name, value in (
+                ("Tokenizer", tokenizer),
+                ("Model", model),
+                ("Generation configuration", generation_config),
+            ):
+                _checked_component(name, value)
+            self.tokenizer, self.model, self.generation_config = (
+                tokenizer,
+                model,
+                generation_config,
+            )
+            owner.source = self._injected_backend
+            owner.source_kind = "injected"
             logger.info("Agent initialized with injected backend")
             return
 
@@ -372,9 +594,12 @@ class Agent:
             )
 
         # Load tokenizer
+        self._initialization_owner().phase = "tokenizer"
         if self.tokenizer is None:
             if self._tokenizer_loader:
-                self.tokenizer = self._tokenizer_loader(self.config)
+                self.tokenizer = _checked_component(
+                    "Tokenizer", self._tokenizer_loader(self.config), owned=True
+                )
             else:
                 tokenizer_kwargs = dict(self.config.tokenizer_kwargs or {})
                 if self.config.model_revision is not None:
@@ -389,6 +614,7 @@ class Agent:
                     trust_remote_code=self.config.trust_remote_code,
                     **tokenizer_kwargs,
                 )
+        _checked_component("Tokenizer", self.tokenizer)
         if getattr(self.tokenizer, "pad_token", None) is None:
             if self.config.pad_token_id is not None:
                 try:
@@ -411,9 +637,12 @@ class Agent:
                 logger.debug("Could not set eos_token_id: %s", e)
 
         # Build model kwargs
+        self._initialization_owner().phase = "model"
         if self.model is None:
             if self._model_loader:
-                self.model = self._model_loader(self.config)
+                self.model = _checked_component(
+                    "Model", self._model_loader(self.config), owned=True
+                )
             else:
                 if AutoModelForCausalLM is None:
                     raise ImportError(
@@ -446,28 +675,57 @@ class Agent:
                     self.config.model_name,
                     model_kwargs,
                 )
+        _checked_component("Model", self.model)
 
         # Setup generation config
+        self._initialization_owner().phase = "generation_config"
         if self.generation_config is None:
-            self.generation_config = self._build_generation_config()
+            self.generation_config = _checked_component(
+                "Generation configuration", self._build_generation_config(), owned=True
+            )
+        _checked_component("Generation configuration", self.generation_config)
         logger.info("Agent initialized successfully")
 
     def _initialize_stub_backend(self) -> None:
         """Setup lightweight stub backend for offline scenarios."""
-        backend = create_stub_backend(
-            stub_responses=self.config.stub_responses,
-            max_new_tokens=self.config.max_new_tokens,
-            temperature=self.config.temperature,
-            top_p=self.config.top_p,
-            top_k=self.config.top_k,
-            do_sample=self.config.do_sample,
-            repetition_penalty=self.config.repetition_penalty,
-            pad_token_id=self.config.pad_token_id,
-            eos_token_id=self.config.eos_token_id,
+        owner = self._initialization_owner()
+        request: dict[str, Any] = copy.deepcopy(
+            {
+                "stub_responses": self.config.stub_responses,
+                "max_new_tokens": self.config.max_new_tokens,
+                "temperature": self.config.temperature,
+                "top_p": self.config.top_p,
+                "top_k": self.config.top_k,
+                "do_sample": self.config.do_sample,
+                "repetition_penalty": self.config.repetition_penalty,
+                "pad_token_id": self.config.pad_token_id,
+                "eos_token_id": self.config.eos_token_id,
+            }
         )
-        self.tokenizer = backend.tokenizer
-        self.model = backend.model
-        self.generation_config = backend.generation_config
+        if (
+            owner.source_kind == "stub"
+            and owner.stub_request == request
+            and self._is_stub_backend
+            and self.tokenizer is not None
+            and self.generation_config is not None
+        ):
+            return
+        backend = create_stub_backend(**copy.deepcopy(request))
+        tokenizer, model, generation_config = (
+            backend.tokenizer,
+            backend.model,
+            backend.generation_config,
+        )
+        if any(value is None for value in (tokenizer, model, generation_config)):
+            raise RuntimeError("Stub backend has incomplete initialization components")
+        self.tokenizer, self.model, self.generation_config = (
+            tokenizer,
+            model,
+            generation_config,
+        )
+        owner.stub_request = request
+        owner.source_kind = "stub"
+        owner.source = None
         logger.info(
             "Agent initialized in stub mode (no external model downloads required)"
         )
@@ -493,9 +751,23 @@ class Agent:
             return [{"role": "user", "content": messages}]
         return messages
 
+    def _conversation_owner(self) -> _ConversationState:
+        if not hasattr(self, "_conversation"):
+            self._conversation = _ConversationState()
+        return self._conversation
+
+    def get_conversation_status(self) -> dict[str, Any]:
+        """Inspect conversation identity and operations, including invalidated work."""
+        return self._conversation_owner().inspect()
+
     async def reset(self) -> None:
-        """Reset agent state for new conversation"""
-        self.conversation_history = []
+        """Start a new conversation and reject late results from previous work.
+
+        Reset clears history, turn count and the last reasoning trace. It does
+        not cancel provider/tool effects already in progress or erase long-term
+        enhanced memory. In-flight operations keep ownership until they settle.
+        """
+        self._conversation_owner().reset(self)
 
     def add_to_history(self, turn: ConversationTurn) -> None:
         """Add a turn to conversation history.
@@ -508,11 +780,13 @@ class Agent:
             msg = {"role": turn.role, "content": turn.content}
         except (AttributeError, TypeError):
             msg = turn
-        self.conversation_history.append(msg)
+        with self._conversation_owner().commit():
+            self.conversation_history.append(copy.deepcopy(msg))
 
     def get_history(self) -> list[ConversationTurn]:
         """Get current conversation history"""
-        return self.conversation_history.copy()
+        with self._conversation_owner().lock:
+            return copy.deepcopy(self.conversation_history)
 
     def _build_generation_config(self) -> GenerationConfig:
         """Create a generation config using current tokenizer/model."""
@@ -555,6 +829,8 @@ _TURN_METADATA_KEYS: tuple[str, ...] = (
     "prompt_token_ids",
     "token_ids",
     "sampler_log_probs",
+    "sampler_log_probs_source",
+    "model_log_probs",
     "rollout_backend",
     "rollout_backend_version",
     "rollout_backend_stale",
@@ -573,12 +849,21 @@ def _validated_backend_result(result: Any, prompt: str) -> dict[str, Any]:
         raise ValueError("rollout backend token IDs and log-probs differ in length")
     if any(not math.isfinite(value) or value > 1e-6 for value in log_probs):
         raise ValueError("rollout backend returned invalid token log-probs")
-    return {
+    log_probs = [min(value, 0.0) for value in log_probs]
+    details: dict[str, Any] = {
         "response": str(result.response),
         "prompt_token_ids": prompt_ids,
         "token_ids": token_ids,
-        "sampler_log_probs": log_probs,
     }
+    mode = getattr(result, "logprobs_mode", "processed_logprobs")
+    if mode == "raw_logprobs":
+        details["model_log_probs"] = log_probs
+    elif mode == "processed_logprobs":
+        details["sampler_log_probs"] = log_probs
+        details["sampler_log_probs_source"] = "backend"
+    else:
+        raise ValueError("rollout backend returned an unknown log probability mode")
+    return details
 
 
 class MultiTurnAgent(Agent):
@@ -636,52 +921,119 @@ class MultiTurnAgent(Agent):
         # so /v1/agents/{id} can surface it). Not used by the agent itself.
         self.metadata: dict[str, Any] = {}
 
-    async def initialize(self) -> None:
-        """Initialize the multi-turn agent"""
-        await super().initialize()
-
+    def _initialize_adapter(self) -> None:
+        """Apply an adapter once, retaining uncertain in-place mutations on failure."""
+        owner = self._initialization_owner()
         if self._is_stub_backend:
-            logger.info(
-                "MultiTurnAgent running in stub mode; skipping optional adapters"
-            )
+            owner.adapter = None
             return
 
-        # Load a pre-trained LoRA adapter from disk, if configured.
-        if self.config.peft_path and self.model is not None:
+        request: dict[str, Any]
+        checkpoint_adapters = getattr(self, "_checkpoint_adapters", None)
+        if self.config.peft_path:
+            from pathlib import Path
+
+            adapter_path = Path(self.config.peft_path).expanduser().resolve()
+            if (
+                checkpoint_adapters is not None
+                and adapter_path == checkpoint_adapters.path.resolve()
+            ):
+                request = checkpoint_adapters.request()
+            else:
+                request = {"kind": "path", "path": str(adapter_path)}
+        elif self.config.use_peft and self.config.peft_config:
+            request = {
+                "kind": "config",
+                "config": copy.deepcopy(self.config.peft_config),
+            }
+        else:
+            request = {"kind": "none"}
+
+        previous = owner.adapter
+        if previous is not None and (
+            self.model is previous.input_model or self.model is previous.output_model
+        ):
+            if previous.error is not None:
+                raise RuntimeError(
+                    "Previous adapter initialization failed after attachment began; "
+                    "provide a fresh model or agent before retrying"
+                ) from previous.error
+            if previous.request != request:
+                raise ValueError(
+                    "Adapter configuration changed on an initialized model; "
+                    "provide a fresh model or agent to apply a different adapter"
+                )
+            if previous.output_model is None:
+                raise RuntimeError("Adapter initialization is already in progress")
+            self.model = previous.output_model
+            return
+
+        if request["kind"] == "none":
+            owner.adapter = None
+            return
+        if self.model is None:
+            raise RuntimeError("Model must be loaded before adapter initialization")
+
+        if request["kind"] == "checkpoint":
             if not _load_peft() or PeftModel is None:
                 raise ImportError(
                     "PEFT library not available. Install with: pip install peft"
                 )
-            from pathlib import Path
+            assert checkpoint_adapters is not None
+            checkpoint_adapters.validate_files()
 
-            adapter_path = Path(self.config.peft_path).expanduser().resolve()
+            def attach(model: Any) -> Any:
+                return checkpoint_adapters.attach(model, PeftModel)
+
+        elif request["kind"] == "path":
+            if not _load_peft() or PeftModel is None:
+                raise ImportError(
+                    "PEFT library not available. Install with: pip install peft"
+                )
             if not adapter_path.exists():
                 raise FileNotFoundError(f"peft_path does not exist: {adapter_path}")
             from .checkpoint_io import validate_local_shard_indexes
 
             validate_local_shard_indexes(adapter_path)
-            self.model = PeftModel.from_pretrained(self.model, str(adapter_path))
-            logger.info("Loaded LoRA adapter from %s", adapter_path)
-        # Otherwise apply a fresh PEFT config if requested (training-time path).
-        elif (
-            self.config.use_peft and self.config.peft_config and self.model is not None
-        ):
+
+            def attach(model: Any) -> Any:
+                return PeftModel.from_pretrained(model, str(adapter_path))
+
+        else:
             if not _load_peft() or LoraConfig is None or get_peft_model is None:
                 raise ImportError(
                     "PEFT library not available. Install with: pip install peft"
                 )
-            lora_config = LoraConfig(**self.config.peft_config)
-            self.model = get_peft_model(self.model, lora_config)
-            logger.info("PEFT/LoRA applied to model")
+            lora_config = _checked_component(
+                "Adapter configuration",
+                LoraConfig(**copy.deepcopy(request["config"])),
+                owned=True,
+            )
 
-        logger.info("MultiTurnAgent initialized successfully")
+            def attach(model: Any) -> Any:
+                return get_peft_model(model, lora_config)
+
+        attachment = _AdapterAttachment(request=request, input_model=self.model)
+        owner.adapter = attachment
+        owner.phase = "adapter_attachment"
+        try:
+            model = attach(attachment.input_model)
+            if model is None:
+                raise RuntimeError("Adapter initialization returned no model")
+            model = _checked_component("Adapter", model, owned=True)
+        except BaseException as error:
+            attachment.error = error
+            raise
+        else:
+            attachment.output_model = model
+            self.model = model
+            logger.info("MultiTurnAgent adapter initialized successfully")
 
     async def reset(self) -> None:
         """Reset agent state for a fresh conversation."""
         await super().reset()
-        self.turn_count = 0
-        self._last_reasoning = None
 
+    @conversation_call
     async def generate_response(
         self,
         messages: str | list[dict[str, str]],
@@ -773,6 +1125,7 @@ class MultiTurnAgent(Agent):
         self._rollout_backend_error = None
         return True
 
+    @conversation_call
     async def generate_turn(
         self,
         messages: str | list[dict[str, str]],
@@ -783,8 +1136,8 @@ class MultiTurnAgent(Agent):
         Same pipeline as :meth:`generate_response`; the returned turn's
         ``metadata`` additionally holds ``prompt_token_ids`` (the exact ids
         fed to ``generate``), ``token_ids`` (the sampled response ids, before
-        text cleaning) and ``sampler_log_probs`` (the model's own log-probs of
-        those ids at temperature 1) when a real model produced the text. Stub
+        text cleaning) and ``sampler_log_probs`` (the probabilities of those actions under
+        the generation policy, in log space) when a real model produced the text. Stub
         backends return a turn with text only.
         """
         prompt, messages = self._render_prompt(messages, context)
@@ -796,6 +1149,7 @@ class MultiTurnAgent(Agent):
                 metadata[key] = details[key]
         return ConversationTurn(role="assistant", content=content, metadata=metadata)
 
+    @conversation_call
     async def generate_turns(
         self,
         messages: str | list[dict[str, str]],
@@ -833,6 +1187,7 @@ class MultiTurnAgent(Agent):
         """``n`` samples of :meth:`_generate_with_model_details` in one batch
         where the backend allows it (HF ``num_return_sequences``, engine batch
         of ``n`` prompts); sequential otherwise."""
+        self._ensure_backend_usable()
         backend_error: str | None = None
         backend = getattr(self, "_rollout_backend", None)
         if backend is not None:
@@ -843,6 +1198,7 @@ class MultiTurnAgent(Agent):
                     top_p=float(self.config.top_p),
                     max_tokens=int(self.config.max_new_tokens),
                 )
+                self._conversation_owner().check()
                 if len(results) != n:
                     raise ValueError(
                         f"rollout backend returned {len(results)} results for {n} prompts"
@@ -860,6 +1216,8 @@ class MultiTurnAgent(Agent):
                     )
                     backend_item["rollout_backend_stale"] = self.rollout_backend_stale
                 return backend_batch
+            except ConversationResetError:
+                raise
             except Exception as e:  # noqa: BLE001 - engine failure falls back
                 backend_error = f"{type(e).__name__}: {e}"
                 logger.warning(
@@ -870,13 +1228,17 @@ class MultiTurnAgent(Agent):
                     e,
                 )
 
+        self._conversation_owner().check()
+
         async def sequential_fallback() -> list[dict[str, Any]]:
-            details = [
-                await self._generate_with_model_details(
-                    prompt, context, use_rollout_backend=False
+            details = []
+            for _ in range(n):
+                self._conversation_owner().check()
+                details.append(
+                    await self._generate_with_model_details(
+                        prompt, context, use_rollout_backend=False
+                    )
                 )
-                for _ in range(n)
-            ]
             if backend_error:
                 for item in details:
                     item["rollout_backend_error"] = backend_error
@@ -922,63 +1284,40 @@ class MultiTurnAgent(Agent):
             )
             return await sequential_fallback()
 
-        prompt_len = int(inputs["input_ids"].shape[1])
-        prompt_ids = [int(t) for t in inputs["input_ids"][0]]
-        raw_logits = getattr(outputs, "logits", None)
-        steps = (
-            [t for t in raw_logits if torch.is_tensor(t)]
-            if isinstance(raw_logits, (tuple, list))
-            else []
+        return self._captured_turns(
+            outputs, inputs["input_ids"][0], stopper, backend_error
         )
-        pad_id = getattr(self.tokenizer, "pad_token_id", None)
-        eos_id = getattr(self.tokenizer, "eos_token_id", None)
-        batch: list[dict[str, Any]] = []
-        for row in range(n):
-            response_tokens = sequences[row, prompt_len:]
-            # Rows that finished early are padded to the longest row: keep
-            # everything through the first EOS and drop the padding after it.
-            length = int(response_tokens.shape[0])
-            if length and eos_id is not None:
-                hits = (response_tokens == int(eos_id)).nonzero()
-                if hits.numel():
-                    length = int(hits[0].item()) + 1
-                    # A row stopped by a stop string is padded afterwards; with
-                    # pad == eos that first pad is not a sampled EOS.
-                    head = [int(t) for t in response_tokens[: length - 1]]
-                    if pad_id == eos_id and stopper.ends_with_stop(head):
-                        length -= 1
-            if pad_id is not None and pad_id != eos_id:
-                while length and int(response_tokens[length - 1]) == int(pad_id):
-                    length -= 1
-            response_tokens = response_tokens[:length]
-            text = self._decode_model_response(response_tokens)
-            details: dict[str, Any] = {"response": text}
+
+    def _captured_turns(
+        self, outputs: Any, prompt: Any, stopper: Any, backend_error: Any
+    ) -> list[dict[str, Any]]:
+        """Decode and score single and batched generation in the same action frame."""
+        from .generation_evidence import hf_turn_evidence
+
+        sequences = outputs.sequences
+        eos = getattr(self.generation_config, "eos_token_id", None)
+        if eos is None:
+            eos = getattr(self.tokenizer, "eos_token_id", None)
+        rows = hf_turn_evidence(
+            outputs,
+            prompt,
+            self.generation_config,
+            eos,
+            getattr(stopper, "stop_token_ids", []),
+            (
+                None
+                if hasattr(stopper, "stop_token_ids")
+                else getattr(stopper, "ends_with_stop", None)
+            ),
+        )
+        start = len(prompt)
+        for i, row in enumerate(rows):
+            row["response"] = self._decode_model_response(
+                sequences[i, start : start + len(row["token_ids"])]
+            )
             if backend_error:
-                details["rollout_backend_error"] = backend_error
-            try:
-                if steps and length:
-                    with torch.no_grad():
-                        stacked = torch.stack(steps, dim=1)[row].float()
-                        log_probs = torch.log_softmax(stacked, dim=-1)
-                        k = min(length, int(log_probs.shape[0]))
-                        picked = (
-                            log_probs[:k]
-                            .gather(-1, response_tokens[:k].unsqueeze(-1))
-                            .squeeze(-1)
-                        )
-                    details["prompt_token_ids"] = list(prompt_ids)
-                    details["token_ids"] = [int(t) for t in response_tokens[:k]]
-                    details["sampler_log_probs"] = [float(x) for x in picked]
-            except (
-                RuntimeError,
-                TypeError,
-                ValueError,
-                AttributeError,
-                IndexError,
-            ) as e:
-                logger.debug("token capture skipped for row %d: %s", row, e)
-            batch.append(details)
-        return batch
+                row["rollout_backend_error"] = backend_error
+        return rows
 
     def _render_prompt(
         self,
@@ -986,6 +1325,7 @@ class MultiTurnAgent(Agent):
         context: dict[str, Any] | None = None,
     ) -> tuple[str, list[dict[str, str]]]:
         """Normalise, window, and template the conversation into a prompt."""
+        self._ensure_backend_usable()
         messages = self._normalize_messages(messages)
 
         # Apply memory window
@@ -1031,7 +1371,7 @@ class MultiTurnAgent(Agent):
         """Strip reasoning traces, apply persona hints, record history."""
 
         # Handle Reasoning Traces (DeepSeek-R1 style)
-        self._last_reasoning = None
+        reasoning = None
         if self.config.enable_reasoning:
             import re
 
@@ -1039,17 +1379,18 @@ class MultiTurnAgent(Agent):
             pattern = f"<{tag}>(.*?)</{tag}>"
             match = re.search(pattern, response, re.DOTALL)
             if match:
-                self._last_reasoning = match.group(1).strip()
+                reasoning = match.group(1).strip()
                 # Remove reasoning from the final response presented to user
                 response = re.sub(pattern, "", response, flags=re.DOTALL).strip()
 
         # Lightweight keyword adaptation to satisfy persona-style expectations in tests
         response = _apply_persona_keyword_hints(response, messages)
 
-        self.turn_count += 1
-        # Update conversation history for compatibility with tests
-        # We store the FINAL answer in history, not the reasoning (usually)
-        self.conversation_history.append({"role": "assistant", "content": response})
+        with self._conversation_owner().commit():
+            self._last_reasoning = reasoning
+            self.turn_count += 1
+            # Store the final answer in history, with reasoning kept separately.
+            self.conversation_history.append({"role": "assistant", "content": response})
         return response
 
     def _apply_memory_window(
@@ -1077,9 +1418,12 @@ class MultiTurnAgent(Agent):
         if self.planning_manager is None:
             return messages
 
-        plan_message = self.planning_manager.build_plan_message(
-            messages, context=context
-        )
+        from ..experimental.long_term_planning import _planning_scope
+
+        with _planning_scope(self._conversation_owner().commit):
+            plan_message = self.planning_manager.build_plan_message(
+                messages, context=context
+            )
         if plan_message is None:
             return messages
 
@@ -1139,6 +1483,7 @@ class MultiTurnAgent(Agent):
         for real HF models, the exact prompt ids, the sampled response ids, and
         the model's log-probs of those ids (temperature 1, no truncation)."""
 
+        self._ensure_backend_usable()
         backend_error: str | None = None
         backend = (
             getattr(self, "_rollout_backend", None) if use_rollout_backend else None
@@ -1151,6 +1496,7 @@ class MultiTurnAgent(Agent):
                     top_p=float(self.config.top_p),
                     max_tokens=int(self.config.max_new_tokens),
                 )
+                self._conversation_owner().check()
                 if len(results) != 1:
                     raise ValueError(
                         f"rollout backend returned {len(results)} results for one prompt"
@@ -1164,6 +1510,8 @@ class MultiTurnAgent(Agent):
                     "rollout_backend_version": self.rollout_backend_version,
                     "rollout_backend_stale": self.rollout_backend_stale,
                 }
+            except ConversationResetError:
+                raise
             except Exception as e:  # noqa: BLE001 - any engine failure falls back
                 backend_error = f"{type(e).__name__}: {e}"
                 logger.warning(
@@ -1172,6 +1520,7 @@ class MultiTurnAgent(Agent):
                     e,
                 )
 
+        self._conversation_owner().check()
         if self._is_stub_backend and isinstance(self.model, StubModel):
             stub_details: dict[str, Any] = {
                 "response": str(self.model.generate(prompt, context))
@@ -1220,42 +1569,16 @@ class MultiTurnAgent(Agent):
                 output_logits=True,
             )
 
-        prompt_len = int(inputs["input_ids"].shape[1])
-        sequences = outputs.sequences[0]
-        response_tokens = sequences[prompt_len:]
-        response = self._decode_model_response(response_tokens)
-
-        details: dict[str, Any] = {"response": response}
+        if torch.is_tensor(outputs.sequences) and torch.is_tensor(inputs["input_ids"]):
+            return self._captured_turns(
+                outputs, inputs["input_ids"][0], stopping_criteria[0], backend_error
+            )[0]
+        response = self._decode_model_response(
+            outputs.sequences[0][int(inputs["input_ids"].shape[1]) :]
+        )
+        details = {"response": response}
         if backend_error:
             details["rollout_backend_error"] = backend_error
-        # Best-effort token capture for per-token RL. Never let it break
-        # generation: mocked models, empty generations, and backends without
-        # per-step logits simply return text only.
-        raw_logits = getattr(outputs, "logits", None)
-        try:
-            steps = (
-                [t for t in raw_logits if torch.is_tensor(t)]
-                if isinstance(raw_logits, (tuple, list))
-                else []
-            )
-            if steps and torch.is_tensor(response_tokens) and response_tokens.numel():
-                with torch.no_grad():
-                    # Model log-probs of the sampled ids from the RAW logits
-                    # (before temperature / top-p warping), so a training-time
-                    # forward pass on the stored ids reproduces them.
-                    stacked = torch.stack(steps, dim=1)[0].float()
-                    log_probs = torch.log_softmax(stacked, dim=-1)
-                    n = min(int(response_tokens.shape[0]), int(log_probs.shape[0]))
-                    picked = (
-                        log_probs[:n]
-                        .gather(-1, response_tokens[:n].unsqueeze(-1))
-                        .squeeze(-1)
-                    )
-                details["prompt_token_ids"] = [int(t) for t in inputs["input_ids"][0]]
-                details["token_ids"] = [int(t) for t in response_tokens[:n]]
-                details["sampler_log_probs"] = [float(x) for x in picked]
-        except (RuntimeError, TypeError, ValueError, AttributeError, IndexError) as e:
-            logger.debug("token capture skipped: %s", e)
         return details
 
     def _decode_model_response(self, token_ids: Any) -> str:
@@ -1347,6 +1670,7 @@ class MultiTurnAgent(Agent):
             return int(max_len)
         return 1024  # conservative fallback when tokenizer does not expose a limit
 
+    @conversation_stream
     async def generate_response_stream(
         self,
         messages: str | list[dict[str, str]],
@@ -1370,6 +1694,7 @@ class MultiTurnAgent(Agent):
             >>> async for token in agent.generate_response_stream("Hello!"):
             ...     print(token, end="", flush=True)
         """
+        self._ensure_backend_usable()
         messages = self._normalize_messages(messages)
         recent_messages = self._apply_memory_window(messages)
 
@@ -1542,11 +1867,13 @@ class MultiTurnAgent(Agent):
             response_text = self._clean_response(response_text, native_protocol=False)
         else:
             response_text = self._clean_response(response_text)
-        self.conversation_history.append(
-            {"role": "assistant", "content": response_text}
-        )
-        self.turn_count += 1
+        with self._conversation_owner().commit():
+            self.conversation_history.append(
+                {"role": "assistant", "content": response_text}
+            )
+            self.turn_count += 1
 
+    @conversation_call
     async def process_turn(
         self,
         conversation_history: list[dict[str, str]],
@@ -1600,6 +1927,8 @@ _LAZY_REEXPORTS: dict[str, str] = {
 # Starred so the lazily re-exported names above are not flagged as undefined.
 __all__ = [
     "Agent",
+    "BackendInitializationState",
+    "ConversationResetError",
     "AgentConfig",
     "ConfigValidationError",
     "MultiTurnAgent",

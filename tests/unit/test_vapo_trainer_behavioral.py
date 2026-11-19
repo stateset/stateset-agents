@@ -413,6 +413,29 @@ def _stub_group(trainer, monkeypatch, lengths=((4, 3), (4, 5))):
 
 
 @pytest.mark.asyncio
+async def test_train_step_uses_critic_return_before_advantage_rounding(
+    vapo_trainer_tiny, monkeypatch
+):
+    trainer = vapo_trainer_tiny
+    _stub_group(trainer, monkeypatch, lengths=((3, 2), (3, 1)))
+    with torch.no_grad():
+        output = trainer.value_head.network[-1]
+        output.weight.zero_()
+        output.bias.fill_(1e8)
+    actual = []
+    loss = trainer.compute_value_loss
+
+    def capture(values, old_values, targets, mask):
+        for row, active in zip(targets, mask.bool(), strict=True):
+            actual.append(row[active][-1].item())
+        return loss(values, old_values, targets, mask)
+
+    monkeypatch.setattr(trainer, "compute_value_loss", capture)
+    await trainer.train_step(["prompt"])
+    assert actual == [1.0, 1.0]
+
+
+@pytest.mark.asyncio
 async def test_gae_runs_in_the_action_frame(vapo_trainer_tiny, monkeypatch):
     """Log-probs/values/masks use the shifted frame (column t = action emitting
     token t+1). GAE must too: the reward and terminal flag belong on the last
@@ -464,3 +487,45 @@ def test_value_warmup_targets_are_discounted_returns_per_action(vapo_trainer_tin
     # Actions at columns 1..3 emit tokens 2..4; the reward lands on column 3.
     assert action_mask.tolist() == [[0.0, 1.0, 1.0, 1.0, 0.0]]
     assert targets.tolist() == [[0.0, 0.5, 1.0, 2.0, 0.0]]
+
+
+@pytest.mark.asyncio
+async def test_vapo_weights_policy_critic_and_positive_tokens_over_batch(
+    vapo_trainer_tiny, monkeypatch
+):
+    trainer = vapo_trainer_tiny
+    _stub_group(trainer, monkeypatch, lengths=((3, 2), (3, 2)))
+    base = trainer.generate_group_responses
+
+    async def generate(prompt):
+        rows = await base(prompt)
+        if prompt == "short":
+            for row in rows:
+                row["sequence_length"] = 1
+                row["response_mask"][-1] = 0.0
+        return rows
+
+    monkeypatch.setattr(trainer, "generate_group_responses", generate)
+    trainer.verifier_fn = lambda prompt, response: prompt == "long" or response == "r0"
+    graph_losses = []
+    original = trainer.compute_vapo_losses
+
+    def observe(*args):
+        loss = original(*args)
+        for term in loss:
+            term.retain_grad()
+        graph_losses.append(loss)
+        return loss
+
+    monkeypatch.setattr(trainer, "compute_vapo_losses", observe)
+    await trainer.train_step(["short", "long"])
+    for loss, action_share, positive_share in zip(
+        graph_losses, (1 / 3, 2 / 3), (1 / 5, 4 / 5), strict=True
+    ):
+        assert loss[0].grad.item() == pytest.approx(action_share)
+        assert loss[1].grad.item() == pytest.approx(
+            action_share * trainer.config.value_loss_coef
+        )
+        assert loss[2].grad.item() == pytest.approx(
+            positive_share * trainer.config.positive_lm_weight
+        )

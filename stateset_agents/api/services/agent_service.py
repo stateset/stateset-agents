@@ -1,3 +1,4 @@
+import copy
 import logging
 import os
 import time
@@ -9,9 +10,15 @@ from typing import Any
 from fastapi import HTTPException
 
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
+from stateset_agents.core.conversation import (
+    ConversationResetError,
+    bind_conversation_guard,
+)
+from stateset_agents.core.multiturn_context import ConversationConflict
 from stateset_agents.exceptions import ATTRIBUTE_VALUE_EXCEPTIONS
 from stateset_agents.utils.security import SecurityMonitor
 
+from ..conversation_lifecycle import GatewayConversations
 from ..schemas import AgentConfigRequest, ConversationRequest, ConversationResponse
 
 logger = logging.getLogger(__name__)
@@ -34,6 +41,9 @@ class AgentService:
         self.agents: dict[str, MultiTurnAgent] = {}
         self.conversations: dict[str, list[dict[str, Any]]] = {}
         self.security_monitor = security_monitor
+        self.conversation_operations = GatewayConversations()
+        self._retiring_agents: dict[str, Any] = {}
+        self._deleting_conversations: set[tuple[str, str]] = set()
 
     def _get_or_create_conversation(
         self,
@@ -48,6 +58,11 @@ class AgentService:
                     raise HTTPException(
                         status_code=404, detail="Conversation not found"
                     )
+                if (
+                    user_id
+                    and conversation.setdefault("metadata", {}).get("user_id") is None
+                ):
+                    conversation["metadata"]["user_id"] = user_id
                 return conversation
 
         conversation = {
@@ -244,11 +259,15 @@ class AgentService:
 
     def delete_agent(self, agent_id: str) -> bool:
         """Delete an agent and clear associated conversation state."""
-        agent = self.agents.get(agent_id)
-        if agent is None:
-            return False
-
-        conv_list = self.conversations.get(agent_id, [])
+        owner = self.conversation_operations
+        with owner.lock:
+            agent = self.agents.get(agent_id)
+            if agent is None:
+                return False
+            self._retiring_agents[agent_id] = agent
+            conv_list = list(self.conversations.get(agent_id, []))
+            for conv in conv_list:
+                owner.retire(conv)
         planning_manager = getattr(agent, "planning_manager", None)
         if planning_manager and hasattr(planning_manager, "clear_conversation"):
             for conv in conv_list:
@@ -256,19 +275,18 @@ class AgentService:
                 if conv_id:
                     planning_manager.clear_conversation(conv_id)
 
-        self.conversations.pop(agent_id, None)
-        del self.agents[agent_id]
+        with owner.lock:
+            if self.agents.get(agent_id) is agent:
+                self.conversations.pop(agent_id, None)
+                del self.agents[agent_id]
+            if self._retiring_agents.get(agent_id) is agent:
+                self._retiring_agents.pop(agent_id)
         return True
 
     async def get_conversation_response(
         self, agent_id: str, request: ConversationRequest
     ) -> ConversationResponse:
         """Get response from agent for conversation."""
-        if agent_id not in self.agents:
-            raise HTTPException(status_code=404, detail="Agent not found")
-
-        agent = self.agents[agent_id]
-
         # Basic validation (request schema already validates structure/content)
         content = request.messages[0].get("content") if request.messages else None
         if not isinstance(content, str) or not content.strip():
@@ -278,80 +296,112 @@ class AgentService:
             )
             raise HTTPException(status_code=400, detail="Invalid input")
 
-        # Get or create conversation
         conv_id = request.conversation_id or str(uuid.uuid4())
-        conversation = self._get_or_create_conversation(
-            agent_id, conv_id, user_id=request.user_id
-        )
-        conversation_messages = conversation.setdefault("messages", [])
-        incoming_messages = [dict(msg) for msg in request.messages]
-        self._merge_messages(conversation_messages, incoming_messages)
-
-        # Generate response
-        start_time = time.time()
-
+        principal = request.user_id
+        incoming = copy.deepcopy(request.messages)
+        request_context = copy.deepcopy(request.context or {})
+        has_context = bool(request_context)
+        owner = self.conversation_operations
         try:
-            context = dict(request.context or {})
-            context.setdefault("conversation_id", conv_id)
-            if request.user_id:
-                context.setdefault("user_id", request.user_id)
-            response_text = await agent.generate_response(
-                conversation_messages, context=context
-            )
-            processing_time = time.time() - start_time
+            with owner.lock:
+                agent = self.agents.get(agent_id)
+                if agent is None:
+                    raise HTTPException(status_code=404, detail="Agent not found")
+                if self._retiring_agents.get(agent_id) is agent:
+                    raise ConversationConflict("Agent deletion is still pending")
+                conversation = self._get_or_create_conversation(
+                    agent_id, conv_id, user_id=principal
+                )
+                authorized_owner = conversation.get("metadata", {}).get("user_id")
 
-            # Add assistant response to conversation
-            conversation_messages.append(
-                {"role": "assistant", "content": response_text}
-            )
+            def current() -> bool:
+                return (
+                    self.agents.get(agent_id) is agent
+                    and self._retiring_agents.get(agent_id) is not agent
+                    and any(
+                        item is conversation
+                        for item in self.conversations.get(agent_id, [])
+                    )
+                    and self._user_can_access_conversation(conversation, principal)
+                    and conversation.get("metadata", {}).get("user_id")
+                    == authorized_owner
+                )
 
-            plan_payload = None
-            planning_manager = getattr(agent, "planning_manager", None)
-            if planning_manager is not None:
-                plan = planning_manager.get_plan(conv_id)
-                if plan is not None:
-                    plan_payload = {
-                        "goal": plan.goal,
-                        "progress": plan.progress(),
-                        "summary": plan.summarize(
-                            max_steps=planning_manager.config.max_steps,
-                            keep_completed=planning_manager.config.keep_completed,
-                        ),
-                    }
-
-            # Calculate tokens used
-            if hasattr(agent, "tokenizer") and agent.tokenizer:
-                try:
-                    # accurate count using tokenizer
-                    tokens_used = len(agent.tokenizer.encode(response_text))
-                except TOKENIZE_EXCEPTIONS:
-                    # Fallback if tokenizer fails or encoding not possible
-                    tokens_used = int(len(response_text.split()) * 1.3)
-            else:
-                # Rough approximation if no tokenizer
-                tokens_used = int(len(response_text.split()) * 1.3)
-
-            conversation["last_message_at"] = datetime.utcnow()
-            conversation["total_tokens"] = int(
-                conversation.get("total_tokens", 0)
-            ) + int(tokens_used)
-            conversation_metadata = conversation.setdefault("metadata", {})
-            if request.context:
-                conversation_metadata["context"] = dict(request.context)
-            if plan_payload is not None:
-                conversation_metadata["plan"] = plan_payload
-
-            return ConversationResponse(
-                response=response_text,
-                conversation_id=conv_id,
-                tokens_used=tokens_used,
-                processing_time=processing_time,
-                metadata={
-                    "agent_id": agent_id,
-                    **({"plan": plan_payload} if plan_payload is not None else {}),
-                },
-            )
-
+            with owner.operation(
+                (agent_id, conv_id), conversation, current
+            ) as operation:
+                messages = copy.deepcopy(operation.messages)
+                self._merge_messages(messages, incoming)
+                # Preserve the service's accepted-user-message policy on failure.
+                operation.publish({"messages": messages})
+                context = request_context
+                context["conversation_id"] = conv_id
+                if principal:
+                    context["user_id"] = principal
+                start_time = time.monotonic()
+                with bind_conversation_guard(agent, operation.guard):
+                    response_text = await operation.run(
+                        lambda: agent.generate_response(
+                            copy.deepcopy(messages), context=copy.deepcopy(context)
+                        )
+                    )
+                    processing_time = time.monotonic() - start_time
+                    plan_payload = None
+                    planning_manager = getattr(agent, "planning_manager", None)
+                    if planning_manager is not None:
+                        operation.check()
+                        plan = planning_manager.get_plan(conv_id)
+                        if plan is not None:
+                            plan_payload = {
+                                "goal": plan.goal,
+                                "progress": plan.progress(),
+                                "summary": plan.summarize(
+                                    max_steps=planning_manager.config.max_steps,
+                                    keep_completed=planning_manager.config.keep_completed,
+                                ),
+                            }
+                    operation.check()
+                    tokenizer = getattr(agent, "tokenizer", None)
+                    if tokenizer:
+                        try:
+                            tokens_used = len(tokenizer.encode(response_text))
+                        except TOKENIZE_EXCEPTIONS:
+                            tokens_used = int(len(response_text.split()) * 1.3)
+                    else:
+                        tokens_used = int(len(response_text.split()) * 1.3)
+                    metadata = copy.deepcopy(conversation.get("metadata", {}))
+                    if has_context:
+                        metadata["context"] = copy.deepcopy(context)
+                    if plan_payload is not None:
+                        metadata["plan"] = plan_payload
+                    response = ConversationResponse(
+                        response=response_text,
+                        conversation_id=conv_id,
+                        tokens_used=tokens_used,
+                        processing_time=processing_time,
+                        metadata={
+                            "agent_id": agent_id,
+                            **(
+                                {"plan": copy.deepcopy(plan_payload)}
+                                if plan_payload is not None
+                                else {}
+                            ),
+                        },
+                    )
+                    operation.publish(
+                        {
+                            "messages": messages
+                            + [{"role": "assistant", "content": response_text}],
+                            "last_message_at": datetime.utcnow(),
+                            "metadata": metadata,
+                            "total_tokens": int(conversation.get("total_tokens", 0))
+                            + int(tokens_used),
+                        },
+                        response=True,
+                    )
+                    return response
+        except (ConversationConflict, ConversationResetError) as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
         except AGENT_SERVICE_EXCEPTIONS as e:
             logger.error(f"Agent response failed: {e}")
             raise HTTPException(status_code=500, detail="Agent response failed") from e
@@ -360,20 +410,56 @@ class AgentService:
         self, conversation_id: str, user_id: str | None = None
     ) -> bool:
         """Delete a stored conversation and clear related plan state."""
-        for agent_id, conv_list in self.conversations.items():
-            for idx, conv in enumerate(conv_list):
-                if conv.get("id") == conversation_id:
-                    if not self._user_can_access_conversation(conv, user_id):
-                        return False
-                    conv_list.pop(idx)
-                    agent = self.agents.get(agent_id)
-                    planning_manager = getattr(agent, "planning_manager", None)
-                    if planning_manager and hasattr(
-                        planning_manager, "clear_conversation"
-                    ):
-                        planning_manager.clear_conversation(conversation_id)
-                    return True
-        return False
+        owner = self.conversation_operations
+        with owner.lock:
+            found = next(
+                (
+                    (aid, conv)
+                    for aid, entries in self.conversations.items()
+                    for conv in entries
+                    if conv.get("id") == conversation_id
+                ),
+                None,
+            )
+            if found is None or not self._user_can_access_conversation(
+                found[1], user_id
+            ):
+                return False
+            agent_id, conversation = found
+            key = (agent_id, conversation_id)
+            if key in self._deleting_conversations:
+                raise HTTPException(
+                    status_code=409, detail="Conversation deletion is still pending"
+                )
+            self._deleting_conversations.add(key)
+            owner.retire(conversation)
+            agent = self.agents.get(agent_id)
+        try:
+            planning_manager = getattr(agent, "planning_manager", None)
+            if planning_manager and hasattr(planning_manager, "clear_conversation"):
+                planning_manager.clear_conversation(conversation_id)
+            with owner.lock:
+                entries = self.conversations.get(agent_id, [])
+                entries[:] = [entry for entry in entries if entry is not conversation]
+        finally:
+            with owner.lock:
+                self._deleting_conversations.discard(key)
+        return True
+
+    def get_conversation_status(
+        self, conversation_id: str, user_id: str | None = None
+    ) -> dict[str, Any]:
+        """Inspect request ownership after applying normal conversation access rules."""
+        with self.conversation_operations.lock:
+            for entries in self.conversations.values():
+                for record in entries:
+                    if record.get("id") == conversation_id:
+                        if self._user_can_access_conversation(record, user_id):
+                            return self.conversation_operations.inspect(record)
+                        raise HTTPException(
+                            status_code=404, detail="Conversation not found"
+                        )
+        raise HTTPException(status_code=404, detail="Conversation not found")
 
 
 # Global instance will be created in dependencies or main

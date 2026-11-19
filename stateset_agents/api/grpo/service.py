@@ -6,6 +6,7 @@ Main FastAPI application for the GRPO service with modular architecture.
 
 from __future__ import annotations
 
+import inspect
 import os
 import time
 import uuid
@@ -25,6 +26,7 @@ except ImportError:
     FASTAPI_AVAILABLE = False
 
 from stateset_agents.exceptions import INFERENCE_EXCEPTIONS, MODEL_IO_EXCEPTIONS
+from stateset_agents.utils.async_calls import drain_owned_operation, run_sync_owned
 
 from ..logging_config import (
     clear_request_id,
@@ -39,7 +41,9 @@ from .handlers import ConversationHandler, TrainingHandler, WebSocketHandler
 from .metrics import get_grpo_metrics
 from .router_v1 import create_v1_router
 from .service_routes import register_routes
-from .state import get_state_manager
+from .state import (
+    get_state_manager as get_state_manager,  # Legacy import compatibility.
+)
 
 logger = get_logger(__name__)
 
@@ -179,10 +183,45 @@ def _get_websocket_handler() -> WebSocketHandler:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Run the service and retain monitoring cleanup if startup fails."""
+    services = _services
+    previous_monitor = services.get("monitoring")
+    started = False
+    try:
+        async with _service_lifespan(app):
+            started = True
+            yield
+    except BaseException:
+        if not started:
+            monitor = services.get("monitoring")
+            close = getattr(monitor, "aclose", None)
+            if monitor is not previous_monitor and close is not None:
+
+                async def rollback_monitoring() -> None:
+                    await close()
+                    if services.get("monitoring") is monitor:
+                        services.pop("monitoring")
+
+                try:
+                    await drain_owned_operation(rollback_monitoring())
+                except BaseException as error:
+                    logger.error(
+                        "Monitoring startup rollback failed (%s)", type(error).__name__
+                    )
+        raise
+
+
+@asynccontextmanager
+async def _service_lifespan(app: FastAPI):
     """Lifespan manager for FastAPI app."""
     logger.info("Starting GRPO Service")
     config = get_grpo_config()
     shutdown_manager = get_shutdown_manager()
+    if shutdown_manager.is_shutting_down:
+        raise RuntimeError("GRPO startup requires a fresh shutdown manager")
+    training_handler = _get_training_handler()
+    if training_handler.is_closing:
+        raise RuntimeError("GRPO startup requires an accepting training handler")
 
     # Validate configuration
     issues = config.validate()
@@ -300,27 +339,22 @@ async def lifespan(app: FastAPI):
         logger.warning("Could not create multi-turn agent: %s", e)
 
     # Initialize handlers lazily but ensure they are available during startup.
-    _get_training_handler()
     _get_conversation_handler()
     _get_websocket_handler()
+    services = _services
+
+    async def stop_training() -> None:
+        """Close training admission before request draining begins."""
+        training_handler.close_admission()
 
     # Register shutdown tasks
-    async def cleanup_jobs():
-        """Cancel pending training jobs."""
-        state = get_state_manager()
-        pending_jobs = [
-            job_id
-            for job_id in list(state.jobs.keys())
-            if state.get_job(job_id)
-            and state.get_job(job_id).status in ("starting", "running")
-        ]
-        for job_id in pending_jobs:
-            state.update_job(job_id, status="cancelled")
-            logger.info("Cancelled training job: %s", job_id)
+    async def cleanup_jobs() -> None:
+        """Join workers, including those whose job records have expired."""
+        await training_handler.aclose()
 
     async def cleanup_conversations():
         """End active conversations."""
-        state = get_state_manager()
+        state = training_handler.state
         active_convs = list(state.conversations.keys())
         for conv_id in active_convs:
             state.end_conversation(conv_id)
@@ -329,30 +363,65 @@ async def lifespan(app: FastAPI):
 
     async def cleanup_state():
         """Cleanup state manager."""
-        state = get_state_manager()
+        state = training_handler.state
         cleanup_counts = state.cleanup()
         logger.info("State cleanup: %s", cleanup_counts)
 
-    async def cleanup_engines():
-        """Cleanup computational engines."""
-        state = get_state_manager()
-        for engine_id in list(state.engines.keys()):
-            engine = state.unregister_engine(engine_id)
-            if hasattr(engine, "cleanup"):
-                engine.cleanup()
-            logger.debug("Cleaned up engine: %s", engine_id)
+    async def cleanup_engines() -> None:
+        """Release engines only after worker ownership has ended."""
+        if not training_handler.is_closed:
+            raise RuntimeError("Training workers must finish before engine cleanup")
 
-        if "demo_engine" in _services:
-            engine = _services["demo_engine"]
-            if hasattr(engine, "cleanup"):
-                engine.cleanup()
-            logger.info("Cleaned up demo engine")
+        async def cleanup_owned_engines() -> None:
+            state = training_handler.state
+            cleaned: set[int] = set()
 
+            async def cleanup_once(engine: Any) -> None:
+                if id(engine) in cleaned:
+                    return
+                cleanup = getattr(engine, "cleanup", None)
+                if cleanup is not None:
+                    if inspect.iscoroutinefunction(cleanup):
+                        await cleanup()
+                    else:
+                        result = await run_sync_owned(cleanup)
+                        if inspect.isawaitable(result):
+                            await result
+                cleaned.add(id(engine))
+
+            for engine_id, engine in list(state.engines.items()):
+                await cleanup_once(engine)
+                if state.get_engine(engine_id) is engine:
+                    state.unregister_engine(engine_id)
+                logger.debug("Cleaned up engine: %s", engine_id)
+
+            if "demo_engine" in services:
+                await cleanup_once(services["demo_engine"])
+                logger.info("Cleaned up demo engine")
+
+        await drain_owned_operation(cleanup_owned_engines())
+
+    async def cleanup_monitoring() -> None:
+        """Join monitoring workers and release their listener after training ends."""
+        monitor = services.get("monitoring")
+        close = getattr(monitor, "aclose", None)
+        if close is not None:
+            await close()
+            if services.get("monitoring") is monitor:
+                services.pop("monitoring")
+
+    shutdown_manager.register_task(
+        "stop_training",
+        ShutdownPhase.STOP_ACCEPTING,
+        stop_training,
+        critical=True,
+    )
     shutdown_manager.register_task(
         "cleanup_jobs",
         ShutdownPhase.CLEANUP_JOBS,
         cleanup_jobs,
         timeout_seconds=10.0,
+        critical=True,
     )
     shutdown_manager.register_task(
         "cleanup_conversations",
@@ -371,16 +440,23 @@ async def lifespan(app: FastAPI):
         ShutdownPhase.CLEANUP_ENGINES,
         cleanup_engines,
         timeout_seconds=10.0,
+        critical=True,
+    )
+    shutdown_manager.register_task(
+        "cleanup_monitoring",
+        ShutdownPhase.FINAL,
+        cleanup_monitoring,
+        critical=True,
     )
 
     logger.info("GRPO Service initialized")
 
-    yield
-
-    # Execute graceful shutdown
-    logger.info("Initiating graceful shutdown")
-    await shutdown_manager.execute_shutdown()
-    logger.info("GRPO Service shutdown complete")
+    try:
+        yield
+    finally:
+        logger.info("Initiating graceful shutdown")
+        await shutdown_manager.execute_shutdown()
+        logger.info("GRPO Service shutdown complete")
 
 
 def create_app() -> FastAPI:

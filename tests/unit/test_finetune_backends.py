@@ -97,8 +97,9 @@ def test_uncapped_remote_billing_requires_explicit_policy(settings, provider):
 
 
 @pytest.mark.parametrize("provider", ["runpod", "modal"])
+@pytest.mark.parametrize("preview", [False, True])
 def test_reviewed_gpu_selection_reaches_remote_spec(
-    settings, tmp_path, monkeypatch, provider
+    settings, tmp_path, monkeypatch, provider, preview
 ):
     config = replace(
         settings,
@@ -119,7 +120,9 @@ def test_reviewed_gpu_selection_reaches_remote_spec(
             return JobHandle(provider, "synthetic-provider-job")
 
         def wait(self, handle):
-            return RemoteJobResult(handle, JobStatus.SUCCEEDED, run / "artifacts", [])
+            return RemoteJobResult(
+                handle, JobStatus.SUCCEEDED, run / "artifacts", [], is_preview=preview
+            )
 
     from stateset_agents.remote import registry
 
@@ -128,7 +131,12 @@ def test_reviewed_gpu_selection_reaches_remote_spec(
         "get_executor",
         lambda name: Executor() if name == provider else pytest.fail("wrong provider"),
     )
-    assert worker._train_remote(run, config) == run / "artifacts"
+    if preview:
+        with pytest.raises(workspace.FinetuneFailure) as error:
+            worker._train_remote(run, config)
+        assert error.value.code == "provider_preview"
+    else:
+        assert worker._train_remote(run, config) == run / "artifacts"
     spec = calls[0]
     assert spec.package_version == read_json(run / "plan.json")["framework_version"]
     assert spec.gpu == "H100" and spec.gpu_count == 2

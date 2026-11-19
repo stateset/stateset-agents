@@ -113,6 +113,29 @@ fn compute_gae<'py>(
     Ok(Array1::from_vec(advantages).to_pyarray(py))
 }
 
+/// Return both actor advantages and critic targets before either is rounded away.
+#[pyfunction]
+#[pyo3(signature = (rewards, values, gamma=0.99, gae_lambda=0.95))]
+fn compute_gae_targets<'py>(
+    py: Python<'py>,
+    rewards: PyReadonlyArray1<'py, f64>,
+    values: PyReadonlyArray1<'py, f64>,
+    gamma: f64,
+    gae_lambda: f64,
+) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>)> {
+    let (advantages, targets) = gae::compute_gae_targets(
+        rewards.as_slice()?,
+        values.as_slice()?,
+        &[],
+        gamma,
+        gae_lambda,
+    );
+    Ok((
+        Array1::from_vec(advantages).to_pyarray(py),
+        Array1::from_vec(targets).to_pyarray(py),
+    ))
+}
+
 /// Batch compute GAE for multiple trajectories in parallel
 ///
 /// Args:
@@ -132,14 +155,19 @@ fn batch_compute_gae<'py>(
     gamma: f64,
     gae_lambda: f64,
 ) -> PyResult<Vec<Bound<'py, PyArray1<f64>>>> {
+    if all_rewards.len() != all_values.len() {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "GAE batch rows must align",
+        ));
+    }
     let rewards_vecs: Vec<Vec<f64>> = all_rewards
         .iter()
-        .map(|r| r.as_slice().map(|s| s.to_vec()).unwrap_or_default())
+        .map(|row| row.as_array().iter().copied().collect())
         .collect();
 
     let values_vecs: Vec<Vec<f64>> = all_values
         .iter()
-        .map(|v| v.as_slice().map(|s| s.to_vec()).unwrap_or_default())
+        .map(|row| row.as_array().iter().copied().collect())
         .collect();
 
     // Parallel GAE computation
@@ -228,6 +256,11 @@ fn compute_gspo_importance_ratios<'py>(
     let new_probs = log_probs_new.as_slice()?;
     let old_probs = log_probs_old.as_slice()?;
     let lengths = sequence_lengths.as_slice()?;
+    if new_probs.len() != old_probs.len() || new_probs.len() != lengths.len() {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "GSPO requires aligned vectors of sequence scores and lengths",
+        ));
+    }
 
     let ratios: Vec<f64> = new_probs
         .par_iter()
@@ -239,7 +272,7 @@ fn compute_gspo_importance_ratios<'py>(
             }
             let log_ratio = new - old;
             let normalized_log_ratio = log_ratio / (len as f64);
-            normalized_log_ratio.exp()
+            normalized_log_ratio.clamp(-20.0, 20.0).exp()
         })
         .collect();
 
@@ -355,6 +388,7 @@ fn compute_reward_statistics(rewards: Vec<f64>) -> PyResult<HashMap<String, f64>
 fn stateset_rl_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(compute_group_advantages, m)?)?;
     m.add_function(wrap_pyfunction!(compute_gae, m)?)?;
+    m.add_function(wrap_pyfunction!(compute_gae_targets, m)?)?;
     m.add_function(wrap_pyfunction!(batch_compute_gae, m)?)?;
     m.add_function(wrap_pyfunction!(normalize_rewards, m)?)?;
     m.add_function(wrap_pyfunction!(clip_rewards_py, m)?)?;

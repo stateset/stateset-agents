@@ -29,10 +29,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Callable
 from typing import Any
 
 import torch
 
+from stateset_agents.core.generation_evidence import selected_logprobs
 from stateset_agents.core.generation_mode import inference_mode
 from stateset_agents.core.lora_targets import text_lora_targets
 from stateset_agents.core.transformers_compat import load_generation_model
@@ -205,6 +207,50 @@ def build_group_batch(
     return batch_input_ids, batch_attention_mask, batch_response_mask
 
 
+@torch.no_grad()
+def group_old_logprobs(
+    responses: list[dict[str, Any]],
+    response_mask: torch.Tensor,
+    config: Any,
+    rescore: Callable[[], torch.Tensor],
+) -> torch.Tensor:
+    """Freeze the configured denominator in the causal action frame."""
+    if config.old_logprobs_source == "recompute":
+        return rescore().detach().clone()
+    if config.old_logprobs_source != "sampler":
+        raise ValueError("Unknown old_logprobs_source")
+    if response_mask.ndim != 2 or response_mask.shape[0] != len(responses):
+        raise ValueError("Sampler scores must align with response rows")
+    if response_mask[:, :1].any():
+        raise ValueError("A sampled action requires a preceding prompt token")
+    active = response_mask[:, 1:] != 0
+    dtype = torch.float32 if active.device.type == "mps" else torch.float64
+    frozen = torch.zeros_like(active, dtype=dtype)
+    missing = []
+    for i, row in enumerate(responses):
+        scores = row.get("sampler_log_probs")
+        if scores is None:
+            if active[i].any():
+                missing.append(i)
+            continue
+        selected = torch.as_tensor(scores, device=active.device, dtype=dtype)
+        if selected.ndim != 1 or selected.numel() != int(active[i].sum()):
+            raise ValueError(
+                "sampler_log_probs must contain one score per retained action"
+            )
+        if not torch.isfinite(selected).all() or (selected > 0).any():
+            raise ValueError(
+                "Sampled action log probabilities must be finite and nonpositive"
+            )
+        frozen[i, active[i]] = selected
+    if missing:
+        if not config.allow_missing_sampler_logprobs:
+            raise ValueError("Requested sampler_log_probs are missing from the rollout")
+        fallback = rescore()
+        frozen[missing] = fallback[missing].to(dtype).masked_fill(~active[missing], 0)
+    return frozen
+
+
 async def hf_generate_group(
     model: Any,
     tokenizer: Any,
@@ -229,6 +275,13 @@ async def hf_generate_group(
         max_length=config.max_prompt_length,
     )
     prompt_length = prompt_tokens["input_ids"].shape[1]
+    record = getattr(config, "old_logprobs_source", "recompute") == "sampler"
+    eos = getattr(getattr(model, "generation_config", None), "eos_token_id", None)
+    if eos is None:
+        eos = getattr(tokenizer, "eos_token_id", None)
+    eos_ids = torch.as_tensor(
+        [] if eos is None else eos, device=device, dtype=torch.long
+    ).reshape(-1)
 
     if type(group_size) is not int or group_size < 1:
         raise ValueError("group_size must be a positive integer")
@@ -248,14 +301,42 @@ async def hf_generate_group(
                 do_sample=True,
                 pad_token_id=tokenizer.pad_token_id,
                 num_return_sequences=count,
+                eos_token_id=eos,
+                **(
+                    {
+                        "num_beams": 1,
+                        "return_dict_in_generate": True,
+                        "output_scores": True,
+                    }
+                    if record
+                    else {}
+                ),
             )
-            if len(outputs) != count:
+            sequences = getattr(outputs, "sequences", outputs)
+            generation_scores = getattr(outputs, "scores", None) if record else None
+            if (
+                record
+                and generation_scores is None
+                and not config.allow_missing_sampler_logprobs
+            ):
+                raise ValueError("Generator omitted requested sampler_log_probs")
+            if len(sequences) != count:
                 raise ValueError("Generator returned an incomplete response group")
-            for full_ids in outputs:
+            if generation_scores is not None:
+                actions = sequences[:, prompt_length:]
+                sampled = selected_logprobs(generation_scores, actions, sampled=True)
+                if sampled is None:
+                    raise ValueError(
+                        "Generation scores must align with sampled steps and rows"
+                    )
+            for i, full_ids in enumerate(sequences):
                 # Exclude batch padding after EOS, including when pad == EOS.
-                eos = getattr(tokenizer, "eos_token_id", None)
                 response_ids = full_ids[prompt_length:]
-                ends = (response_ids == eos).nonzero() if eos is not None else []
+                ends = (
+                    torch.isin(response_ids, eos_ids).nonzero()
+                    if eos_ids.numel()
+                    else []
+                )
                 if len(ends):
                     full_ids = full_ids[: prompt_length + int(ends[0].item()) + 1]
                 response_length = len(full_ids) - prompt_length
@@ -273,6 +354,13 @@ async def hf_generate_group(
                         "prompt_length": prompt_length,
                     }
                 )
+                if generation_scores is not None:
+                    scores = sampled[i, :response_length].detach().clone()
+                    if not torch.isfinite(scores).all() or (scores > 0).any():
+                        raise ValueError(
+                            "Generator returned an invalid sampled action likelihood"
+                        )
+                    responses[-1]["sampler_log_probs"] = scores
     return responses
 
 
@@ -331,6 +419,7 @@ def save_checkpoint_artifacts(
 __all__ = [
     "SharedModelManager",
     "build_group_batch",
+    "group_old_logprobs",
     "hf_generate_group",
     "save_checkpoint_artifacts",
 ]

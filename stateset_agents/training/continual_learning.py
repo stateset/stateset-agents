@@ -12,8 +12,9 @@ from __future__ import annotations
 import logging
 import math
 import random
+from bisect import bisect_right
 from collections.abc import Iterable, Sequence
-from copy import deepcopy
+from copy import copy, deepcopy
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any, cast
@@ -23,14 +24,23 @@ try:  # pragma: no cover - optional dependency
 except ImportError:  # pragma: no cover
     torch = cast(Any, None)
 
+from stateset_agents.core.reward_moments import RewardMoments
 from stateset_agents.core.trajectory import TrajectoryGroup
 from stateset_agents.exceptions import ATTRIBUTE_VALUE_EXCEPTIONS
 
-from .loss_computation import _prepare_inputs_and_labels
+from .loss_computation import (
+    _forward_token_rows,
+    _prepare_inputs_and_labels,
+    _resolve_model_device,
+    _trajectory_token_rows,
+)
 
 logger = logging.getLogger(__name__)
 
 CONTINUAL_EXCEPTIONS = ATTRIBUTE_VALUE_EXCEPTIONS
+_FISHER_SAMPLE_EXCEPTIONS: tuple[type[BaseException], ...] = CONTINUAL_EXCEPTIONS + (
+    IndexError,
+)
 
 
 def _finite_number(value: Any) -> bool:
@@ -38,6 +48,59 @@ def _finite_number(value: Any) -> bool:
         return type(value) in (int, float) and math.isfinite(value)
     except OverflowError:
         return False
+
+
+def _ewc_term(param: Any, anchor: Any, fisher: Any, strength: float, dtype: Any) -> Any:
+    """Sum half-strength weighted squares, including the weight before reduction."""
+    device = param.device
+    if (
+        dtype != torch.float64
+        and device.type != "mps"
+        and strength <= torch.finfo(dtype).max
+    ):
+        # The unscaled quadratic and the strength-weighted Fisher in its
+        # backward fit in FP64 across the entire FP32 input range.
+        delta = param.double() - anchor.to(device=device, dtype=torch.float64)
+        return (
+            (delta.square() * fisher.to(device=device, dtype=torch.float64)).sum()
+            * 0.5
+            * strength
+        )
+
+    # Compute sqrt(strength * fisher / 2) from a bounded mantissa. Even
+    # strength / 2 can underflow before a large displacement restores scale.
+    mantissa, exponent = math.frexp(strength)
+    power = math.ldexp(1.0, exponent // 2)
+    fraction = math.ldexp(mantissa, exponent % 2 - 1)
+    if (
+        device.type == "mps"
+        and not torch.finfo(dtype).tiny <= strength <= torch.finfo(dtype).max
+    ):
+        # MPS lacks FP64. Extreme Python scalar strengths need its exponent range.
+        device, dtype = torch.device("cpu"), torch.float64
+    elif device.type != "mps":
+        dtype = torch.float64
+    weight = fisher.to(device=device, dtype=dtype)
+    root = (
+        weight.sqrt() * torch.scalar_tensor(fraction, device=device, dtype=dtype).sqrt()
+    )
+    current = param.to(device=device, dtype=dtype)
+    mean = anchor.to(device=device, dtype=dtype)
+    delta = current - mean
+    large = delta.detach().abs() > torch.finfo(dtype).max / 2
+    delta = torch.where(large, current * 0.5 - mean * 0.5, delta)
+    if power < 1:
+        # When both factors shrink the residual, apply them separately so
+        # their product cannot round to zero before meeting a large delta.
+        residual = (delta * (root.clamp_min(1) * power)) * root.clamp_max(1)
+    else:
+        residual = delta * (root * power)
+    term = torch.where(large, residual * 2, residual).square().sum()
+    return (
+        term.to(device=param.device, dtype=torch.float32)
+        if device != param.device
+        else term
+    )
 
 
 def _restore_private_rng(state: Any, fallback: random.Random) -> random.Random:
@@ -92,6 +155,7 @@ class ContinualLearningConfig:
 
     # Replay settings
     replay_buffer_size: int = 2000
+    # Expected replay groups per new group, capped by eligible stored groups.
     replay_ratio: float = 0.5
     replay_min_size: int = 100
     replay_sampling: str = "uniform"  # "uniform", "recent", "reward", "balanced"
@@ -165,8 +229,27 @@ class TrajectoryReplayBuffer:
         task_id: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        for group in groups:
-            reward = _mean_reward(group)
+        """Commit one batch atomically with storage bounded by buffer capacity."""
+        additions = ((group, _mean_reward(group)) for group in groups)
+        if isinstance(groups, Sequence) and len(groups) <= self.max_size:
+            self._add_validated(list(additions), task_id, metadata)
+            return
+
+        # A one-pass stream can exceed memory or fail after many replacements.
+        staged = copy(self)
+        staged._entries = self._entries.copy()
+        staged._rng = deepcopy(self._rng)
+        staged._add_validated(additions, task_id, metadata)
+        self._entries, self._rng = staged._entries, staged._rng
+        self._sequence, self._seen = staged._sequence, staged._seen
+
+    def _add_validated(
+        self,
+        additions: Iterable[tuple[TrajectoryGroup, float]],
+        task_id: str | None,
+        metadata: dict[str, Any] | None,
+    ) -> None:
+        for group, reward in additions:
             entry = ReplayEntry(
                 group=group,
                 task_id=task_id,
@@ -216,33 +299,40 @@ class TrajectoryReplayBuffer:
             ordered = sorted(candidates, key=lambda e: e.sequence, reverse=True)
             return [entry.group for entry in ordered[:count]]
         if strategy == "reward":
-            weights = [max(entry.reward, 0.0) + 1e-3 for entry in candidates]
-            if not any(weights):
-                return [entry.group for entry in self._rng.sample(candidates, count)]
-            chosen = self._rng.choices(candidates, weights=weights, k=count)
-            return [entry.group for entry in chosen]
+            # Exact binary64 weights keep even the smallest interval reachable.
+            floor, denominator = (1e-3).as_integer_ratio()
+            parts = [max(entry.reward, 0.0).as_integer_ratio() for entry in candidates]
+            unit = max(denominator, max(d for _, d in parts))
+            floor_ticks = floor * (unit // denominator)
+            cumulative = []
+            total = 0
+            for numerator, divisor in parts:
+                total += numerator * (unit // divisor) + floor_ticks
+                cumulative.append(total)
+            return [
+                candidates[bisect_right(cumulative, self._rng.randrange(total))].group
+                for _ in range(count)
+            ]
         if strategy == "balanced":
             by_task: dict[str | None, list[ReplayEntry]] = {}
             for entry in candidates:
                 by_task.setdefault(entry.task_id, []).append(entry)
-            task_ids = [tid for tid in by_task if tid is not None]
-            if not task_ids:
-                return [entry.group for entry in self._rng.sample(candidates, count)]
-            per_task = max(1, count // len(task_ids))
-            selected: list[ReplayEntry] = []
-            for tid in task_ids:
-                entries = by_task.get(tid, [])
-                if not entries:
-                    continue
-                take = min(per_task, len(entries))
-                selected.extend(self._rng.sample(entries, take))
+            unlabeled = by_task.pop(None, [])
+            active = list(by_task.values())
+            selected: list[TrajectoryGroup] = []
+            while active and len(selected) < count:
+                take = min(count - len(selected), len(active))
+                for pool in self._rng.sample(active, take):
+                    index = self._rng.randrange(len(pool))
+                    pool[index], pool[-1] = pool[-1], pool[index]
+                    selected.append(pool.pop().group)
+                active = [pool for pool in active if pool]
             remaining = count - len(selected)
             if remaining > 0:
-                pool = [entry for entry in candidates if entry not in selected]
-                if pool:
-                    remaining = min(remaining, len(pool))
-                    selected.extend(self._rng.sample(pool, remaining))
-            return [entry.group for entry in selected[:count]]
+                selected.extend(
+                    entry.group for entry in self._rng.sample(unlabeled, remaining)
+                )
+            return selected
 
         # Uniform without replacement
         return [entry.group for entry in self._rng.sample(candidates, count)]
@@ -252,7 +342,7 @@ class TrajectoryReplayBuffer:
         return {
             "size": len(self._entries),
             "seen": self._seen,
-            "mean_reward": sum(rewards) / len(rewards) if rewards else 0.0,
+            "mean_reward": RewardMoments(rewards).mean,
             "storage_strategy": self.storage_strategy,
             "sampling_strategy": self.sampling_strategy,
         }
@@ -315,11 +405,14 @@ class TrajectoryReplayBuffer:
             else:
                 continue
             reward_value = item.get("reward")
+            reward = float(reward_value) if reward_value is not None else 0.0
+            if not math.isfinite(reward):
+                raise ValueError("Replay rewards must be finite")
             entries.append(
                 ReplayEntry(
                     group=group,
                     task_id=item.get("task_id"),
-                    reward=float(reward_value) if reward_value is not None else 0.0,
+                    reward=reward,
                     sequence=int(item.get("sequence", 0)),
                     metadata=item.get("metadata") or {},
                 )
@@ -357,7 +450,8 @@ class ContinualLearningManager:
     ):
         self.config = config
         self.training_config = training_config
-        self._rng = random.Random(seed)
+        # Rounding and reservoir sampling must not start at the same RNG state.
+        self._rng = random.Random(random.Random(seed).getrandbits(256))
         self.buffer = TrajectoryReplayBuffer(
             max_size=config.replay_buffer_size,
             storage_strategy=config.replay_storage,
@@ -450,9 +544,9 @@ class ContinualLearningManager:
             return []
         if new_group_count <= 0:
             return []
-        expected = max(0.0, new_group_count * self.config.replay_ratio)
-        target = int(expected)
-        if self._rng.random() < expected - target:
+        numerator, denominator = self.config.replay_ratio.as_integer_ratio()
+        target, remainder = divmod(new_group_count * numerator, denominator)
+        if remainder and self._rng.randrange(denominator) < remainder:
             target += 1
         if target <= 0:
             return []
@@ -601,23 +695,54 @@ class ContinualLearningManager:
             report[reason] += 1
 
         modes = [(child, child.training) for child in model.modules()]
+        device = _resolve_model_device(agent, torch)
+        vocabulary = None
+        chunk_size = getattr(self.training_config, "generation_batch_size", None)
+        score_dtype = (
+            torch.float64
+            if any(p.dtype == torch.float64 for _, p in named_params)
+            else None
+        )
         try:
             with torch.enable_grad():
                 model.eval()
                 for idx, trajectory in enumerate(trajectories[:max_samples]):
                     report["attempted"] += 1
                     try:
-                        inputs, labels = _prepare_inputs_and_labels(
-                            trajectory, agent, self.training_config or {}
+                        rows = _trajectory_token_rows(
+                            trajectory, 0, reject_partial=True
                         )
-                        if (
-                            not torch.is_tensor(labels)
-                            or labels.ndim < 1
-                            or not bool(labels[..., 1:].ne(-100).any())
-                        ):
-                            skip("no_supervised_tokens")
-                            continue
-                        loss = model(**inputs, labels=labels).loss
+                        if rows:
+                            from .learner_preflight import (
+                                _check_token_vocabulary,
+                                _vocabulary,
+                            )
+
+                            if vocabulary is None:
+                                vocabulary = _vocabulary(model)
+                            _check_token_vocabulary(rows, vocabulary)
+                            logp, _, _ = _forward_token_rows(
+                                model,
+                                rows,
+                                device,
+                                chunk_size or len(rows),
+                                grad=True,
+                                logprob_dtype=score_dtype,
+                            )
+                            count_tokens = sum(len(response) for _, response, _ in rows)
+                            loss = -(logp / count_tokens).sum()
+                        else:
+                            inputs, labels = _prepare_inputs_and_labels(
+                                trajectory, agent, self.training_config or {}
+                            )
+                            if (
+                                not torch.is_tensor(labels)
+                                or labels.ndim < 1
+                                or not bool(labels[..., 1:].ne(-100).any())
+                            ):
+                                skip("no_supervised_tokens")
+                                continue
+                            loss = model(**inputs, labels=labels).loss
                         if (
                             not torch.is_tensor(loss)
                             or loss.ndim != 0
@@ -659,7 +784,7 @@ class ContinualLearningManager:
                             else:
                                 value.mul_(1.0 - 1.0 / count)
                         report["accepted"] = count
-                    except CONTINUAL_EXCEPTIONS as exc:
+                    except _FISHER_SAMPLE_EXCEPTIONS as exc:
                         oom = getattr(torch, "OutOfMemoryError", None)
                         if oom is None:
                             oom = getattr(torch.cuda, "OutOfMemoryError", None)
@@ -689,20 +814,28 @@ class ContinualLearningManager:
             return None
 
         loss = None
+        result_dtype = torch.float32
+        strength = float(self.config.ewc_lambda)
         for name, param in agent.model.named_parameters():
             if name not in self._ewc_fisher:
                 continue
-            fisher = self._ewc_fisher[name].to(device=param.device)
+            fisher = self._ewc_fisher[name]
             mean = self._ewc_params.get(name)
             if mean is None:
                 continue
-            penalty = fisher * (param - mean.to(device=param.device)) ** 2
-            term = penalty.sum()
-            loss = term if loss is None else loss + term
+            dtype = torch.promote_types(
+                torch.float32,
+                torch.promote_types(
+                    param.dtype, torch.promote_types(mean.dtype, fisher.dtype)
+                ),
+            )
+            result_dtype = torch.promote_types(result_dtype, dtype)
+            term = _ewc_term(param, mean, fisher, strength, dtype)
+            loss = term if loss is None else loss + term.to(device=loss.device)
 
         if loss is None:
             return None
-        return 0.5 * float(self.config.ewc_lambda) * loss
+        return loss.to(dtype=result_dtype)
 
     def state_dict(self, *, include_reference: bool = True) -> dict[str, Any]:
         """Return a serializable snapshot of continual learning state."""
@@ -710,7 +843,7 @@ class ContinualLearningManager:
         if isinstance(config["strategy"], ContinualLearningStrategy):
             config["strategy"] = config["strategy"].value
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "task_boundary": deepcopy(self._task_boundary),
             "rng_state": self._rng.getstate(),
             "config": config,
@@ -749,7 +882,7 @@ class ContinualLearningManager:
             raise ValueError("Invalid continual task-boundary receipt")
         if "schema_version" in state and (
             type(state["schema_version"]) is not int
-            or state["schema_version"] != 1
+            or state["schema_version"] not in (1, 2)
             or not {
                 "rng_state",
                 "reference_state",
@@ -763,6 +896,8 @@ class ContinualLearningManager:
         ):
             raise ValueError("Invalid continual learning checkpoint schema")
         rng = _restore_private_rng(state.get("rng_state"), self._rng)
+        if state.get("schema_version") != 2 and state.get("rng_state") is not None:
+            rng = random.Random(rng.getrandbits(256))
         config = deepcopy(self.config)
         config_state = state.get("config")
         if "schema_version" in state and (
@@ -944,10 +1079,10 @@ def _flatten_trajectories(
 
 
 def _mean_reward(group: TrajectoryGroup) -> float:
-    rewards = group.rewards
-    if not rewards:
-        return 0.0
-    return float(sum(rewards) / len(rewards))
+    rewards = [float(reward) for reward in group.rewards]
+    if not all(map(math.isfinite, rewards)):
+        raise ValueError("Replay rewards must be finite")
+    return RewardMoments(rewards).mean
 
 
 def _coerce_int(value: Any, default: int) -> int:

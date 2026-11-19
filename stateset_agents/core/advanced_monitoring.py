@@ -13,12 +13,15 @@ import logging
 import statistics
 import time
 from collections import defaultdict, deque
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from contextlib import asynccontextmanager, contextmanager
+from enum import Enum
 from functools import wraps
 from typing import Any
 
 import psutil
+
+from stateset_agents.utils.async_calls import drain_owned_operation, run_sync_owned
 
 try:
     from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Summary
@@ -72,10 +75,230 @@ PROMETHEUS_METRIC_ALIASES = {
 }
 
 
-class MetricsCollector:
+class MonitoringState(str, Enum):
+    """Admission and background-work ownership for advanced monitoring."""
+
+    NEW = "new"
+    STARTING = "starting"
+    RUNNING = "running"
+    CLOSING = "closing"
+    CLOSED = "closed"
+    FAILED = "failed"
+
+
+class _BackgroundLifecycle:
+    """Local lifecycle shared by the three advanced monitoring task owners.
+
+    Use one event loop. Passive metric/history access is independent of worker
+    admission. Startup and shutdown each have one retained outcome; closing
+    cannot discard workers, and failed workers are never silently restarted.
+    """
+
+    def __init__(self) -> None:
+        self._state = MonitoringState.NEW
+        self._start_task: asyncio.Task[None] | None = None
+        self._close_task: asyncio.Task[None] | None = None
+        self._workers: dict[str, asyncio.Task[None]] = {}
+        self._observed_workers: set[str] = set()
+        self._stopping_workers: set[str] = set()
+        self._failure: BaseException | None = None
+
+    def _background_children(self) -> dict[str, _BackgroundLifecycle]:
+        return {}
+
+    def _record_failure(self, error: BaseException) -> None:
+        if self._failure is None:
+            self._failure = error
+            logger.error(
+                "%s background monitoring failed (%s)",
+                type(self).__name__,
+                type(error).__name__,
+            )
+        if self._state not in (MonitoringState.CLOSING, MonitoringState.CLOSED):
+            self._state = MonitoringState.FAILED
+
+    def _observe_workers(self) -> None:
+        for name, task in self._workers.items():
+            if not task.done() or name in self._observed_workers:
+                continue
+            self._observed_workers.add(name)
+            error = None if task.cancelled() else task.exception()
+            if error is not None:
+                self._record_failure(error)
+            elif (
+                name not in self._stopping_workers
+                and self._state is not MonitoringState.CLOSING
+            ):
+                self._record_failure(RuntimeError(f"Monitor worker {name} stopped"))
+        if self._state is MonitoringState.RUNNING:
+            for name, child in self._background_children().items():
+                if child.state is not MonitoringState.RUNNING:
+                    self._record_failure(
+                        child._failure or RuntimeError(f"Monitor child {name} stopped")
+                    )
+
+    @property
+    def state(self) -> MonitoringState:
+        """Observe lifecycle state, including unexpected worker termination."""
+        self._observe_workers()
+        return self._state
+
+    def get_status(self) -> dict[str, Any]:
+        """Return detached lifecycle diagnostics without starting any work."""
+        return {
+            "state": self.state.value,
+            "workers": {
+                name: "done" if task.done() else "running"
+                for name, task in self._workers.items()
+            },
+            "active_workers": sum(not task.done() for task in self._workers.values()),
+            "error_type": type(self._failure).__name__ if self._failure else None,
+            "children": {
+                name: child.get_status()
+                for name, child in self._background_children().items()
+            },
+        }
+
+    def _owns_task(self, task: asyncio.Task[Any] | None) -> bool:
+        return task is not None and (
+            task in (self._start_task, self._close_task)
+            or task in self._workers.values()
+            or any(
+                child._owns_task(task) for child in self._background_children().values()
+            )
+        )
+
+    @staticmethod
+    def _create_task(operation: Coroutine[Any, Any, None]) -> asyncio.Task[None]:
+        try:
+            return asyncio.create_task(operation)
+        except BaseException:
+            operation.close()
+            raise
+
+    def _spawn_worker(
+        self, name: str, operation: Callable[[], Coroutine[Any, Any, None]]
+    ) -> asyncio.Task[None]:
+        async def run() -> None:
+            # Eager factories run before create_task returns. Register ownership
+            # before user callbacks can attempt to close their own monitor.
+            current = asyncio.current_task()
+            assert current is not None
+            self._workers[name] = current
+            await operation()
+
+        task = self._create_task(run())
+        self._workers[name] = task
+        task.add_done_callback(lambda _: self._observe_workers())
+        return task
+
+    async def _start_background_tasks(self) -> None:
+        raise NotImplementedError
+
+    async def _close_background_resources(self) -> None:
+        """Release dependencies after all background workers and children drain."""
+
+    async def _start(self) -> None:
+        self._start_task = asyncio.current_task()
+        try:
+            await self._start_background_tasks()
+            self._observe_workers()
+            if self._failure is not None:
+                raise self._failure
+            if self._state is MonitoringState.STARTING:
+                self._state = MonitoringState.RUNNING
+        except BaseException as error:
+            self._record_failure(
+                RuntimeError("Monitor startup was cancelled")
+                if isinstance(error, asyncio.CancelledError)
+                else error
+            )
+            raise
+
+    async def start(self) -> None:
+        """Start once; concurrent callers join the same admitted startup.
+
+        A cancelled caller waits for admitted startup to settle. If it succeeds,
+        the monitor remains owned and running until explicitly closed.
+        """
+        if self._owns_task(asyncio.current_task()):
+            raise RuntimeError("Monitor workers cannot start their own owner")
+        state = self.state
+        if state is MonitoringState.RUNNING:
+            return
+        if state not in (MonitoringState.NEW, MonitoringState.STARTING):
+            raise RuntimeError(f"Monitor is {state.value}; create a new monitor")
+        if self._start_task is None:
+            self._state = MonitoringState.STARTING
+            try:
+                self._start_task = self._create_task(self._start())
+            except BaseException as error:
+                self._record_failure(error)
+                raise
+
+        async def join() -> None:
+            assert self._start_task is not None
+            await self._start_task
+
+        try:
+            await drain_owned_operation(join())
+        except BaseException:
+            if self._start_task.done() and self._failure is not None:
+                try:
+                    await self.aclose()
+                except BaseException:
+                    pass  # Preserve the startup outcome after draining rollback.
+            raise
+
+    async def aclose(self) -> None:
+        """Close admission and drain workers and children despite waiter cancellation."""
+        if self._owns_task(asyncio.current_task()):
+            raise RuntimeError("Monitor workers cannot close their own owner")
+        if self._close_task is None:
+            self._observe_workers()
+            self._state = MonitoringState.CLOSING
+            self._close_task = self._create_task(self._close())
+
+        async def join() -> None:
+            assert self._close_task is not None
+            await self._close_task
+
+        await drain_owned_operation(join())
+
+    async def _close(self) -> None:
+        self._close_task = asyncio.current_task()
+        if self._start_task is not None:
+            await asyncio.gather(self._start_task, return_exceptions=True)
+        self._observe_workers()
+        for name, task in self._workers.items():
+            if not task.done():
+                self._stopping_workers.add(name)
+                task.cancel()
+        await asyncio.gather(*self._workers.values(), return_exceptions=True)
+        self._observe_workers()
+        # Producers finish before their dependencies. Continue draining other
+        # children even when one child reports a worker/cleanup failure.
+        for child in self._background_children().values():
+            try:
+                await child.aclose()
+            except BaseException as error:
+                self._record_failure(error)
+        try:
+            await self._close_background_resources()
+        except BaseException as error:
+            self._record_failure(error)
+        self._state = (
+            MonitoringState.FAILED if self._failure else MonitoringState.CLOSED
+        )
+        if self._failure is not None:
+            raise self._failure
+
+
+class MetricsCollector(_BackgroundLifecycle):
     """Advanced metrics collection and aggregation"""
 
     def __init__(self, retention_period: int = 86400):  # 24 hours
+        super().__init__()
         self.metrics: dict[str, deque] = defaultdict(lambda: deque())
         self.retention_period = retention_period
         self.aggregated_metrics: dict[str, dict[str, float]] = {}
@@ -92,19 +315,8 @@ class MetricsCollector:
         # Cleanup task (lazily initialized)
         self._cleanup_task: asyncio.Task | None = None
 
-    def _ensure_cleanup_task(self):
-        """Ensure cleanup task is running (lazy initialization)"""
-        if self._cleanup_task is None or self._cleanup_task.done():
-            try:
-                loop = asyncio.get_running_loop()
-                self._cleanup_task = loop.create_task(self._cleanup_old_metrics())
-            except RuntimeError:
-                # No running event loop, will be started later
-                pass
-
-    async def start(self):
-        """Start the metrics collector background tasks"""
-        self._ensure_cleanup_task()
+    async def _start_background_tasks(self) -> None:
+        self._cleanup_task = self._spawn_worker("cleanup", self._cleanup_old_metrics)
 
     def _setup_prometheus_metrics(self):
         """Setup Prometheus metrics"""
@@ -220,7 +432,7 @@ class MetricsCollector:
     async def collect_system_metrics(self):
         """Collect system metrics"""
         # CPU metrics
-        cpu_percent = psutil.cpu_percent(interval=0.1)
+        cpu_percent = await run_sync_owned(psutil.cpu_percent, interval=0.1)
         self.record_metric("system.cpu.utilization", cpu_percent, {"unit": "percent"})
 
         # Memory metrics
@@ -365,7 +577,7 @@ class MetricsCollector:
 
     async def _cleanup_old_metrics(self):
         """Clean up old metrics periodically"""
-        while True:
+        while self._state is not MonitoringState.CLOSING:
             try:
                 current_time = time.time()
                 cutoff_time = current_time - self.retention_period
@@ -377,14 +589,17 @@ class MetricsCollector:
 
                 await asyncio.sleep(3600)  # Clean up every hour
             except ADV_MONITORING_EXCEPTIONS as e:
+                if self._state is MonitoringState.CLOSING:
+                    raise
                 logger.error(f"Metrics cleanup failed: {e}")
                 await asyncio.sleep(60)
 
 
-class AlertManager:
+class AlertManager(_BackgroundLifecycle):
     """Advanced alerting system"""
 
     def __init__(self, metrics_collector: MetricsCollector):
+        super().__init__()
         self.metrics_collector = metrics_collector
         self.alerts: dict[str, Alert] = {}
         self.active_alerts: dict[str, Alert] = {}
@@ -394,19 +609,8 @@ class AlertManager:
         # Alert checking task (lazily initialized)
         self._alert_task: asyncio.Task | None = None
 
-    def _ensure_alert_task(self):
-        """Ensure alert checking task is running (lazy initialization)"""
-        if self._alert_task is None or self._alert_task.done():
-            try:
-                loop = asyncio.get_running_loop()
-                self._alert_task = loop.create_task(self._check_alerts())
-            except RuntimeError:
-                # No running event loop, will be started later
-                pass
-
-    async def start(self):
-        """Start the alert manager background tasks"""
-        self._ensure_alert_task()
+    async def _start_background_tasks(self) -> None:
+        self._alert_task = self._spawn_worker("alerts", self._check_alerts)
 
     def add_alert(self, alert: Alert):
         """Add an alert definition"""
@@ -418,7 +622,7 @@ class AlertManager:
 
     async def _check_alerts(self):
         """Continuously check alert conditions"""
-        while True:
+        while self._state is not MonitoringState.CLOSING:
             try:
                 current_time = time.time()
 
@@ -429,6 +633,8 @@ class AlertManager:
                     try:
                         # Evaluate alert condition
                         should_trigger = await self._evaluate_alert_condition(alert)
+                        if self._state is MonitoringState.CLOSING:
+                            return
 
                         if should_trigger:
                             if alert.id not in self.active_alerts:
@@ -452,6 +658,8 @@ class AlertManager:
                                     try:
                                         handler(alert, current_time)
                                     except ADV_MONITORING_EXCEPTIONS as e:
+                                        if self._state is MonitoringState.CLOSING:
+                                            raise
                                         logger.error(
                                             f"Notification handler failed: {e}"
                                         )
@@ -461,10 +669,14 @@ class AlertManager:
                                 del self.active_alerts[alert.id]
 
                     except ADV_MONITORING_EXCEPTIONS as e:
+                        if self._state is MonitoringState.CLOSING:
+                            raise
                         logger.error(f"Alert evaluation failed for {alert.id}: {e}")
 
                 await asyncio.sleep(10)  # Check every 10 seconds
             except ADV_MONITORING_EXCEPTIONS as e:
+                if self._state is MonitoringState.CLOSING:
+                    raise
                 logger.error(f"Alert checking loop failed: {e}")
                 await asyncio.sleep(60)
 
@@ -509,8 +721,14 @@ class AlertManager:
         return self.alert_history[-limit:]
 
 
-class AdvancedMonitoringService:
-    """Comprehensive monitoring service"""
+class AdvancedMonitoringService(_BackgroundLifecycle):
+    """Monitoring facade with explicit ownership of its three async workers.
+
+    Await ``start()`` to enable background collection and alerts, then await
+    ``aclose()`` before closing the event loop. Passive metric recording remains
+    available without startup and after shutdown. Tracing exporters are released
+    after all workers finish; new traces are rejected once the tracer closes.
+    """
 
     def __init__(
         self,
@@ -519,6 +737,7 @@ class AdvancedMonitoringService:
         enable_tracing: bool = True,
         retention_period: int = 86400,
     ):
+        super().__init__()
         self.metrics_collector = (
             MetricsCollector(retention_period) if enable_metrics else None
         )
@@ -550,23 +769,34 @@ class AdvancedMonitoringService:
             self._setup_default_alerts()
             # Note: monitoring loop is started lazily via start() method
 
-    def _ensure_monitoring_task(self):
-        """Ensure monitoring task is running (lazy initialization)"""
-        if self._monitoring_task is None or self._monitoring_task.done():
-            try:
-                loop = asyncio.get_running_loop()
-                self._monitoring_task = loop.create_task(self._monitoring_loop())
-            except RuntimeError:
-                # No running event loop, will be started later
-                pass
+    def _background_children(self) -> dict[str, _BackgroundLifecycle]:
+        children: dict[str, _BackgroundLifecycle] = {}
+        if self.alert_manager is not None:
+            children["alerts"] = self.alert_manager
+        if self.metrics_collector is not None:
+            children["metrics"] = self.metrics_collector
+        return children
 
-    async def start(self):
-        """Start all monitoring background tasks"""
+    async def _start_background_tasks(self) -> None:
         if self.metrics_collector:
             await self.metrics_collector.start()
-            self._ensure_monitoring_task()
+            self._monitoring_task = self._spawn_worker(
+                "monitoring", self._monitoring_loop
+            )
         if self.alert_manager:
             await self.alert_manager.start()
+
+    async def _close_background_resources(self) -> None:
+        if self.tracer is not None:
+            await self.tracer.aclose()
+
+    def get_status(self) -> dict[str, Any]:
+        """Inspect worker ownership and the separate tracing pipeline lifecycle."""
+        status = super().get_status()
+        status["tracing"] = (
+            self.tracer.get_status() if self.tracer is not None else None
+        )
+        return status
 
     def _setup_default_alerts(self):
         """Setup default alerts"""
@@ -622,12 +852,16 @@ class AdvancedMonitoringService:
 
     async def _monitoring_loop(self):
         """Main monitoring loop"""
-        while True:
+        while self._state is not MonitoringState.CLOSING:
             try:
                 if self.metrics_collector:
                     await self.metrics_collector.collect_system_metrics()
+                if self._state is MonitoringState.CLOSING:
+                    return
                 await asyncio.sleep(30)  # Collect every 30 seconds
             except ADV_MONITORING_EXCEPTIONS as e:
+                if self._state is MonitoringState.CLOSING:
+                    raise
                 logger.error(f"Monitoring loop failed: {e}")
                 await asyncio.sleep(60)
 
@@ -693,6 +927,7 @@ class AdvancedMonitoringService:
 
         summary = {
             "status": "healthy",
+            "lifecycle": self.get_status(),
             "uptime": uptime,
             "timestamp": current_time,
             "components": {
@@ -721,6 +956,8 @@ class AdvancedMonitoringService:
                 if critical_alerts:
                     summary["status"] = "unhealthy"
 
+        if self.state is not MonitoringState.RUNNING:
+            summary["status"] = "unhealthy"
         return summary
 
     def get_metrics_dashboard(self) -> dict[str, Any]:
@@ -909,6 +1146,7 @@ if __name__ == "__main__":
         # Get dashboard
         dashboard = monitoring.get_metrics_dashboard()
         print("Dashboard:", json.dumps(dashboard, indent=2))
+        await monitoring.aclose()
 
     asyncio.run(main())
 
@@ -923,6 +1161,7 @@ __all__ = [
     "MetricPoint",
     "MetricType",
     "MetricsCollector",
+    "MonitoringState",
     "OPENTELEMETRY_AVAILABLE",
     "PROMETHEUS_AVAILABLE",
     "TraceSpan",

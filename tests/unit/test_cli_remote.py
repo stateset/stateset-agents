@@ -210,10 +210,27 @@ class TestCommandRegistration:
         assert rows["modal"]["verification_status"] == "transport-unverified"
         assert rows["coreweave"]["compute_model"] == "managed-bare-metal-kubernetes"
         assert rows["nebius"]["compute_model"] == "serverless-container-job"
+        assert {name for name, row in rows.items() if row["dry_run"]} == {
+            "local",
+            "modal",
+            "runpod",
+            "river",
+            "coreweave",
+            "nebius",
+            "huggingface",
+        }
 
 
 class TestSuccessfulRun:
-    def test_local_dry_run_exits_zero(self, dataset, tmp_path):
+    @pytest.mark.parametrize("preview_args", [["--dry-run"], []])
+    def test_local_preview_exits_zero_without_advertising_stale_weights(
+        self, dataset, tmp_path, preview_args
+    ):
+        out = tmp_path / "out"
+        out.mkdir()
+        (out / "adapter_config.json").write_text("{}")
+        weights = out / "adapter_model.safetensors"
+        weights.write_bytes(b"previous run")
         result = runner.invoke(
             app,
             [
@@ -226,15 +243,47 @@ class TestSuccessfulRun:
                 "Qwen/Qwen3.5-0.8B",
                 "--output-dir",
                 str(tmp_path / "out"),
-                "--dry-run",
+                *preview_args,
             ],
+            env={"CUDA_VISIBLE_DEVICES": ""},
         )
 
         assert result.exit_code == 0, result.output
         assert "Qwen/Qwen3.5-0.8B" in result.output
+        assert "Preview complete" in result.output
+        assert "Adapter written" not in result.output
+        assert "serve --checkpoint" not in result.output
+        assert weights.read_bytes() == b"previous run"
 
 
 class TestFailurePaths:
+    def test_fireworks_dry_run_with_deploy_is_rejected_offline(
+        self, dataset, monkeypatch
+    ):
+        from stateset_agents.remote.fireworks import FireworksExecutor
+
+        monkeypatch.setattr(
+            FireworksExecutor,
+            "_get_client",
+            lambda self: pytest.fail("opened Fireworks client"),
+        )
+        args = [
+            "train-remote",
+            "--provider",
+            "fireworks",
+            "--dataset",
+            str(dataset),
+            "--base-model",
+            "test/model",
+            "--deploy",
+        ]
+        preview = runner.invoke(app, [*args, "--dry-run"])
+        assert preview.exit_code != 0
+        assert "--plan-only" in preview.output
+        plan = runner.invoke(app, [*args, "--plan-only"])
+        assert plan.exit_code == 0
+        assert json.loads(plan.output)["provisions_hardware"] is False
+
     def test_unknown_provider_exits_nonzero_and_names_valid_options(
         self, dataset, tmp_path
     ):
@@ -668,34 +717,27 @@ class TestRemoteJobCommand:
 
 
 class TestRunPodOrphansCommand:
-    def test_read_only_mode_lists_leases_without_terminating(self, monkeypatch):
+    def test_read_only_mode_lists_leases_without_terminating(
+        self, monkeypatch, tmp_path
+    ):
         import stateset_agents.cli_remote as cli_remote
         from stateset_agents.remote.runpod import RunPodExecutor
 
-        executor = RunPodExecutor(api=object(), ssh=object(), public_key="key")
-        monkeypatch.setattr(
-            executor,
-            "orphaned_leases",
-            lambda: [
-                {
-                    "pod_id": "pod-1",
-                    "job_id": "job-1",
-                    "base_model": "Qwen/test",
-                    "gpu": "H100",
-                }
-            ],
-        )
-        monkeypatch.setattr(
-            executor,
-            "cleanup_orphans",
-            lambda: pytest.fail("read-only mode must not terminate"),
-        )
+        executor = RunPodExecutor(api=object(), lease_dir=tmp_path)
+        from stateset_agents.remote.runpod_recovery import PodLease
+
+        lease = PodLease(tmp_path / "attempts" / "stateset-sft-123456789abc.json")
+        with lease.starting(
+            {"job_id": "123456789abc", "base_model": "demo/model", "gpu": "H100"}
+        ):
+            lease.record_id("pod-1")
         monkeypatch.setattr(cli_remote, "get_executor", lambda provider: executor)
 
         result = runner.invoke(app, ["runpod-orphans"])
 
         assert result.exit_code == 0, result.output
         assert "pod-1" in result.output
+        assert "model=demo/model" in result.output and "gpu=H100" in result.output
         assert "Read-only" in result.output
 
 

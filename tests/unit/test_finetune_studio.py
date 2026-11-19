@@ -419,7 +419,7 @@ def test_runpod_preserves_reviewed_resources_budget_and_handle(
     settings, tmp_path, monkeypatch
 ):
     from stateset_agents.remote import registry
-    from stateset_agents.remote.job import JobHandle, JobStatus
+    from stateset_agents.remote.job import JobHandle, JobStatus, RemoteJobResult
 
     config = replace(settings, provider="runpod", max_cost_usd=7.5)
     plan = plan_run(config)
@@ -435,9 +435,9 @@ def test_runpod_preserves_reviewed_resources_budget_and_handle(
             return JobHandle(provider="runpod", job_id="synthetic-unit-test-handle")
 
         def wait(self, handle):
-            return SimpleNamespace(
+            return RemoteJobResult(
+                handle=handle,
                 status=JobStatus.SUCCEEDED,
-                succeeded=True,
                 output_dir=run / "artifacts",
                 logs=["synthetic provider fixture"],
                 cost_usd=0.1,

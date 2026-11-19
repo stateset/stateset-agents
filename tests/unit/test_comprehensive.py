@@ -614,11 +614,13 @@ class TestUtilities:
     def test_monitoring_service_basic(self):
         """Test basic monitoring service functionality"""
         monitoring = MonitoringService()
-
-        # Test basic operations
-        assert hasattr(monitoring, "log_metric")
-        assert hasattr(monitoring, "log_event")
-        assert hasattr(monitoring, "get_metrics")
+        try:
+            # Test basic operations
+            assert hasattr(monitoring, "log_metric")
+            assert hasattr(monitoring, "log_event")
+            assert hasattr(monitoring, "get_metrics")
+        finally:
+            monitoring.close()
 
 
 class TestIntegration:

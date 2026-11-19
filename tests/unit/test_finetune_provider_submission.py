@@ -111,6 +111,20 @@ def test_preallocation_intent_is_retained_before_mock_billable_action(run):
         assert journal_path(run).stat().st_mode & 0o077 == 0
 
 
+@pytest.mark.parametrize("suffix", ["", "-2"])
+def test_retry_receipt_accepts_historical_and_attempt_specific_names(run, suffix):
+    journal = submission.SubmissionJournal(run, "runpod", durable_supported=True)
+    retry = dict(
+        event("allocation_intent"),
+        attempt=2,
+        resource_name=f"stateset-sft-{JOB_ID}{suffix}",
+    )
+    journal.publish(retry)
+    submission.inspect_submission(run)
+    with pytest.raises(ValueError, match="Allocation name"):
+        journal.publish({**retry, "resource_name": f"stateset-sft-{JOB_ID}-3"})
+
+
 def test_allocated_identity_is_inspectable_while_submission_has_not_returned(run):
     journal = submission.SubmissionJournal(run, "runpod", durable_supported=True)
     allocated, release = threading.Event(), threading.Event()

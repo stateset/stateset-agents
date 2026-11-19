@@ -19,40 +19,10 @@ pub fn compute_gae_internal(
     gamma: f64,
     gae_lambda: f64,
 ) -> Vec<f64> {
-    let n = rewards.len();
-    if n == 0 {
-        return vec![];
-    }
-
-    let mut advantages = vec![0.0; n];
-    let mut gae = 0.0;
-
-    // Compute backwards for numerical stability
-    for t in (0..n).rev() {
-        let next_value = if t + 1 < values.len() {
-            values[t + 1]
-        } else {
-            0.0 // Terminal state
-        };
-
-        let current_value = if t < values.len() {
-            values[t]
-        } else {
-            0.0
-        };
-
-        // TD error: δ_t = r_t + γV(s_{t+1}) - V(s_t)
-        let delta = rewards[t] + gamma * next_value - current_value;
-
-        // GAE: A_t = δ_t + (γλ)A_{t+1}
-        gae = delta + gamma * gae_lambda * gae;
-        advantages[t] = gae;
-    }
-
-    advantages
+    compute_gae_targets(rewards, values, &[], gamma, gae_lambda).0
 }
 
-/// Compute GAE with done flags for episode boundaries
+/// Compute GAE with done flags for episode boundaries.
 pub fn compute_gae_with_dones(
     rewards: &[f64],
     values: &[f64],
@@ -60,39 +30,65 @@ pub fn compute_gae_with_dones(
     gamma: f64,
     gae_lambda: f64,
 ) -> Vec<f64> {
+    compute_gae_targets(rewards, values, dones, gamma, gae_lambda).0
+}
+
+/// Keep the reward and bootstrap parts of the lambda return separate until
+/// both the critic target and the actor advantage have been formed.
+pub fn compute_gae_targets(
+    rewards: &[f64],
+    values: &[f64],
+    dones: &[bool],
+    gamma: f64,
+    lambda: f64,
+) -> (Vec<f64>, Vec<f64>) {
     let n = rewards.len();
-    if n == 0 {
-        return vec![];
-    }
-
     let mut advantages = vec![0.0; n];
-    let mut gae = 0.0;
-
+    let mut targets = vec![0.0; n];
+    let mut reward_part = 0.0;
+    let weight = gamma * lambda;
+    let mut value_part = values.get(n).copied().unwrap_or(0.0);
     for t in (0..n).rev() {
-        let next_non_terminal = if t < dones.len() && dones[t] {
-            0.0
+        let next = values.get(t + 1).copied().unwrap_or(0.0);
+        let current = values.get(t).copied().unwrap_or(0.0);
+        if gamma == 0.0 || dones.get(t) == Some(&true) {
+            reward_part = rewards[t];
+            value_part = 0.0;
+        } else if lambda == 0.0 {
+            reward_part = rewards[t];
+            value_part = gamma * next;
         } else {
-            1.0
-        };
-
-        let next_value = if t + 1 < values.len() {
-            values[t + 1]
+            reward_part = if weight.abs() < f64::MIN_POSITIVE {
+                gamma.mul_add(lambda * reward_part, rewards[t])
+            } else {
+                weight.mul_add(reward_part, rewards[t])
+            };
+            if lambda != 1.0 {
+                const TINY_SCALE: f64 = 7.458340731200207e-155; // 2^-512
+                let unit = if next.abs().max(value_part.abs()) < TINY_SCALE {
+                    TINY_SCALE
+                } else {
+                    1.0
+                };
+                value_part = unit * ((1.0 - lambda) * (next / unit) + lambda * (value_part / unit));
+            }
+            value_part *= gamma;
+        }
+        let target = reward_part + value_part;
+        targets[t] = target;
+        let (large, small) = if reward_part.abs() >= value_part.abs() {
+            (reward_part, value_part)
         } else {
-            0.0
+            (value_part, reward_part)
         };
-
-        let current_value = if t < values.len() {
-            values[t]
+        // FastTwoSum recovers the rounding residual of a finite sum.
+        advantages[t] = if target.is_finite() {
+            (target - current) + ((large - target) + small)
         } else {
-            0.0
+            (large - current) + small
         };
-
-        let delta = rewards[t] + gamma * next_value * next_non_terminal - current_value;
-        gae = delta + gamma * gae_lambda * next_non_terminal * gae;
-        advantages[t] = gae;
     }
-
-    advantages
+    (advantages, targets)
 }
 
 /// Compute returns (advantages + values) for value function training
@@ -111,35 +107,28 @@ pub fn compute_lambda_returns(
     gamma: f64,
     lambda: f64,
 ) -> Vec<f64> {
-    let n = rewards.len();
-    if n == 0 {
-        return vec![];
-    }
-
-    let mut returns = vec![0.0; n];
-    let mut next_return = if n < values.len() { values[n] } else { 0.0 };
-
-    for t in (0..n).rev() {
-        let next_value = if t + 1 < values.len() {
-            values[t + 1]
-        } else {
-            0.0
-        };
-
-        // Lambda return: G_t^λ = (1-λ)(V(s_{t+1}) + r_t) + λ(r_t + γG_{t+1}^λ)
-        let one_step_return = rewards[t] + gamma * next_value;
-        let multi_step_return = rewards[t] + gamma * next_return;
-
-        returns[t] = (1.0 - lambda) * one_step_return + lambda * multi_step_return;
-        next_return = returns[t];
-    }
-
-    returns
+    compute_gae_targets(rewards, values, &[], gamma, lambda).1
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_separate_critic_targets_and_tiny_bootstrap() {
+        let tiny = f64::from_bits(1);
+        let (_, targets) = compute_gae_targets(&[0.0], &[0.0, tiny], &[], 1.0, 0.5);
+        assert_eq!(targets, vec![tiny]);
+        let (adv, targets) = compute_gae_targets(
+            &[1.0, f64::NAN],
+            &[1e30, f64::NAN],
+            &[true, false],
+            1.0,
+            0.5,
+        );
+        assert_eq!(adv[0], -1e30);
+        assert_eq!(targets[0], 1.0);
+    }
 
     #[test]
     fn test_gae_basic() {
@@ -178,6 +167,29 @@ mod tests {
         let returns = compute_returns(&advantages, &values);
 
         assert_eq!(returns, vec![1.5, 2.5, 3.5]);
+    }
+
+    #[test]
+    fn gae_plus_value_matches_lambda_return_with_bootstrap() {
+        let rewards = [1.0, -1.0, 2.0];
+        let values = [-0.5, 2.0, 1.0, -2.0];
+        for gamma in [0.0, 0.5, 1.0] {
+            for lambda in [0.0, 0.5, 1.0] {
+                let advantages = compute_gae_internal(&rewards, &values, gamma, lambda);
+                assert_eq!(
+                    compute_returns(&advantages, &values),
+                    compute_lambda_returns(&rewards, &values, gamma, lambda)
+                );
+                let terminal =
+                    compute_gae_with_dones(&rewards, &values, &[false, true, false], gamma, lambda);
+                assert_eq!(terminal[1] + values[1], rewards[1]);
+                assert_eq!(
+                    terminal[..2],
+                    compute_gae_internal(&rewards[..2], &values[..2], gamma, lambda)
+                );
+                assert_eq!(terminal[2], advantages[2]);
+            }
+        }
     }
 
     #[test]

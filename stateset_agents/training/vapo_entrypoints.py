@@ -89,12 +89,16 @@ async def train_with_vapo(
         batch_indices = np.random.choice(len(train_prompts), batch_size, replace=False)
         batch_prompts = [train_prompts[i] for i in batch_indices]
 
-        metrics = await trainer.train_step(batch_prompts)
+        metrics: dict[str, float] = {}
+        if not trainer.value_warmup_complete:
+            metrics = await trainer.warmup_value_network(batch_prompts)
+        if trainer.value_warmup_complete:
+            metrics.update(await trainer.train_step(batch_prompts))
 
         if iteration % config.logging_steps == 0:
             if "warmup_value_loss" in metrics:
                 logger.info("Value warmup | Loss: %.4f", metrics["warmup_value_loss"])
-            else:
+            if "policy_loss" in metrics:
                 logger.info(
                     "Iter %s/%s | Policy: %.4f | Value: %.4f | Reward: %.4f | Acc: %.2f%% | EV: %.4f",
                     iteration,

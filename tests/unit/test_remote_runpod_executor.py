@@ -69,6 +69,12 @@ class FakePodApi:
         self.ready_after = ready_after
         self.never_ready = never_ready
         self.cost_per_hr = cost_per_hr
+        self.catalog_rate = 1.0
+        self.price_requests: list[tuple[str, str]] = []
+
+    def get_gpu_rate(self, gpu_type_id, cloud_type):
+        self.price_requests.append((gpu_type_id, cloud_type))
+        return self.catalog_rate
 
     def create_pod(self, **kwargs):
         self.created.append(kwargs)
@@ -81,7 +87,7 @@ class FakePodApi:
             "costPerHr": self.cost_per_hr,
         }
 
-    def get_pod(self, pod_id):
+    def get_pod(self, pod_id, *, deadline=None):
         self.polls += 1
         if self.never_ready or self.polls < self.ready_after:
             return {"id": pod_id, "desiredStatus": "PENDING", "publicIp": None}
@@ -179,11 +185,95 @@ def make_executor(tmp_path):
 
 
 class TestProvisioning:
+    @pytest.mark.parametrize("tier, expected", [("SECURE", 1.5), ("COMMUNITY", 0.25)])
+    def test_catalog_uses_exact_gpu_and_tier_without_credentials(
+        self, monkeypatch, tier, expected
+    ):
+        from stateset_agents.remote.runpod import GPU_CATALOG_URL, RunPodApi
+
+        row = {
+            "id": "GPU",
+            "secureCloud": True,
+            "securePrice": 1.5,
+            "communityCloud": True,
+            "communityPrice": 0.25,
+        }
+
+        class Response:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"data": {"gpuTypes": [dict(row, id="GPU XL"), row]}}
+
+        def post(url, *, json, timeout):
+            assert (
+                url == GPU_CATALOG_URL and "gpuTypes" in json["query"] and timeout > 0
+            )
+            return Response()
+
+        monkeypatch.setattr("requests.post", post)
+        assert RunPodApi("unused").get_gpu_rate("GPU", tier) == expected
+
+    @pytest.mark.parametrize(
+        "rows",
+        [
+            [],
+            [{"id": "other"}],
+            [{"id": "GPU"}] * 2,
+            [{"id": "GPU", "secureCloud": False, "securePrice": 1}],
+        ]
+        + [
+            [{"id": "GPU", "secureCloud": True, "securePrice": value}]
+            for value in (None, False, -1, 0, float("nan"), float("inf"))
+        ],
+    )
+    def test_catalog_rejects_missing_ambiguous_or_invalid_price(
+        self, monkeypatch, rows
+    ):
+        from stateset_agents.remote.runpod import RunPodApi
+
+        api = RunPodApi("unused")
+        monkeypatch.setattr(api, "gpu_catalog", lambda: rows)
+        with pytest.raises(
+            RemoteExecutionError, match="No usable RunPod catalog price"
+        ):
+            api.get_gpu_rate("GPU", "SECURE")
+
+    def test_budgeted_ssh_uses_one_deadline_for_readiness_upload_and_training(
+        self, make_executor, spec, monkeypatch
+    ):
+        import subprocess
+
+        from stateset_agents.remote.runpod import SshTransport
+
+        api = FakePodApi(ready_after=1, cost_per_hr=1)
+        spec.timeout_s, spec.max_cost_usd = 10, 1.0
+        clock = [100.0]
+        timeouts = []
+
+        def run(command, **kwargs):
+            timeouts.append(kwargs["timeout"])
+            clock[0] += 2
+            if len(timeouts) == 3:
+                raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        monkeypatch.setattr(
+            "stateset_agents.remote.runpod.time.monotonic", lambda: clock[0]
+        )
+        monkeypatch.setattr("stateset_agents.remote.runpod.subprocess.run", run)
+        with pytest.raises(RemoteExecutionError, match="timed out"):
+            make_executor(api=api, ssh=SshTransport()).submit(spec)
+        assert timeouts == [10, 8, 6]
+        assert len(api.created) == 1 and api.terminated == ["pod-abc"]
+
     def test_requests_the_configured_gpu(self, make_executor, spec):
         api = FakePodApi()
         make_executor(api=api).submit(spec)
 
         assert api.created[0]["gpu_type_id"] == "NVIDIA RTX A4000"
+        assert not api.price_requests
 
     def test_exposes_tcp_22_so_scp_works(self, make_executor, spec):
         """Without a mapped 22/tcp port there is no file transport at all."""
@@ -209,6 +299,21 @@ class TestProvisioning:
 
 
 class TestJobExecution:
+    @pytest.mark.parametrize("kind", ["sft", "harvest"])
+    def test_worker_preview_preserves_mode_and_returns_no_checkpoint(
+        self, make_executor, spec, kind
+    ):
+        spec.job_kind = kind
+        spec.dry_run = True
+        ssh = FakeSsh()
+        executor = make_executor(ssh=ssh)
+        result = executor.wait(executor.submit(spec))
+        assert result.is_preview and result.output_dir is None
+        assert any(
+            f"stateset_agents.training.{kind}" in command and "--dry-run" in command
+            for command in ssh.commands
+        )
+
     def test_uploads_the_dataset(self, make_executor, spec, dataset):
         ssh = FakeSsh()
         make_executor(ssh=ssh).submit(spec)
@@ -242,6 +347,30 @@ class TestJobExecution:
 
 
 class TestCrashRecoveryLeases:
+    def test_unwritable_intent_blocks_allocation(self, make_executor, spec, tmp_path):
+        api = FakePodApi()
+        root = tmp_path / "not-a-directory"
+        root.touch()
+        executor = make_executor(api=api, lease_dir=root)
+        with pytest.raises(RemoteExecutionError, match="Cannot lock RunPod allocation"):
+            executor.submit(spec)
+        assert api.created == []
+
+    def test_uncapped_retry_waits_for_confirmed_cleanup(self, make_executor, spec):
+        api = FakePodApi()
+        executor = make_executor(api=api, ssh=FakeSsh(run_failures=1))
+
+        def failed_delete(pod_id):
+            raise OSError("response lost")
+
+        api.terminate_pod = failed_delete
+        with pytest.raises(RemoteExecutionError, match="cleanup is unconfirmed"):
+            executor.submit(spec)
+        assert len(api.created) == 1
+        (record,) = executor.orphaned_leases()
+        assert record["pod_id"] == "pod-abc"
+        assert record["name"] == api.created[0]["name"]
+
     def test_pod_has_a_lease_until_termination_is_confirmed(
         self, make_executor, spec, tmp_path
     ):
@@ -251,7 +380,8 @@ class TestCrashRecoveryLeases:
         original_terminate = api.terminate_pod
 
         def observe_then_terminate(pod_id):
-            observed.append(executor._lease_path(pod_id).exists())
+            path = executor.lease_dir / "attempts" / f"{api.created[-1]['name']}.json"
+            observed.append(json.loads(path.read_text())["pod_id"] == pod_id)
             original_terminate(pod_id)
 
         api.terminate_pod = observe_then_terminate
@@ -261,29 +391,21 @@ class TestCrashRecoveryLeases:
         assert observed == [True]
         assert executor.orphaned_leases() == []
 
-    def test_later_process_can_terminate_a_crash_lease(self, spec, tmp_path):
-        from stateset_agents.remote.runpod import RunPodExecutor
-
-        lease_dir = tmp_path / "leases"
-        first = RunPodExecutor(
-            api=FakePodApi(),
-            ssh=FakeSsh(),
-            public_key="ssh-rsa AAAATESTKEY",
-            lease_dir=lease_dir,
-        )
-        first._write_lease("pod-orphan", "job-1", spec, 123.0)
-
+    def test_unlocked_legacy_leases_remain_visible_for_manual_cleanup(
+        self, make_executor, tmp_path
+    ):
         api = FakePodApi()
-        restarted = RunPodExecutor(
-            api=api,
-            ssh=FakeSsh(),
-            public_key="ssh-rsa AAAATESTKEY",
-            lease_dir=lease_dir,
+        executor = make_executor(api=api, lease_dir=tmp_path)
+        path = tmp_path / "pod-old.json"
+        path.write_text(
+            json.dumps({"provider": "runpod", "pod_id": "pod-old", "job_id": "job-1"})
         )
-
-        assert restarted.cleanup_orphans() == ["pod-orphan"]
-        assert api.terminated == ["pod-orphan"]
-        assert restarted.orphaned_leases() == []
+        assert executor.orphaned_leases()[0]["pod_id"] == "pod-old"
+        assert executor.recover_training(terminate=True)[0].status == "legacy"
+        with pytest.raises(RemoteExecutionError, match="Owner status unknown"):
+            executor.cleanup_orphans()
+        assert api.terminated == []
+        assert path.exists()
 
 
 class TestPodTermination:
@@ -502,6 +624,8 @@ class TestScpCommandForm:
         captured = {}
         transport = SshTransport()
         transport._host, transport._port = "1.2.3.4", 22
+        monkeypatch.setattr("stateset_agents.remote.runpod.time.monotonic", lambda: 100)
+        transport._deadline = 130
 
         def fake_run(cmd, **kwargs):
             captured["cmd"] = cmd
@@ -522,6 +646,7 @@ class TestScpCommandForm:
         assert "rp-secret-value" not in joined
         assert captured["kwargs"]["input"] == "rp-secret-value"
         assert captured["kwargs"]["text"] is True
+        assert captured["kwargs"]["timeout"] == 30
 
 
 class TestPublicKeyDiscovery:

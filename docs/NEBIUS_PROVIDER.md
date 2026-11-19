@@ -51,17 +51,38 @@ stateset-agents train-remote \
   --output-dir outputs/nebius
 ```
 
-Submission uploads the exact local dataset to a unique prefix, launches the
-same packaged `run_sft_job` entrypoint used by other machine providers, and
-persists a durable job handle. `remote-job` can reconnect after the original
-process exits. Fetching downloads all returned artifacts and then removes the
-job-owned object prefix. If submission fails, staged input is rolled back;
-cancellation requests provider cancellation and removes job-owned objects.
+Submission records a unique job name locally, uploads the dataset to a
+job-specific prefix, and requests an asynchronous create. The returned handle
+contains the Nebius job ID. `train-remote` prints this ID before polling.
+To reconnect from the same state directory and
+Nebius profile after the submitting process exits, run
 
-Nebius' CLI timeout has a one-hour minimum, so shorter StateSet timeouts round
-up to one hour and longer values round up to the next hour. `--max-cost` fails
-closed because the documented job CLI does not expose an authoritative price
-before allocation.
+```bash
+stateset-agents remote-job --provider nebius --job-id <job-id> --wait
+```
+
+If the create reply is lost, the error prints the same command with the
+generated `stateset-sft-...` name. Run it to look up the existing job and
+fetch its output. This lookup can be repeated while the job becomes visible.
+After an interruption, the provisional name is also the filename stem of its
+record under `${XDG_CACHE_HOME:-$HOME/.cache}/stateset-agents/nebius-jobs/`.
+Recovery needs that record and works after the original dataset is removed.
+For a confirmed rejection such as insufficient capacity, StateSet removes the
+staged input. If lookup continues to find no job, confirm the outcome in the
+submitting project before removing the retained prefix or submitting again.
+
+Fetching downloads artifacts before removing the job-owned prefix. A
+cancellation request keeps that prefix until Nebius reports `CANCELLED`. If
+the job completes or fails during cancellation, its output remains available
+for fetch.
+
+StateSet passes the requested timeout in seconds. The CLI reference gives a
+range of five minutes to 168 hours, which StateSet validates before upload.
+The job management guide lists a one-hour minimum, so acceptance of shorter
+jobs still needs live verification. Nebius checks the timeout asynchronously.
+`--max-cost` requires an authoritative price that the job CLI does not provide.
+[Job create reference](https://docs.nebius.com/cli/reference/ai/job/create)
+and [job management guide](https://docs.nebius.com/serverless/jobs/manage).
 
 ## Serverless vLLM endpoint
 
@@ -82,9 +103,16 @@ stateset-agents inference-deploy \
   --gpu gpu-h100-sxm
 ```
 
-The provider-managed HTTPS endpoint is token-authenticated; StateSet does not
-request an additional public VM IP. Delete it explicitly when it is no longer
-needed:
+The deployment handle includes the managed HTTPS URL when Nebius has assigned
+one. If the URL is pending, inspect `status.public_endpoints` with
+
+```bash
+stateset-agents inference-status --provider nebius \
+  --deployment-id <id> --model-name support-model
+```
+
+Use the configured endpoint token when connecting. Delete the endpoint when
+you finish using it.
 
 ```bash
 stateset-agents inference-delete --provider nebius \

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 import re
 import shlex
@@ -18,10 +19,13 @@ import subprocess
 import time
 import uuid
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from copy import copy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.finetune_workspace import write_json
 from stateset_agents.remote.artifacts import S3ArtifactStore
 from stateset_agents.remote.deployment import (
     DeploymentHandle,
@@ -30,17 +34,23 @@ from stateset_agents.remote.deployment import (
 )
 from stateset_agents.remote.executor import RemoteExecutionError, RemoteExecutor
 from stateset_agents.remote.job import JobHandle, JobStatus, RemoteJobSpec
+from stateset_agents.utils.snapshot_files import exclusive_file_lock, sync_directory
 
 __all__ = ["NebiusCli", "NebiusEndpointProvider", "NebiusExecutor"]
 
 _DEFAULT_IMAGE = "pytorch/pytorch:2.8.0-cuda12.9-cudnn9-runtime"
 _STATE_SCHEMA_VERSION = 1
 _STATUS_MAP = {
+    "state_unspecified": JobStatus.PENDING,
+    "provisioning": JobStatus.PENDING,
+    "image_pulling": JobStatus.PENDING,
     "pending": JobStatus.PENDING,
     "creating": JobStatus.PENDING,
     "queued": JobStatus.PENDING,
     "starting": JobStatus.PENDING,
     "running": JobStatus.RUNNING,
+    "cancelling": JobStatus.RUNNING,
+    "deleting": JobStatus.RUNNING,
     "succeeded": JobStatus.SUCCEEDED,
     "success": JobStatus.SUCCEEDED,
     "completed": JobStatus.SUCCEEDED,
@@ -49,6 +59,10 @@ _STATUS_MAP = {
     "cancelled": JobStatus.CANCELLED,
     "canceled": JobStatus.CANCELLED,
 }
+
+
+class _CreateRejected(RemoteExecutionError):
+    """The CLI failed before submission or Nebius rejected the create request."""
 
 
 def _default_state_dir() -> Path:
@@ -61,21 +75,8 @@ def _encode_spec(spec: RemoteJobSpec) -> str:
     return base64.urlsafe_b64encode(payload.encode()).decode()
 
 
-def _find_string(value: Any, names: frozenset[str]) -> str | None:
-    if isinstance(value, dict):
-        for key, child in value.items():
-            if key.lower() in names and isinstance(child, (str, int)):
-                return str(child)
-        for child in value.values():
-            found = _find_string(child, names)
-            if found:
-                return found
-    if isinstance(value, list):
-        for child in value:
-            found = _find_string(child, names)
-            if found:
-                return found
-    return None
+class _JobBusy(RuntimeError):
+    """Another process is updating the same durable job."""
 
 
 class NebiusCli:
@@ -106,7 +107,7 @@ class NebiusCli:
                 timeout=120,
             )
         except FileNotFoundError as exc:
-            raise RemoteExecutionError.wrap(
+            raise _CreateRejected.wrap(
                 exc,
                 "the Nebius CLI is not installed; follow "
                 "https://docs.nebius.com/cli/install",
@@ -118,7 +119,15 @@ class NebiusCli:
             ) from exc
         if result.returncode != 0:
             detail = (result.stderr or result.stdout or "unknown error").strip()
-            raise RemoteExecutionError(
+            # Only definite target-call rejections permit staged data rollback.
+            # Extra-call failures and deadline/transport errors can follow acceptance.
+            error = (
+                _CreateRejected
+                if args[:3] == ["ai", "job", "create"]
+                and result.returncode in {2, 4, 13, 15, 16, 17, 19, 23, 24, 25}
+                else RemoteExecutionError
+            )
+            raise error(
                 f"Nebius CLI failed ({result.returncode}): {detail}",
                 provider="nebius",
             )
@@ -133,15 +142,29 @@ class NebiusCli:
             ) from exc
 
     def create_job(self, args: list[str]) -> str:
-        payload = self._run(["ai", "job", "create", *args], json_output=True)
-        job_id = _find_string(
-            payload, frozenset({"id", "job_id", "resource_id", "resourceid"})
+        operation = self._run(
+            ["ai", "job", "create", "--async", *args], json_output=True
         )
-        if not job_id:
+        job_id = operation.get("resource_id") if isinstance(operation, dict) else None
+        if not isinstance(job_id, str) or not job_id.strip():
             raise RemoteExecutionError(
-                "Nebius job creation returned no job id", provider="nebius"
+                "Nebius create operation returned no resource_id", provider="nebius"
             )
         return job_id
+
+    def job_id_by_name(self, name: str) -> str:
+        """Resolve a staged submission in the same project as the CLI profile."""
+        payload = self._run(
+            ["ai", "job", "get-by-name", "--name", name], json_output=True
+        )
+        metadata = payload.get("metadata") if isinstance(payload, dict) else None
+        if isinstance(metadata, dict) and metadata.get("name") == name:
+            resource_id = metadata.get("id")
+            if isinstance(resource_id, str) and resource_id.strip():
+                return resource_id
+        raise RemoteExecutionError(
+            f"Nebius lookup returned no matching job for {name}", provider="nebius"
+        )
 
     def get_job(self, job_id: str) -> dict[str, Any]:
         payload = self._run(["ai", "job", "get", job_id], json_output=True)
@@ -186,15 +209,20 @@ class _NebiusJob:
     spec: RemoteJobSpec
     input_uri: str
     output_uri: str
+    resource_id: str = ""
+    # None before cancellation, True while cleanup is pending, False once cleaned.
+    cleanup_on_cancel: bool | None = None
     status: JobStatus = JobStatus.PENDING
     logs: list[str] = field(default_factory=list)
     fetched: Path | None = None
+    fetch_cleanup_pending: bool = False
 
 
 class NebiusExecutor(RemoteExecutor):
     """Run packaged StateSet SFT jobs on Nebius Serverless AI."""
 
     name = "nebius"
+    supports_dry_run = True
     supports_sft_seed = True
     uses_packaged_training = True
     supported_job_kinds = frozenset({"sft"})
@@ -230,7 +258,6 @@ class NebiusExecutor(RemoteExecutor):
         self.image = image or os.environ.get("NEBIUS_JOB_IMAGE") or _DEFAULT_IMAGE
         self.state_dir = Path(state_dir or _default_state_dir())
         self.poll_interval_s = poll_interval_s
-        self._jobs: dict[str, _NebiusJob] = {}
 
     def _require_configuration(self) -> tuple[str, str]:
         missing = [
@@ -263,41 +290,70 @@ class NebiusExecutor(RemoteExecutor):
 
     def _persist(self, job_id: str, job: _NebiusJob) -> None:
         target = self._state_path(job_id)
-        temporary = target.with_suffix(".tmp")
         payload = {
             "schema_version": _STATE_SCHEMA_VERSION,
             "provider": self.name,
             "job_id": job_id,
+            "resource_id": job.resource_id,
+            "cleanup_on_cancel": job.cleanup_on_cancel,
             "spec": job.spec.to_dict(),
             "input_uri": job.input_uri,
             "output_uri": job.output_uri,
             "status": job.status.value,
             "logs": job.logs,
             "fetched": str(job.fetched) if job.fetched else None,
+            "fetch_cleanup_pending": job.fetch_cleanup_pending,
         }
         target.parent.mkdir(parents=True, exist_ok=True)
-        temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
-        temporary.replace(target)
+        write_json(target, payload)
+        sync_directory(target.parent)
+
+    @contextmanager
+    def _locked_job(self, handle: JobHandle) -> Iterator[_NebiusJob]:
+        """Serialize changes to a receipt across polling and recovery processes."""
+        path = self._state_path(handle.job_id)
+        if not path.is_file():
+            raise RemoteExecutionError(
+                f"unknown Nebius job: {handle.job_id}", provider=self.name
+            )
+        try:
+            with exclusive_file_lock(path.with_suffix(".lock"), _JobBusy):
+                yield self._job(handle)
+        except _JobBusy as exc:
+            raise RemoteExecutionError(
+                f"Nebius job {handle.job_id} is being updated by another process. "
+                "Retry after the current operation finishes.",
+                provider=self.name,
+            ) from exc
 
     def _job(self, handle: JobHandle) -> _NebiusJob:
         if handle.provider != self.name:
             raise RemoteExecutionError(
                 "job handle provider mismatch", provider=self.name
             )
-        if handle.job_id in self._jobs:
-            return self._jobs[handle.job_id]
         try:
             payload = json.loads(self._state_path(handle.job_id).read_text())
-            if payload.get("schema_version") != _STATE_SCHEMA_VERSION:
+            if (
+                not isinstance(payload, dict)
+                or payload.get("schema_version") != _STATE_SCHEMA_VERSION
+            ):
                 raise ValueError("unsupported state schema")
+            if payload["provider"] != self.name or payload["job_id"] != handle.job_id:
+                raise ValueError("job handle does not match stored metadata")
             job = _NebiusJob(
-                spec=RemoteJobSpec.from_dict(payload["spec"]),
+                spec=RemoteJobSpec.from_dict(payload["spec"], require_dataset=False),
                 input_uri=str(payload["input_uri"]),
                 output_uri=str(payload["output_uri"]),
+                resource_id=payload.get("resource_id", handle.job_id),
+                cleanup_on_cancel=payload.get("cleanup_on_cancel"),
                 status=JobStatus(payload.get("status", "pending")),
                 logs=[str(line) for line in payload.get("logs", [])],
                 fetched=Path(payload["fetched"]) if payload.get("fetched") else None,
+                fetch_cleanup_pending=payload.get("fetch_cleanup_pending", False),
             )
+            # Older clients recorded CANCELLED as soon as the request returned.
+            if "resource_id" not in payload and job.status is JobStatus.CANCELLED:
+                job.status = JobStatus.PENDING
         except FileNotFoundError as exc:
             raise RemoteExecutionError(
                 f"unknown Nebius job: {handle.job_id}", provider=self.name
@@ -307,15 +363,26 @@ class NebiusExecutor(RemoteExecutor):
                 f"invalid durable metadata for Nebius job {handle.job_id}: {exc}",
                 provider=self.name,
             ) from exc
-        self._jobs[handle.job_id] = job
+        if not job.resource_id:
+            job.resource_id = self.cli.job_id_by_name(handle.job_id)
+            self._persist(handle.job_id, job)
         return job
 
-    def submit(self, spec: RemoteJobSpec) -> JobHandle:
-        self.validate_spec(spec)
-        if spec.max_cost_usd is not None:
+    def validate_cost_ceiling(self, max_cost_usd: float | None) -> None:
+        """Reject a budget when the job CLI cannot quote the capacity."""
+        if max_cost_usd is not None:
             raise RemoteExecutionError(
                 "Nebius does not expose an authoritative pre-allocation price "
                 "through the job CLI; --max-cost cannot be enforced safely",
+                provider=self.name,
+            )
+
+    def submit(self, spec: RemoteJobSpec) -> JobHandle:
+        spec = copy(spec)
+        self.validate_spec(spec)
+        if not 300 <= spec.timeout_s <= 168 * 3600:
+            raise RemoteExecutionError(
+                "Nebius CLI job timeout must be between 300 and 604800 seconds",
                 provider=self.name,
             )
         preset_gpu_count = re.match(r"^(\d+)gpu-", self.preset)
@@ -327,11 +394,11 @@ class NebiusExecutor(RemoteExecutor):
                 provider=self.name,
             )
         bucket, subnet_id = self._require_configuration()
-        local_id = uuid.uuid4().hex[:12]
+        local_id = uuid.uuid4().hex
+        job_name = f"stateset-sft-{local_id}"
         prefix = f"stateset-agents/jobs/{local_id}"
         input_uri = f"s3://{bucket}/{prefix}/input/{spec.dataset.name}"
         output_uri = f"s3://{bucket}/{prefix}/output"
-        self.artifacts.upload_file(spec.dataset, input_uri)
 
         from stateset_agents import __version__
 
@@ -347,10 +414,9 @@ class NebiusExecutor(RemoteExecutor):
         )
         if endpoint:
             command += ' --s3-endpoint-url "$STATESET_S3_ENDPOINT_URL"'
-        timeout_hours = max(1, min(168, (spec.timeout_s + 3599) // 3600))
         args = [
             "--name",
-            f"stateset-sft-{local_id}",
+            job_name,
             "--image",
             self.image,
             "--container-command",
@@ -362,7 +428,7 @@ class NebiusExecutor(RemoteExecutor):
             "--preset",
             self.preset,
             "--timeout",
-            f"{timeout_hours}h",
+            f"{spec.timeout_s}s",
             "--subnet-id",
             subnet_id,
             "--env",
@@ -387,74 +453,138 @@ class NebiusExecutor(RemoteExecutor):
         for env_name, selector_name in secret_env.items():
             if selector := os.environ.get(selector_name):
                 args.extend(["--env-secret", f"{env_name}={selector}"])
-        try:
-            job_id = self.cli.create_job(args)
-        except Exception:
-            self.artifacts.delete_prefix(f"s3://{bucket}/{prefix}")
-            raise
         job = _NebiusJob(
             spec=spec,
             input_uri=input_uri,
             output_uri=output_uri,
-            logs=[f"Nebius Serverless AI job {job_id} submitted"],
+            logs=[f"Nebius Serverless AI job {job_name}"],
         )
-        self._jobs[job_id] = job
-        self._persist(job_id, job)
+        self._persist(job_name, job)
+        pending = self._state_path(job_name)
+        try:
+            self.artifacts.upload_file(spec.dataset, input_uri)
+        except Exception:
+            pending.unlink(missing_ok=True)
+            raise
+        try:
+            job_id = self.cli.create_job(args)
+            job.resource_id = job_id
+            self._persist(job_id, job)
+        except _CreateRejected:
+            self.artifacts.delete_prefix(f"s3://{bucket}/{prefix}")
+            pending.unlink(missing_ok=True)
+            raise
+        except Exception as exc:
+            raise RemoteExecutionError.wrap(
+                exc,
+                f"Submission may have reached Nebius. Staged data retained at {input_uri}. "
+                f"Reconnect with stateset-agents remote-job --provider nebius "
+                f"--job-id {job_name} --wait",
+                provider=self.name,
+            ) from exc
+        try:
+            pending.unlink(missing_ok=True)
+        except OSError:
+            logging.getLogger(__name__).warning(
+                "Job %s submitted. Could not retire provisional record %s",
+                job_id,
+                pending,
+            )
         return JobHandle(provider=self.name, job_id=job_id)
 
     def status(self, handle: JobHandle) -> JobStatus:
-        job = self._job(handle)
-        if job.status.is_terminal:
-            return job.status
-        payload = self.cli.get_job(handle.job_id)
-        raw = (
-            _find_string(payload, frozenset({"status", "state", "phase"})) or "pending"
-        )
-        normalized = raw.lower().removeprefix("job_status_").removeprefix("status_")
-        job.status = _STATUS_MAP.get(normalized, JobStatus.PENDING)
-        self._persist(handle.job_id, job)
+        with self._locked_job(handle) as job:
+            return self._refresh_status(handle, job)
+
+    def _refresh_status(self, handle: JobHandle, job: _NebiusJob) -> JobStatus:
+        if not job.status.is_terminal:
+            status = self.cli.get_job(job.resource_id).get("status")
+            raw = status.get("state") if isinstance(status, dict) else status
+            normalized = (
+                raw.lower().removeprefix("job_status_").removeprefix("status_")
+                if isinstance(raw, str)
+                else ""
+            )
+            if normalized not in _STATUS_MAP:
+                raise RemoteExecutionError(
+                    f"Nebius job {job.resource_id} returned an unrecognized "
+                    f"status.state ({raw!r})",
+                    provider=self.name,
+                )
+            job.status = _STATUS_MAP[normalized]
+            if job.status.is_terminal:
+                self._persist(handle.job_id, job)
+        if job.cleanup_on_cancel and job.status is JobStatus.CANCELLED:
+            self.artifacts.delete_prefix(job.output_uri.rsplit("/", 1)[0])
+            job.cleanup_on_cancel = False
+            self._persist(handle.job_id, job)
         return job.status
 
     def logs(self, handle: JobHandle) -> Iterator[str]:
-        job = self._job(handle)
+        with self._locked_job(handle) as job:
+            resource_id, local_logs = job.resource_id, job.logs
         try:
-            remote = self.cli.logs(handle.job_id).splitlines()
+            remote = self.cli.logs(resource_id).splitlines()
         except RemoteExecutionError as exc:
             remote = [f"log retrieval failed: {exc}"]
-        yield from [*job.logs, *remote]
+        yield from [*local_logs, *remote]
 
-    def fetch(self, handle: JobHandle, dest: Path | None = None) -> Path:
-        job = self._job(handle)
-        if not job.status.is_terminal:
-            raise RemoteExecutionError(
-                f"Nebius job {handle.job_id} is not terminal", provider=self.name
+    def _is_preview(self, handle: JobHandle) -> bool:
+        with self._locked_job(handle) as job:
+            return job.spec.dry_run
+
+    def fetch(self, handle: JobHandle, dest: Path | None = None) -> Path | None:
+        with self._locked_job(handle) as job:
+            if not self._refresh_status(handle, job).is_terminal:
+                raise RemoteExecutionError(
+                    f"Nebius job {handle.job_id} is not terminal", provider=self.name
+                )
+            destination = Path(dest or job.spec.output_dir)
+            preview = job.spec.dry_run and job.status is JobStatus.SUCCEEDED
+            already_fetched = (
+                job.fetched is not None
+                if preview
+                else (job.fetched == destination and destination.exists())
             )
-        destination = Path(dest or job.spec.output_dir)
-        if job.fetched == destination and destination.exists():
-            return destination
-        written = self.artifacts.download_prefix(job.output_uri, destination)
-        if not written and not job.spec.dry_run:
-            raise RemoteExecutionError(
-                f"Nebius job {handle.job_id} produced no artifacts",
-                provider=self.name,
-            )
-        job.fetched = destination
-        root_uri = job.input_uri.split("/input/", 1)[0]
-        self.artifacts.delete_prefix(root_uri)
-        self._persist(handle.job_id, job)
-        return destination
+            if not already_fetched:
+                if not preview:
+                    written = self.artifacts.download_prefix(
+                        job.output_uri, destination
+                    )
+                    if not written and not job.spec.dry_run:
+                        raise RemoteExecutionError(
+                            f"Nebius job {handle.job_id} produced no artifacts",
+                            provider=self.name,
+                        )
+                job.fetched = destination
+                job.fetch_cleanup_pending = True
+                self._persist(handle.job_id, job)
+            if job.fetch_cleanup_pending:
+                self.artifacts.delete_prefix(job.output_uri.rsplit("/", 1)[0])
+                job.fetch_cleanup_pending = False
+                self._persist(handle.job_id, job)
+            return None if preview else destination
 
     def cancel(self, handle: JobHandle) -> None:
-        job = self._job(handle)
-        if not job.status.is_terminal:
-            self.status(handle)
-        if not job.status.is_terminal:
-            self.cli.cancel(handle.job_id)
-            job.status = JobStatus.CANCELLED
-            job.logs.append("cancellation requested")
-            self._persist(handle.job_id, job)
-        if job.status is JobStatus.CANCELLED:
-            self.artifacts.delete_prefix(job.input_uri.split("/input/", 1)[0])
+        with self._locked_job(handle) as job:
+            status = self._refresh_status(handle, job)
+            if (
+                status in (JobStatus.SUCCEEDED, JobStatus.FAILED)
+                or job.cleanup_on_cancel is False
+            ):
+                return
+            if job.cleanup_on_cancel is None:
+                job.logs.append("cancellation requested")
+                job.cleanup_on_cancel = True
+                self._persist(handle.job_id, job)
+            if status is not JobStatus.CANCELLED:
+                try:
+                    self.cli.cancel(job.resource_id)
+                except RemoteExecutionError:
+                    if self._refresh_status(handle, job).is_terminal:
+                        return
+                    raise
+            self._refresh_status(handle, job)
 
     def wait(self, handle: JobHandle, poll_interval_s: float | None = None):
         return super().wait(
@@ -570,18 +700,32 @@ class NebiusEndpointProvider(InferenceDeploymentProvider):
             )
         args.extend(["--token-secret", token_secret])
         payload = self.cli.create_endpoint(args)
-        endpoint_id = _find_string(
-            payload,
-            frozenset({"id", "endpoint_id", "resource_id", "resourceid"}),
-        )
-        if not endpoint_id:
+        metadata = payload.get("metadata")
+        endpoint_id = metadata.get("id") if isinstance(metadata, dict) else None
+        if not isinstance(endpoint_id, str) or not endpoint_id.strip():
             raise RemoteExecutionError(
                 "Nebius endpoint creation returned no endpoint id",
                 provider=self.name,
             )
-        endpoint = _find_string(
-            payload, frozenset({"url", "endpoint", "public_url", "publicurl"})
-        )
+        status = payload.get("status")
+        endpoint = None
+        if isinstance(status, dict):
+            addresses = status.get("public_endpoints", [])
+            if isinstance(addresses, list):
+                endpoint = next(
+                    (
+                        url
+                        for url in addresses
+                        if isinstance(url, str) and url.startswith("https://")
+                    ),
+                    None,
+                )
+            if (
+                endpoint is None
+                and isinstance(status.get("url"), str)
+                and status["url"].startswith("https://")
+            ):
+                endpoint = status["url"]
         return DeploymentHandle(
             provider=self.name,
             deployment_id=endpoint_id,

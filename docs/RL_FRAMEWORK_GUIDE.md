@@ -26,7 +26,7 @@ StateSet Agents is a production-ready RL framework designed specifically for tra
 ### Key Features
 
 - **Multi-turn conversation support** - Train agents for extended dialogues
-- **Multiple RL algorithms** - GRPO, GSPO, PPO, DPO, A2C, TRPO
+- **Online training** - GRPO, GSPO, PPO, DAPO, VAPO, and StateSet GEPO. The experimental orchestrator also supports DPO and A2C.
 - **Offline RL** - Learn from historical logs with BCQ, BEAR, CQL, IQL, Decision Transformer
 - **Sim-to-Real transfer** - Domain randomization, conversation simulation, progressive transfer
 - **10+ pre-built reward functions** - Helpfulness, safety, correctness, and more

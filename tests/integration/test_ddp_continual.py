@@ -163,6 +163,19 @@ def _groups(rank, population="uneven"):
         )
         for text in texts
     ]
+    if rank == 1 and population in {"uneven", "empty_peer"}:
+        for index, trajectory in enumerate(trajectories):
+            trajectory.turns[-1].metadata = {
+                "prompt_token_ids": [2, 15],
+                "token_ids": [7, index + 4],
+            }
+            trajectory.turns.append(
+                ConversationTurn(
+                    role="assistant",
+                    content="end",
+                    metadata={"prompt_token_ids": [3], "token_ids": [12]},
+                )
+            )
     if population == "masked" and rank == 1:
         trajectories.append(
             MultiTurnTrajectory(
@@ -188,16 +201,30 @@ def _reference(trainer, groups):
     for trajectory in [t for g in groups for t in g.trajectories][
         : trainer.continual_manager.config.ewc_num_samples
     ]:
-        inputs, labels = _prepare_inputs_and_labels(
-            trajectory,
-            SimpleNamespace(model=policy, tokenizer=trainer.agent.tokenizer),
-            trainer.config,
-        )
-        if not bool(labels[:, 1:].ne(-100).any()):
-            continue
-        (gradient,) = torch.autograd.grad(
-            policy(**inputs, labels=labels).loss, [policy.lookup.weight]
-        )
+        records = [t.metadata for t in trajectory.turns if t.role == "assistant"]
+        if records and all(md and "token_ids" in md for md in records):
+            losses = []
+            for md in records:
+                prompt, response = md["prompt_token_ids"], md["token_ids"]
+                logits = policy(torch.tensor([prompt + response])).logits[0]
+                losses.append(
+                    torch.nn.functional.cross_entropy(
+                        logits[len(prompt) - 1 : -1],
+                        torch.tensor(response),
+                        reduction="none",
+                    )
+                )
+            loss = torch.cat(losses).mean()
+        else:
+            inputs, labels = _prepare_inputs_and_labels(
+                trajectory,
+                SimpleNamespace(model=policy, tokenizer=trainer.agent.tokenizer),
+                trainer.config,
+            )
+            if not bool(labels[:, 1:].ne(-100).any()):
+                continue
+            loss = policy(**inputs, labels=labels).loss
+        (gradient,) = torch.autograd.grad(loss, [policy.lookup.weight])
         value += gradient.detach().double().square()
         count += 1
     encoded = torch.tensor(count, dtype=torch.int64)

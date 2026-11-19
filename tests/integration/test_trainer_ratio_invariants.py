@@ -16,7 +16,7 @@ invariants every importance-sampling trainer must satisfy:
       parameters it's supposed to update).
 
 Each trainer's public API differs (DAPO exposes token log probs + an inner
-mu-loop; GEPO recomputes learner/sampler log probs every call; GSPO scores
+mu-loop; GEPO keeps rollout-time sampler scores fixed; GSPO scores
 whole sequences), so each factory below builds a small harness with a
 uniform interface and the shared test body asserts the same four invariants
 against it.
@@ -37,6 +37,7 @@ pytest.importorskip("transformers")
 from transformers import GPT2Config, GPT2LMHeadModel
 
 from stateset_agents.core.reward_base import RewardResult
+from stateset_agents.training import objectives
 from stateset_agents.training.dapo_trainer import DAPOConfig, DAPOTrainer
 from stateset_agents.training.gepo_trainer import GEPOConfig, GEPOTrainer
 from stateset_agents.training.gspo_config import GSPOConfig
@@ -201,14 +202,12 @@ def _make_gepo_harness() -> TrainerHarness:
     trainer.generate_group_responses = fake_generate_group_responses  # type: ignore[method-assign]
 
     captured_ratios: list[torch.Tensor] = []
-    orig_coef = trainer.compute_gepo_coefficient
+    policy_loss = objectives.policy_loss
 
-    def spy(learner: torch.Tensor, sampler: torch.Tensor) -> torch.Tensor:
-        coef = orig_coef(learner, sampler)
-        captured_ratios.append(coef.detach().clone())
-        return coef
-
-    trainer.compute_gepo_coefficient = spy  # type: ignore[method-assign]
+    def record_loss(**kwargs: Any) -> objectives.PolicyLossResult:
+        result = policy_loss(**kwargs)
+        captured_ratios.append(result.ratio.flatten().double())
+        return result
 
     batch_input_ids = torch.stack([r["input_ids"] for r in fixed_responses])
     batch_attention_mask = torch.stack([r["attention_mask"] for r in fixed_responses])
@@ -224,7 +223,9 @@ def _make_gepo_harness() -> TrainerHarness:
             )
         frozen_old_log_probs.clear()
         frozen_old_log_probs.append(old)
-        return await trainer.train_step(["hello"])
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(objectives, "policy_loss", record_loss)
+            return await trainer.train_step(["hello"])
 
     def onpolicy_ratios() -> torch.Tensor:
         return captured_ratios[0]
@@ -238,7 +239,8 @@ def _make_gepo_harness() -> TrainerHarness:
 
     def onpolicy_expected() -> torch.Tensor:
         old = frozen_old_log_probs[0]
-        return trainer.compute_gepo_coefficient(old, old)
+        mass = (old - old.max()).exp()
+        return mass * mass.sum() / mass.square().sum()
 
     return TrainerHarness(
         model=model,

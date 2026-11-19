@@ -16,6 +16,11 @@ Welcome to the StateSet Agents examples directory! This collection demonstrates 
 
 ## 🚀 Quick Start Examples
 
+### Run RL and weight editing on StateSet Swarm
+
+Run two independent CPU tasks, compare the returned evidence, then expand to
+a three-seed RL sweep or a two-layer Qwen edit. [Swarm getting started](swarm/README.md)
+
 ### Five-Minute Demo
 
 The fastest path from `pip install stateset-agents` to a curated training set — offline, no GPU, no API key:
@@ -56,7 +61,85 @@ python examples/quick_start.py
 - Reward computation and post-training conversation smoke test
 - Clear upgrade path to swap in a real checkpoint later
 
+### Resetting a conversation with work in flight
+
+[`conversation_reset.py`](conversation_reset.py) starts a stub-backed stream,
+resets the conversation, rejects its late output, and generates a fresh response.
+It requires no model downloads or credentials:
+
+```bash
+python examples/conversation_reset.py
+```
+
+See the [conversation reset contract](../docs/STATE_MACHINES.md#conversation-reset-and-operation-ownership)
+for history, streaming cleanup, and already-started tool effects.
+
+### Durable named conversations
+
+[`durable_conversation.py`](durable_conversation.py) saves a named conversation,
+restores it into a fresh agent, and continues using the recovered transcript.
+The example uses local callbacks and a temporary directory, with no credentials
+or model downloads:
+
+```bash
+python examples/durable_conversation.py
+```
+
+See [named conversation recovery](../docs/STATE_MACHINES.md#named-conversation-turns-and-recovery)
+for concurrent turns, failed-turn receipts, and explicit snapshot revisions.
+
+[`durable_planning.py`](durable_planning.py) extends recovery to a partially
+completed built-in plan. It verifies that the next prompt retains the completed
+step and the current step, without repeating the previous advance command:
+
+```bash
+python examples/durable_planning.py
+```
+
+### Atomic repository writes
+
+[`transactional_persistence.py`](transactional_persistence.py) commits an agent and
+conversation together, rolls back a rejected change, and reopens the SQLite file.
+It runs entirely offline:
+
+```bash
+python examples/transactional_persistence.py
+```
+
+Use `UnitOfWork.transaction()` for atomic writes. The ordinary resource context
+keeps its existing autocommit behavior. See the
+[transaction contract](../docs/STATE_MACHINES.md#persistence-transactions-and-resource-ownership)
+for task ownership, cancellation, and uncertain commit acknowledgements.
+
+### Reasoning proposals and scoped assessment
+
+[`enhanced_reasoning.py`](enhanced_reasoning.py) demonstrates an offline proposal
+backend and a checker against supplied refund-policy data. An incorrect proposal
+with high declared confidence fails; a corrected proposal passes the scoped check.
+It requires no model downloads or API key:
+
+```bash
+python examples/enhanced_reasoning.py
+```
+
+The example demonstrates provider/assessor wiring and stopping behavior. For the
+runtime contract and connecting a separate model backend, see
+[reasoning providers and assessments](../docs/STATE_MACHINES.md#reasoning-providers-assessments-and-stopping).
+
 ## 🎓 Training Examples
+
+### Durable memory recovery
+
+[`durable_memory.py`](durable_memory.py) saves portable memory entries, restores
+them into a fresh memory object, and updates the file using its current revision.
+It runs offline with lexical retrieval, no model download, and a temporary directory:
+
+```bash
+python examples/durable_memory.py
+```
+
+See [snapshot recovery](../docs/STATE_MACHINES.md#durable-memory-snapshots)
+for cancellation, concurrent updates, and publication/durability receipts.
 
 ### Refund resolution tool
 

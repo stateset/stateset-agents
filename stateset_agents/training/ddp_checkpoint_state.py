@@ -150,8 +150,18 @@ def static_identity(trainer: Any) -> dict[str, Any]:
     """Bind configuration, component classes, parameter groups and tokenizer."""
     import torch
 
+    from .adamw_weights import ModelAdamW
+
     policy = trainer.agent.model.module
     names = {id(p): name for name, p in trainer.agent.model.named_parameters()}
+    optimizer_kind = _kind(trainer.optimizer)
+    if type(trainer.optimizer) is ModelAdamW:
+        names.update(
+            {id(m): names[id(p)] for p, m in trainer.optimizer.masters.items()}
+        )
+        optimizer_kind = (
+            f"{torch.optim.AdamW.__module__}.{torch.optim.AdamW.__qualname__}"
+        )
     manager = trainer.continual_manager
     return cast(
         dict[str, Any],
@@ -169,7 +179,7 @@ def static_identity(trainer: Any) -> dict[str, Any]:
                     name: getattr(trainer.config, name, None) for name in _CONFIG
                 },
                 "policy": model_identity(policy),
-                "optimizer": _kind(trainer.optimizer),
+                "optimizer": optimizer_kind,
                 "optimizer_groups": (
                     None
                     if trainer.optimizer is None
@@ -354,6 +364,13 @@ def _model_state(model: Any, shared: Any, buffers: Any, torch: Any) -> dict[str,
 
 
 def _optimizer_stage(optimizer: Any, saved: Any, torch: Any) -> Any:
+    from .adamw_weights import ModelAdamW
+
+    sources = (
+        {master: source for source, master in optimizer.masters.items()}
+        if type(optimizer) is ModelAdamW
+        else {}
+    )
     if optimizer is None:
         if saved is not None:
             raise ValueError("Native checkpoint optimizer availability differs")
@@ -384,6 +401,8 @@ def _optimizer_stage(optimizer: Any, saved: Any, torch: Any) -> Any:
             required = {"step", "exp_avg", "exp_avg_sq"}
             if group["amsgrad"]:
                 required.add("max_exp_avg_sq")
+            if expected[key] in sources and "master_weight" in values:
+                required.add("master_weight")
             if set(values) != required:
                 raise ValueError("Native checkpoint Adam slot schema differs")
         elif isinstance(optimizer, torch.optim.SGD) and values:
@@ -404,10 +423,33 @@ def _optimizer_stage(optimizer: Any, saved: Any, torch: Any) -> Any:
                     ):
                         raise ValueError("Invalid native optimizer step slot")
                 elif value.dtype != expected[key].dtype:
-                    raise ValueError("Native optimizer slot tensor dtype differs")
-            if torch.is_tensor(value) and value.shape != expected[key].shape:
+                    # Older checkpoints kept moments in the model dtype and
+                    # had no working-weight slot. AdamW widens them on load.
+                    source = sources.get(expected[key])
+                    if (
+                        "master_weight" in values
+                        or source is None
+                        or value.dtype != source.dtype
+                    ):
+                        raise ValueError("Native optimizer slot tensor dtype differs")
+            source_shape = sources.get(expected[key], expected[key]).shape
+            if torch.is_tensor(value) and value.shape != source_shape:
                 if name != "step" or value.numel() != 1:
                     raise ValueError("Native optimizer slot tensor shape differs")
+        if isinstance(optimizer, (torch.optim.Adam, torch.optim.AdamW)) and values:
+            second = values["exp_avg_sq"]
+            if second.is_complex():
+                second = torch.view_as_real(second)
+            if second.numel() and bool(second.amin() < 0):
+                raise ValueError("Native Adam second moments must be nonnegative")
+            if "max_exp_avg_sq" in values:
+                maximum = values["max_exp_avg_sq"]
+                if maximum.is_complex():
+                    maximum = torch.view_as_real(maximum)
+                if bool((maximum < second).any()):
+                    raise ValueError(
+                        "Native AMSGrad maximum is below its second moment"
+                    )
     state_fingerprint(saved)
     staged = copy.copy(optimizer)
     staged.defaults = copy.deepcopy(optimizer.defaults)
@@ -438,7 +480,10 @@ def _optimizer_stage(optimizer: Any, saved: Any, torch: Any) -> Any:
         )
     # Use the class implementation, so per-instance commit fault injectors do
     # not accidentally act on the live optimizer during validation.
-    type(optimizer).load_state_dict(staged, saved)
+    # The working-weight optimizer also publishes state to its live master
+    # tensors on load. Staging only needs the stock AdamW slot conversion.
+    loader = torch.optim.AdamW if type(optimizer) is ModelAdamW else type(optimizer)
+    loader.load_state_dict(staged, saved)
     return staged
 
 

@@ -429,3 +429,39 @@ async def test_public_offline_training_rejects_online_objectives_before_loading(
             objective="gspo",
             dataset_path="must-not-be-loaded.jsonl",
         )
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+async def test_low_precision_adamw_and_pending_gradient_resume(tmp_path, dtype):
+    torch.manual_seed(11)
+    instance = trainer(TinyPolicy().to(dtype))
+    instance.config.gradient_accumulation_steps = 2
+    await instance.pretrain_value_functions(LoggedDataset())
+    batch = varied_policy_batch()
+    first = {k: v[:2] for k, v in batch.items()}
+    last = {k: v[2:] for k, v in batch.items()}
+    await instance.train_step(first)
+    await instance.train_step(last)
+    assert all(torch.isfinite(p).all() for p in instance.model.parameters())
+    await instance.train_step(first)
+    checkpoint = tmp_path / "pending.pt"
+    instance.save(str(checkpoint))
+    saved = torch.load(checkpoint, weights_only=True)
+    assert all(g.dtype == torch.float32 for g in saved["gradients"].values())
+    assert all(
+        state["master_weight"].dtype == torch.float32
+        for state in saved["policy_optimizer_state_dict"]["state"].values()
+    )
+    restored = trainer(TinyPolicy().to(dtype))
+    restored.load(str(checkpoint), require_policy=True)
+    for micro in [last, first, last]:
+        assert await restored.train_step(micro) == await instance.train_step(micro)
+    torch.testing.assert_close(
+        restored.model.state_dict(), instance.model.state_dict(), atol=0, rtol=0
+    )
+    torch.testing.assert_close(
+        restored.policy_optimizer.state_dict(),
+        instance.policy_optimizer.state_dict(),
+        atol=0,
+        rtol=0,
+    )

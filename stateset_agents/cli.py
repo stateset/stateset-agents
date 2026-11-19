@@ -27,6 +27,14 @@ from stateset_agents.cli_finetune import app as finetune_app  # noqa: E402
 
 app.add_typer(finetune_app, name="finetune")
 
+from stateset_agents.cli_swarm import app as swarm_app  # noqa: E402
+
+app.add_typer(swarm_app, name="swarm")
+
+from stateset_agents.cli_workflow import app as workflow_app  # noqa: E402
+
+app.add_typer(workflow_app, name="workflow")
+
 CLI_IMPORT_EXCEPTIONS = (AttributeError, ImportError, OSError, RuntimeError)
 CLI_CONFIG_EXCEPTIONS = (OSError, TypeError, ValueError)
 CLI_TRAIN_EXCEPTIONS = INFERENCE_EXCEPTIONS

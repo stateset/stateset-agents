@@ -8,7 +8,9 @@ context management, tool usage, and sophisticated dialogue strategies.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
+import os
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
@@ -17,6 +19,7 @@ from stateset_agents.utils.cache import CacheService
 
 from .agent import Agent
 from .agent_config import AgentConfig
+from .conversation import ConversationResetError, conversation_call
 from .multiturn_analysis import (
     analyze_user_input,
     compress_conversation_context,
@@ -27,9 +30,17 @@ from .multiturn_analysis import (
     extract_technical_terms,
 )
 from .multiturn_context import (
+    ConversationClosedError,
+    ConversationConflict,
     ConversationContext,
     DialogueDatabase,
     apply_context_update,
+)
+from .multiturn_lifecycle import (
+    check_turn,
+    consume_planning_commands,
+    planning_commit,
+    run_turn,
 )
 from .reward import RewardFunction
 from .trajectory import ConversationTurn
@@ -72,6 +83,8 @@ class MultiTurnAgent(Agent):
     and sophisticated dialogue strategies.
     """
 
+    _conversation_snapshots: dict[str, Any]
+
     def __init__(
         self,
         model_config: dict[str, Any],
@@ -90,6 +103,9 @@ class MultiTurnAgent(Agent):
         }
         if "model_name" not in agent_config_kwargs:
             agent_config_kwargs["model_name"] = "stub://test"
+        use_hf_backend = bool(kwargs.pop("use_hf_backend", False))
+        hf_backend_config = dict(kwargs.pop("hf_backend_config", {}) or {})
+        response_backend = kwargs.pop("response_backend", None)
         super().__init__(AgentConfig(**agent_config_kwargs), **kwargs)
         self.model_config = dict(model_config)
 
@@ -138,19 +154,18 @@ class MultiTurnAgent(Agent):
         self.tools: dict[str, Callable[..., Any]] = {}
 
         # Response generation backend controls (pluggable)
-        self._use_hf_backend: bool = bool(kwargs.get("use_hf_backend", False))
-        self._hf_backend_config: dict[str, Any] = dict(
-            kwargs.get("hf_backend_config", {}) or {}
-        )
+        self._use_hf_backend = use_hf_backend
+        self._hf_backend_config = hf_backend_config
         self._hf_agent: Agent | None = None  # Lazy-initialized HF-backed agent
         self.response_backend: (
             Callable[[str | list[dict[str, Any]]], str | Awaitable[str]] | None
-        ) = kwargs.get("response_backend")
+        ) = response_backend
 
     def register_tool(self, name: str, tool_func: Callable[..., Any]) -> None:
         """Register a tool for the agent to use"""
         self.tools[name] = tool_func
 
+    @conversation_call
     async def generate_response(
         self,
         messages_or_prompt: str | list[dict[str, Any]],
@@ -163,11 +178,15 @@ class MultiTurnAgent(Agent):
         2) HF backend (lazy-initialized) if `use_hf_backend=True`
         3) Lightweight heuristic response (fast default for tests)
         """
+        check_turn(self)
         messages_for_backend = messages_or_prompt
         if self.planning_manager is not None and isinstance(messages_or_prompt, list):
-            plan_message = self.planning_manager.build_plan_message(
-                messages_or_prompt, context=context or {}
-            )
+            from ..experimental.long_term_planning import _planning_scope
+
+            with _planning_scope(lambda: planning_commit(self)):
+                plan_message = self.planning_manager.build_plan_message(
+                    messages_or_prompt, context=context or {}
+                )
             if plan_message is not None:
                 messages_for_backend = list(messages_or_prompt)
                 insert_at = 0
@@ -181,23 +200,32 @@ class MultiTurnAgent(Agent):
         # 1) Custom response backend
         if self.response_backend is not None:
             try:
+                check_turn(self)
                 maybe = self.response_backend(messages_for_backend)
-                if asyncio.iscoroutine(maybe):
-                    return str(await maybe)
+                if inspect.isawaitable(maybe):
+                    maybe = await maybe
+                check_turn(self)
                 return str(maybe)
+            except ConversationResetError:
+                raise
             except BACKEND_EXCEPTIONS as e:
                 logger.warning("Custom backend failed, falling back: %s", e)
 
         # 2) HF backend
         if self._use_hf_backend:
             try:
+                check_turn(self)
                 hf_resp = await self._generate_with_hf_backend(messages_for_backend)
+                check_turn(self)
                 if isinstance(hf_resp, str) and hf_resp:
                     return hf_resp
+            except ConversationResetError:
+                raise
             except BACKEND_EXCEPTIONS as e:  # pragma: no cover - safety fallback
                 logger.warning("HF backend failed, falling back to heuristic: %s", e)
 
         # 3) Heuristic fallback
+        check_turn(self)
         return self._generate_heuristic(messages_for_backend)
 
     def register_response_backend(
@@ -279,7 +307,9 @@ class MultiTurnAgent(Agent):
         )
         self._apply_context_update(context, initial_context)
 
-        self.active_conversations[conversation_id] = context
+        with self._conversation_owner().lock:
+            context._owner()
+            self.active_conversations[conversation_id] = context
 
         logger.info(f"Started conversation {conversation_id} for user {user_id}")
 
@@ -293,6 +323,7 @@ class MultiTurnAgent(Agent):
         """Merge context updates into the active conversation context."""
         apply_context_update(context, update)
 
+    @conversation_call
     async def continue_conversation(
         self,
         conversation_id: str,
@@ -302,25 +333,86 @@ class MultiTurnAgent(Agent):
         context_update: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """Continue an existing conversation, applying any context updates."""
-        if conversation_id not in self.active_conversations:
-            raise ValueError(f"Conversation {conversation_id} not found")
+        context = await run_turn(
+            self,
+            conversation_id,
+            user_message,
+            strategy,
+            context_update,
+            analyze=False,
+            use_tools=False,
+        )
+        return context.get_recent_history(max_turns)
 
-        context = self.active_conversations[conversation_id]
-        self._apply_context_update(context, context_update)
+    def get_conversation_status(
+        self, conversation_id: str | None = None
+    ) -> dict[str, Any]:
+        """Inspect a named context, or the agent's reset scope when no ID is given."""
+        if conversation_id is None:
+            return super().get_conversation_status()
+        with self._conversation_owner().lock:
+            context = self.active_conversations.get(conversation_id)
+            if context is None:
+                raise ValueError(f"Conversation {conversation_id} not found")
+            return context.get_status()
 
-        # Add user message to context
-        context.add_turn({"role": "user", "content": user_message})
+    @conversation_call
+    async def save_conversation(
+        self,
+        conversation_id: str,
+        path: str | os.PathLike[str],
+        *,
+        expected_revision: str | None = None,
+        max_bytes: int = 64 * 1024 * 1024,
+    ) -> dict[str, Any]:
+        """Save a settled named context as portable JSON and return its receipt.
 
-        # Generate response using selected strategy
-        strategy_func = self.strategies.get(strategy, self._default_strategy)
-        response = await strategy_func(context)
+        The parent directory must exist. ``None`` is create-only; replacing a
+        file requires its current revision. Later turns may proceed after capture.
+        Built-in planning state is included; model/tool implementations are not.
+        Inspect the receipt after interruption before deciding whether to retry.
+        """
+        from .conversation_snapshot import save_conversation
 
-        # Add assistant response to context
-        context.add_turn({"role": "assistant", "content": response})
+        return await save_conversation(
+            self, conversation_id, path, expected_revision, max_bytes
+        )
 
-        # Return recent conversation history
-        return list(context.get_recent_history(max_turns))
+    @conversation_call
+    async def restore_conversation(
+        self,
+        path: str | os.PathLike[str],
+        *,
+        expected_revision: str | None = None,
+        max_bytes: int = 64 * 1024 * 1024,
+    ) -> ConversationContext:
+        """Attach a validated snapshot without replacing an existing conversation.
 
+        Uses this agent's backend and tool registry. Failed turns are not replayed.
+        Planning snapshots require a built-in manager on the destination agent;
+        its planner callbacks and configuration are preserved, never deserialized.
+        This does not restore a gateway's separate user/access-control registry.
+        """
+        from .conversation_snapshot import restore_conversation
+
+        return await restore_conversation(self, path, expected_revision, max_bytes)
+
+    @staticmethod
+    async def inspect_conversation_snapshot(
+        path: str | os.PathLike[str], *, max_bytes: int = 64 * 1024 * 1024
+    ) -> dict[str, Any]:
+        """Validate snapshot metadata without attaching context or invoking tools."""
+        from .conversation_snapshot import inspect_snapshot
+
+        return await inspect_snapshot(path, max_bytes)
+
+    def get_conversation_snapshot_status(self) -> dict[str, Any]:
+        """Return detached active/latest snapshot receipts, including file paths."""
+        from .conversation_snapshot import get_snapshot_status
+
+        return get_snapshot_status(self)
+
+    @conversation_call
     async def generate_multiturn_response(
         self,
         conversation_id: str,
@@ -330,32 +422,16 @@ class MultiTurnAgent(Agent):
         context_update: dict[str, Any] | None = None,
     ) -> str:
         """Generate a single response in a multi-turn conversation."""
-        if conversation_id not in self.active_conversations:
-            raise ValueError(f"Conversation {conversation_id} not found")
-
-        context = self.active_conversations[conversation_id]
-        self._apply_context_update(context, context_update)
-
-        # Check if context needs compression
-        if len(context.history) > self.max_conversation_turns:
-            await self._compress_context(context)
-
-        # Update context with user message
-        context.add_turn({"role": "user", "content": user_message})
-
-        # Analyze user intent and entities
-        await self._analyze_user_input(context, user_message)
-
-        # Generate response using strategy
-        strategy_func = self.strategies.get(strategy, self._default_strategy)
-        response = await strategy_func(context)
-
-        # Apply tools if requested
-        if use_tools:
-            response = await self._apply_tools(context, response)
-
-        context.add_turn({"role": "assistant", "content": response})
-        return response
+        context = await run_turn(
+            self,
+            conversation_id,
+            user_message,
+            strategy,
+            context_update,
+            analyze=True,
+            use_tools=use_tools,
+        )
+        return str(context.history[-1]["content"])
 
     async def _default_strategy(self, context: ConversationContext) -> str:
         """Default conversation strategy"""
@@ -440,6 +516,7 @@ class MultiTurnAgent(Agent):
         return response
 
     def _build_planning_context(self, context: ConversationContext) -> dict[str, Any]:
+        consume_planning_commands(self, context)
         plan_context = dict(context.metadata) if context.metadata else {}
         plan_update = plan_context.pop("plan_update", None)
         if plan_update is not None:
@@ -470,9 +547,12 @@ class MultiTurnAgent(Agent):
         if self.planning_manager is None:
             return None
 
-        plan_message = self.planning_manager.build_plan_message(
-            history, context=self._build_planning_context(context)
-        )
+        from ..experimental.long_term_planning import _planning_scope
+
+        with _planning_scope(lambda: planning_commit(self)):
+            plan_message = self.planning_manager.build_plan_message(
+                history, context=self._build_planning_context(context)
+            )
         if plan_message and plan_message.get("content"):
             return str(plan_message["content"])
         return None
@@ -635,6 +715,7 @@ class MultiTurnAgent(Agent):
 
     async def _apply_tools(self, context: ConversationContext, response: str) -> str:
         """Apply tools based on response content"""
+        check_turn(self)
         if not self.tools:
             return response
 
@@ -644,8 +725,12 @@ class MultiTurnAgent(Agent):
             query = context.history[-1].get("content", "") if context.history else ""
 
             try:
+                check_turn(self)
                 search_results = await self.tools["search"](query)
+                check_turn(self)
                 response += f"\n\nSearch results: {search_results}"
+            except ConversationResetError:
+                raise
             except TOOL_EXCEPTIONS as e:
                 logger.error(f"Search tool failed: {e}")
 
@@ -654,8 +739,12 @@ class MultiTurnAgent(Agent):
             doc_id = self._extract_document_reference(response)
             if doc_id:
                 try:
+                    check_turn(self)
                     content = await self.tools["read"](doc_id)
+                    check_turn(self)
                     response += f"\n\nDocument content: {content}"
+                except ConversationResetError:
+                    raise
                 except TOOL_EXCEPTIONS as e:
                     logger.error(f"Read tool failed: {e}")
 
@@ -741,8 +830,13 @@ class MultiTurnAgent(Agent):
 
     def end_conversation(self, conversation_id: str) -> ConversationContext | None:
         """End a conversation and return its context"""
-        if conversation_id in self.active_conversations:
-            context = self.active_conversations.pop(conversation_id)
+        with self._conversation_owner().lock:
+            context = self.active_conversations.pop(conversation_id, None)
+            if context is not None:
+                with context._owner().lock:
+                    context._owner().state = "ended"
+                    context._owner().revision += 1
+        if context is not None:
             if self.planning_manager is not None:
                 self.planning_manager.clear_conversation(conversation_id)
             logger.info(f"Ended conversation {conversation_id}")
@@ -751,7 +845,8 @@ class MultiTurnAgent(Agent):
 
     def get_active_conversations(self) -> list[str]:
         """Get list of active conversation IDs"""
-        return list(self.active_conversations.keys())
+        with self._conversation_owner().lock:
+            return list(self.active_conversations.keys())
 
     def get_conversation_summary(self, conversation_id: str) -> dict[str, Any] | None:
         """Get summary of a conversation"""
@@ -774,6 +869,8 @@ class MultiTurnAgent(Agent):
 
 
 __all__ = [
+    "ConversationClosedError",
+    "ConversationConflict",
     "ConversationContext",
     "DialogueDatabase",
     "MultiTurnAgent",

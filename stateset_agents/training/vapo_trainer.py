@@ -17,22 +17,41 @@ Reference: https://arxiv.org/abs/2504.05118
 """
 
 import logging
+import math
 from collections.abc import Awaitable, Callable
+from copy import deepcopy
+from functools import partial
 from typing import Any
 
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-from ..core.rust_accelerator import compute_gae as _rust_compute_gae
+from ..core.rust_accelerator import compute_gae_targets as _rust_gae_targets
 from ..core.rust_accelerator import is_rust_available as _rust_gae_available
 from . import objectives, rl_losses
-from .runtime_state import TrainingRuntime, validate_training_config
+from .adamw_weights import model_adamw
+from .advantage_estimation import (
+    gae_dtype,
+    gae_targets,
+    normalize_advantages,
+    terminal_rewards,
+)
+from .runtime_state import (
+    TrainingRuntime,
+    _require_runtime_ready,
+    validate_training_config,
+)
 from .trainer_runtime import (
     SharedModelManager,
     build_group_batch,
+    group_old_logprobs,
     hf_generate_group,
+)
+from .trainer_utils import (
+    _clip_gradient_norm,
+    deterministic_scoring,
+    inner_update_scheduler,
 )
 from .vapo_config import VAPOConfig
 
@@ -188,13 +207,13 @@ class LengthAdaptiveGAE:
     """
     Implements VAPO's Length-Adaptive GAE.
 
-    Uses different lambda values for critic (lambda=1.0 for unbiased)
-    and policy (adaptive based on sequence length).
+    The critic uses a fixed lambda. The policy uses the number of response
+    actions to set its lambda.
 
-    lambda_policy = 1 - 1/(alpha * length)
+    lambda_policy = 1 - 1/(alpha * length + 1)
 
-    This ensures the sum of GAE coefficients is proportional to output length,
-    balancing bias-variance across variable-length sequences.
+    With n actions remaining, the residual weights sum to the first n terms
+    of the geometric series with ratio gamma * lambda_policy.
     """
 
     def __init__(
@@ -213,9 +232,12 @@ class LengthAdaptiveGAE:
 
         lambda = 1 - 1/(alpha * length + 1)
 
-        This ensures lambda is in (0, 1) and increases with sequence length.
+        For nonnegative inputs the real coefficient increases toward one.
         """
-        return 1.0 - 1.0 / (self.lambda_policy_alpha * sequence_length + 1.0)
+        scaled_length = self.lambda_policy_alpha * sequence_length
+        return (
+            1.0 if scaled_length == math.inf else scaled_length / (1.0 + scaled_length)
+        )
 
     def compute_gae(
         self,
@@ -237,35 +259,10 @@ class LengthAdaptiveGAE:
             advantages: [batch, seq_len]
             returns: [batch, seq_len] (advantages + values)
         """
-        batch_size, seq_len = rewards.shape
-        device = rewards.device
-
-        rust_advantages = self._try_rust_gae(rewards, values, dones, lambda_value)
-        if rust_advantages is not None:
-            returns = rust_advantages + values
-            return rust_advantages, returns
-
-        advantages = torch.zeros_like(rewards)
-        last_gae = torch.zeros(batch_size, device=device)
-
-        # Compute GAE backwards
-        for t in reversed(range(seq_len)):
-            if t == seq_len - 1:
-                next_value = torch.zeros(batch_size, device=device)
-            else:
-                next_value = values[:, t + 1]
-
-            delta = (
-                rewards[:, t]
-                + self.gamma * next_value * (1 - dones[:, t])
-                - values[:, t]
-            )
-            last_gae = delta + self.gamma * lambda_value * (1 - dones[:, t]) * last_gae
-            advantages[:, t] = last_gae
-
-        returns = advantages + values
-
-        return advantages, returns
+        result = self._try_rust_targets(rewards, values, dones, lambda_value)
+        if result is not None:
+            return result
+        return gae_targets(rewards, values, self.gamma, lambda_value, dones)
 
     def _try_rust_gae(
         self,
@@ -274,42 +271,63 @@ class LengthAdaptiveGAE:
         dones: torch.Tensor,
         lambda_value: float,
     ) -> torch.Tensor | None:
-        """Optional fast path using the Rust ``compute_gae`` kernel.
+        """Return just the advantage component for existing callers."""
+        result = self._try_rust_targets(rewards, values, dones, lambda_value)
+        return None if result is None else result[0]
+
+    def _try_rust_targets(
+        self,
+        rewards: torch.Tensor,
+        values: torch.Tensor,
+        dones: torch.Tensor,
+        lambda_value: float,
+    ) -> tuple[torch.Tensor, torch.Tensor] | None:
+        """Optional fast path using the Rust paired GAE kernel.
 
         Only used when every row has at most one termination step (the
         common single-episode-per-response case used by VAPO). Rows are
         truncated at their terminal step before delegating to the Rust
         kernel (a single termination at the end of a sequence is
-        equivalent to simply not bootstrapping past it), and any padding
-        after termination is left as zero advantage. Returns ``None`` to
+        equivalent to simply not bootstrapping past it). The suffix starts a
+        new episode and is computed independently as in the torch recursion. Returns ``None`` to
         signal the caller should fall back to the pure-torch loop, either
         because the Rust extension isn't installed or a row has more than
         one termination flag (a case the vectorized kernel can't express).
         """
-        if not _rust_gae_available():
+        if (
+            not _rust_gae_available()
+            or rewards.ndim != 2
+            or values.shape != rewards.shape
+            or dones.shape != rewards.shape
+        ):
             return None
 
         batch_size, seq_len = rewards.shape
-        rewards_np = rewards.detach().cpu().numpy()
-        values_np = values.detach().cpu().numpy()
+        dtype = gae_dtype(rewards, values)
+        rewards_np = rewards.detach().to(device="cpu", dtype=torch.float64).numpy()
+        values_np = values.detach().to(device="cpu", dtype=torch.float64).numpy()
         dones_np = dones.detach().cpu().numpy()
 
-        advantages_np = np.zeros((batch_size, seq_len), dtype=np.float64)
+        advantages_np = np.empty((batch_size, seq_len), dtype=np.float64)
+        targets_np = np.empty_like(advantages_np)
         for i in range(batch_size):
             done_indices = np.nonzero(dones_np[i])[0]
             if len(done_indices) > 1:
-                # Multiple terminations within one row aren't representable
-                # by the plain (no-dones) GAE kernel; bail out entirely so
-                # the whole batch uses the torch fallback for consistency.
                 return None
             end = int(done_indices[0]) + 1 if len(done_indices) else seq_len
-            row_advantages = _rust_compute_gae(
-                rewards_np[i, :end], values_np[i, :end], self.gamma, lambda_value
-            )
-            advantages_np[i, :end] = row_advantages
-
-        return torch.as_tensor(
-            advantages_np, dtype=rewards.dtype, device=rewards.device
+            for start, stop in ((0, end), (end, seq_len)):
+                if start < stop:
+                    advantages_np[i, start:stop], targets_np[i, start:stop] = (
+                        _rust_gae_targets(
+                            rewards_np[i, start:stop],
+                            values_np[i, start:stop],
+                            self.gamma,
+                            lambda_value,
+                        )
+                    )
+        return (
+            torch.as_tensor(advantages_np, dtype=dtype, device=rewards.device),
+            torch.as_tensor(targets_np, dtype=dtype, device=rewards.device),
         )
 
     def compute_decoupled_gae(
@@ -342,7 +360,7 @@ class LengthAdaptiveGAE:
 
         # Policy GAE (length-adaptive)
         batch_size = rewards.shape[0]
-        policy_advantages = torch.zeros_like(rewards)
+        policy_advantages = torch.empty_like(critic_advantages)
 
         for i in range(batch_size):
             seq_len = int(sequence_lengths[i].item())
@@ -369,7 +387,7 @@ class VAPOTrainer(TrainingRuntime):
 
     1. Value warmup: Pretrain value network for 50 steps
     2. Decoupled GAE: Separate lambda for critic (1.0) and policy (adaptive)
-    3. Length-adaptive lambda: lambda = 1 - 1/(alpha * length)
+    3. Length-adaptive lambda: lambda = 1 - 1/(1 + alpha * length)
     4. Clip-Higher: Asymmetric clipping [1-0.2, 1+0.28]
     5. Token-level loss: Normalize by total tokens
     6. Positive LM loss: Add NLL on correct samples
@@ -385,6 +403,7 @@ class VAPOTrainer(TrainingRuntime):
         tokenizer: Any,
         reward_fn: Callable[[str, str], float | Awaitable[float]],
         verifier_fn: Callable[[str, str], bool] | None = None,
+        ref_model: Any | None = None,
     ):
         # Ensure transformers is loaded for scheduler
         _load_transformers_vapo()
@@ -408,7 +427,15 @@ class VAPOTrainer(TrainingRuntime):
             aggregate="token_mean" if config.use_token_level_loss else "seq_mean",
             kl="none",
         )
+        if "entropy_coef" not in (config.objective_overrides or {}):
+            self._objective = self._objective.with_(
+                entropy_coef=float(config.entropy_coef)
+            )
         self.model = model
+        self.ref_model = None
+        if self._objective.kl_coef > 0:
+            reference = model if ref_model is None else ref_model
+            self.ref_model = deepcopy(reference).requires_grad_(False).eval()
         self.tokenizer = tokenizer
         self.reward_fn = reward_fn
         self.verifier_fn = verifier_fn
@@ -432,7 +459,7 @@ class VAPOTrainer(TrainingRuntime):
 
         # Initialize GAE computer
         self.gae_computer = LengthAdaptiveGAE(
-            gamma=0.99,
+            gamma=config.gamma,
             lambda_critic=config.lambda_critic,
             lambda_policy_alpha=config.lambda_policy_alpha,
         )
@@ -442,14 +469,14 @@ class VAPOTrainer(TrainingRuntime):
         if not params:
             self._stub_param = torch.nn.Parameter(torch.zeros(1))
             params = [self._stub_param]
-        self.actor_optimizer = torch.optim.AdamW(
+        self.actor_optimizer = model_adamw(
             params,
             lr=config.actor_learning_rate,
             betas=(config.adam_beta1, config.adam_beta2),
             weight_decay=config.weight_decay,
         )
 
-        self.critic_optimizer = torch.optim.AdamW(
+        self.critic_optimizer = model_adamw(
             self.value_head.parameters(),
             lr=config.critic_learning_rate,
             betas=(config.adam_beta1, config.adam_beta2),
@@ -457,29 +484,13 @@ class VAPOTrainer(TrainingRuntime):
         )
 
         # Schedulers
-        total_steps = config.num_episodes * config.num_epochs
-        warmup_steps = int(total_steps * config.warmup_ratio)
-
-        if get_cosine_schedule_with_warmup is not None:
-            self.actor_scheduler = get_cosine_schedule_with_warmup(
-                self.actor_optimizer,
-                num_warmup_steps=warmup_steps,
-                num_training_steps=total_steps,
-            )
-
-            self.critic_scheduler = get_cosine_schedule_with_warmup(
-                self.critic_optimizer,
-                num_warmup_steps=warmup_steps,
-                num_training_steps=total_steps,
-            )
-        else:
-            # Fallback to constant learning rate if scheduler unavailable
-            self.actor_scheduler = torch.optim.lr_scheduler.ConstantLR(
-                self.actor_optimizer, factor=1.0, total_iters=total_steps
-            )
-            self.critic_scheduler = torch.optim.lr_scheduler.ConstantLR(
-                self.critic_optimizer, factor=1.0, total_iters=total_steps
-            )
+        cosine = get_cosine_schedule_with_warmup is not None
+        self.actor_scheduler = inner_update_scheduler(
+            self.actor_optimizer, config, cosine=cosine
+        )
+        self.critic_scheduler = inner_update_scheduler(
+            self.critic_optimizer, config, cosine=cosine
+        )
 
         # Metrics
         self.metrics_history: dict[str, list[float]] = {
@@ -492,7 +503,8 @@ class VAPOTrainer(TrainingRuntime):
         }
 
         self.global_step = 0
-        self.value_warmup_complete = False
+        self.value_warmup_updates = 0
+        self.value_warmup_complete = self.config.value_warmup_steps == 0
         self.rollout_samples_total = 0
 
     async def _compute_reward(self, prompt: str, response: str) -> float:
@@ -500,7 +512,10 @@ class VAPOTrainer(TrainingRuntime):
         reward = self.reward_fn(prompt, response)
         if isinstance(reward, Awaitable):
             reward = await reward
-        return float(reward)
+        result = float(reward)
+        if not math.isfinite(result):
+            raise ValueError("VAPO requires finite rollout rewards")
+        return result
 
     def get_hidden_states(
         self,
@@ -508,7 +523,7 @@ class VAPOTrainer(TrainingRuntime):
         attention_mask: torch.Tensor,
     ) -> torch.Tensor:
         """Extract hidden states from model"""
-        with torch.set_grad_enabled(self.model.training):
+        with deterministic_scoring(self.model):
             outputs = self.model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
@@ -522,15 +537,28 @@ class VAPOTrainer(TrainingRuntime):
         self,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
+        response_mask: torch.Tensor | None = None,
+        *,
+        detach_backbone: bool = False,
     ) -> torch.Tensor:
         """Compute values for a sequence"""
-        hidden_states = self.get_hidden_states(input_ids, attention_mask)
+        if detach_backbone:
+            with torch.no_grad():
+                hidden_states = self.get_hidden_states(input_ids, attention_mask)
+        else:
+            hidden_states = self.get_hidden_states(input_ids, attention_mask)
+        if response_mask is not None:
+            # Value at column t predicts the return of the action at t+1.
+            active = torch.nn.functional.pad(response_mask[:, 1:].bool(), (0, 1))
+            hidden_states = hidden_states.masked_fill(~active.unsqueeze(-1), 0)
+
         # Keep the critic in fp32 for stable regression while allowing the
         # policy backbone to run in bf16/fp16.  Linear layers require matching
         # dtypes; an explicit differentiable cast avoids the live CUDA
         # ``BFloat16 and Float`` matmul failure without severing actor grads.
         value_dtype = next(self.value_head.parameters()).dtype
-        values = self.value_head(hidden_states.to(dtype=value_dtype))
+        with deterministic_scoring(self.value_head):
+            values = self.value_head(hidden_states.to(dtype=value_dtype))
         return values.squeeze(-1)
 
     def compute_token_log_probs(
@@ -546,7 +574,8 @@ class VAPOTrainer(TrainingRuntime):
         anyway, so the losses are identical — passing the real mask just
         avoids carrying scores that are guaranteed to be discarded.
         """
-        outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
+        with deterministic_scoring(self.model):
+            outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
         if response_mask is None:
             response_mask = torch.ones_like(input_ids)
         token_log_probs, _ = rl_losses.gather_token_logprobs(
@@ -580,6 +609,7 @@ class VAPOTrainer(TrainingRuntime):
         This mitigates value initialization bias by training the value
         network to predict actual returns before joint training.
         """
+        _require_runtime_ready(self)
         logger.info(
             f"Starting value network warmup ({self.config.value_warmup_steps} steps)"
         )
@@ -587,7 +617,9 @@ class VAPOTrainer(TrainingRuntime):
         total_value_loss = 0.0
         explained_variances = []
 
-        for step in range(self.config.value_warmup_steps):
+        updates = 0
+        remaining = self.config.value_warmup_steps - self.value_warmup_updates
+        for _ in range(remaining if prompts else 0):
             # Sample prompt
             prompt = np.random.choice(prompts)
 
@@ -611,60 +643,81 @@ class VAPOTrainer(TrainingRuntime):
             ) = build_group_batch(responses, self.device)
             assert batch_response_mask is not None
 
+            if not batch_response_mask[:, 1:].any():
+                continue
+
             # Monte-Carlo return targets in the action frame (see train_step)
-            rewards_tensor = torch.tensor(rewards, device=self.device)
+            reward_device = "cpu" if self.device.type == "mps" else self.device
+            rewards_tensor = torch.tensor(
+                rewards, dtype=torch.float64, device=reward_device
+            )
             mc_returns, action_mask = self.monte_carlo_value_targets(
                 rewards_tensor, batch_response_mask
             )
 
-            # Compute values
-            with torch.no_grad():
-                hidden_states = self.get_hidden_states(
-                    batch_input_ids, batch_attention_mask
-                )
+            values = self.compute_values(
+                batch_input_ids,
+                batch_attention_mask,
+                batch_response_mask,
+                detach_backbone=True,
+            )[:, :-1]
 
-            value_dtype = next(self.value_head.parameters()).dtype
-            values = self.value_head(hidden_states.to(dtype=value_dtype)).squeeze(-1)
-            values = values[:, :-1]
-
-            # Value loss (MSE)
-            value_loss = F.mse_loss(
-                values * action_mask, mc_returns, reduction="sum"
-            ) / action_mask.sum().clamp(min=1)
+            # Compare the critic to the original binary64 rollout rewards.
+            values = values.to(mc_returns.device)
+            value_loss = rl_losses.critic_value_loss(
+                values, values.detach(), mc_returns, action_mask, None
+            )
 
             # Update value network
             self.critic_optimizer.zero_grad()
-            value_loss.backward()
-            torch.nn.utils.clip_grad_norm_(
-                self.value_head.parameters(), self.config.max_grad_norm
-            )
-            self.critic_optimizer.step()
+            try:
+                if not torch.isfinite(value_loss):
+                    raise ValueError("VAPO warmup value loss must be finite")
+                value_loss.backward()
+                gradients = [
+                    p.grad for p in self.value_head.parameters() if p.grad is not None
+                ]
+                _clip_gradient_norm(gradients, self.config.max_grad_norm, torch)
+            except BaseException:
+                self.critic_optimizer.zero_grad(set_to_none=True)
+                raise
+            try:
+                self.critic_optimizer.step()
+            except BaseException:
+                self._runtime_checkpoint_poisoned = True
+                raise
 
+            self.value_warmup_updates += 1
+            updates += 1
             total_value_loss += value_loss.item()
 
             # Compute explained variance
             with torch.no_grad():
-                var_returns = mc_returns[action_mask > 0].var()
-                var_residual = (mc_returns - values)[action_mask > 0].var()
-                if var_returns > 1e-8:
-                    explained_var = 1 - var_residual / var_returns
-                    explained_variances.append(explained_var.item())
+                targets = mc_returns[action_mask > 0]
+                if targets.numel() > 1:
+                    var_returns = targets.var()
+                    if var_returns > 1e-8:
+                        residuals = targets - values[action_mask > 0]
+                        explained_variances.append(
+                            (1 - residuals.var() / var_returns).item()
+                        )
 
-            if (step + 1) % 10 == 0:
-                avg_loss = total_value_loss / (step + 1)
+            if self.value_warmup_updates % 10 == 0:
+                avg_loss = total_value_loss / updates
                 avg_ev = (
                     np.mean(explained_variances[-10:]) if explained_variances else 0
                 )
                 logger.info(
-                    f"Value warmup step {step + 1}/{self.config.value_warmup_steps} | "
+                    f"Value warmup step {self.value_warmup_updates}/{self.config.value_warmup_steps} | "
                     f"Loss: {avg_loss:.4f} | EV: {avg_ev:.4f}"
                 )
 
-        self.value_warmup_complete = True
-        logger.info("Value network warmup complete")
+        self.value_warmup_complete = (
+            self.value_warmup_updates >= self.config.value_warmup_steps
+        )
 
         return {
-            "warmup_value_loss": total_value_loss / self.config.value_warmup_steps,
+            "warmup_value_loss": total_value_loss / max(updates, 1),
             "warmup_explained_variance": (
                 float(np.mean(explained_variances)) if explained_variances else 0
             ),
@@ -685,22 +738,14 @@ class VAPOTrainer(TrainingRuntime):
         ``values`` itself (which would make the clipped and unclipped
         branches identical).
         """
-        value_pred = values * response_mask
-        value_target = returns * response_mask
-
-        if self.config.value_clip > 0:
-            clipped_values = old_values + torch.clamp(
-                values - old_values,
-                -self.config.value_clip,
-                self.config.value_clip,
-            )
-            value_loss_unclipped = (value_pred - value_target) ** 2
-            value_loss_clipped = (clipped_values * response_mask - value_target) ** 2
-            value_loss = torch.max(value_loss_unclipped, value_loss_clipped)
-        else:
-            value_loss = (value_pred - value_target) ** 2
-
-        return value_loss.sum() / response_mask.sum().clamp(min=1)
+        return rl_losses.critic_value_loss(
+            values,
+            old_values,
+            returns,
+            response_mask,
+            self.config.value_clip if self.config.value_clip > 0 else None,
+            square_mask=True,
+        )
 
     def monte_carlo_value_targets(
         self,
@@ -714,10 +759,12 @@ class VAPOTrainer(TrainingRuntime):
         by the same ``gamma`` the GAE uses. Returns ``(targets, action_mask)``,
         both ``[batch, seq_len - 1]`` with targets zeroed outside the mask.
         """
-        action_mask = response_mask[:, 1:]
+        if not ((response_mask == 0) | (response_mask == 1)).all():
+            raise ValueError("VAPO requires binary response masks")
+        action_mask = response_mask[:, 1:].to(rewards.device)
         token_rewards = self.build_token_rewards(rewards, action_mask)
         dones = self.build_token_rewards(1.0, action_mask)
-        returns, _ = self.gae_computer.compute_gae(
+        _, returns = self.gae_computer.compute_gae(
             token_rewards, torch.zeros_like(token_rewards), dones, 1.0
         )
         return returns * action_mask, action_mask
@@ -735,33 +782,7 @@ class VAPOTrainer(TrainingRuntime):
         ``scalar_reward`` may be a python float (applied to every row) or a
         1-D tensor of per-row rewards.
         """
-        if not isinstance(scalar_reward, torch.Tensor):
-            scalar_reward = torch.tensor(
-                scalar_reward, dtype=response_mask.dtype, device=response_mask.device
-            )
-        scalar_reward = scalar_reward.to(
-            dtype=response_mask.dtype, device=response_mask.device
-        )
-        if scalar_reward.dim() == 0:
-            scalar_reward = scalar_reward.expand(response_mask.shape[0])
-
-        batch_size, seq_len = response_mask.shape
-        rewards = torch.zeros_like(response_mask)
-        mask_bool = response_mask > 0
-
-        idx = (
-            torch.arange(seq_len, device=response_mask.device)
-            .unsqueeze(0)
-            .expand(batch_size, seq_len)
-        )
-        last_idx = (
-            torch.where(mask_bool, idx, torch.full_like(idx, -1)).max(dim=1).values
-        )
-        valid = last_idx >= 0
-        rows = torch.arange(batch_size, device=response_mask.device)[valid]
-        rewards[rows, last_idx[valid]] = scalar_reward[valid]
-
-        return rewards
+        return terminal_rewards(scalar_reward, response_mask)
 
     def compute_vapo_losses(
         self,
@@ -773,6 +794,12 @@ class VAPOTrainer(TrainingRuntime):
         old_values: torch.Tensor,
         response_mask: torch.Tensor,
         positive_mask: torch.Tensor,
+        critic_returns: torch.Tensor | None = None,
+        *,
+        entropy: torch.Tensor | None = None,
+        kl: torch.Tensor | None = None,
+        logp_ref: torch.Tensor | None = None,
+        batch_population: tuple[int, int] | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Compute VAPO losses:
@@ -782,29 +809,49 @@ class VAPOTrainer(TrainingRuntime):
         """
         # Clip-Higher surrogate and token-/sequence-level aggregation via the
         # shared objective (ratios are clamped before exp inside it).
+        if self._objective.entropy_coef > 0 and entropy is None:
+            raise ValueError(
+                "The VAPO entropy bonus requires per-token categorical entropy"
+            )
+        scores = current_log_probs
+        if policy_advantages.dtype == torch.float64:
+            scores = scores.to(policy_advantages.device, torch.float64)
         policy_result = objectives.policy_loss(
-            logp_cur=current_log_probs,
+            logp_cur=scores,
             mask=response_mask,
             advantages=policy_advantages,
             objective=self._objective,
             logp_old=old_log_probs,
+            entropy=entropy,
+            kl=kl,
+            logp_ref=logp_ref,
+            batch_population=batch_population,
         )
         policy_loss = policy_result.loss
 
-        # Decoupled GAE: value target is built from the critic-lambda
-        # advantages, not the policy-lambda advantages used above.
-        returns = critic_advantages + old_values
-        value_loss = self.compute_value_loss(values, old_values, returns, response_mask)
+        # Legacy callers supply only critic advantages. The training loop has
+        # the unrounded critic-lambda target from the same rollout scan.
+        returns = (
+            critic_returns
+            if critic_returns is not None
+            else critic_advantages + old_values
+        )
+        value_loss = self.compute_value_loss(
+            values.to(returns.device),
+            old_values.to(returns.device),
+            returns,
+            response_mask.to(returns.device),
+        )
 
         # Positive example LM loss
-        if self.config.use_positive_lm_loss and positive_mask.sum() > 0:
-            # NLL loss on correct samples
-            positive_log_probs = current_log_probs * positive_mask
-            positive_lm_loss = -positive_log_probs.sum() / positive_mask.sum().clamp(
-                min=1
+        if self.config.use_positive_lm_loss:
+            selected = (positive_mask.bool() & response_mask.bool()).to(
+                current_log_probs.device
             )
+            observed = current_log_probs[selected]
+            positive_lm_loss = -(observed.to(scores) / max(1, observed.numel())).sum()
         else:
-            positive_lm_loss = torch.tensor(0.0, device=self.device)
+            positive_lm_loss = current_log_probs.new_zeros(())
 
         return policy_loss, value_loss, positive_lm_loss
 
@@ -828,9 +875,6 @@ class VAPOTrainer(TrainingRuntime):
             warmup_metrics = await self.warmup_value_network(prompts)
             return warmup_metrics
 
-        # Per-update metrics are (re)initialised inside the update loop below,
-        # which always runs at least once; rollout-level metrics accumulate
-        # across the whole step.
         all_rewards: list[float] = []
         all_accuracies: list[float] = []
 
@@ -840,12 +884,13 @@ class VAPOTrainer(TrainingRuntime):
         # from the current model made the importance ratio identically 1 and
         # the Clip-Higher trust region a no-op.
         rollouts: list[dict[str, Any]] = []
+        response_rows = 0
 
         for prompt in prompts[: self.config.per_device_train_batch_size]:
             # Generate group responses
             responses = await self.generate_group_responses(prompt)
 
-            if len(responses) < 2:
+            if not responses:
                 continue
 
             # Compute rewards and identify correct samples
@@ -874,11 +919,14 @@ class VAPOTrainer(TrainingRuntime):
                 batch_response_mask,
             ) = build_group_batch(responses, self.device)
             assert batch_response_mask is not None
+            if not ((batch_response_mask == 0) | (batch_response_mask == 1)).all():
+                raise ValueError("VAPO requires binary response masks")
+            response_rows += batch_size
+            if not batch_response_mask[:, 1:].any():
+                continue
             max_len = batch_input_ids.shape[1]
 
-            sequence_lengths = torch.zeros(batch_size, device=self.device)
-            for i, resp in enumerate(responses):
-                sequence_lengths[i] = resp["sequence_length"]
+            sequence_lengths = batch_response_mask[:, 1:].count_nonzero(dim=1)
 
             # Positive mask for LM loss (correct samples only)
             positive_mask = torch.zeros(batch_size, max_len - 1, device=self.device)
@@ -890,18 +938,31 @@ class VAPOTrainer(TrainingRuntime):
 
             # Get old log probs and values
             with torch.no_grad():
-                old_log_probs = self.compute_token_log_probs(
+                old_log_probs = group_old_logprobs(
+                    responses,
+                    batch_response_mask,
+                    self.config,
+                    partial(
+                        self.compute_token_log_probs,
+                        batch_input_ids,
+                        batch_attention_mask,
+                        batch_response_mask,
+                    ),
+                )
+                old_values = self.compute_values(
                     batch_input_ids, batch_attention_mask, batch_response_mask
                 )
-                old_values = self.compute_values(batch_input_ids, batch_attention_mask)
 
             # GAE runs in the shifted *action* frame shared by the log-probs,
             # values and loss masks: column t is the action at state t that
             # emits token t+1. The episode reward and terminal flag sit on the
             # last action column, so the value of the post-terminal state
             # (never trained) cannot leak into any advantage.
-            action_mask = batch_response_mask[:, 1:]
-            rewards_tensor = torch.tensor(rewards, device=self.device)
+            reward_device = "cpu" if self.device.type == "mps" else self.device
+            rewards_tensor = torch.tensor(
+                rewards, dtype=torch.float64, device=reward_device
+            )
+            action_mask = batch_response_mask[:, 1:].to(reward_device)
             reward_sequence = self.build_token_rewards(rewards_tensor, action_mask)
             dones = self.build_token_rewards(1.0, action_mask)
 
@@ -911,15 +972,14 @@ class VAPOTrainer(TrainingRuntime):
                 policy_advantages,
                 returns,
             ) = self.gae_computer.compute_decoupled_gae(
-                reward_sequence, old_values[:, :-1], dones, sequence_lengths
+                reward_sequence,
+                old_values[:, :-1].to(reward_device).masked_fill(action_mask == 0, 0),
+                dones,
+                sequence_lengths,
             )
 
             # Normalize advantages over the actions that are actually trained
-            policy_adv_masked = policy_advantages[action_mask > 0]
-            if len(policy_adv_masked) > 1:
-                policy_advantages = (policy_advantages - policy_adv_masked.mean()) / (
-                    policy_adv_masked.std() + 1e-8
-                )
+            policy_advantages = normalize_advantages(policy_advantages, action_mask > 0)
 
             rollouts.append(
                 {
@@ -942,104 +1002,157 @@ class VAPOTrainer(TrainingRuntime):
         # path (only dropout RNG ordering differs).
         num_updates = max(1, getattr(self.config, "num_gradient_updates", 1))
 
+        token_counts = [
+            int(r["response_mask"][:, 1:].count_nonzero().item()) for r in rollouts
+        ]
+        positive_counts = [
+            int(r["positive_mask"].count_nonzero().item()) for r in rollouts
+        ]
+        policy_counts = (
+            token_counts
+            if self._objective.aggregate == "token_mean"
+            else [r["input_ids"].shape[0] for r in rollouts]
+        )
+        policy_count = max(
+            1,
+            (
+                sum(token_counts)
+                if self._objective.aggregate == "token_mean"
+                else response_rows
+            ),
+        )
+        token_count = max(1, sum(token_counts))
+        positive_count = max(1, sum(positive_counts))
+
+        regularized = self._objective.entropy_coef > 0 or self._objective.kl_coef > 0
         for _ in range(num_updates):
-            prompt_count = len(rollouts)
             all_policy_losses: list[float] = []
             all_value_losses: list[float] = []
             all_positive_lm_losses: list[float] = []
             all_explained_variances: list[float] = []
 
-            if prompt_count > 0:
-                self.actor_optimizer.zero_grad()
-                self.critic_optimizer.zero_grad()
+            if not rollouts:
+                break
+            self.actor_optimizer.zero_grad()
+            self.critic_optimizer.zero_grad()
 
-            for rollout in rollouts:
-                batch_input_ids = rollout["input_ids"]
-                batch_attention_mask = rollout["attention_mask"]
-                batch_response_mask = rollout["response_mask"]
+            try:
+                for rollout, policy_n, token_n, positive_n in zip(
+                    rollouts, policy_counts, token_counts, positive_counts, strict=True
+                ):
+                    batch_input_ids = rollout["input_ids"]
+                    batch_attention_mask = rollout["attention_mask"]
+                    batch_response_mask = rollout["response_mask"]
 
-                # Compute current log probs and values
-                current_log_probs = self.compute_token_log_probs(
-                    batch_input_ids, batch_attention_mask, batch_response_mask
-                )
-                current_values = self.compute_values(
-                    batch_input_ids, batch_attention_mask
-                )
+                    # Compute current log probs and values
+                    terms: dict[str, Any] = {}
+                    if regularized:
+                        from .causal_likelihood import regularized_policy_scores
 
-                # Shift masks for loss computation
-                shifted_response_mask = batch_response_mask[:, 1:]
-                shifted_policy_adv = rollout["policy_advantages"]
-                shifted_critic_adv = rollout["critic_advantages"]
-                shifted_old_values = rollout["old_values"][:, :-1]
-                shifted_values = current_values[:, :-1]
+                        current_log_probs, terms = regularized_policy_scores(
+                            self.model,
+                            self.ref_model,
+                            batch_input_ids,
+                            batch_attention_mask,
+                            batch_response_mask,
+                            self._objective,
+                            self._logprob_dtype,
+                        )
+                        terms["batch_population"] = (response_rows, token_count)
+                    else:
+                        current_log_probs = self.compute_token_log_probs(
+                            batch_input_ids, batch_attention_mask, batch_response_mask
+                        )
+                    current_values = self.compute_values(
+                        batch_input_ids, batch_attention_mask, batch_response_mask
+                    )
 
-                # Compute VAPO losses
-                policy_loss, value_loss, positive_lm_loss = self.compute_vapo_losses(
-                    current_log_probs,
-                    rollout["old_log_probs"],
-                    shifted_policy_adv,
-                    shifted_critic_adv,
-                    shifted_values,
-                    shifted_old_values,
-                    shifted_response_mask,
-                    rollout["positive_mask"],
-                )
+                    # Shift masks for loss computation
+                    shifted_response_mask = batch_response_mask[:, 1:]
+                    shifted_policy_adv = rollout["policy_advantages"]
+                    shifted_critic_adv = rollout["critic_advantages"]
+                    shifted_old_values = rollout["old_values"][:, :-1]
+                    shifted_values = current_values[:, :-1]
 
-                # Backpropagate each prompt's normalized contribution
-                # immediately, then step once after the loop. This is gradient
-                # accumulation with the same mean objective, but it releases
-                # each pair of large policy/value forward graphs before the
-                # next prompt instead of retaining the whole batch in VRAM.
-                total_loss = (
-                    policy_loss
-                    + self.config.value_loss_coef * value_loss
-                    + self.config.positive_lm_weight * positive_lm_loss
-                )
+                    # Compute VAPO losses
+                    policy_loss, value_loss, positive_lm_loss = (
+                        self.compute_vapo_losses(
+                            current_log_probs,
+                            rollout["old_log_probs"],
+                            shifted_policy_adv,
+                            shifted_critic_adv,
+                            shifted_values,
+                            shifted_old_values,
+                            shifted_response_mask,
+                            rollout["positive_mask"],
+                            rollout["returns"],
+                            **terms,
+                        )
+                    )
 
-                all_policy_losses.append(policy_loss.item())
-                all_value_losses.append(value_loss.item())
-                all_positive_lm_losses.append(positive_lm_loss.item())
+                    # Each local mean contributes its share of the batch population.
+                    if not regularized:
+                        policy_loss = policy_loss * (policy_n / policy_count)
+                    value_loss = value_loss * (token_n / token_count)
+                    positive_lm_loss = positive_lm_loss * (positive_n / positive_count)
+                    total_loss = (
+                        policy_loss
+                        + self.config.value_loss_coef
+                        * value_loss.to(policy_loss.device)
+                        + self.config.positive_lm_weight
+                        * positive_lm_loss.to(policy_loss.device)
+                    )
+                    all_policy_losses.append(policy_loss.item())
+                    all_value_losses.append(value_loss.item())
+                    all_positive_lm_losses.append(positive_lm_loss.item())
 
-                # Compute explained variance
-                with torch.no_grad():
-                    returns_masked = rollout["returns"][shifted_response_mask > 0]
-                    values_masked = shifted_values[shifted_response_mask > 0]
-                    if len(returns_masked) > 1:
-                        var_returns = returns_masked.var()
-                        var_residual = (returns_masked - values_masked).var()
-                        if var_returns > 1e-8:
-                            explained_var = 1 - var_residual / var_returns
-                            all_explained_variances.append(explained_var.item())
+                    # Compute explained variance
+                    with torch.no_grad():
+                        returns_masked = rollout["returns"][
+                            shifted_response_mask.to(rollout["returns"].device) > 0
+                        ]
+                        values_masked = shifted_values[shifted_response_mask > 0].to(
+                            returns_masked.device
+                        )
+                        if len(returns_masked) > 1:
+                            var_returns = returns_masked.var()
+                            var_residual = (returns_masked - values_masked).var()
+                            if var_returns > 1e-8:
+                                explained_var = 1 - var_residual / var_returns
+                                all_explained_variances.append(explained_var.item())
 
-                (total_loss / prompt_count).backward()
+                    if not torch.isfinite(total_loss):
+                        raise ValueError("VAPO batch loss must be finite")
+                    total_loss.backward()
 
-            # A single optimizer update consumes the mean gradient accumulated
-            # across prompts without requiring their graphs to coexist.
-            if prompt_count > 0:
-                _params = list(self.model.parameters())
-                if _params:
-                    torch.nn.utils.clip_grad_norm_(_params, self.config.max_grad_norm)
-                torch.nn.utils.clip_grad_norm_(
-                    self.value_head.parameters(), self.config.max_grad_norm
-                )
+                for network in (self.model, self.value_head):
+                    gradients = [
+                        p.grad for p in network.parameters() if p.grad is not None
+                    ]
+                    _clip_gradient_norm(gradients, self.config.max_grad_norm, torch)
+            except BaseException:
+                self.actor_optimizer.zero_grad(set_to_none=True)
+                self.critic_optimizer.zero_grad(set_to_none=True)
+                raise
 
+            # A failed optimizer or scheduler may already have changed its state.
+            # Recover the four coupled states together from a complete checkpoint.
+            try:
                 self.actor_optimizer.step()
                 self.critic_optimizer.step()
-
-            # Cadence convention shared with DAPO/GEPO: the LR schedulers
-            # advance once per inner update, global_step counts train_steps.
-            self.actor_scheduler.step()
-            self.critic_scheduler.step()
+                self.actor_scheduler.step()
+                self.critic_scheduler.step()
+            except BaseException:
+                self._runtime_checkpoint_poisoned = True
+                raise
 
         self.global_step += 1
 
         # Compute metrics
         metrics = {
-            "policy_loss": np.mean(all_policy_losses) if all_policy_losses else 0.0,
-            "value_loss": np.mean(all_value_losses) if all_value_losses else 0.0,
-            "positive_lm_loss": (
-                np.mean(all_positive_lm_losses) if all_positive_lm_losses else 0.0
-            ),
+            "policy_loss": sum(all_policy_losses, 0.0),
+            "value_loss": sum(all_value_losses, 0.0),
+            "positive_lm_loss": (sum(all_positive_lm_losses, 0.0)),
             "average_reward": np.mean(all_rewards) if all_rewards else 0.0,
             "accuracy": np.mean(all_accuracies) if all_accuracies else 0.0,
             "explained_variance": (

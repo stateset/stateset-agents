@@ -3,7 +3,7 @@ Enhanced Agent Architecture for StateSet Agents
 
 This module provides advanced agent capabilities including:
 - Memory augmentation with vector retrieval
-- Chain-of-thought reasoning
+- Assessed preparation with optional reasoning providers
 - Dynamic persona adaptation
 - Multi-modal processing
 - Self-improvement mechanisms
@@ -11,51 +11,26 @@ This module provides advanced agent capabilities including:
 
 from __future__ import annotations
 
+import copy
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-import numpy as np
-from numpy.typing import NDArray
-
-try:
-    import torch
-except ImportError:  # pragma: no cover - optional dependency
-    torch = None
+from stateset_agents.utils.async_calls import closing_async_generator
 
 from ..agent import AgentConfig, MultiTurnAgent
+from ..agent_initialization import BackendInitializationState
+from ..conversation import conversation_call, conversation_stream
+from ..trajectory import ConversationTurn
+from . import generation as enhanced_generation
+from .reasoning import ReasoningEngine as ReasoningEngine
+from .reasoning import ReasoningStep as ReasoningStep
+from .vector_memory import MemoryEntry as MemoryEntry
+from .vector_memory import VectorMemory
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class MemoryEntry:
-    """Enhanced memory entry with vector embeddings"""
-
-    content: str
-    embedding: np.ndarray | None = None
-    timestamp: datetime = field(default_factory=datetime.now)
-    importance: float = 1.0
-    context: dict[str, Any] = field(default_factory=dict)
-    access_count: int = 0
-    last_accessed: datetime | None = None
-
-    def update_access(self):
-        """Update access metadata"""
-        self.access_count += 1
-        self.last_accessed = datetime.now()
-
-
-@dataclass
-class ReasoningStep:
-    """Step in chain-of-thought reasoning"""
-
-    thought: str
-    action: str
-    confidence: float
-    evidence: list[str] = field(default_factory=list)
-    timestamp: datetime = field(default_factory=datetime.now)
 
 
 @dataclass
@@ -78,223 +53,11 @@ class PersonaProfile:
                 )
 
 
-class VectorMemory:
-    """Vector-based memory system for semantic retrieval"""
-
-    def __init__(
-        self,
-        embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
-        max_entries: int = 1000,
-    ):
-        self.embedding_model = embedding_model
-        self.max_entries = max_entries
-        self.entries: list[MemoryEntry] = []
-        self.tokenizer: Any | None = None
-        self.model: Any | None = None
-        if torch is not None:
-            cuda_available = False
-            try:  # pragma: no cover - device probing
-                cuda_available = torch.cuda.is_available()
-            except (AttributeError, RuntimeError):
-                cuda_available = False
-            self.device = torch.device("cuda" if cuda_available else "cpu")
-        else:
-            self.device = "cpu"
-
-    async def initialize(self):
-        """Initialize the embedding model"""
-        try:
-            from sentence_transformers import SentenceTransformer
-
-            self.model = SentenceTransformer(self.embedding_model)
-            self.model.to(self.device)
-            logger.info(f"Vector memory initialized with {self.embedding_model}")
-        except ImportError:
-            logger.warning(
-                "sentence-transformers not available, using simple embeddings"
-            )
-            self.model = None
-
-    async def add_entry(
-        self,
-        content: str,
-        context: dict[str, Any] | None = None,
-        importance: float = 1.0,
-    ) -> None:
-        """Add a new memory entry"""
-        entry = MemoryEntry(
-            content=content, context=context or {}, importance=importance
-        )
-
-        # Generate embedding
-        if self.model:
-            embedding = await self._generate_embedding(content)
-            entry.embedding = embedding
-
-        self.entries.append(entry)
-
-        # Maintain size limit (remove least important entries)
-        if len(self.entries) > self.max_entries:
-            self.entries.sort(
-                key=lambda x: x.importance * (1 + x.access_count * 0.1), reverse=True
-            )
-            self.entries = self.entries[: self.max_entries]
-
-    async def retrieve_relevant(self, query: str, top_k: int = 5) -> list[MemoryEntry]:
-        """Retrieve relevant memories based on semantic similarity"""
-        if not self.entries or not self.model:
-            return []
-
-        # Generate query embedding
-        query_embedding = await self._generate_embedding(query)
-
-        # Calculate similarities
-        similarities = []
-        for entry in self.entries:
-            if entry.embedding is not None:
-                similarity = np.dot(query_embedding, entry.embedding) / (
-                    np.linalg.norm(query_embedding) * np.linalg.norm(entry.embedding)
-                )
-                similarities.append((similarity, entry))
-
-        # Sort by similarity and recency
-        similarities.sort(
-            key=lambda x: x[0] * (1 + x[1].access_count * 0.1), reverse=True
-        )
-
-        # Update access metadata
-        relevant_entries = []
-        for _, entry in similarities[:top_k]:
-            entry.update_access()
-            relevant_entries.append(entry)
-
-        return relevant_entries
-
-    async def _generate_embedding(self, text: str) -> NDArray[np.float64]:
-        """Generate embedding for text"""
-        if self.model:
-            if torch is not None and hasattr(torch, "no_grad"):
-                with torch.no_grad():
-                    embedding = self.model.encode(text, convert_to_numpy=True)
-            else:
-                embedding = self.model.encode(text, convert_to_numpy=True)
-            return np.asarray(embedding, dtype=np.float64)
-        else:
-            # Simple fallback embedding
-            return np.random.rand(384).astype(np.float64)  # Match MiniLM dimension
-
-
-class ReasoningEngine:
-    """Chain-of-thought reasoning engine"""
-
-    def __init__(self, max_steps: int = 5, confidence_threshold: float = 0.7):
-        self.max_steps = max_steps
-        self.confidence_threshold = confidence_threshold
-        self.reasoning_templates = {
-            "analytical": "Let me analyze this step by step...",
-            "creative": "Let me think creatively about this...",
-            "problem_solving": "Let me break this problem down...",
-            "decision_making": "Let me weigh the options...",
-        }
-
-    async def reason(
-        self, query: str, context: dict[str, Any] | None = None
-    ) -> list[ReasoningStep]:
-        """Perform chain-of-thought reasoning"""
-        steps: list[ReasoningStep] = []
-        current_context = context or {}
-
-        # Determine reasoning type
-        reasoning_type = self._classify_reasoning_type(query)
-
-        # Generate reasoning steps
-        for step_num in range(self.max_steps):
-            step = await self._generate_reasoning_step(
-                query, reasoning_type, step_num, steps, current_context
-            )
-
-            steps.append(step)
-
-            # Stop if confidence is high enough or we have a clear answer
-            if step.confidence >= self.confidence_threshold:
-                break
-
-            # Update context with new information
-            current_context.update({"step": step_num + 1, "last_thought": step.thought})
-
-        return steps
-
-    def _classify_reasoning_type(self, query: str) -> str:
-        """Classify the type of reasoning needed"""
-        query_lower = query.lower()
-
-        if any(word in query_lower for word in ["analyze", "compare", "evaluate"]):
-            return "analytical"
-        elif any(word in query_lower for word in ["create", "design", "generate"]):
-            return "creative"
-        elif any(word in query_lower for word in ["solve", "fix", "troubleshoot"]):
-            return "problem_solving"
-        else:
-            return "decision_making"
-
-    async def _generate_reasoning_step(
-        self,
-        query: str,
-        reasoning_type: str,
-        step_num: int,
-        previous_steps: list[ReasoningStep],
-        context: dict[str, Any],
-    ) -> ReasoningStep:
-        """Generate a single reasoning step"""
-
-        # Template-based reasoning for now
-        # In practice, this would use an LLM for more sophisticated reasoning
-
-        thought_templates = {
-            "analytical": [
-                "First, I need to understand the key components of this query.",
-                "Now let me examine the relationships between different elements.",
-                "Based on my analysis, I can identify the main patterns.",
-                "Let me verify my understanding by checking against known facts.",
-                "Finally, I can synthesize my findings into a coherent response.",
-            ],
-            "creative": [
-                "Let me start by brainstorming different approaches.",
-                "I can combine these ideas in interesting ways.",
-                "This combination could lead to innovative solutions.",
-                "Let me refine this concept further.",
-                "The final creative solution emerges from this process.",
-            ],
-            "problem_solving": [
-                "The core problem seems to be...",
-                "Let me identify the root cause by examining symptoms.",
-                "I can apply systematic problem-solving techniques.",
-                "Testing potential solutions against requirements.",
-                "The most effective solution appears to be...",
-            ],
-            "decision_making": [
-                "I need to consider all available options.",
-                "Let me evaluate the pros and cons of each choice.",
-                "Based on the criteria, some options stand out.",
-                "Considering risks and uncertainties.",
-                "The optimal decision balances all factors.",
-            ],
-        }
-
-        template = thought_templates.get(
-            reasoning_type, thought_templates["analytical"]
-        )
-
-        thought = template[min(step_num, len(template) - 1)]
-        action = f"Continue {reasoning_type} reasoning"
-        confidence = min(0.5 + step_num * 0.1, 0.9)  # Increasing confidence
-
-        return ReasoningStep(
-            thought=thought,
-            action=action,
-            confidence=confidence,
-            evidence=[f"Step {i + 1}" for i in range(step_num)],
-        )
+@dataclass
+class _MemorySetup:
+    system: VectorMemory
+    complete: bool = False
+    error: BaseException | None = None
 
 
 class EnhancedMultiTurnAgent(MultiTurnAgent):
@@ -308,14 +71,29 @@ class EnhancedMultiTurnAgent(MultiTurnAgent):
         memory_system: VectorMemory | None = None,
         reasoning_engine: ReasoningEngine | None = None,
         persona: PersonaProfile | None = None,
+        *,
+        memory_enabled: bool = True,
+        reasoning_enabled: bool = True,
         **kwargs,
     ):
         super().__init__(config, **kwargs)
 
         # Advanced capabilities
-        self.memory_system = memory_system or VectorMemory()
-        self.reasoning_engine = reasoning_engine or ReasoningEngine()
-        self.persona = persona or PersonaProfile("Assistant")
+        self.memory_enabled = memory_enabled
+        self.reasoning_enabled = reasoning_enabled
+        self.memory_system = (
+            memory_system
+            if memory_system is not None
+            else (VectorMemory() if memory_enabled else None)
+        )
+        self.reasoning_engine = (
+            reasoning_engine
+            if reasoning_engine is not None
+            else (ReasoningEngine() if reasoning_enabled else None)
+        )
+        self.persona = persona if persona is not None else PersonaProfile("Assistant")
+        self._memory_setup: _MemorySetup | None = None
+        self._generations = enhanced_generation._GenerationLedger()
 
         # Enhanced state
         self.reasoning_history: list[list[ReasoningStep]] = []
@@ -325,70 +103,167 @@ class EnhancedMultiTurnAgent(MultiTurnAgent):
         # Multi-modal support
         self.multimodal_processors: dict[str, Any] = {}
 
-    async def initialize(self):
-        """Initialize the enhanced agent"""
-        await super().initialize()
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Keep previously serialized enhanced agents readable."""
+        self.__dict__.update(state)
+        self.memory_enabled = state.get("memory_enabled", True)
+        self.reasoning_enabled = state.get("reasoning_enabled", True)
+        self._memory_setup = state.get("_memory_setup")
+        self._generations = state.get(
+            "_generations", enhanced_generation._GenerationLedger()
+        )
 
-        # Initialize memory system
-        await self.memory_system.initialize()
+    def _generation_ledger(self) -> enhanced_generation._GenerationLedger:
+        return self._generations
 
-        logger.info("Enhanced MultiTurnAgent initialized with advanced capabilities")
+    def get_generation_status(self, generation_id: str | None = None) -> dict[str, Any]:
+        """Inspect active/latest generation and retained batch memory receipts."""
+        return self._generation_ledger().inspect(generation_id)
 
+    @conversation_call
+    async def remember_candidate(self, turn: ConversationTurn) -> None:
+        """Remember one unchanged batch candidate, at most once per retained batch.
+
+        The latest 32 idle batch receipts are retained, plus in-flight writes.
+        A failed write is unconfirmed and cannot be replayed automatically.
+        Candidate selection rights are excluded from deep copies and pickles.
+        """
+        await enhanced_generation.remember_candidate(self, turn)
+
+    async def _initialize_extensions(self) -> None:
+        """Retain memory setup effects inside the agent initialization attempt."""
+        if self.reasoning_enabled and self.reasoning_engine is None:
+            raise ValueError("Enabled reasoning requires a reasoning engine")
+        if not self.memory_enabled:
+            return
+        memory = self.memory_system
+        if memory is None:
+            raise ValueError("Enabled memory requires a memory system")
+        previous = self._memory_setup
+        if previous is not None and previous.system is memory:
+            if previous.error is not None and type(memory) is not VectorMemory:
+                raise RuntimeError(
+                    "Previous custom memory initialization failed after it began; "
+                    "provide a fresh memory system or agent before retrying"
+                ) from previous.error
+            if previous.complete and type(memory) is not VectorMemory:
+                return
+        # Built-in VectorMemory prepares a detached candidate and can safely retry.
+        # Custom systems may mutate borrowed resources before raising.
+        setup = _MemorySetup(memory)
+        self._memory_setup = setup
+        try:
+            await memory.initialize()
+            if self.memory_system is not memory:
+                raise ValueError("Memory system changed during initialization")
+        except BaseException as error:
+            setup.error = error
+            raise
+        else:
+            setup.complete = True
+
+    def _ensure_backend_usable(self) -> None:
+        super()._ensure_backend_usable()
+        if (
+            self.memory_enabled
+            and self._initialization_owner().state is BackendInitializationState.READY
+            and (
+                self._memory_setup is None
+                or self.memory_system is not self._memory_setup.system
+                or not self._memory_setup.complete
+            )
+        ):
+            raise RuntimeError(
+                "Enhanced memory system changed; initialize the agent before use"
+            )
+        if self.memory_enabled and isinstance(self.memory_system, VectorMemory):
+            self.memory_system._ensure_usable()
+        if self.reasoning_enabled and self.reasoning_engine is None:
+            raise RuntimeError("Enabled reasoning requires a reasoning engine")
+
+    @conversation_call
     async def generate_response(
         self,
         messages_or_prompt: str | list[dict[str, str]],
         context: dict[str, Any] | None = None,
     ) -> str:
-        """Generate enhanced response with reasoning and memory"""
-
-        if isinstance(messages_or_prompt, str):
-            messages = [{"role": "user", "content": messages_or_prompt}]
-        else:
-            messages = messages_or_prompt
-
-        # Extract current query
-        current_query = messages[-1]["content"] if messages else ""
-
-        # Retrieve relevant memories
-        relevant_memories = await self.memory_system.retrieve_relevant(
-            current_query, top_k=3
-        )
-
-        # Perform reasoning if needed
-        reasoning_steps = []
-        if self._should_reason(current_query):
-            reasoning_steps = await self.reasoning_engine.reason(
-                current_query, context or {}
+        """Prepare enhancements once and remember one completed response."""
+        async with self._generation_ledger().attempt("response") as receipt:
+            request = await enhanced_generation.prepare(
+                self, receipt, messages_or_prompt, context
             )
-            self.reasoning_history.append(reasoning_steps)
+            response = await enhanced_generation.sample(
+                super().generate_response(request.messages, request.context),
+                receipt,
+                lambda response: [response],
+            )
+            await enhanced_generation.complete(self, request)
+            return response
 
-        # Adapt persona based on context
-        if context:
-            self._adapt_persona(context)
+    @conversation_call
+    async def generate_turn(
+        self,
+        messages: str | list[dict[str, str]],
+        context: dict[str, Any] | None = None,
+    ) -> ConversationTurn:
+        """Apply enhancements while preserving native sampler metadata."""
+        async with self._generation_ledger().attempt("turn") as receipt:
+            request = await enhanced_generation.prepare(
+                self, receipt, messages, context
+            )
+            turn = await enhanced_generation.sample(
+                super().generate_turn(request.messages, request.context),
+                receipt,
+                lambda turn: [enhanced_generation.output_text(turn)],
+            )
+            await enhanced_generation.complete(self, request)
+            enhanced_generation.annotate(turn, receipt, 0)
+            return turn
 
-        # Enhance context with memories and reasoning
-        enhanced_context = {
-            **(context or {}),
-            "relevant_memories": [mem.content for mem in relevant_memories],
-            "reasoning_steps": [step.thought for step in reasoning_steps],
-            "persona_traits": self.persona.traits,
-        }
+    @conversation_call
+    async def generate_turns(
+        self,
+        messages: str | list[dict[str, str]],
+        n: int,
+        context: dict[str, Any] | None = None,
+    ) -> list[ConversationTurn]:
+        """Sample from one prepared context; remember only an explicitly selected candidate."""
+        n = int(n)
+        if n <= 0:
+            return []
+        async with self._generation_ledger().attempt("batch") as receipt:
+            request = await enhanced_generation.prepare(
+                self, receipt, messages, context
+            )
+            turns = await enhanced_generation.sample(
+                super().generate_turns(request.messages, n, request.context),
+                receipt,
+                lambda turns: [enhanced_generation.output_text(turn) for turn in turns],
+            )
+            await enhanced_generation.complete(self, request, candidates=True)
+            for index, turn in enumerate(turns):
+                enhanced_generation.annotate(turn, receipt, index)
+            return turns
 
-        # Generate response using base agent
-        response = str(await super().generate_response(messages, enhanced_context))
-
-        # Store interaction in memory
-        memory_content = f"Query: {current_query}\nResponse: {response}"
-        await self.memory_system.add_entry(
-            content=memory_content,
-            context={"query": current_query, "response": response},
-            importance=self._calculate_importance(current_query, response),
-        )
-
-        # Update performance metrics
-        self._update_performance_metrics(response, context or {})
-
-        return str(response)
+    @conversation_stream
+    async def generate_response_stream(
+        self,
+        messages: str | list[dict[str, str]],
+        context: dict[str, Any] | None = None,
+    ) -> AsyncIterator[str]:
+        """Stream one prepared request, committing memory only on normal exhaustion."""
+        async with self._generation_ledger().attempt("stream") as receipt:
+            request = await enhanced_generation.prepare(
+                self, receipt, messages, context
+            )
+            source = super().generate_response_stream(request.messages, request.context)
+            async with closing_async_generator(source) as stream:
+                async for chunk in stream:
+                    receipt.partial_text += chunk
+                    yield chunk
+            response = self._clean_response(receipt.partial_text, native_protocol=False)
+            receipt.outputs = [response]
+            await enhanced_generation.complete(self, request)
 
     def _should_reason(self, query: str) -> bool:
         """Determine if complex reasoning is needed"""
@@ -408,17 +283,30 @@ class EnhancedMultiTurnAgent(MultiTurnAgent):
         query_lower = query.lower()
         return any(indicator in query_lower for indicator in complex_indicators)
 
-    def _adapt_persona(self, context: dict[str, Any]):
-        """Adapt persona based on context"""
+    def _adapt_persona(self, context: dict[str, Any]) -> None:
+        """Adapt persona based on context."""
+        persona = self.persona
+        preview = copy.deepcopy(persona)
+        self._adapt_persona_profile(preview, context)
+        with self._conversation_owner().commit():
+            if self.persona is not persona:
+                raise RuntimeError("Persona changed during adaptation")
+            vars(persona).update(vars(preview))
+
+    @staticmethod
+    def _adapt_persona_profile(
+        persona: PersonaProfile, context: dict[str, Any]
+    ) -> None:
+        """Apply context traits to either a detached preview or the live profile."""
         # Simple adaptation logic
         if context.get("urgency") == "high":
-            self.persona.traits["responsiveness"] = min(
-                1.0, self.persona.traits.get("responsiveness", 0.5) + 0.1
+            persona.traits["responsiveness"] = min(
+                1.0, persona.traits.get("responsiveness", 0.5) + 0.1
             )
 
         if context.get("technical_level") == "expert":
-            self.persona.traits["technical_depth"] = min(
-                1.0, self.persona.traits.get("technical_depth", 0.5) + 0.1
+            persona.traits["technical_depth"] = min(
+                1.0, persona.traits.get("technical_depth", 0.5) + 0.1
             )
 
     def _calculate_importance(self, query: str, response: str) -> float:
@@ -441,58 +329,100 @@ class EnhancedMultiTurnAgent(MultiTurnAgent):
 
     def _update_performance_metrics(self, response: str, context: dict[str, Any]):
         """Update performance tracking"""
-        self.performance_metrics["total_responses"] = (
-            self.performance_metrics.get("total_responses", 0) + 1
-        )
-        self.performance_metrics["avg_response_length"] = (
-            self.performance_metrics.get("avg_response_length", 0)
-            * (self.performance_metrics["total_responses"] - 1)
-            + len(response.split())
-        ) / self.performance_metrics["total_responses"]
+        with self._conversation_owner().commit():
+            self.performance_metrics["total_responses"] = (
+                self.performance_metrics.get("total_responses", 0) + 1
+            )
+            self.performance_metrics["avg_response_length"] = (
+                self.performance_metrics.get("avg_response_length", 0)
+                * (self.performance_metrics["total_responses"] - 1)
+                + len(response.split())
+            ) / self.performance_metrics["total_responses"]
 
+    @conversation_call
     async def self_improve(self, feedback: dict[str, Any]):
         """Self-improvement mechanism"""
-        self.self_improvement_data.append(
-            {
-                "timestamp": datetime.now(),
-                "feedback": feedback,
-                "current_metrics": self.performance_metrics.copy(),
-            }
-        )
+        self._ensure_backend_usable()
+        with self._conversation_owner().commit():
+            self.self_improvement_data.append(
+                {
+                    "timestamp": datetime.now(),
+                    "feedback": feedback,
+                    "current_metrics": self.performance_metrics.copy(),
+                }
+            )
 
         # Adapt persona based on feedback
         if "persona_feedback" in feedback:
-            self.persona.adapt(feedback["persona_feedback"])
+            persona = self.persona
+            preview = copy.deepcopy(persona)
+            preview.adapt(feedback["persona_feedback"])
+            with self._conversation_owner().commit():
+                if self.persona is not persona:
+                    raise RuntimeError("Persona changed during adaptation")
+                vars(persona).update(vars(preview))
 
         # Store improvement insights in memory
         improvement_insight = (
             f"Self-improvement: {feedback.get('insight', 'General improvement')}"
         )
-        await self.memory_system.add_entry(
-            content=improvement_insight,
-            context={"type": "self_improvement", "feedback": feedback},
-            importance=1.5,
-        )
+        if self.memory_enabled and self.memory_system is not None:
+            self._conversation_owner().check()
+            await self.memory_system.add_entry(
+                content=improvement_insight,
+                context={"type": "self_improvement", "feedback": feedback},
+                importance=1.5,
+            )
 
     def get_agent_status(self) -> dict[str, Any]:
         """Get comprehensive agent status"""
-        return {
-            "base_config": self.config.__dict__,
-            "memory_entries": len(self.memory_system.entries),
-            "reasoning_sessions": len(self.reasoning_history),
-            "performance_metrics": self.performance_metrics,
-            "persona": {
-                "name": self.persona.name,
-                "traits": self.persona.traits,
-                "expertise_areas": self.persona.expertise_areas,
-            },
-            "capabilities": [
-                "vector_memory",
-                "chain_of_thought",
-                "dynamic_persona",
-                "self_improvement",
-            ],
-        }
+        return copy.deepcopy(
+            {
+                "base_config": self.config.__dict__,
+                "initialization": self.get_initialization_status(),
+                "conversation": self.get_conversation_status(),
+                "memory_backend": (
+                    self.memory_system.get_initialization_status()
+                    if self.memory_system is not None
+                    and isinstance(self.memory_system, VectorMemory)
+                    else None
+                ),
+                "memory_snapshot": (
+                    self.memory_system.get_snapshot_status()
+                    if self.memory_system is not None
+                    and isinstance(self.memory_system, VectorMemory)
+                    else None
+                ),
+                "memory_entries": (
+                    len(self.memory_system.entries)
+                    if self.memory_system is not None
+                    else 0
+                ),
+                "reasoning_sessions": len(self.reasoning_history),
+                "reasoning_backend": (
+                    (
+                        self.reasoning_engine.get_status()
+                        if isinstance(self.reasoning_engine, ReasoningEngine)
+                        else {"mode": "custom", "status": "unavailable"}
+                    )
+                    if self.reasoning_enabled and self.reasoning_engine is not None
+                    else None
+                ),
+                "performance_metrics": self.performance_metrics,
+                "persona": {
+                    "name": self.persona.name,
+                    "traits": self.persona.traits,
+                    "expertise_areas": self.persona.expertise_areas,
+                },
+                "capabilities": [
+                    *(["vector_memory"] if self.memory_enabled else []),
+                    *(["chain_of_thought"] if self.reasoning_enabled else []),
+                    *(["reasoning_preparation"] if self.reasoning_enabled else []),
+                    "dynamic_persona",
+                    "self_improvement",
+                ],
+            }
+        )
 
 
 # Factory functions for creating enhanced agents
@@ -503,6 +433,9 @@ def create_enhanced_agent(
     memory_enabled: bool = True,
     reasoning_enabled: bool = True,
     persona_name: str = "Assistant",
+    *,
+    memory_system: VectorMemory | None = None,
+    reasoning_engine: ReasoningEngine | None = None,
     **kwargs,
 ) -> EnhancedMultiTurnAgent:
     """Create an enhanced agent with advanced capabilities"""
@@ -510,8 +443,10 @@ def create_enhanced_agent(
     config = AgentConfig(model_name=model_name, **kwargs)
 
     # Create components
-    memory_system = VectorMemory() if memory_enabled else None
-    reasoning_engine = ReasoningEngine() if reasoning_enabled else None
+    if memory_system is None and memory_enabled:
+        memory_system = VectorMemory()
+    if reasoning_engine is None and reasoning_enabled:
+        reasoning_engine = ReasoningEngine()
 
     # Create persona
     persona = PersonaProfile(
@@ -530,6 +465,8 @@ def create_enhanced_agent(
         memory_system=memory_system,
         reasoning_engine=reasoning_engine,
         persona=persona,
+        memory_enabled=memory_enabled,
+        reasoning_enabled=reasoning_enabled,
     )
 
 

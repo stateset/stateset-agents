@@ -1,165 +1,158 @@
-# StateSet Agents – Quickstart (the boring path)
+# StateSet Agents quickstart
 
-> **TraceForge RL rename (Phase 1):** `traceforge-rl` and
-> `import traceforge_rl` are equivalent aliases for the
-> `stateset-agents` / `stateset_agents` names used below; both keep
-> working. See [docs/RENAME_TRACEFORGE.md](docs/RENAME_TRACEFORGE.md).
+Run an offline loop from conversation logs to a graded, curated training
+dataset. Then preview training and serving. The commands below work from an
+installed Python package without a repository checkout, GPU, or API key.
 
-One loop you can run right away — no GPU, no API keys:
+`traceforge-rl` and `import traceforge_rl` are aliases for `stateset-agents`
+and `stateset_agents`. See the [rename guide](docs/RENAME_TRACEFORGE.md).
 
-- pip install → ingest sample logs → improve (grade/curate) → one GRPO dry‑run (stub/HF) → serve.
+## 1. Install
 
-All commands below are real and use files/scripts that live in this repository.
-
----
-
-## 1) Install
+Use Python 3.10 or later:
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install stateset-agents
-# Optional (for `serve`): FastAPI + Uvicorn gateway
-pip install 'stateset-agents[api]'
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install stateset-agents
 ```
 
-Verify:
+The packaged grading and dataset-preparation modules described here require a
+release containing these changes. To verify the current source before that
+release is published, run `python -m pip install .` from its checkout, then
+follow the remaining steps from any directory.
 
+## 2. Grade and curate sample conversations
+
+The sample contains one weak reply and two replies that pass the heuristic
+customer-support rubric. The rubric scores tone and relevance; review real
+examples against your own business policy before using them for training.
+
+The following steps use Bash. Artifacts stay in the printed working directory.
+
+<!-- quickstart-smoke:start -->
 ```bash
-python -c "import stateset_agents; print(stateset_agents.__version__)"
-```
+WORKDIR="$(mktemp -d -t stateset-quickstart.XXXXXX)"
+export WORKDIR
 
----
+python - <<'SAMPLE'
+import json
+import os
+from pathlib import Path
 
-## 2) Ingest sample logs and Improve (grade → curate)
-
-Easiest: run the maintained example that writes three OpenAI‑format logs, ingests them, grades every assistant turn with the customer‑support rubric, and writes a curated JSONL:
-
-```bash
-PYTHON=python examples/five_minute_demo.sh
-```
-
-It prints the location of the curated set (curated.jsonl). You can also run the same loop explicitly:
-
-```bash
-# 2a. Write three chat-completions transcripts (from the example)
-WORKDIR="$(mktemp -d)"; LOGS="$WORKDIR/logs.jsonl"
-python - <<'PY'
-import json, os
-logs = [
-  {"messages":[{"role":"user","content":"My package is late, can I get an update?"},{"role":"assistant","content":"Thanks for flagging this delay — I’ll check your order and email you the latest ETA."}]},
-  {"messages":[{"role":"user","content":"I was charged twice for my order"},{"role":"assistant","content":"Sorry about that — I’ll refund the duplicate charge and confirm by email."}]},
-  {"messages":[{"role":"user","content":"What’s included in the Premium Plan?"},{"role":"assistant","content":"Premium includes priority support and higher usage limits."}]},
+conversations = [
+    ("My order has not arrived. Can you help?", "No."),
+    (
+        "I need a refund for my damaged order.",
+        "I am sorry your order arrived damaged. Thank you for letting us know. "
+        "I would be happy to help with your refund. Please share your order "
+        "number so I can check the return policy and explain the next steps.",
+    ),
+    (
+        "Can you check my order status? It has been a week.",
+        "Of course, happy to help! I understand waiting a week is frustrating. "
+        "Please share your order number and I will look up the latest shipping "
+        "status and tracking details for you.",
+    ),
 ]
-with open(os.environ["LOGS"],"w") as f:
-  for row in logs: f.write(json.dumps(row)+"\n")
-print("wrote:", os.environ["LOGS"])
-PY
+path = Path(os.environ["WORKDIR"]) / "logs.jsonl"
+with path.open("w", encoding="utf-8") as handle:
+    for question, answer in conversations:
+        handle.write(json.dumps({"messages": [
+            {"role": "user", "content": question},
+            {"role": "assistant", "content": answer},
+        ]}) + "\n")
+print(f"Working directory: {path.parent}")
+SAMPLE
 
-# 2b. Ingest OpenAI logs → grading transcripts (one conversation per file)
-python -m stateset_agents.cli ingest --format openai --input "$LOGS" --output "$WORKDIR/transcripts"
-
-# 2c. Grade and curate with the customer-support reward (offline, no API keys)
-python -m stateset_agents.cli improve run \
-  --transcripts "$WORKDIR/transcripts" --format transcripts \
-  --reward customer_support --output "$WORKDIR/improved"
-
-echo "Curated set → $WORKDIR/improved/curated.jsonl"
+python -m stateset_agents.cli ingest --format openai --input "$WORKDIR/logs.jsonl" --output "$WORKDIR/transcripts"
+python -m stateset_agents.cli improve run --transcripts "$WORKDIR/transcripts" --reward customer_support --output "$WORKDIR/improved"
+python -m stateset_agents.cli improve status --output "$WORKDIR/improved"
 ```
 
----
-
-## 3) One GRPO job (GPU‑free, stub/HF)
-
-Run the unified GSPO driver in dry‑run mode (default). It builds the agent with the stub backend, resolves hyperparameters, and prints the plan — no downloads, no GPU:
+The output directory contains `improve_summary.json`, `curated.jsonl`, and
+`next_steps.md`. Confirm that grading kept the useful examples:
 
 ```bash
-python examples/finetune_gspo.py --model qwen3.5-0.8b
-# Add --no-dry-run on a GPU host to actually train.
+python - <<'CHECK'
+import json
+import os
+from pathlib import Path
+
+output = Path(os.environ["WORKDIR"]) / "improved"
+summary = json.loads((output / "improve_summary.json").read_text())
+assert summary["transcript_count"] == 3
+assert summary["assistant_turn_count"] == 3
+assert summary["curated_count"] == 2
+rows = [json.loads(line) for line in (output / "curated.jsonl").read_text().splitlines()]
+assert len(rows) == 2
+assert all(row["response"] != "No." for row in rows)
+print("Graded three conversations and retained two examples.")
+CHECK
 ```
 
-Prefer supervised fine‑tuning first? Turn the curated set into a CPU‑safe SFT plan (prints the training plan and exits 0 on CPU‑only machines):
+## 3. Prepare data and preview training
+
+Convert the curated pairs into chat-format JSONL, then validate an SFT plan:
 
 ```bash
-python scripts/prepare_sft_dataset.py \
-  --input "$WORKDIR/improved/curated.jsonl" --format chat \
-  --output "$WORKDIR/improved/sft_train.jsonl" --min-score 0.7 --dedup
-
-python scripts/sft_from_curated.py \
-  --dataset "$WORKDIR/improved/sft_train.jsonl" \
-  --base-model Qwen/Qwen3.5-0.8B \
-  --output-dir "$WORKDIR/outputs/sft_v1" \
-  --num-epochs 3 --lora-r 16
+python -m stateset_agents.data.prepare_sft_dataset --input "$WORKDIR/improved/curated.jsonl" --format chat --output "$WORKDIR/improved/sft_train.jsonl" --min-score 0.7 --dedup
+python -m stateset_agents.training.sft --dataset "$WORKDIR/improved/sft_train.jsonl" --base-model Qwen/Qwen3.5-0.8B --output-dir "$WORKDIR/sft_v1" --num-epochs 3 --lora-r 16 --dry-run
+python -m stateset_agents.training.gspo_preview --model qwen3.5-0.8b --task customer_support
+python -m stateset_agents.cli serve --dry-run
 ```
+<!-- quickstart-smoke:end -->
 
----
+These previews download no model weights, perform no optimizer updates, and
+create no trained checkpoint. The GSPO preview resolves hyperparameters; its
+task label does not select a task-specific reward or environment.
 
-## 3.1) Contract‑only: standard‑agent quality contract (no GPU)
+For real local SFT, install `stateset-agents[training]`, use a supported GPU,
+and rerun the SFT command without `--dry-run`. Review held-out quality before
+serving. See [the improvement pipeline](docs/IMPROVEMENT_PIPELINE.md) for
+validation/test separation and promotion criteria.
 
-This validates the standard‑agent execution manifest shape and harness config without provisioning compute. It is NOT a measured τ³/BFCL/SWE result — just an unpaid receipt that the contract is intact.
+## 4. Plan remote training
 
-Example (uses the committed example manifest and harness config):
+Choose a provider explicitly. RunPod has retained live training evidence for
+the configurations in the [RunPod guide](docs/RUNPOD_GUIDE.md). The CLI's
+compatibility default remains Modal, whose live transport is unverified.
+Provider support does not certify every model or hardware combination.
+
+This command prints a local resource plan and allocates no compute:
 
 ```bash
-make benchmark-agent-quality-contract
-# Under the hood (for reference):
-#   python benchmarks/adapters/paired_agent_harness.py validate \
-#       --harness-config benchmarks/agent_quality_harnesses.example.json
-#   python benchmarks/run_agent_quality_matrix.py \
-#       benchmarks/agent_quality_manifest.example.json \
-#       --output-dir /tmp/stateset-agent-quality-contract --dry-run
+python -m stateset_agents.cli train-remote --provider runpod --dataset "$WORKDIR/improved/sft_train.jsonl" --base-model Qwen/Qwen3.5-0.8B --output-dir "$WORKDIR/sft_v1" --plan-only
 ```
 
----
+For a live run, follow the provider guide to configure credentials and choose
+a timeout and `--max-cost` budget. Remote `--dry-run` can still rent hardware;
+use `--plan-only` for a non-billable preview.
 
-## 4) Remote training (default backend = Modal)
+## 5. Serve an evaluated checkpoint
 
-Modal is the recommended remote backend. Live transport remains unverified; jobs fail closed without credentials and never claim results.
-
-Plan a run without spending:
+After real training and evaluation have produced an adapter:
 
 ```bash
-# Default provider is Modal — --provider modal is optional
-python -m stateset_agents.cli train-remote \
-  --dataset "$WORKDIR/improved/sft_train.jsonl" \
-  --base-model Qwen/Qwen3.5-0.8B \
-  --plan-only
+python -m pip install 'stateset-agents[training,api]'
+python -m stateset_agents.cli serve --checkpoint "$WORKDIR/sft_v1" --host 127.0.0.1 --port 8000
 ```
 
-Run for real (requires Modal account + extras):
+See the [API guide](docs/GETTING_STARTED_API.md) for authentication and production
+configuration. The earlier dry runs do not produce an adapter to serve.
 
-```bash
-pip install 'stateset-agents[modal]'
-python -m stateset_agents.cli train-remote \
-  --dataset "$WORKDIR/improved/sft_train.jsonl" \
-  --base-model Qwen/Qwen3.5-0.8B
-```
+## Run experiments on StateSet Swarm
 
-Other providers (RunPod, Fireworks, River, …) remain available but are not the default.
+Fan out a GRPO run and a verified checkpoint edit to two sandboxes. The guide
+includes a local replay, hosted launch commands and sample results for three RL
+seeds. [Swarm getting started](examples/swarm/README.md)
 
----
+## Verification
 
-## 5) Serve the API
+The wheel CI runs the marked offline steps above from outside the checkout,
+including in a minimal environment without PyTorch. It also exercises MCP
+grading and preset-preview functions against the installed wheel. This proves
+the local workflow; it does not certify remote training or model-quality gains.
 
-Start the FastAPI gateway. On CPU‑only machines, use a dry run to preview the command; on GPU/after training, pass your checkpoint:
-
-```bash
-# Preview (no server starts)
-stateset-agents serve --dry-run
-
-# Serve a trained adapter (on a machine with the weights available)
-stateset-agents serve --checkpoint "$WORKDIR/outputs/sft_v1" --host 0.0.0.0 --port 8000
-```
-
----
-
-## What keeps this from rotting?
-
-- CI runs a CLI smoke over the same entrypoints used above.
-- A docs‑contract test asserts the `stateset-agents` commands referenced here exist.
-- The npm client’s test script is JS‑only and typechecks, with a guard that prevents accidental `*.ts` execution.
-
-If something here stops working, please open an issue.
-
----
-
-• Need a deeper tour? See `docs/PLATFORM_TOUR.md` and `docs/COOKBOOK.md`.*** End Patch``` }}}```?? Wait... The tool requires valid grammar exactly. Ensure no stray braces. The patch content should be plain. Let's correct. I included extra triple braces. I must re-submit. Let's produce proper ApplyPatch input. We'll craft again without stray delimiting.
+Continue with the [platform tour](docs/PLATFORM_TOUR.md) or
+[cookbook](docs/COOKBOOK.md).

@@ -1,23 +1,27 @@
+import asyncio
+import copy
+import inspect
 import logging
 import os
 import time
-from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
-from stateset_agents.utils.async_calls import drain_owned_operation
+from stateset_agents.utils.async_calls import run_async_owned
 
+from .application_lifecycle import ApplicationLifecycle, ApplicationLifecycleMiddleware
 from .config import ConfigurationError, get_config
 from .errors import setup_exception_handlers
 from .middleware import setup_middleware
 from .openapi import add_documentation_routes, setup_openapi
 from .resilience import HealthChecker, HealthStatus, get_all_circuit_stats
+from .resource_lifecycle import ResourceOwnershipError
 from .routers import (
     agents,
     distributed_rollouts,
@@ -54,139 +58,308 @@ class LazyApp:
         return getattr(self._get_app(), name)
 
 
+def _lifecycle(app: FastAPI) -> ApplicationLifecycle:
+    owner = getattr(app.state, "lifecycle", None)
+    if owner is None:
+        owner = ApplicationLifecycle()
+        app.state.lifecycle = owner
+    if not isinstance(owner, ApplicationLifecycle):
+        raise ResourceOwnershipError(
+            "app.state.lifecycle must be an ApplicationLifecycle"
+        )
+    return owner
+
+
+def _restart_dependencies(app: FastAPI, owner: ApplicationLifecycle) -> None:
+    from .conversation_store import ConversationStore
+    from .services.training_service import TrainingService
+
+    supported = {
+        "health_checker": HealthChecker,
+        "inference_service": InferenceService,
+        "training_service": TrainingService,
+        "v1_conversation_store": ConversationStore,
+    }
+    factories = getattr(app.state, "lifecycle_factories", {})
+    if not isinstance(factories, dict) or set(factories) - supported.keys():
+        raise ValueError(
+            "lifecycle_factories must map supported dependency names to factories"
+        )
+    if any(not callable(factory) for factory in factories.values()):
+        raise TypeError("Lifecycle factories must be callable")
+    # Validate all custom replacements before constructing anything. Each new
+    # resource is then bound by the caller immediately after construction.
+    for name, native_type in supported.items():
+        current = getattr(app.state, name, None)
+        if owner.was_retired(name, current) and type(current) is not native_type:
+            if name not in factories or not callable(factories[name]):
+                raise ResourceOwnershipError(
+                    f"Replace closed custom {name} or provide app.state.lifecycle_factories[{name!r}]"
+                )
+
+
+def _dependency(
+    app: FastAPI, owner: ApplicationLifecycle, name: str, default: Any
+) -> Any:
+    from .conversation_store import ConversationStore
+    from .services.training_service import TrainingService
+
+    current = getattr(app.state, name, None)
+    if current is None or owner.was_retired(name, current):
+        factory = getattr(app.state, "lifecycle_factories", {}).get(name)
+        if factory is not None:
+            replacement = factory()
+            if inspect.isawaitable(replacement):
+                if inspect.iscoroutine(replacement):
+                    replacement.close()
+                raise TypeError(
+                    "Lifecycle factories must construct resources synchronously"
+                )
+            if replacement is None or replacement is current:
+                raise ResourceOwnershipError(
+                    "Lifecycle factories must return a fresh resource"
+                )
+            current = replacement
+        elif current is None:
+            current = default()
+        elif type(current) is HealthChecker or type(current) is TrainingService:
+            current = current.clone_for_restart()
+        elif type(current) is InferenceService:
+            current = InferenceService(copy.deepcopy(current.config))
+        elif type(current) is ConversationStore:
+            path = (
+                getattr(app.state.config, "v1_conversation_db_path", None)
+                or current.path
+            )
+            current = ConversationStore(
+                path, ttl_seconds=current.ttl_seconds, max_items=current.max_items
+            )
+        else:
+            raise ResourceOwnershipError(
+                f"Closed custom {name} requires a fresh resource"
+            )
+    setattr(app.state, name, current)
+    return current
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan manager with resource initialization."""
-    config = getattr(app.state, "config", get_config())
-    strict_startup = (
-        os.getenv("STATESET_AGENTS_STRICT_STARTUP", "false").lower()
-        in {"1", "true", "on", "yes"}
-        or config.is_production()
-    )
-    health_checker = getattr(app.state, "health_checker", HealthChecker())
-    app.state.health_checker = health_checker
-    inference_service = getattr(app.state, "inference_service", None)
-    close_cache_fn: Callable[[], Awaitable[None]] | None = None
-    close_database_fn: Callable[[], Awaitable[None]] | None = None
-    training_service = getattr(app.state, "training_service", None)
-
-    async def shutdown() -> None:
-        # Training cleanup may still use these shared services. Keep them open
-        # until every owned worker has exited, even if the shutdown caller is
-        # cancelled repeatedly.
-        if training_service is not None:
-            await training_service.aclose()
-        if close_cache_fn is not None:
-            try:
-                await close_cache_fn()
-            except Exception as exc:
-                logger.warning("Cache cleanup failed (%s)", type(exc).__name__)
-        if close_database_fn is not None:
-            try:
-                await close_database_fn()
-            except Exception as exc:
-                logger.warning("Database cleanup failed (%s)", type(exc).__name__)
-        if inference_service is not None:
-            try:
-                await inference_service.aclose()
-            except Exception as exc:
-                logger.warning("Inference cleanup failed (%s)", type(exc).__name__)
-
+    """Own one complete application generation, including rollback and request drain."""
+    owner = _lifecycle(app)
+    generation = owner.begin()  # Rejected overlap must not clean up the active app.
+    primary: BaseException | None = None
     try:
-        if inference_service is None:
-            inference_service = InferenceService(InferenceConfig.from_env())
-            app.state.inference_service = inference_service
+        with owner.phase(generation, "configuration"):
+            config = getattr(app.state, "config", None)
+            if config is None:
+                config = get_config()
+                app.state.config = config
+            strict_startup = (
+                os.getenv("STATESET_AGENTS_STRICT_STARTUP", "false").lower()
+                in {"1", "true", "on", "yes"}
+                or config.is_production()
+            )
+            _restart_dependencies(app, owner)
+
+        with owner.phase(generation, "dependencies"):
+            health_checker = _dependency(app, owner, "health_checker", HealthChecker)
+            close_health = getattr(health_checker, "aclose", None)
+            if close_health is not None:
+                owner.bind(generation, "health_checker", health_checker, close_health)
+            inference_service = _dependency(
+                app,
+                owner,
+                "inference_service",
+                lambda: InferenceService(InferenceConfig.from_env()),
+            )
+            owner.bind(
+                generation,
+                "inference_service",
+                inference_service,
+                inference_service.aclose,
+                critical=False,
+            )
+            # Retain injected training/journal owners even if an earlier startup
+            # step fails. Missing services are constructed at their normal phase.
+            for name in ("training_service", "v1_conversation_store"):
+                if getattr(app.state, name, None) is not None:
+                    resource = _dependency(app, owner, name, lambda: None)
+                    owner.bind(generation, name, resource, resource.aclose)
 
         logger.info("Starting StateSet Agents API v%s", config.api_version)
-
-        # Initialize distributed cache (optional)
-        try:
-            from .distributed_cache import CacheConfig
-            from .distributed_cache import close_cache as _close_cache
-            from .distributed_cache import init_cache
-
-            cache_config = CacheConfig.from_env()
-            await init_cache(cache_config)
-            close_cache_fn = _close_cache
-            logger.info(
-                "Cache initialized with backend: %s", cache_config.backend.value
-            )
-        except API_LIFESPAN_EXCEPTIONS as e:
-            if strict_startup:
-                logger.error("Cache initialization failed during startup: %s", e)
-                raise
-            logger.warning("Cache initialization skipped: %s", e)
-
-        # Initialize database (optional)
-        try:
-            from .persistence import DatabaseConfig
-            from .persistence import close_database as _close_database
-            from .persistence import init_database
-
-            db_config = DatabaseConfig.from_env()
-            await init_database(db_config)
-            close_database_fn = _close_database
-            logger.info(
-                "Database initialized with backend: %s", db_config.backend.value
-            )
-        except API_LIFESPAN_EXCEPTIONS as e:
-            if strict_startup:
-                logger.error("Database initialization failed during startup: %s", e)
-                raise
-            logger.warning("Database initialization skipped: %s", e)
-
-        # Initialize agent service
-        from stateset_agents.utils.security import SecurityMonitor as _SecurityMonitor
-
-        from .services.agent_service import AgentService
-
-        agent_service = getattr(app.state, "agent_service", None)
-        if agent_service is None:
-            agent_service = AgentService(_SecurityMonitor())
-            app.state.agent_service = agent_service
-
-        # Honor STATESET_DEFAULT_CHECKPOINT — set by `stateset-agents serve --checkpoint`.
-        default_ckpt = os.environ.get("STATESET_DEFAULT_CHECKPOINT")
-        if default_ckpt:
-            default_base = os.environ.get("STATESET_DEFAULT_BASE_MODEL")
-            logger.info(
-                "Loading default checkpoint at startup",
-                extra={"checkpoint": default_ckpt, "base_model": default_base},
-            )
+        with owner.phase(generation, "cache"):
+            cache_status = None
             try:
-                await agent_service.register_default_checkpoint_agent(
-                    checkpoint_path=default_ckpt,
-                    base_model=default_base,
-                )
-            except (
-                Exception
-            ) as exc:  # noqa: BLE001 — log and continue; don't kill the API
-                logger.error(
-                    "Failed to load default checkpoint at startup",
-                    extra={"checkpoint": default_ckpt, "error": str(exc)},
+                from .distributed_cache import (
+                    CacheConfig,
+                    acquire_cache,
+                    get_cache_status,
                 )
 
-        # Initialize training service
-        from .services.training_service import TrainingService
+                cache_status = get_cache_status
+                cache_lease = await acquire_cache(CacheConfig.from_env())
+                owner.bind(
+                    generation, "cache", cache_lease, cache_lease.aclose, critical=False
+                )
+            except ResourceOwnershipError:
+                raise
+            except API_LIFESPAN_EXCEPTIONS as error:
+                if strict_startup or (
+                    cache_status is not None and cache_status()["state"] == "failed"
+                ):
+                    raise
+                logger.warning(
+                    "Cache initialization skipped (%s)", type(error).__name__
+                )
 
-        if training_service is None:
-            training_service = TrainingService(
-                max_concurrent_jobs=getattr(config, "training_max_concurrent_jobs", 1),
-                queue_path=getattr(config, "training_queue_path", None),
+        with owner.phase(generation, "database"):
+            database_status = None
+            try:
+                from .persistence import (
+                    DatabaseConfig,
+                    acquire_database,
+                    get_database_status,
+                )
+
+                database_status = get_database_status
+                database_lease = await acquire_database(DatabaseConfig.from_env())
+                owner.bind(
+                    generation,
+                    "database",
+                    database_lease,
+                    database_lease.aclose,
+                    critical=False,
+                )
+            except ResourceOwnershipError:
+                raise
+            except API_LIFESPAN_EXCEPTIONS as error:
+                if strict_startup or (
+                    database_status is not None
+                    and database_status()["state"] == "failed"
+                ):
+                    raise
+                logger.warning(
+                    "Database initialization skipped (%s)", type(error).__name__
+                )
+
+        with owner.phase(generation, "conversations"):
+            conversation_path = getattr(config, "v1_conversation_db_path", None)
+            if (
+                conversation_path
+                or "v1_conversation_store"
+                in getattr(app.state, "lifecycle_factories", {})
+            ) and getattr(app.state, "v1_conversation_store", None) is None:
+                from .conversation_store import ConversationStore
+                from .routers.v1 import (
+                    V1_CONVERSATION_TTL_SECONDS,
+                    V1_MAX_CONVERSATIONS,
+                )
+
+                def create_store() -> ConversationStore:
+                    if conversation_path is None:
+                        raise ValueError("A conversation journal path is required")
+                    return ConversationStore(
+                        conversation_path,
+                        ttl_seconds=V1_CONVERSATION_TTL_SECONDS,
+                        max_items=V1_MAX_CONVERSATIONS,
+                    )
+
+                store = _dependency(
+                    app,
+                    owner,
+                    "v1_conversation_store",
+                    create_store,
+                )
+                owner.bind(generation, "v1_conversation_store", store, store.aclose)
+
+        with owner.phase(generation, "agent"):
+            from stateset_agents.utils.security import (
+                SecurityMonitor as _SecurityMonitor,
             )
-            app.state.training_service = training_service
 
-        # Register health checks
-        health_checker.add_check("api", lambda: True)
-        if inference_service is not None:
+            from .services.agent_service import AgentService
+
+            agent_service = getattr(app.state, "agent_service", None)
+            if agent_service is None:
+                agent_service = AgentService(_SecurityMonitor())
+                app.state.agent_service = agent_service
+
+        with owner.phase(generation, "checkpoint"):
+            default_ckpt = os.environ.get("STATESET_DEFAULT_CHECKPOINT")
+            if default_ckpt:
+                default_base = os.environ.get("STATESET_DEFAULT_BASE_MODEL")
+                previous = getattr(app.state, "_default_checkpoint_binding", None)
+                current_agent = getattr(agent_service, "agents", {}).get("default")
+                request = (agent_service, default_ckpt, default_base)
+                if (
+                    previous is None
+                    or previous[:3] != request
+                    or previous[3] is not current_agent
+                ):
+                    try:
+                        await run_async_owned(
+                            agent_service.register_default_checkpoint_agent(
+                                checkpoint_path=default_ckpt,
+                                base_model=default_base,
+                            )
+                        )
+                        registered = getattr(agent_service, "agents", {}).get("default")
+                        if registered is not None:
+                            app.state._default_checkpoint_binding = (
+                                *request,
+                                registered,
+                            )
+                    except Exception as error:
+                        logger.error(
+                            "Default checkpoint initialization failed (%s)",
+                            type(error).__name__,
+                        )
+
+        with owner.phase(generation, "training"):
+            from .services.training_service import TrainingService
+
+            if getattr(app.state, "training_service", None) is None:
+                training_service = _dependency(
+                    app,
+                    owner,
+                    "training_service",
+                    lambda: TrainingService(
+                        max_concurrent_jobs=getattr(
+                            config, "training_max_concurrent_jobs", 1
+                        ),
+                        queue_path=getattr(config, "training_queue_path", None),
+                    ),
+                )
+                owner.bind(
+                    generation,
+                    "training_service",
+                    training_service,
+                    training_service.aclose,
+                )
+
+        with owner.phase(generation, "health_checks"):
+            health_checker.add_check("api", lambda: True)
             health_checker.add_check(
                 "inference_backend", inference_service.check_health
             )
-
+        app.state.started_at = time.time()
+        owner.serving(generation)
         yield
+    except BaseException as error:
+        primary = error
+        owner.record_error(generation, error)
+        raise
     finally:
         logger.info("Shutting down StateSet Agents API")
-        await drain_owned_operation(shutdown())
+        try:
+            await owner.aclose(generation)
+        except (Exception, asyncio.CancelledError) as cleanup_error:
+            if primary is None:
+                raise
+            logger.warning(
+                "Application cleanup failed while preserving the primary error (%s)",
+                type(cleanup_error).__name__,
+            )
 
 
 def create_app() -> FastAPI:
@@ -226,12 +399,14 @@ def create_app() -> FastAPI:
     )
     app.state.config = config
     app.state.health_checker = health_checker
+    owner = _lifecycle(app)
     app.state.started_at = time.time()
     if not getattr(app.state, "inference_service", None):
         app.state.inference_service = InferenceService(InferenceConfig.from_env())
 
     # Middleware
     app.add_middleware(GZipMiddleware, minimum_size=1000)
+    app.add_middleware(ApplicationLifecycleMiddleware, owner=owner)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=config.cors.allowed_origins,
@@ -306,10 +481,20 @@ def create_app() -> FastAPI:
         description="Check if the API is ready to receive traffic.",
         tags=["health"],
     )
-    async def readiness_check() -> Any:
+    async def readiness_check(request: Request) -> Any:
         """Kubernetes readiness probe endpoint."""
-        await health_checker.check_all()
-        overall_status = health_checker.overall_status
+        try:
+            checker = getattr(request.app.state, "health_checker", None)
+            results = (
+                await asyncio.wait_for(
+                    checker.check_all(), timeout=metrics.HEALTH_TIMEOUT_SECONDS
+                )
+                if checker is not None
+                else {}
+            )
+            overall_status = HealthChecker.aggregate_status(results)
+        except Exception:
+            overall_status = HealthStatus.UNHEALTHY
 
         if overall_status == HealthStatus.UNHEALTHY:
             return JSONResponse(
@@ -332,6 +517,11 @@ def create_app() -> FastAPI:
             "status": "alive",
             "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         }
+
+    @app.get("/lifecycle", summary="Application Lifecycle", tags=["health"])
+    async def application_lifecycle(request: Request) -> dict[str, Any]:
+        """Inspect application ownership without starting dependency probes."""
+        return _lifecycle(request.app).get_status()
 
     # Circuit breaker status endpoint
     @app.get(

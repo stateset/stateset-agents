@@ -2,9 +2,44 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from datetime import datetime
+from threading import RLock
 from typing import Any
+
+from .conversation import ConversationResetError
+
+
+class ConversationConflict(RuntimeError):
+    """A named conversation has competing work or changed during an operation."""
+
+
+class ConversationClosedError(ConversationResetError):
+    """The named conversation was ended or replaced while work was in flight."""
+
+
+@dataclass
+class _ContextLifecycle:
+    state: str = "active"
+    revision: int = 0
+    operation: dict[str, Any] | None = None
+    last_operation: dict[str, Any] | None = None
+    snapshot_operation: dict[str, Any] | None = None
+    last_snapshot: dict[str, Any] | None = None
+    lock: RLock = field(default_factory=RLock, repr=False, compare=False)
+
+    def __getstate__(self) -> dict[str, Any]:
+        with self.lock:
+            if self.operation is not None or self.snapshot_operation is not None:
+                raise RuntimeError(
+                    "Cannot copy a conversation while an operation is active"
+                )
+            return {key: value for key, value in vars(self).items() if key != "lock"}
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self.__dict__.update(state)
+        self.lock = RLock()
 
 
 @dataclass
@@ -20,26 +55,75 @@ class ConversationContext:
     metadata: dict[str, Any] = field(default_factory=dict)
     started_at: datetime = field(default_factory=datetime.now)
 
-    def add_turn(self, turn: dict[str, Any]):
+    def _owner(self) -> _ContextLifecycle:
+        if not hasattr(self, "_lifecycle"):
+            self._lifecycle = _ContextLifecycle()
+        return self._lifecycle
+
+    def get_status(self) -> dict[str, Any]:
+        """Return detached turn and snapshot receipts without invoking a backend."""
+        owner = self._owner()
+        with owner.lock:
+            return copy.deepcopy(
+                {
+                    "state": owner.state,
+                    "revision": owner.revision,
+                    "active": owner.operation,
+                    "last_finished": owner.last_operation,
+                    "snapshot_active": owner.snapshot_operation,
+                    "last_snapshot": owner.last_snapshot,
+                }
+            )
+
+    def add_turn(self, turn: dict[str, Any]) -> None:
         """Add a turn to the conversation history."""
-        turn_with_timestamp = {**turn, "timestamp": datetime.now().isoformat()}
-        self.history.append(turn_with_timestamp)
+        turn_with_timestamp = {
+            **copy.deepcopy(turn),
+            "timestamp": datetime.now().isoformat(),
+        }
+        owner = self._owner()
+        with owner.lock:
+            if owner.state != "active":
+                raise ConversationClosedError("Conversation has ended")
+            self.history.append(turn_with_timestamp)
+            owner.revision += 1
 
     def get_recent_history(self, max_turns: int = 10) -> list[dict[str, Any]]:
         """Get recent conversation history."""
-        return self.history[-max_turns:]
+        with self._owner().lock:
+            return copy.deepcopy(self.history[-max_turns:])
 
     def get_context_summary(self) -> dict[str, Any]:
         """Get a summary of the conversation context."""
-        return {
-            "conversation_id": self.conversation_id,
-            "user_id": self.user_id,
-            "topic": self.topic,
-            "intent": self.intent,
-            "entities": self.entities,
-            "turn_count": len(self.history),
-            "started_at": self.started_at.isoformat(),
+        with self._owner().lock:
+            return copy.deepcopy(
+                {
+                    "conversation_id": self.conversation_id,
+                    "user_id": self.user_id,
+                    "topic": self.topic,
+                    "intent": self.intent,
+                    "entities": self.entities,
+                    "turn_count": len(self.history),
+                    "started_at": self.started_at.isoformat(),
+                }
+            )
+
+
+def context_data(context: ConversationContext) -> dict[str, Any]:
+    """Copy canonical context data without copying its operation ownership."""
+    return copy.deepcopy(
+        {
+            name: getattr(context, name)
+            for name in ConversationContext.__dataclass_fields__
         }
+    )
+
+
+def publish_context(context: ConversationContext, data: dict[str, Any]) -> None:
+    """Publish prepared canonical data; the caller must hold the context lock."""
+    for name in ConversationContext.__dataclass_fields__:
+        setattr(context, name, data[name])
+    context._owner().revision += 1
 
 
 class DialogueDatabase:
@@ -101,7 +185,18 @@ def apply_context_update(
     if not update:
         return
 
-    update_dict = dict(update)
+    update_dict = copy.deepcopy(update)
+    owner = context._owner()
+    with owner.lock:
+        if owner.state != "active":
+            raise ConversationClosedError("Conversation has ended")
+        _apply_context_update(context, update_dict)
+        owner.revision += 1
+
+
+def _apply_context_update(
+    context: ConversationContext, update_dict: dict[str, Any]
+) -> None:
     if "user_id" in update_dict and update_dict["user_id"]:
         context.user_id = update_dict["user_id"]
     if "topic" in update_dict and update_dict["topic"]:
@@ -138,6 +233,8 @@ def apply_context_update(
 
 
 __all__ = [
+    "ConversationConflict",
+    "ConversationClosedError",
     "ConversationContext",
     "DialogueDatabase",
     "apply_context_update",

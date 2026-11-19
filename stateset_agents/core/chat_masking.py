@@ -15,7 +15,45 @@ import os
 from collections.abc import Callable, Sequence
 from typing import Any
 
+try:
+    from jinja2.exceptions import TemplateError as _Jinja2TemplateError
+except ImportError:  # pragma: no cover
+    _Jinja2TemplateError = ValueError
+
 Render = Callable[[list[dict[str, Any]], bool], "str | None"]
+
+
+def truncates_weighted_target(
+    messages: Sequence[dict[str, Any]], token_weights: Sequence[float], max_length: int
+) -> bool:
+    """Check whether a prefix cutoff discards a loss token in a weighted chat row."""
+    return (
+        len(token_weights) > max_length
+        and any(m.get("role") == "assistant" and "weight" in m for m in messages)
+        and any(token_weights[i] > 0 for i in range(max_length, len(token_weights)))
+    )
+
+
+def _check_parallel_calls(
+    render: Render, messages: list[dict[str, Any]], position: int, full: str
+) -> None:
+    """Detect templates that silently omit a call in an explicitly weighted row."""
+    message = messages[position]
+    calls = message["tool_calls"]
+    for index in range(len(calls)):
+        reduced = {**message, "tool_calls": calls[:index] + calls[index + 1 :]}
+        comparison = messages.copy()
+        comparison[position] = reduced
+        try:
+            text = render(comparison, False)
+        except _Jinja2TemplateError:
+            # Some templates reject the comparison because a result lost its call.
+            continue
+        if text == full:
+            raise ValueError(
+                "Chat template omits a parallel tool call from this weighted chat row. "
+                "Use a template that renders every call."
+            )
 
 
 def assistant_char_spans(
@@ -39,6 +77,11 @@ def assistant_char_spans(
     spans: list[tuple[int, int]] = []
     for i, message in enumerate(messages):
         if message.get("role") != "assistant":
+            continue
+        calls = message.get("tool_calls")
+        if "weight" in message and isinstance(calls, list) and len(calls) > 1:
+            _check_parallel_calls(render, messages, i, full)
+        if message.get("weight", 1) == 0:
             continue
         before = render(messages[:i], True)
         after = render(messages[: i + 1], False)
@@ -117,7 +160,12 @@ def last_assistant_token_mask(
 ) -> tuple[list[int], list[bool]] | None:
     """Locate only the last assistant action for transition-weighted offline RL."""
     located = assistant_char_spans(chat_template_render(tokenizer), messages)
-    if located is None or not located[1] or messages[-1].get("role") != "assistant":
+    if (
+        located is None
+        or not located[1]
+        or messages[-1].get("role") != "assistant"
+        or messages[-1].get("weight", 1) == 0
+    ):
         return None
     full, spans = located
     return _token_mask_for_spans(tokenizer, full, spans[-1:])
@@ -168,4 +216,5 @@ __all__ = [
     "assistant_token_mask",
     "chat_template_render",
     "last_assistant_token_mask",
+    "truncates_weighted_target",
 ]

@@ -8,6 +8,120 @@ The StateSet Agents API provides a production-ready REST interface for training 
 
 **API Version:** 2.0.0
 
+## Application Lifecycle and Restart
+
+Applications returned by `stateset_agents.api.main.create_app()` own one lifespan
+generation at a time. Startup opens request admission only after dependencies are
+ready. Shutdown stops admission, drains accepted HTTP responses, streams, and
+WebSocket callbacks, then closes dependencies in order. New HTTP requests receive
+503 while starting, stopping, closed, or failed; new WebSocket handshakes close
+with code 1013. `/ready` returns 503 without probing those dependencies.
+`/live`, `/healthz`, and `/lifecycle` remain available for passive observations.
+
+`GET /lifecycle` returns the generation, state, phase, active request count,
+completed/pending cleanup components, and initiating/cleanup exception class
+names. It exposes no request content, exception messages, configuration, or
+credentials. `closed` and `cleanup_complete: true` mean that all captured cleanup
+succeeded; `failed` blocks restart and retains the failed outcome. Repeated close
+joins that outcome without rerunning cleanup.
+
+After a clean exit, the same application can start another lifespan. Native
+health, inference, training, and durable conversation services get fresh owners.
+The existing agent service, registered models, in-memory conversations, and local
+training history remain; configured SQLite conversation and training journals
+are reopened without resubmitting work. This is reuse of the same application
+object, not restoration of arbitrary in-memory models after process loss.
+The existing inference configuration, training capacity/queue location, and
+health registrations are retained. Replace or remove a dependency between clean
+lifespans to reconfigure it explicitly.
+
+Closed custom services and subclasses need a fresh instance assigned to
+`app.state`, or a synchronous factory that constructs a fresh resource:
+
+```python
+from stateset_agents.api.main import create_app
+
+app = create_app()
+app.state.inference_service = MyInferenceService()
+app.state.lifecycle_factories = {
+    "inference_service": lambda: MyInferenceService(),
+}
+```
+
+Factories support `health_checker`, `inference_service`, `training_service`, and
+`v1_conversation_store`. They run when the named dependency is absent or was
+closed by this application, and must return its expected service interface.
+`create_app()` already supplies health and inference instances; set the desired
+initial custom instance explicitly, as above, or remove the unused default to
+let its factory construct the initial service.
+A factory owns allocations it fails to return. Custom health callbacks should
+look up current dependencies through `app.state` rather than capture a retired
+service. Do not replace live dependency bindings or close them independently.
+
+Request drain waits for actual callback completion, including cancellation
+cleanup; an unresponsive callback or open WebSocket can delay shutdown. Escaped
+custom background tasks and direct service calls need their own ownership.
+Before the first lifespan, request admission remains available for manually
+configured embedding and ASGI tests. A bare `FastAPI(lifespan=lifespan)` does not
+install the request guard; prefer `create_app()`, or explicitly install
+`ApplicationLifecycleMiddleware` using the same `ApplicationLifecycle` stored
+at `app.state.lifecycle`.
+See the [application contract](STATE_MACHINES.md#canonical-api-application-generations)
+for rollback, cancellation, and recovery boundaries.
+
+## Embedded Application Resource Ownership
+
+The API lifespan leases its process-wide cache and database. Overlapping
+applications with matching configuration share them; each releases its own
+leases during shutdown, and the final owner closes the resources. Incompatible
+configuration fails startup while another application is using the resource.
+Matching `init_cache()`/`init_database()` calls preserve existing records.
+
+For custom embedded services, hold an explicit lease through dependent work:
+
+```python
+from stateset_agents.api.persistence import acquire_database, get_database_status
+
+lease = await acquire_database()
+try:
+    database = lease.resource
+    # Finish all dependent tasks and transactions before releasing this lease.
+    status = get_database_status()
+finally:
+    await lease.aclose()
+```
+
+`acquire_cache()` provides the same interface. Global `close_cache()` and
+`close_database()` reject active leases. Cleanup failure is retained, disables
+automatic replacement/retry, and remains visible through `get_cache_status()` or
+`get_database_status()`. Status contains exception class names, never credentials.
+See the [ownership contract](STATE_MACHINES.md#shared-api-cache-and-database-ownership)
+for cancellation, recovery boundaries, and standalone resource usage.
+
+`RedisCache.get_status()` and `HybridCache.get_status()` expose backend ownership
+and active operations separately from process-wide application leases. Closing
+either cache drains its accepted operations before releasing the pool; closed
+instances do not reconnect or resume fallback service. See
+[Redis and hybrid cache lifetimes](STATE_MACHINES.md#redis-and-hybrid-cache-lifetimes)
+for health observations, cancellation, and consistency boundaries.
+
+Hybrid operations on the same key now run in order; pattern deletion and clear
+wait for earlier operations and block later operations until complete. Different
+keys remain concurrent. A Redis refill retains its remaining TTL rather than
+starting a new default lifetime. Memory expiry uses elapsed time, so system clock
+adjustments do not extend cached entries. Submitted values and returned fallback
+values are detached with `deepcopy`; custom value types must support copying.
+
+The hybrid cache remains Redis-primary. A `set()` result of `True` can mean only
+the local fallback accepted the value. After an outage, Redis can return an older
+value or a key whose remote deletion was unconfirmed; no local mutations are
+automatically replayed. `get_status()` adds entry admission counts, fallback
+safety, a cumulative incomplete-acknowledgement count, and the most recently
+completed mutation's layer acknowledgements. That last observation is diagnostic
+and may belong to another concurrent caller. It is not a per-request receipt or
+proof of atomic replication. See the
+[entry contract](STATE_MACHINES.md#hybrid-cache-entries-and-fallback-consistency).
+
 ## Authentication
 
 All API endpoints require authentication using one of the following methods:
@@ -466,6 +580,85 @@ GET /api/v1/conversations/{conversation_id}
   "request_id": "req_abc123"
 }
 ```
+
+#### Inspect Conversation Operation
+
+Inspect the active request or the latest finished request without returning
+conversation content:
+
+```
+GET /api/v1/conversations/{conversation_id}/status
+```
+
+The response contains `conversation_id`, `state` (`active` or `ended`),
+`revision`, `active`, and `last_finished`. The two receipt fields are either
+`null` or an object describing request `state` and `phase`,
+`user_recorded`, `response_recorded`, `cancellation_requested`,
+`generation_status`, `error_type`, and `work_error_type`.
+
+Only one request can generate for a conversation at a time. A competing request
+receives HTTP **409** before invoking the provider. Ownership remains held while
+a cancelled provider call cleans up. Deletion, expiry, or replacement prevents
+late responses from entering history. Missing or inaccessible conversations
+return HTTP **404**, including through the status endpoint.
+
+`generation_status` is `not_started`, `unconfirmed`, or `returned`. It describes
+the local callback's outcome; it is not a guarantee about remote execution or
+billing. Inspect status and history before resubmitting uncertain work. The v1
+route records incoming messages and the answer together only after success.
+
+The separate agent-service routes expose the same status fields at
+`GET /conversations/{conversation_id}/status`, using their existing access rules.
+That service retains accepted user messages when generation fails. By default,
+conversation stores and receipts remain in memory. The v1 routes can opt into
+durable recovery as described below; the separate agent-service routes remain
+in memory.
+
+#### Durable v1 Conversation Recovery
+
+Set a journal path before starting the API:
+
+```bash
+export API_V1_CONVERSATION_DB=/path/to/application-data/conversations.sqlite3
+```
+
+This enables persistence for `/api/v1/conversations` without changing request
+bodies or successful responses. The journal stores history, principal ownership,
+and request receipts. It is independent of `DB_BACKEND` and does not store
+provider credentials. A configured journal that cannot open aborts startup;
+runtime storage failures return **503**, with no fallback to empty memory.
+Only requests handled while persistence is enabled are journaled; earlier
+in-memory histories are not imported automatically.
+
+After restart, query the existing history and status endpoints using the same
+authenticated identity. A request still owned by a live worker stays active.
+Abandoned work becomes `last_finished.state="interrupted"`; it is never replayed
+automatically. If generation may have started and no answer was recorded,
+`recovery_required` is `true` and new turns return **409**.
+
+After reviewing the history and accepting the uncertain provider outcome,
+acknowledge that exact interrupted operation:
+
+```http
+POST /api/v1/conversations/{conversation_id}/acknowledge
+Content-Type: application/json
+
+{"operation_id": "<last_finished.id from status>"}
+```
+
+Acknowledgement enables later turns without sending a prompt or executing any
+provider work. A stale operation ID returns **409**; another user's conversation
+returns **404**. If the answer was already recorded before interruption, it stays
+in history and no acknowledgement is required. Provider billing or external
+effects cannot be inferred from local completion alone.
+
+Workers on one host may share the same canonical SQLite path and its adjacent
+lock directory. Keep both paths stable while workers run. Retention remains
+24 hours since last access, with a 500-conversation capacity; expiry, eviction,
+and deletion still prevent late publication. The journal does not provide
+distributed storage, restore local model/planner objects, or recover the separate
+`/agents` and `/conversations` service stores. See the
+[lifecycle contract](STATE_MACHINES.md#durable-v1-gateway-conversations) for details.
 
 #### End Conversation
 

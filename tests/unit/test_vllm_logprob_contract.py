@@ -7,6 +7,7 @@ import pytest
 
 from stateset_agents.training.vllm_backend import (
     HuggingFaceGeneratorFallback,
+    VLLMConfig,
     VLLMGenerator,
     quick_generate,
 )
@@ -28,7 +29,7 @@ class FakeEngine:
 
 def generator(outputs) -> tuple[VLLMGenerator, FakeEngine]:
     engine = FakeEngine(outputs)
-    adapter = object.__new__(VLLMGenerator)
+    adapter = VLLMGenerator(VLLMConfig())
     adapter._initialized = True
     adapter.engine = engine
     adapter.tokenizer = SimpleNamespace(encode=lambda text: [1] if text == "P" else [])
@@ -260,3 +261,14 @@ async def test_dapo_rejects_short_group_before_building_tensors():
 
     assert await trainer._generate_with_vllm("P") == [{"response": "native"}]
     trainer._generate_with_hf.assert_awaited_once_with("P")
+
+
+def test_reported_mode_belongs_to_the_running_engine():
+    adapter, _ = generator([completion_output()])
+    adapter.config.logprobs_mode = "raw_logprobs"
+    result = adapter.generate_sync(
+        ["P"], sampling_params=SimpleNamespace(temperature=0.0)
+    )[0]
+    assert result.logprobs_mode == "processed_logprobs"
+    assert result.token_logprobs == [0.0, 0.0]
+    assert result.cumulative_logprob == 0.0

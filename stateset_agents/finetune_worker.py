@@ -692,6 +692,8 @@ def _train_remote(run: Path, config: FinetuneConfig) -> Path:
         run / "provider-result.json",
         {"cost_usd": result.cost_usd, "duration_s": result.duration_s},
     )
+    if result.is_preview:
+        raise FinetuneFailure("provider_preview")
     if not result.succeeded or result.output_dir is None:
         raise FinetuneFailure("provider_failed")
     return Path(result.output_dir)

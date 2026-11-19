@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from stateset_agents.finetune_workspace import read_run_plan, write_json
+from stateset_agents.remote.runpod_recovery import training_pod_name
 
 _LIMIT = 128 * 1024
 _EVENT_LIMIT = 128
@@ -79,14 +80,18 @@ def _event(value: Any, provider: str) -> dict[str, Any]:
         not isinstance(name, str) or not _IDENTIFIER.fullmatch(name)
     ):
         raise ValueError("Invalid provider allocation name")
-    if value["resource_kind"] in {"pod", "volume"} and name != (
-        "stateset-sft-" + value["job_id"]
-    ):
-        raise ValueError("Allocation name differs from the owned submission")
     if "attempt" in value and (
         type(value["attempt"]) is not int or not 1 <= value["attempt"] <= 10_000
     ):
         raise ValueError("Invalid allocation attempt")
+    if value["resource_kind"] in {"pod", "volume"}:
+        # Previously every attempt used the unsuffixed name. Those receipts
+        # still identify their logical job and remain readable after upgrade.
+        names = {"stateset-sft-" + value["job_id"]}
+        if provider == "runpod" and value["resource_kind"] == "pod":
+            names.add(training_pod_name(value["job_id"], value.get("attempt", 1)))
+        if name not in names:
+            raise ValueError("Allocation name differs from the owned submission")
     return dict(value)
 
 

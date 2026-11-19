@@ -39,6 +39,12 @@ class OpenAIChatCompletionRequest(BaseModel):
     messages: list[OpenAIChatMessage] = Field(..., description="Chat messages")
 
     max_tokens: int | None = Field(None, ge=1, description="Max tokens to generate")
+    max_completion_tokens: int | None = Field(
+        None, ge=1, description="Completion budget including reasoning tokens"
+    )
+    response_format: dict[str, Any] | None = Field(
+        None, description="OpenAI structured output format (JSON object or schema)"
+    )
     temperature: float | None = Field(
         None, ge=0.0, le=2.0, description="Sampling temperature"
     )

@@ -24,7 +24,7 @@ def test_train_remote_default_provider_is_modal() -> None:
     provider = provider_params[0]
     assert (
         provider.default == "modal"
-    ), "Default --provider must be 'modal' to match docs and recommended backend"
+    ), "Preserve the compatibility default; quickstart must choose its provider explicitly"
 
 
 def test_npm_package_test_script_is_js_only_and_typechecks() -> None:

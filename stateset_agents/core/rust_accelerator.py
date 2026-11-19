@@ -14,6 +14,8 @@ Usage:
 """
 
 import logging
+import math
+import sys
 from typing import Any, cast
 
 import numpy as np
@@ -68,29 +70,40 @@ def compute_group_advantages(
             ),
         )
 
-    # Pure Python fallback
+    from .reward_moments import RewardMoments
+
     if rewards.ndim == 1:
         rewards = rewards.reshape(1, -1)
-
     all_advantages: list[float] = []
-    for group_rewards in rewards:
-        if baseline_type == "median":
-            baseline = np.median(group_rewards)
-        elif baseline_type == "min":
-            baseline = np.min(group_rewards)
-        else:
-            baseline = np.mean(group_rewards)
-
-        advantages = group_rewards - baseline
-
-        if normalize and len(advantages) > 1:
-            std = np.std(advantages)
-            if std > 1e-8:
-                advantages = (advantages - np.mean(advantages)) / (std + 1e-8)
-
-        all_advantages.extend(float(value) for value in advantages)
-
-    return cast(np.ndarray, np.array(all_advantages, dtype=np.float64))
+    for group in rewards:
+        if not np.isfinite(group).all():
+            all_advantages.extend([0.0] * len(group))
+            continue
+        pop = RewardMoments(group.tolist())
+        if normalize and pop.above(1e-8):
+            unit = pop.scale()
+            p, q = unit.as_integer_ratio()
+            denom = pop.deviation(unit) + 1e-8 / unit
+            all_advantages.extend(
+                (v * q / (pop.denominator * p)) / denom for v in pop.residuals
+            )
+        elif pop.count:
+            residuals = pop.residuals
+            denominator = pop.denominator
+            if baseline_type == "min":
+                minimum = min(residuals)
+                residuals = [v - minimum for v in residuals]
+            elif baseline_type == "median":
+                ordered = sorted(residuals)
+                middle = ordered[(pop.count - 1) // 2] + ordered[pop.count // 2]
+                residuals = [2 * v - middle for v in residuals]
+                denominator *= 2
+            for numerator in residuals:
+                try:
+                    all_advantages.append(numerator / denominator)
+                except OverflowError:
+                    all_advantages.append(math.inf if numerator > 0 else -math.inf)
+    return cast(np.ndarray, np.asarray(all_advantages, dtype=np.float64))
 
 
 def compute_gae(
@@ -111,29 +124,67 @@ def compute_gae(
     Returns:
         Array of advantage estimates
     """
-    rewards = np.asarray(rewards, dtype=np.float64)
-    values = np.asarray(values, dtype=np.float64)
+    return compute_gae_targets(rewards, values, gamma, gae_lambda)[0]
 
-    if _RUST_AVAILABLE:
-        return cast(
-            np.ndarray,
-            np.asarray(_rust_core.compute_gae(rewards, values, gamma, gae_lambda)),
+
+def compute_gae_targets(
+    rewards: np.ndarray,
+    values: np.ndarray,
+    gamma: float = 0.99,
+    gae_lambda: float = 0.95,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return separate advantages and lambda returns, including an optional final bootstrap."""
+    rewards = np.ascontiguousarray(rewards, dtype=np.float64)
+    values = np.ascontiguousarray(values, dtype=np.float64)
+    if _RUST_AVAILABLE and hasattr(_rust_core, "compute_gae_targets"):
+        adv, targets = _rust_core.compute_gae_targets(
+            rewards, values, gamma, gae_lambda
         )
-
-    # Pure Python fallback
+        return np.asarray(adv), np.asarray(targets)
     n = len(rewards)
-    advantages: np.ndarray = np.zeros(n)
-    gae = 0.0
-
+    advantages, targets = np.empty(n), np.empty(n)
+    reward_part = 0.0
+    weight = gamma * gae_lambda
+    tiny_weight = abs(weight) < sys.float_info.min
+    value_part = float(values[n]) if n < len(values) else 0.0
     for t in reversed(range(n)):
-        next_value = float(values[t + 1]) if t + 1 < len(values) else 0.0
-        current_value = float(values[t]) if t < len(values) else 0.0
-
-        delta = rewards[t] + gamma * next_value - current_value
-        gae = delta + gamma * gae_lambda * gae
-        advantages[t] = gae
-
-    return advantages
+        current = float(values[t]) if t < len(values) else 0.0
+        successor = float(values[t + 1]) if t + 1 < len(values) else 0.0
+        reward = float(rewards[t])
+        if gamma == 0 or gae_lambda == 0:
+            reward_part = reward
+            value_part = 0.0 if gamma == 0 else gamma * successor
+        else:
+            carry = (
+                gamma * (gae_lambda * reward_part)
+                if tiny_weight
+                else weight * reward_part
+            )
+            reward_part = reward + carry
+            if gae_lambda != 1:
+                unit = (
+                    2.0**-512
+                    if max(abs(successor), abs(value_part)) < 2.0**-512
+                    else 1.0
+                )
+                value_part = unit * (
+                    (1 - gae_lambda) * (successor / unit)
+                    + gae_lambda * (value_part / unit)
+                )
+            value_part *= gamma
+        target = reward_part + value_part
+        targets[t] = target
+        large, small = (
+            (reward_part, value_part)
+            if abs(reward_part) >= abs(value_part)
+            else (value_part, reward_part)
+        )
+        advantages[t] = (
+            (target - current) + ((large - target) + small)
+            if math.isfinite(target)
+            else (large - current) + small
+        )
+    return advantages, targets
 
 
 def batch_compute_gae(
@@ -154,10 +205,12 @@ def batch_compute_gae(
     Returns:
         List of advantage arrays
     """
+    if len(all_rewards) != len(all_values):
+        raise ValueError("GAE batch rows must align")
     all_rewards = [np.asarray(r, dtype=np.float64) for r in all_rewards]
     all_values = [np.asarray(v, dtype=np.float64) for v in all_values]
 
-    if _RUST_AVAILABLE:
+    if _RUST_AVAILABLE and hasattr(_rust_core, "compute_gae_targets"):
         return [
             cast(np.ndarray, np.asarray(a))
             for a in _rust_core.batch_compute_gae(
@@ -262,6 +315,12 @@ def compute_gspo_importance_ratios(
     log_probs_old = np.asarray(log_probs_old, dtype=np.float64)
     sequence_lengths = np.asarray(sequence_lengths, dtype=np.int64)
 
+    if not (
+        log_probs_new.ndim == 1
+        and log_probs_new.shape == log_probs_old.shape == sequence_lengths.shape
+    ):
+        raise ValueError("GSPO requires aligned vectors of sequence scores and lengths")
+
     if _RUST_AVAILABLE:
         return cast(
             np.ndarray,
@@ -275,8 +334,8 @@ def compute_gspo_importance_ratios(
     # Pure Python fallback
     log_ratios = log_probs_new - log_probs_old
     lengths = np.maximum(sequence_lengths, 1)  # Avoid division by zero
-    normalized_log_ratios = log_ratios / lengths
-    return cast(np.ndarray, np.exp(normalized_log_ratios))
+    normalized_log_ratios = np.where(sequence_lengths > 0, log_ratios / lengths, 0.0)
+    return cast(np.ndarray, np.exp(np.clip(normalized_log_ratios, -20.0, 20.0)))
 
 
 def apply_gspo_clipping(

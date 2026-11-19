@@ -18,11 +18,29 @@ import sys
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
 COMPLETION_FILE = ".stateset-checkpoint.json"
 LOCK_FILE = ".stateset-checkpoint.lock"
+CheckpointKind = Literal["training", "agent"]
+
+
+def _record(kind: CheckpointKind, **payload: Any) -> dict[str, Any]:
+    if kind == "training":
+        return {"schema_version": 1, **payload}
+    if kind == "agent":
+        return {"schema_version": 2, "kind": "agent", **payload}
+    raise ValueError(f"Unknown checkpoint kind: {kind!r}")
+
+
+def _required_files(kind: CheckpointKind) -> set[str]:
+    _record(kind)  # Validate before any filesystem effects.
+    return (
+        {"training_state.pt"}
+        if kind == "training"
+        else {"agent_config.json", "agent_checkpoint.json"}
+    )
 
 
 def _sync_directory(path: Path) -> None:
@@ -109,8 +127,11 @@ def _inventory(path: Path, *, sync: bool = False) -> dict[str, str]:
     return files
 
 
-def validate_checkpoint_publication(path: Path, *, required: bool = False) -> bool:
+def validate_checkpoint_publication(
+    path: Path, *, required: bool = False, kind: CheckpointKind = "training"
+) -> bool:
     """Verify a new checkpoint's complete file inventory before loading weights."""
+    required_files = _required_files(kind)
     marker = path / COMPLETION_FILE
     if not marker.exists() and not marker.is_symlink():
         if required:
@@ -124,11 +145,12 @@ def validate_checkpoint_publication(path: Path, *, required: bool = False) -> bo
         raise ValueError("Invalid checkpoint completion marker") from exc
     if (
         not isinstance(state, dict)
-        or set(state) != {"schema_version", "files"}
+        or set(state) != set(_record(kind, files={}))
         or type(state["schema_version"]) is not int
-        or state["schema_version"] != 1
+        or state["schema_version"] != _record(kind)["schema_version"]
+        or (kind == "agent" and state.get("kind") != "agent")
         or not isinstance(state["files"], dict)
-        or "training_state.pt" not in state["files"]
+        or not required_files.issubset(state["files"])
         or state["files"] != _inventory(path)
     ):
         raise ValueError("Checkpoint artifacts differ from the completed publication")
@@ -142,7 +164,7 @@ def _paths(path: Path) -> tuple[Path, Path]:
     )
 
 
-def _recover(path: Path) -> None:
+def _recover(path: Path, *, kind: CheckpointKind = "training") -> None:
     journal, previous = _paths(path)
     if not journal.exists() and not journal.is_symlink():
         return
@@ -154,9 +176,10 @@ def _recover(path: Path) -> None:
         raise ValueError("Invalid checkpoint publication journal") from exc
     if (
         not isinstance(record, dict)
-        or set(record) != {"schema_version", "staging"}
+        or set(record) != set(_record(kind, staging=""))
         or type(record["schema_version"]) is not int
-        or record["schema_version"] != 1
+        or record["schema_version"] != _record(kind)["schema_version"]
+        or (kind == "agent" and record.get("kind") != "agent")
         or not isinstance(record["staging"], str)
         or not record["staging"].startswith(f".{path.name}.stateset-stage-")
         or Path(record["staging"]).name != record["staging"]
@@ -169,7 +192,7 @@ def _recover(path: Path) -> None:
             raise ValueError("Invalid checkpoint publication directory")
     # A missing staging directory means its complete contents were published.
     if not staging.exists() and path.exists():
-        validate_checkpoint_publication(path, required=True)
+        validate_checkpoint_publication(path, required=True, kind=kind)
         if previous.exists():
             shutil.rmtree(previous)
         journal.unlink()
@@ -189,22 +212,26 @@ def _recover(path: Path) -> None:
 
 
 @contextlib.contextmanager
-def checkpoint_read(path: Path) -> Iterator[Path]:
+def checkpoint_read(path: Path, *, kind: CheckpointKind = "training") -> Iterator[Path]:
     """Recover a replaced directory and hold its lock through the entire load."""
+    _required_files(kind)
     if not path.parent.exists():
         yield path
         return
     with _lock(path.parent):
-        _recover(path)
+        _recover(path, kind=kind)
         yield path
 
 
 @contextlib.contextmanager
-def checkpoint_write(path: Path) -> Iterator[Path]:
+def checkpoint_write(
+    path: Path, *, kind: CheckpointKind = "training"
+) -> Iterator[Path]:
     """Write off to the side; publish only after every artifact is durable."""
+    required_files = _required_files(kind)
     path.parent.mkdir(parents=True, exist_ok=True)
     with _lock(path.parent):
-        _recover(path)
+        _recover(path, kind=kind)
         journal, previous = _paths(path)
         if path.is_symlink() or (path.exists() and not path.is_dir()):
             raise ValueError("Checkpoint destination must be a directory")
@@ -213,9 +240,16 @@ def checkpoint_write(path: Path) -> Iterator[Path]:
         if (
             path.exists()
             and any(path.iterdir())
-            and not (path / "training_state.pt").is_file()
+            and not (
+                path
+                / ("training_state.pt" if kind == "training" else "agent_config.json")
+            ).is_file()
         ):
             raise ValueError("Refusing to replace a directory that is not a checkpoint")
+        if kind == "agent" and (path / "training_state.pt").exists():
+            raise ValueError(
+                "Refusing to replace a training checkpoint with an agent checkpoint"
+            )
         staging = Path(
             tempfile.mkdtemp(prefix=f".{path.name}.stateset-stage-", dir=path.parent)
         )
@@ -223,15 +257,13 @@ def checkpoint_write(path: Path) -> Iterator[Path]:
         try:
             yield staging
             files = _inventory(staging, sync=True)
-            if "training_state.pt" not in files:
-                raise ValueError("Checkpoint save did not produce training_state.pt")
-            _write_json(
-                staging / COMPLETION_FILE, {"schema_version": 1, "files": files}
-            )
+            if not required_files.issubset(files):
+                raise ValueError(
+                    f"Checkpoint save did not produce {', '.join(sorted(required_files))}"
+                )
+            _write_json(staging / COMPLETION_FILE, _record(kind, files=files))
             _sync_directory(staging)
-            _write_json(
-                journal_temporary, {"schema_version": 1, "staging": staging.name}
-            )
+            _write_json(journal_temporary, _record(kind, staging=staging.name))
             os.replace(journal_temporary, journal)
             _sync_directory(staging)
             _sync_directory(path.parent)
@@ -262,7 +294,7 @@ def checkpoint_write(path: Path) -> Iterator[Path]:
             # The new directory is committed. Cleanup failure must not turn a
             # successful publication into an apparent failed save; retry on load.
             try:
-                _recover(path)
+                _recover(path, kind=kind)
             except OSError:
                 logger.warning(
                     "Checkpoint published; cleanup will retry on access", exc_info=True

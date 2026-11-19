@@ -136,6 +136,10 @@ FAILURE_GUIDANCE = {
         "Remote training did not complete",
         "Inspect the retained provider handle, provider status and artifact/download logs before considering a new paid launch.",
     ),
+    "provider_preview": (
+        "Remote training returned a preview",
+        "Check the worker logs and accelerator availability before reviewing a new training run.",
+    ),
     "worker_exit": (
         "The training worker exited unsuccessfully",
         "Inspect run.log and the exit code. Reuse settings with c only after addressing the recorded failure.",

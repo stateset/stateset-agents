@@ -47,6 +47,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from examples.model_presets import PRESETS, ModelPreset, get_preset, list_preset_names
+from stateset_agents.training.gspo_preview import build_gspo_config, preview_payload
 
 logging.basicConfig(
     level=logging.INFO,
@@ -141,71 +142,6 @@ def build_agent_config(preset: ModelPreset, *, dry_run: bool) -> Any:
     )
 
 
-def build_gspo_config(
-    preset: ModelPreset,
-    *,
-    task: str,
-    output_dir: str,
-    use_lora: bool | None = None,
-    use_4bit: bool | None = None,
-    use_8bit: bool | None = None,
-    use_vllm: bool = False,
-    learning_rate: float | None = None,
-    epochs: int | None = None,
-    steps: int | None = None,
-    use_wandb: bool = False,
-    wandb_project: str | None = None,
-) -> Any:
-    """Build a ``GSPOConfig`` reproducing the preset's hyperparameters,
-    with optional CLI overrides layered on top."""
-    from stateset_agents.training.gspo_config import GSPOConfig
-
-    if not preset.supports_gspo:
-        raise ValueError(
-            "This model supports SFT only; use stateset_agents.training.sft."
-        )
-    if preset.model_id.startswith("meta-models/Muse-Spark-Open-") and (
-        use_4bit or use_8bit
-    ):
-        raise ValueError(
-            "Muse Spark's BF16 text RL preset does not certify 4/8-bit training; "
-            "expert tensors are not ordinary quantized Linear modules."
-        )
-
-    kwargs: dict[str, Any] = {
-        "model_name": preset.model_id,
-        "model_revision": preset.model_revision,
-        "run_name": f"{preset.model_id}-{task}",
-        "trust_remote_code": preset.trust_remote_code,
-        "learning_rate": (
-            learning_rate if learning_rate is not None else preset.learning_rate
-        ),
-        "num_generations": preset.num_generations,
-        "max_prompt_length": preset.max_prompt_length,
-        "max_completion_length": preset.max_completion_length,
-        "bf16": preset.bf16,
-        "use_lora": use_lora if use_lora is not None else True,
-        "lora_target_modules": list(preset.lora_target_modules),
-        "use_4bit": use_4bit if use_4bit is not None else preset.use_4bit,
-        "use_8bit": use_8bit if use_8bit is not None else preset.use_8bit,
-        "use_vllm": use_vllm,
-        "output_dir": output_dir,
-    }
-    if epochs is not None:
-        kwargs["num_train_epochs"] = epochs
-    if steps is not None:
-        kwargs["max_steps"] = steps
-    if use_wandb:
-        kwargs["report_to"] = "wandb"
-        kwargs["wandb_project"] = (
-            wandb_project or f"{preset.model_id.split('/')[-1]}-gspo-{task}"
-        )
-        kwargs["wandb_tags"] = ["gspo", task, preset.model_id.split("/")[-1]]
-    else:
-        kwargs["report_to"] = "none"
-    return GSPOConfig(**kwargs)
-
-
 def build_reward_fn() -> Any:
     """Build the common composite reward used by the finetune scripts."""
     from stateset_agents.core.reward import (
@@ -233,26 +169,6 @@ def build_environment() -> Any:
         }
     ]
     return ConversationEnvironment(scenarios=scenarios, max_turns=2)
-
-
-def preview_payload(
-    preset_name: str, preset: ModelPreset, gspo_config: Any
-) -> dict[str, Any]:
-    return {
-        "preset": preset_name,
-        "model_id": preset.model_id,
-        "tokenizer_id": preset.tokenizer_id,
-        "lora_target_modules": list(preset.lora_target_modules),
-        "max_prompt_length": preset.max_prompt_length,
-        "max_completion_length": preset.max_completion_length,
-        "learning_rate": preset.learning_rate,
-        "num_generations": preset.num_generations,
-        "bf16": preset.bf16,
-        "use_4bit": preset.use_4bit,
-        "use_8bit": preset.use_8bit,
-        "output_dir": getattr(gspo_config, "output_dir", None),
-        "notes": preset.notes,
-    }
 
 
 async def _run_starter_backed(args: argparse.Namespace, preset: ModelPreset) -> int:

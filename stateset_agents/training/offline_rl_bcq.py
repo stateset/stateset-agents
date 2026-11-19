@@ -10,6 +10,7 @@ without Exploration" (ICML 2019)
 
 from __future__ import annotations
 
+import copy
 import logging
 from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any
@@ -17,6 +18,16 @@ from typing import Any
 import numpy as np
 
 from .checkpoint_io import load_checkpoint_file
+from .offline_rl_batches import transition_batch, transition_epochs
+from .offline_rl_targets import (
+    critic_network,
+    restore_optimizer,
+    sampled_twin_target,
+    update_target_networks,
+    validate_target_parameters,
+)
+from .rl_losses import td_regression
+from .trainer_utils import clip_parameter_gradients
 
 try:
     import torch as _torch
@@ -78,6 +89,16 @@ class BCQConfig:
 
     # Logging
     log_frequency: int = 100
+
+    def __post_init__(self) -> None:
+        """Require a nonempty proposal set and a convex target update."""
+        validate_target_parameters(
+            self.discount_factor,
+            self.soft_target_tau,
+            self.target_update_frequency,
+            self.num_action_samples,
+            self.lmbda,
+        )
 
 
 class ConversationalVAE(nn.Module):
@@ -205,7 +226,12 @@ class ConversationalVAE(nn.Module):
         state_flat = state_expanded.view(batch_size * num_samples, -1)
 
         # Sample from prior
-        z = torch.randn(batch_size * num_samples, self.latent_dim, device=state.device)
+        z = torch.randn(
+            batch_size * num_samples,
+            self.latent_dim,
+            device=state.device,
+            dtype=state.dtype,
+        )
 
         # Decode
         actions = self.decode(state_flat, z)
@@ -218,8 +244,7 @@ class PerturbationNetwork(nn.Module):
     """
     Network that learns small perturbations to VAE-generated actions.
 
-    The perturbation is constrained to keep actions within the
-    support of the behavior policy.
+    Each action coordinate stays within phi of its VAE-generated proposal.
     """
 
     def __init__(
@@ -296,17 +321,9 @@ class BCQQNetwork(nn.Module):
             output_dim = hidden_size if i < num_layers - 1 else 1
             layers.append(nn.Linear(input_dim, output_dim))
 
-            if i < num_layers - 1:
-                if activation == "relu":
-                    layers.append(nn.ReLU())
-                elif activation == "tanh":
-                    layers.append(nn.Tanh())
-                elif activation == "gelu":
-                    layers.append(nn.GELU())
-
             input_dim = output_dim
 
-        self.network = nn.Sequential(*layers)
+        self.network = critic_network(layers, activation)
         self.apply(self._init_weights)
 
     def _init_weights(self, module):
@@ -390,26 +407,11 @@ class BatchConstrainedQLearning:
             activation=self.config.activation,
         ).to(device)
 
-        # Target networks
-        self.q1_target = BCQQNetwork(
-            state_dim=state_dim,
-            action_dim=action_dim,
-            hidden_size=self.config.hidden_size,
-            num_layers=self.config.num_layers,
-            activation=self.config.activation,
-        ).to(device)
-
-        self.q2_target = BCQQNetwork(
-            state_dim=state_dim,
-            action_dim=action_dim,
-            hidden_size=self.config.hidden_size,
-            num_layers=self.config.num_layers,
-            activation=self.config.activation,
-        ).to(device)
-
-        # Initialize targets
-        self.q1_target.load_state_dict(self.q1.state_dict())
-        self.q2_target.load_state_dict(self.q2.state_dict())
+        self.perturbation_target = copy.deepcopy(self.perturbation).requires_grad_(
+            False
+        )
+        self.q1_target = copy.deepcopy(self.q1).requires_grad_(False)
+        self.q2_target = copy.deepcopy(self.q2).requires_grad_(False)
 
         # Optimizers
         self.vae_optimizer = Adam(
@@ -458,51 +460,25 @@ class BatchConstrainedQLearning:
         dones: torch.Tensor,
     ) -> tuple[torch.Tensor, dict[str, float]]:
         """Compute Q-function loss with BCQ action selection"""
-        with torch.no_grad():
-            # Sample actions from VAE for next states
-            next_actions_vae = self.vae.sample(
-                next_states, self.config.num_action_samples
-            )
-
-            # Apply perturbation
-            batch_size = next_states.shape[0]
-            next_states_expanded = next_states.unsqueeze(1).repeat(
-                1, self.config.num_action_samples, 1
-            )
-            next_states_flat = next_states_expanded.view(
-                batch_size * self.config.num_action_samples, -1
-            )
-            next_actions_flat = next_actions_vae.view(
-                batch_size * self.config.num_action_samples, -1
-            )
-
-            next_actions_perturbed = self.perturbation(
-                next_states_flat, next_actions_flat
-            )
-
-            # Compute Q-values for all sampled actions
-            q1_next = self.q1_target(next_states_flat, next_actions_perturbed)
-            q2_next = self.q2_target(next_states_flat, next_actions_perturbed)
-
-            # Weighted combination (lmbda for uncertainty)
-            q_next = self.config.lmbda * torch.min(q1_next, q2_next) + (
-                1 - self.config.lmbda
-            ) * torch.max(q1_next, q2_next)
-
-            # Reshape and take max over sampled actions
-            q_next = q_next.view(batch_size, self.config.num_action_samples)
-            q_next = q_next.max(dim=1, keepdim=True)[0]
-
-            # Bellman target
-            target_q = rewards + (1 - dones) * self.config.discount_factor * q_next
+        target_q = sampled_twin_target(
+            rewards,
+            dones,
+            next_states,
+            self.config.discount_factor,
+            lambda states: self.vae.sample(states, self.config.num_action_samples),
+            self.q1_target,
+            self.q2_target,
+            min_weight=self.config.lmbda,
+            perturb=self.perturbation_target,
+        )
 
         # Current Q-values
         current_q1 = self.q1(states, actions)
         current_q2 = self.q2(states, actions)
 
         # MSE loss
-        q1_loss = F.mse_loss(current_q1, target_q)
-        q2_loss = F.mse_loss(current_q2, target_q)
+        q1_loss = td_regression(current_q1, target_q)
+        q2_loss = td_regression(current_q2, target_q)
         q_loss = q1_loss + q2_loss
 
         metrics = {
@@ -559,13 +535,23 @@ class BatchConstrainedQLearning:
         Returns:
             Dictionary of training metrics
         """
+        rewards, dones = transition_batch(
+            states,
+            actions,
+            rewards,
+            next_states,
+            dones,
+            state_dim=self.state_dim,
+            action_dim=self.action_dim,
+            discount=self.config.discount_factor,
+        )
         metrics = {}
 
         # 1. Train VAE
         self.vae_optimizer.zero_grad()
         vae_loss, vae_metrics = self._compute_vae_loss(states, actions)
         vae_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.vae.parameters(), self.config.max_grad_norm)
+        clip_parameter_gradients(self.vae.parameters(), self.config.max_grad_norm)
         self.vae_optimizer.step()
         metrics.update(vae_metrics)
 
@@ -575,7 +561,7 @@ class BatchConstrainedQLearning:
             states, actions, rewards, next_states, dones
         )
         q_loss.backward()
-        torch.nn.utils.clip_grad_norm_(
+        clip_parameter_gradients(
             list(self.q1.parameters()) + list(self.q2.parameters()),
             self.config.max_grad_norm,
         )
@@ -588,7 +574,7 @@ class BatchConstrainedQLearning:
             states
         )
         perturbation_loss.backward()
-        torch.nn.utils.clip_grad_norm_(
+        clip_parameter_gradients(
             self.perturbation.parameters(), self.config.max_grad_norm
         )
         self.perturbation_optimizer.step()
@@ -603,19 +589,16 @@ class BatchConstrainedQLearning:
 
         return metrics
 
-    def _soft_update_targets(self):
-        """Soft update target networks"""
-        tau = self.config.soft_target_tau
-
-        for target_param, param in zip(
-            self.q1_target.parameters(), self.q1.parameters(), strict=False
-        ):
-            target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
-
-        for target_param, param in zip(
-            self.q2_target.parameters(), self.q2.parameters(), strict=False
-        ):
-            target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
+    def _soft_update_targets(self) -> None:
+        """Update the policy and both critics from this completed optimizer step."""
+        update_target_networks(
+            (
+                (self.perturbation_target, self.perturbation),
+                (self.q1_target, self.q1),
+                (self.q2_target, self.q2),
+            ),
+            self.config.soft_target_tau,
+        )
 
     def select_action(
         self,
@@ -689,6 +672,10 @@ class BatchConstrainedQLearning:
             {
                 "vae_state_dict": self.vae.state_dict(),
                 "perturbation_state_dict": self.perturbation.state_dict(),
+                "perturbation_target_state_dict": self.perturbation_target.state_dict(),
+                "q_optimizer": self.q_optimizer.state_dict(),
+                "vae_optimizer": self.vae_optimizer.state_dict(),
+                "perturbation_optimizer": self.perturbation_optimizer.state_dict(),
                 "q1_state_dict": self.q1.state_dict(),
                 "q2_state_dict": self.q2.state_dict(),
                 "q1_target_state_dict": self.q1_target.state_dict(),
@@ -710,7 +697,7 @@ class BatchConstrainedQLearning:
         """Load model checkpoint
 
         Args:
-            path: Checkpoint written by :meth:`save`.
+            path: Checkpoint written by :meth:`save` with matching network architecture.
             trusted: Pass ``True`` only for checkpoints from a source you
                 control; the default unpickles with ``weights_only=True`` so a
                 malicious checkpoint cannot execute code.
@@ -719,21 +706,50 @@ class BatchConstrainedQLearning:
             path, map_location=self.device, trusted=trusted
         )
 
+        config = checkpoint.get("config")
+        if isinstance(config, BCQConfig):
+            config = asdict(config)
+        if isinstance(config, dict):
+            restored_config = BCQConfig(**config)
+            if restored_config.activation != self.config.activation:
+                for critic in (self.q1, self.q2, self.q1_target, self.q2_target):
+                    linear_layers = (
+                        layer
+                        for layer in critic.network
+                        if isinstance(layer, nn.Linear)
+                    )
+                    critic.network = critic_network(
+                        linear_layers, restored_config.activation
+                    )
+            self.config = restored_config
+
         self.vae.load_state_dict(checkpoint["vae_state_dict"])
         self.perturbation.load_state_dict(checkpoint["perturbation_state_dict"])
+        self.perturbation_target.load_state_dict(
+            checkpoint.get(
+                "perturbation_target_state_dict", checkpoint["perturbation_state_dict"]
+            )
+        )
         self.q1.load_state_dict(checkpoint["q1_state_dict"])
         self.q2.load_state_dict(checkpoint["q2_state_dict"])
         self.q1_target.load_state_dict(checkpoint["q1_target_state_dict"])
         self.q2_target.load_state_dict(checkpoint["q2_target_state_dict"])
         self.training_step = checkpoint.get("training_step", 0)
 
-        # Checkpoints store the config as a plain dict (see save()); rebuild it.
-        config_payload = checkpoint.get("config")
-        if isinstance(config_payload, dict):
-            try:
-                self.config = BCQConfig(**config_payload)
-            except (TypeError, ValueError) as exc:
-                logger.warning("Failed to restore config from checkpoint: %s", exc)
+        self.perturbation.phi = self.perturbation_target.phi = self.config.phi
+        restore_optimizer(
+            self.q_optimizer, checkpoint.get("q_optimizer"), self.config.learning_rate
+        )
+        restore_optimizer(
+            self.vae_optimizer,
+            checkpoint.get("vae_optimizer"),
+            self.config.vae_learning_rate,
+        )
+        restore_optimizer(
+            self.perturbation_optimizer,
+            checkpoint.get("perturbation_optimizer"),
+            self.config.learning_rate,
+        )
 
         logger.info(f"Loaded BCQ model from {path}")
 
@@ -779,61 +795,19 @@ class BCQTrainer:
         Returns:
             List of training metrics per epoch
         """
-        states = torch.FloatTensor(dataset["states"]).to(self.device)
-        actions = torch.FloatTensor(dataset["actions"]).to(self.device)
-        rewards = torch.FloatTensor(dataset["rewards"]).unsqueeze(-1).to(self.device)
-        next_states = torch.FloatTensor(dataset["next_states"]).to(self.device)
-        dones = torch.FloatTensor(dataset["dones"]).unsqueeze(-1).to(self.device)
-
-        dataset_size = states.shape[0]
-        num_batches = dataset_size // batch_size
-
-        logger.info(f"Training BCQ on {dataset_size} samples for {num_epochs} epochs")
-
-        for epoch in range(num_epochs):
-            indices = torch.randperm(dataset_size)
-            epoch_metrics = []
-
-            for batch_idx in range(num_batches):
-                batch_indices = indices[
-                    batch_idx * batch_size : (batch_idx + 1) * batch_size
-                ]
-
-                batch_states = states[batch_indices]
-                batch_actions = actions[batch_indices]
-                batch_rewards = rewards[batch_indices]
-                batch_next_states = next_states[batch_indices]
-                batch_dones = dones[batch_indices]
-
-                metrics = self.bcq.train_step(
-                    batch_states,
-                    batch_actions,
-                    batch_rewards,
-                    batch_next_states,
-                    batch_dones,
-                )
-                epoch_metrics.append(metrics)
-
-            # Average metrics for epoch
-            avg_metrics: dict[str, float] = {
-                key: float(np.mean([m[key] for m in epoch_metrics]))
-                for key in epoch_metrics[0].keys()
-            }
-            avg_metrics["epoch"] = float(epoch)
-            self.training_metrics.append(avg_metrics)
-
-            if epoch % 10 == 0:
-                logger.info(
-                    f"Epoch {epoch}/{num_epochs}: "
-                    + ", ".join(
-                        [
-                            f"{k}={v:.4f}"
-                            for k, v in avg_metrics.items()
-                            if k not in ("epoch", "training_step")
-                        ]
-                    )
-                )
-
+        self.training_metrics.extend(
+            transition_epochs(
+                dataset,
+                self.bcq.train_step,
+                discount=self.bcq.config.discount_factor,
+                algorithm="bcq",
+                state_dim=self.bcq.state_dim,
+                action_dim=self.bcq.action_dim,
+                device=self.device,
+                num_epochs=num_epochs,
+                batch_size=batch_size,
+            )
+        )
         return self.training_metrics
 
     def save(self, path: str) -> None:
@@ -843,3 +817,4 @@ class BCQTrainer:
     def load(self, path: str) -> None:
         """Load trained model"""
         self.bcq.load(path)
+        self.config = self.bcq.config

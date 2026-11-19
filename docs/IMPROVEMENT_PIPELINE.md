@@ -55,6 +55,72 @@ or duplicate conversation from crossing a split. The reward threshold filters
 training only; failed held-out conversations remain available for evaluation.
 The manifest retains counts and fingerprints for every partition.
 
+## Grade an assistant action in context
+
+Use `--context-file` to supply a reference for each assistant turn. For example,
+a refund conversation can contain a tool call, a tool result and a final reply.
+To grade the final reply, put these two lines in `refund.references.jsonl` in
+assistant-turn order. The empty object skips grading the first action.
+
+```jsonl
+{}
+{"expected_tool":"refund","expected_params":{"order":42},"expected_tool_result":{"approved":true},"expected_outcome":"issued"}
+```
+
+```bash
+stateset-agents improve run --format openai --transcripts refund.jsonl \
+  --reward tool_calling --context-file refund.references.jsonl --output outputs/refund
+python -m stateset_agents.data.prepare_sft_dataset --input outputs/refund/curated.jsonl \
+  --format chat --output outputs/refund/train.jsonl
+```
+
+To grade the tool call itself, put `{"expected_tool":"refund","expected_params":{"order":42}}`
+on its reference line. Use `{}` for `expected_params` when the tool takes no
+arguments. The optional `expected_outcome` checks for a substring of the
+reply. For `gsm8k`, a reference row looks like `{"gold_answer":4}`.
+
+For parallel tool calls, use one `expected_tool_calls` list for the assistant
+turn. For example, these two reference lines grade a pair of order lookups
+and the assistant's subsequent reply.
+
+```jsonl
+{"expected_tool_calls":[{"tool":"lookup_order","args":{"order":19}},{"tool":"lookup_order","args":{"order":42}}]}
+{"expected_tool_calls":[{"tool":"lookup_order","args":{"order":19},"result":{"state":"pending"}},{"tool":"lookup_order","args":{"order":42},"result":{"state":"shipped"}}],"expected_outcome":"42 shipped"}
+```
+
+Each expected call matches exactly once. Result messages can arrive in either
+order because the grader joins them to calls by ID. To grade the reply, include
+a `result` for every call in the immediately preceding batch. A complete batch
+with a wrong argument, extra call or wrong result scores zero. Missing,
+duplicate or unrecognized IDs make the reply ungradable. Earlier batches
+cannot supply missing results.
+
+For training, use a chat template that renders every call. Local SFT rejects a
+weighted example when removing one call leaves the rendered conversation
+identical. This catches templates that silently print only the first call.
+
+For raw transcript inputs, keep one conversation per file. For multiple
+transcripts, pass a directory containing a reference JSONL file with each
+transcript's filename. Imported conversations use names such as
+`conversation_0.jsonl`. A supplied file must have one object per assistant turn.
+Turns with incomplete references or an unlinked tool result appear
+under `ungradable_turns` in the run summary. Only graded turns contribute to
+the mean score or qualify for curation. The mean is `null` if none can be graded.
+
+Each curated chat row ends at the selected assistant action and retains the
+preceding messages, tool calls, tool results and available tool schemas.
+Reference answers stay in the grading input. The local SFT trainer reads
+assistant message weights of 0 for context and 1 for the training target.
+Use the chat export to preserve those weights. Flat text formats retain the
+history as text and have no per-message loss weights.
+
+Local, River and Tinker SFT skip a weighted row if `max_length` cuts any
+selected assistant token, including the end of a reply or the second call in
+a parallel batch. A cutoff in trailing context after the complete target is
+fine. If the training logs report skipped rows, increase `max_length` to fit
+both the conversation history and the full action. Unweighted chat data keeps
+its existing prefix truncation behavior.
+
 ## Train on actual logged actions
 
 `ConversationDataset.policy_transitions()` defines ordered assistant actions.

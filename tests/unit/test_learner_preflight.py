@@ -125,8 +125,10 @@ def test_legacy_sequence_path_requires_explicit_permission(tmp_path):
     }
 
 
-def test_sampler_fallback_is_part_of_effective_path_identity(tmp_path):
+@pytest.mark.parametrize("inner", [1, 3])
+def test_sampler_fallback_is_part_of_effective_path_identity(tmp_path, inner):
     trainer = _worker(tmp_path)
+    trainer.config.num_gradient_updates = inner
     trainer.config.old_logprobs_source = "sampler"
     groups = _groups()
     with pytest.raises(ValueError, match="likelihoods"):

@@ -66,6 +66,15 @@ def test_tool_call_turn_is_kept_and_supervised():
     assert "Refund order 8" not in weighted
 
 
+def test_selected_action_alone_receives_loss():
+    messages = [dict(message) for message in CONVERSATION]
+    messages[2]["weight"] = 0
+    messages[4]["weight"] = 1
+    _, full, weighted = _weighted_and_full(QWEN3_LIKE, messages)
+    assert "Shipped." in full and "Shipped." not in weighted
+    assert "Refunded." in weighted
+
+
 def test_assistant_token_mask_rejects_history_rewriting_templates():
     reversing = (
         "{% for m in messages|reverse %}<|im_start|>{{ m['role'] }}\n"

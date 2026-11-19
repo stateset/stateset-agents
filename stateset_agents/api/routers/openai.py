@@ -22,9 +22,12 @@ from ..dependencies import (
     get_inference_service,
     require_auth_if_enabled,
 )
-from ..messages_models import MessageInput, MessagesRequest
 from ..messages_utils import validate_tool_choice, validate_tools
-from ..openai_models import OpenAIChatCompletionRequest, OpenAIChatCompletionResponse
+from ..openai_models import (
+    OpenAIChatCompletionRequest,
+    OpenAIChatCompletionResponse,
+    OpenAIChatMessage,
+)
 from ..services.inference_service import InferenceService
 
 logger = logging.getLogger(__name__)
@@ -52,7 +55,7 @@ def _estimate_message_content_length(content: Any) -> int:
 
 
 def _validate_openai_request_messages(
-    messages: list[MessageInput], max_messages: int, max_len: int
+    messages: list[OpenAIChatMessage], max_messages: int, max_len: int
 ) -> None:
     if len(messages) > max_messages:
         raise HTTPException(
@@ -132,36 +135,8 @@ async def chat_completions(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    raw_payload = payload.model_dump(exclude_none=True)
-
-    stop_sequences = None
-    stop = raw_payload.pop("stop", None)
-    if isinstance(stop, str):
-        stop_sequences = [stop]
-    elif isinstance(stop, list):
-        stop_sequences = [s for s in stop if isinstance(s, str) and s]
-
-    raw_messages = raw_payload.pop("messages", [])
-    if len(raw_messages) > config.validation.max_conversation_messages:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Too many messages (max {config.validation.max_conversation_messages})",
-        )
-
-    messages_request = MessagesRequest(
-        model=raw_payload.pop("model"),
-        messages=[MessageInput(**m) for m in raw_messages],
-        max_tokens=raw_payload.pop("max_tokens", None),
-        temperature=raw_payload.pop("temperature", None),
-        top_p=raw_payload.pop("top_p", None),
-        stop_sequences=stop_sequences,
-        stream=bool(raw_payload.pop("stream", False)),
-        tools=raw_payload.pop("tools", None),
-        tool_choice=raw_payload.pop("tool_choice", None),
-        **raw_payload,
-    )
     _validate_openai_request_messages(
-        messages_request.messages,
+        payload.messages,
         config.validation.max_conversation_messages,
         config.validation.max_message_length,
     )
@@ -177,8 +152,8 @@ async def chat_completions(
         },
     )
 
-    if messages_request.stream:
-        generator = service.stream_openai(messages_request)
+    if payload.stream:
+        generator = service.stream_openai(payload)
         sse_headers = {
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
@@ -189,7 +164,7 @@ async def chat_completions(
         )
 
     try:
-        openai_payload = await service.create_openai_response(messages_request)
+        openai_payload = await service.create_openai_response(payload)
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
         logger.info(
             "OpenAI chat.completions request completed",

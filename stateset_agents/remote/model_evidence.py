@@ -39,6 +39,19 @@ class ModelProviderEvidence:
 
 MODEL_PROVIDER_EVIDENCE: tuple[ModelProviderEvidence, ...] = (
     ModelProviderEvidence(
+        model="thinkingmachines/Inkling-2-Small",
+        provider="tinker",
+        level="unit-tested",
+        outcome="pass",
+        checked_at="2026-11-06",
+        evidence=(
+            "Offline integration with tinker 0.38.0 and tml-renderers 0.4.0 "
+            "verified assistant/tool loss masking, causal alignment, real SDK "
+            "Datum construction, and checkpoint handoff with RPC doubles. "
+            "See tests/integration/test_inkling2_sdk.py; no live training claim."
+        ),
+    ),
+    ModelProviderEvidence(
         model="thinkingmachines/Inkling-Small",
         provider="tinker",
         level="unit-tested",

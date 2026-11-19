@@ -422,6 +422,7 @@ class NeuralRewardTrainer:
         """Train for one epoch"""
         self.model.train()
         total_loss = 0.0
+        examples = 0
 
         for batch in train_loader:
             # Move to device
@@ -430,7 +431,7 @@ class NeuralRewardTrainer:
             rewards = batch["reward"].to(self.device)
 
             # Forward pass
-            predicted_rewards = self.model(prompt_emb, response_emb).squeeze()
+            predicted_rewards = self.model(prompt_emb, response_emb).squeeze(-1)
             loss = self.criterion(predicted_rewards, rewards)
 
             # Backward pass
@@ -438,14 +439,16 @@ class NeuralRewardTrainer:
             loss.backward()
             self.optimizer.step()
 
-            total_loss += loss.item()
+            total_loss += loss.item() * rewards.numel()
+            examples += rewards.numel()
 
-        return total_loss / len(train_loader)
+        return total_loss / examples
 
     def _validate_epoch(self, val_loader: DataLoader) -> float:
         """Validate for one epoch"""
         self.model.eval()
         total_loss = 0.0
+        examples = 0
 
         with torch.no_grad():
             for batch in val_loader:
@@ -455,12 +458,13 @@ class NeuralRewardTrainer:
                 rewards = batch["reward"].to(self.device)
 
                 # Forward pass
-                predicted_rewards = self.model(prompt_emb, response_emb).squeeze()
+                predicted_rewards = self.model(prompt_emb, response_emb).squeeze(-1)
                 loss = self.criterion(predicted_rewards, rewards)
 
-                total_loss += loss.item()
+                total_loss += loss.item() * rewards.numel()
+                examples += rewards.numel()
 
-        return total_loss / len(val_loader)
+        return total_loss / examples
 
     def train_from_replay_buffer(self, sample_size: int = 1000) -> dict[str, Any]:
         """Train from replay buffer"""

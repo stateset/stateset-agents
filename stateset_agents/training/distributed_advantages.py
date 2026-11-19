@@ -11,6 +11,8 @@ import json
 import math
 from typing import Any
 
+from stateset_agents.core.reward_moments import PopulationMoments, RewardMoments
+
 
 def _ddp_group(model: Any) -> Any:
     from torch.nn.parallel import DistributedDataParallel
@@ -30,19 +32,47 @@ def prepare_reward_batch(
     global_reward_sum: float | None = None,
     updating: bool = False,
 ) -> tuple[list[Any], int, float, float]:
+    """Return clipped row tensors, population count, mean and standard deviation."""
+    rows, pop = prepare_reward_population(
+        groups,
+        config,
+        objective,
+        device,
+        model=model,
+        global_reward_mean=global_reward_mean,
+        global_reward_count=global_reward_count,
+        global_reward_sum=global_reward_sum,
+        updating=updating,
+    )
+    return rows, pop.count, pop.mean, pop.deviation()
+
+
+def prepare_reward_population(
+    groups: list[Any],
+    config: Any,
+    objective: Any,
+    device: Any,
+    *,
+    model: Any = None,
+    global_reward_mean: float | None = None,
+    global_reward_count: int = 0,
+    global_reward_sum: float | None = None,
+    updating: bool = False,
+) -> tuple[list[Any], PopulationMoments]:
     """Validate rewards and agree on clipped batch moments before model forward.
 
     DDP peers reject invalid rewards, estimator differences or running-state
-    drift together. Counts remain int64; population moments are merged in FP64.
+    drift together. Ranks exchange an int64 count and exact dyadic sums.
     Only batch normalization and running baselines need a moments collective.
     Single-process callers use the same reward validation and local moments.
     """
+    from .reward_advantages import reward_tensor
     from .trainer_utils import require_torch
 
     torch = require_torch()
     process_group = _ddp_group(model)
     rewards_by_group: list[Any] = []
-    count, mean, m2 = 0, 0.0, 0.0
+    population: PopulationMoments = RewardMoments([])
     digest = bytes(32)
     error: Exception | None = None
     try:
@@ -79,7 +109,7 @@ def prepare_reward_batch(
                 raise ValueError("Invalid running reward baseline")
             state = [global_reward_mean, global_reward_count, global_reward_sum]
         settings = [
-            "stateset-native-advantages-v2",
+            "stateset-native-advantages-v3",
             explicit,
             objective.advantage if explicit else baseline,
             eps if explicit else bool(getattr(config, "advantage_normalization", True)),
@@ -94,26 +124,23 @@ def prepare_reward_batch(
             raw = [float(t.total_reward) for t in group.trajectories]
             if not raw or not all(math.isfinite(value) for value in raw):
                 raise ValueError("Native reward groups must be nonempty and finite")
-            rewards = torch.tensor(raw, dtype=torch.float32, device=device)
+            rewards = reward_tensor(raw, device)
             if clip is not None:
                 rewards = rewards.clamp(-clip, clip)
-            if not bool(torch.isfinite(rewards).all()):
+            if not bool(torch.isfinite(rewards.float()).all()):
                 raise ValueError("Clipped rewards must be finite in FP32")
             rewards_by_group.append(rewards)
         if not rewards_by_group and process_group is None:
             raise ValueError("Native reward batches must be nonempty")
         if rewards_by_group:
-            values = torch.cat(rewards_by_group).double()
-            count = values.numel()
-            mean = float(values.mean().item())
-            m2 = float(((values - mean) ** 2).sum().item())
+            population = RewardMoments(torch.cat(rewards_by_group).tolist())
     except (ValueError, TypeError, OverflowError, AttributeError, RuntimeError) as exc:
         error = exc
     if process_group is not None:
         import torch.distributed as dist
 
         header = torch.tensor(
-            [2, int(error is None), count if error is None else 0, *digest],
+            [3, int(error is None), population.count if error is None else 0, *digest],
             dtype=torch.int64,
             device=device,
         )
@@ -122,7 +149,7 @@ def prepare_reward_batch(
         ]
         dist.all_gather(peers, header, group=process_group)
         headers = [peer.cpu().tolist() for peer in peers]
-        if not all(peer[0] == 2 and peer[1] == 1 and peer[2] >= 0 for peer in headers):
+        if not all(peer[0] == 3 and peer[1] == 1 and peer[2] >= 0 for peer in headers):
             raise ValueError(
                 "Invalid reward batch or baseline on a DDP rank"
             ) from error
@@ -136,29 +163,23 @@ def prepare_reward_batch(
             running and state is not None
         )
         if needs_global_moments:
-            moments = torch.tensor([mean, m2], dtype=torch.float64, device=device)
-            gathered = [torch.empty_like(moments) for _ in peers]
-            dist.all_gather(gathered, moments, group=process_group)
-            count, mean, m2 = 0, 0.0, 0.0
-            for peer, tensor in zip(headers, gathered, strict=True):
-                if not peer[2]:
-                    continue
-                local_mean, local_m2 = tensor.cpu().tolist()
-                total = count + peer[2]
-                delta = local_mean - mean
-                m2 += local_m2 + delta * delta * (count / total) * peer[2]
-                mean += delta * (peer[2] / total)
-                count = total
+            wire = torch.tensor(
+                list(population.wire()), dtype=torch.uint8, device=device
+            )
+            gathered = [torch.empty_like(wire) for _ in peers]
+            dist.all_gather(gathered, wire, group=process_group)
+            population = PopulationMoments.merge_wire(
+                sum(peer[2] for peer in headers),
+                (bytes(buf.tolist()) for buf in gathered),
+            )
     elif error is not None:
         raise ValueError("Invalid native reward batch or baseline") from error
     if (
-        count + (global_reward_count if running and state is not None else 0)
+        population.count + (global_reward_count if running and state is not None else 0)
         > 2**63 - 1
     ):
         raise ValueError("Running reward count exceeds int64")
-    if not math.isfinite(mean) or not math.isfinite(m2) or m2 < 0:
-        raise ValueError("Invalid reward population moments")
-    return rewards_by_group, count, mean, math.sqrt(m2 / count) if count else 0.0
+    return rewards_by_group, population
 
 
 def validate_advantages(advantages: list[Any], model: Any, device: Any) -> None:

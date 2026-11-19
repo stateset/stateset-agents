@@ -15,6 +15,7 @@ import re
 from typing import Any
 
 from .agent import TOOL_EXEC_EXCEPTIONS, AgentConfig, MultiTurnAgent
+from .conversation import conversation_call
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ class ToolAgent(MultiTurnAgent):
         for tool in tools or []:
             self.add_tool(tool)
 
+    @conversation_call
     async def generate_response(
         self,
         messages: str | list[dict[str, str]],
@@ -174,7 +176,7 @@ class ToolAgent(MultiTurnAgent):
                     start = next_obj_start + 1
                     continue
 
-                obj_end = next_obj_start + end_offset
+                obj_end = end_offset
                 objects.append((text[next_obj_start:obj_end], next_obj_start, obj_end))
                 start = obj_end
 
@@ -299,6 +301,7 @@ class ToolAgent(MultiTurnAgent):
 
         return None
 
+    @conversation_call
     async def _execute_tool(
         self,
         tool_name: str,

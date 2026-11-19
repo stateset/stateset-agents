@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -92,35 +90,29 @@ def create_peft_agent(
 async def save_agent_checkpoint(
     agent: Agent, checkpoint_path: str, save_model: bool = True
 ) -> None:
-    """Save an agent checkpoint."""
-    checkpoint_dir = Path(checkpoint_path)
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    """Atomically publish inference components; config-only saves use a new path.
 
-    if save_model and agent.model is not None:
-        agent.model.save_pretrained(checkpoint_dir)
-        if agent.tokenizer is not None:
-            agent.tokenizer.save_pretrained(checkpoint_dir)
+    Stop concurrent training/generation first. This does not save conversations,
+    optimizer state, or external rollout engines. Config fields must be JSON data.
+    """
+    from .agent_checkpoint import save_checkpoint
 
-    config_path = checkpoint_dir / "agent_config.json"
-    with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(asdict(agent.config), f, indent=2, default=str)
+    save_checkpoint(
+        agent, Path(checkpoint_path).expanduser().absolute(), save_model=save_model
+    )
 
 
 async def load_agent_from_checkpoint(
     checkpoint_path: str, load_model: bool = True
 ) -> MultiTurnAgent:
-    """Load an agent from checkpoint."""
-    from .agent import MultiTurnAgent
+    """Restore saved weights; ``load_model=False`` defers component loading.
 
-    checkpoint_dir = Path(checkpoint_path)
-    config_path = checkpoint_dir / "agent_config.json"
-    with open(config_path) as f:
-        config_dict = json.load(f)
+    Configuration-only snapshots deliberately initialize their original source.
+    Adapter snapshots require their recorded base model to remain available.
+    """
+    from .agent_checkpoint import load_checkpoint
 
-    agent = MultiTurnAgent(AgentConfig(**config_dict))
-    if load_model:
-        await agent.initialize()
-    return agent
+    return await load_checkpoint(Path(checkpoint_path), load_model=load_model)
 
 
 def get_preset_config(preset_name: str, **overrides) -> AgentConfig:

@@ -121,6 +121,7 @@ class VLLMConfig:
     # so ``sync_weights`` can hand tensors straight to the engine's model after
     # every optimizer step. Set False for a standalone/serving engine.
     in_process_weight_sync: bool = True
+    logprobs_mode: str = "processed_logprobs"
 
     def to_vllm_kwargs(self) -> dict[str, Any]:
         """Convert to vLLM LLM constructor kwargs"""
@@ -137,6 +138,11 @@ class VLLMConfig:
             "enable_chunked_prefill": self.enable_chunked_prefill,
         }
 
+        if self.logprobs_mode not in {"raw_logprobs", "processed_logprobs"}:
+            raise ValueError(
+                "vLLM logprobs_mode must return normalized log probabilities"
+            )
+        kwargs["logprobs_mode"] = self.logprobs_mode
         if self.max_model_len is not None:
             kwargs["max_model_len"] = self.max_model_len
 
@@ -173,6 +179,7 @@ class GenerationResult:
     cumulative_logprob: float  # Sum of token log probs
     sequence_length: int
     finish_reason: str  # "stop", "length", "abort"
+    logprobs_mode: str = "processed_logprobs"
 
     @property
     def mean_logprob(self) -> float:
@@ -303,6 +310,8 @@ class VLLMGenerator:
 
     def __init__(self, config: VLLMConfig):
         self.config = config
+        self._logprobs_mode = config.logprobs_mode
+        self._prefix_cache_enabled = config.enable_prefix_caching
         self.engine: LLM | None = None
         self.tokenizer: Any | None = None
         self._lora_adapters: dict[str, Any] = {}
@@ -338,6 +347,8 @@ class VLLMGenerator:
                 os.environ.setdefault("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
             vllm_kwargs = self.config.to_vllm_kwargs()
             self.engine = LLM(**vllm_kwargs)
+            self._logprobs_mode = vllm_kwargs["logprobs_mode"]
+            self._prefix_cache_enabled = vllm_kwargs["enable_prefix_caching"]
             self.tokenizer = self.engine.get_tokenizer()
 
             self._initialized = True
@@ -435,6 +446,11 @@ class VLLMGenerator:
 
             # Exact sampled-token probabilities are required for importance
             # ratios. A top-k alternative or zero would silently bias training.
+            mode = self._logprobs_mode
+            greedy = (
+                mode == "processed_logprobs"
+                and getattr(sampling_params, "temperature", None) == 0
+            )
             token_logprobs: list[float] = []
             if response_token_ids and completion.logprobs is None:
                 raise ValueError("vLLM omitted sampled-token log-probabilities")
@@ -450,7 +466,7 @@ class VLLMGenerator:
                 value = float(logprob_dict[token_id].logprob)
                 if not math.isfinite(value) or value > 1e-6:
                     raise ValueError("vLLM returned an invalid sampled log-probability")
-                token_logprobs.append(value)
+                token_logprobs.append(0.0 if greedy else min(value, 0.0))
 
             # Compute cumulative log prob
             cumulative_logprob = sum(token_logprobs) if token_logprobs else 0.0
@@ -465,6 +481,7 @@ class VLLMGenerator:
                 cumulative_logprob=cumulative_logprob,
                 sequence_length=len(response_token_ids),
                 finish_reason=completion.finish_reason,
+                logprobs_mode=mode,
             )
             results.append(result)
 
@@ -726,6 +743,17 @@ class VLLMGenerator:
         """
         loader = self.weight_loader or self._resolve_weight_loader()
         loader(_iter_policy_weights(model))
+        if getattr(self, "_prefix_cache_enabled", False):
+            engine = self.engine
+            reset = getattr(engine, "reset_prefix_cache", None)
+            if not callable(reset):
+                reset = getattr(
+                    getattr(engine, "llm_engine", None), "reset_prefix_cache", None
+                )
+            if not callable(reset) or reset() is False:
+                raise RuntimeError(
+                    "vLLM could not invalidate its prefix cache after loading policy weights"
+                )
         self.weight_sync_count = int(getattr(self, "weight_sync_count", 0)) + 1
 
     def _resolve_weight_loader(self) -> Callable[[Iterable[tuple[str, Any]]], Any]:
@@ -884,6 +912,9 @@ class HuggingFaceGeneratorFallback:
         top_p = self.config.top_p if top_p is None else top_p
         max_tokens = self.config.max_tokens if max_tokens is None else max_tokens
         top_k = self.config.top_k if top_k is None else top_k
+        mode = self.config.logprobs_mode
+        if mode not in {"processed_logprobs", "raw_logprobs"}:
+            raise ValueError("Unknown generation log-probability mode")
 
         results = []
 
@@ -906,6 +937,8 @@ class HuggingFaceGeneratorFallback:
                     top_k=0 if top_k == -1 else top_k,
                     do_sample=temperature > 0,
                     pad_token_id=tokenizer.pad_token_id,
+                    num_beams=1,
+                    output_logits=mode == "raw_logprobs",
                     output_scores=True,
                     return_dict_in_generate=True,
                 )
@@ -914,30 +947,37 @@ class HuggingFaceGeneratorFallback:
             response_ids = generated_ids[prompt_length:]
             response_text = tokenizer.decode(response_ids, skip_special_tokens=True)
 
-            # Every sampled token needs its own score for importance ratios.
-            if outputs.scores is None or len(outputs.scores) != len(response_ids):
+            from ..core.generation_evidence import selected_logprobs
+
+            steps = (
+                outputs.scores
+                if mode == "processed_logprobs"
+                else getattr(outputs, "logits", None)
+            )
+            sampled = mode == "processed_logprobs"
+            if sampled and temperature <= 0:
+                picked = torch.zeros_like(
+                    response_ids.unsqueeze(0), dtype=torch.float32
+                )
+            else:
+                picked = selected_logprobs(
+                    steps, response_ids.unsqueeze(0), sampled=sampled
+                )
+            if picked is None:
                 raise ValueError(
                     "HuggingFace returned misaligned sampled-token log-probabilities"
                 )
-            token_logprobs = []
-            if outputs.scores:
-                import torch.nn.functional as F
-
-                for i, score in enumerate(outputs.scores):
-                    if i < len(response_ids):
-                        log_probs = F.log_softmax(score[0], dim=-1)
-                        token_id = response_ids[i].item()
-                        value = log_probs[token_id].item()
-                        if not math.isfinite(value):
-                            raise ValueError(
-                                "HuggingFace returned an invalid sampled-token log-probability"
-                            )
-                        token_logprobs.append(value)
+            if not torch.isfinite(picked).all():
+                raise ValueError(
+                    "HuggingFace returned an invalid sampled-token log-probability"
+                )
+            token_logprobs = picked[0].tolist()
 
             cumulative_logprob = sum(token_logprobs) if token_logprobs else 0.0
 
             result = GenerationResult(
                 prompt=prompt,
+                logprobs_mode=mode,
                 response=response_text,
                 full_text=prompt + response_text,
                 prompt_token_ids=inputs["input_ids"][0].tolist(),

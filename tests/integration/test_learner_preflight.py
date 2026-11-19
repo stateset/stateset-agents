@@ -147,7 +147,7 @@ def _worker(rank, directory):
             advantage_normalization=False,
             gradient_accumulation_steps=4 if case.startswith("pending_") else 2,
             num_gradient_updates=(
-                1 if case.startswith("pending_") or case.startswith("sampler_") else 2
+                1 if case.startswith("pending_") or case == "sampler_path" else 2
             ),
             reward_clip=3.0,
             entropy_coef=0.07,
@@ -443,6 +443,9 @@ def _worker(rank, directory):
             trainer._flush_accumulation(torch)
             assert trainer.agent.model.module.calls > 0
             assert metrics["num_trajectories"] == 5
+            if case == "sampler_required":
+                assert metrics["old_logprobs_source"] == "sampler"
+                assert metrics["inner_updates"] == 2
             parameters = trainer.agent.model.module.lookup.weight.detach()
             peers = [torch.empty_like(parameters) for _ in range(2)]
             dist.all_gather(peers, parameters)
@@ -484,6 +487,23 @@ def _worker(rank, directory):
             )
             + "\n"
         )
+        for missing in (False, True):
+            trainer, groups = make("sampler_required")
+            trainer.config.allow_missing_sampler_logprobs = missing
+            if missing:
+                groups[0].trajectories[0].turns[0].metadata.pop("sampler_log_probs")
+            metrics = asyncio.run(
+                trainer.training_step([] if rank == 0 else [groups[0]])
+            )
+            assert metrics["inner_updates"] == 2
+            assert metrics["optimizer_updates"] == 2
+            assert metrics["old_logprobs_source"] == (
+                "recompute_fallback" if missing else "sampler"
+            )
+            parameters = trainer.agent.model.module.lookup.weight.detach()
+            peers = [torch.empty_like(parameters) for _ in range(2)]
+            dist.all_gather(peers, parameters)
+            torch.testing.assert_close(peers[0], peers[1], rtol=0, atol=0)
         # Neither peer should destroy shared communication state while the
         # other still checks the final update or writes its acceptance receipt.
         progress("waiting_for_peer", "uneven_chunks")

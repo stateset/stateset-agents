@@ -16,9 +16,12 @@ records remain authoritative.
 from __future__ import annotations
 
 import json
+import math
 import os
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -127,6 +130,24 @@ class BudgetExceeded(Exception):
     """A run would cost more than the caller's ``max_cost_usd`` ceiling."""
 
 
+def remaining_budget_usd(
+    ceiling: float | None, costs: Iterable[float | None]
+) -> float | None:
+    """Deduct observed charges, leaving no spendable balance after an unknown charge."""
+    if ceiling is None:
+        return None
+    remaining = Decimal(str(ceiling))
+    for cost in costs:
+        if cost is None:
+            return 0.0
+        if not math.isfinite(cost) or cost < 0:
+            raise BudgetExceeded(
+                "Invalid provider cost. The remaining budget is unknown."
+            )
+        remaining -= Decimal(str(cost))
+    return max(0.0, float(remaining))
+
+
 def check_budget(
     cost_per_hr: float | None,
     timeout_s: int,
@@ -143,14 +164,35 @@ def check_budget(
     """
     if max_cost_usd is None:
         return None
-    if cost_per_hr is None:
+    if (
+        type(max_cost_usd) not in (int, float)
+        or not math.isfinite(max_cost_usd)
+        or max_cost_usd <= 0
+    ):
+        raise BudgetExceeded("The --max-cost ceiling must be finite and positive")
+    if (
+        cost_per_hr is None
+        or type(cost_per_hr) not in (int, float)
+        or not math.isfinite(cost_per_hr)
+        or cost_per_hr < 0
+    ):
         raise BudgetExceeded(
             "a --max-cost ceiling was set but the provider did not report a "
             "price for this pod, so the run cannot be checked against it"
         )
-    worst_case = estimate_cost_usd(float(cost_per_hr) * max(1, gpu_count), timeout_s)
-    assert worst_case is not None
-    if worst_case > max_cost_usd:
+    if (
+        type(gpu_count) is not int
+        or gpu_count < 1
+        or type(timeout_s) is not int
+        or timeout_s <= 0
+    ):
+        raise BudgetExceeded(
+            "GPU count and timeout must be positive integers to price this job"
+        )
+    # Compare the quoted decimal amounts before any division or display rounding.
+    hourly_seconds = Decimal(str(cost_per_hr)) * gpu_count * timeout_s
+    worst_case = float(hourly_seconds / 3600)
+    if hourly_seconds > Decimal(str(max_cost_usd)) * 3600:
         raise BudgetExceeded(
             f"this run could cost ${worst_case:.2f} "
             f"({cost_per_hr}/hr x {gpu_count} GPU(s) for up to {timeout_s}s), "
@@ -167,5 +209,6 @@ __all__ = [
     "estimate_cost_usd",
     "read_entries",
     "record_entry",
+    "remaining_budget_usd",
     "summarize",
 ]

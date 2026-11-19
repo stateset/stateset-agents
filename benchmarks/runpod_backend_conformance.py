@@ -73,12 +73,13 @@ from stateset_agents.remote.ledger import (
 )
 from stateset_agents.remote.runpod import (
     DEFAULT_RUNPOD_LEASE_DIR,
+    GPU_CATALOG_URL,
     RunPodApi,
     SshTransport,
 )
 from stateset_agents.remote.serve_session import self_destruct_script
 
-_CATALOG_URL = "https://api.runpod.io/graphql"
+_CATALOG_URL = GPU_CATALOG_URL
 _REPOSITORY_URL = "https://github.com/stateset/stateset-agents.git"
 _REMOTE_REPOSITORY = "/workspace/stateset-agents"
 _REMOTE_MANIFEST = "/workspace/conformance-manifest.json"
@@ -115,28 +116,10 @@ def _sha256_file(path: Path) -> str:
 
 def fetch_catalog() -> list[dict[str, Any]]:
     """Fetch RunPod's public GPU catalog without using an API key."""
-    import requests
-
-    query = """
-    query StateSetConformanceCatalog {
-      gpuTypes {
-        id displayName secureCloud communityCloud securePrice communityPrice
-      }
-    }
-    """
     try:
-        response = requests.post(_CATALOG_URL, json={"query": query}, timeout=30)
-        response.raise_for_status()
-        payload = response.json()
-    except (requests.RequestException, ValueError) as exc:
-        raise RunPodConformanceError(f"RunPod catalog request failed: {exc}") from exc
-    if not isinstance(payload, Mapping) or payload.get("errors"):
-        raise RunPodConformanceError("RunPod catalog returned GraphQL errors")
-    data = payload.get("data")
-    rows = data.get("gpuTypes") if isinstance(data, Mapping) else None
-    if not isinstance(rows, list):
-        raise RunPodConformanceError("RunPod catalog response is malformed")
-    return [dict(row) for row in rows if isinstance(row, Mapping)]
+        return RunPodApi.gpu_catalog()
+    except RemoteExecutionError as exc:
+        raise RunPodConformanceError(str(exc)) from exc
 
 
 def build_plan(

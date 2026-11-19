@@ -37,7 +37,7 @@ from .grpo_accumulation import backward_accumulated_loss
 from .loss_computation import (
     compute_enhanced_grpo_loss,
     compute_grpo_loss,
-    compute_token_old_logprobs,
+    freeze_rollout_logprobs,
 )
 from .runtime_state import TrainingRuntime, validate_training_config
 from .single_turn_checkpointing import (
@@ -238,8 +238,15 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
             },
         ]
 
-        self.optimizer = torch.optim.AdamW(
-            optimizer_grouped_parameters, lr=learning_rate
+        from .adamw_weights import grouped_model_adamw
+
+        self.optimizer = grouped_model_adamw(
+            optimizer_grouped_parameters,
+            lr=learning_rate,
+            betas=(
+                getattr(self.config, "adam_beta1", 0.9),
+                getattr(self.config, "adam_beta2", 0.99),
+            ),
         )
         logger.info(f"Optimizer initialized with lr={learning_rate}")
 
@@ -619,7 +626,23 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
                     "global_reward_count": self._global_reward_count,
                     "global_reward_sum": getattr(self, "_global_reward_sum", None),
                 }
+                inner = max(
+                    1, int(getattr(self.config, "num_gradient_updates", 1) or 1)
+                )
+                had_pending = bool(self._grad_accum_step % grad_accum_steps)
                 with autocast_ctx:
+                    old_logprobs = (
+                        freeze_rollout_logprobs(
+                            training_groups, self.config, self.agent
+                        )
+                        if inner > 1 and self.optimizer is not None
+                        else None
+                    )
+                    # A pending flush discards this initial graph and rebuilds
+                    # every inner loss against the same pre-flush denominator.
+                    initial_batch = baseline.copy()
+                    if old_logprobs is not None and not had_pending:
+                        initial_batch["old_logprobs"] = old_logprobs
                     if use_enhanced:
                         loss_dict = compute_enhanced_grpo_loss(
                             trajectory_groups=training_groups,
@@ -627,7 +650,7 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
                             config=self.config,
                             agent=self.agent,
                             reference_model=self.reference_model,
-                            **baseline,
+                            **initial_batch,
                             update_global_stats=self._update_global_stats,
                         )
                     else:
@@ -635,7 +658,7 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
                             trajectory_groups=training_groups,
                             config=self.config,
                             agent=self.agent,
-                            **baseline,
+                            **initial_batch,
                             update_global_stats=self._update_global_stats,
                         )
 
@@ -656,27 +679,11 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
                     policy_loss = loss_dict.get("policy_loss")
 
                 # Backprop/update
-                inner = max(
-                    1, int(getattr(self.config, "num_gradient_updates", 1) or 1)
-                )
                 if (
-                    inner > 1
-                    and self.optimizer is not None
+                    old_logprobs is not None
                     and policy_loss is not None
                     and loss_dict.get("path") == "token"
                 ):
-                    # PPO/DAPO-style mini-epochs against the frozen old policy,
-                    # kept separate from any pending accumulated update.
-                    # Same precision as the inner-update losses (first ratio 1).
-                    with (
-                        amp.autocast(device_type=device_type, enabled=use_amp)
-                        if amp is not None
-                        else contextlib.nullcontext()
-                    ):
-                        old_logprobs = compute_token_old_logprobs(
-                            training_groups, self.config, self.agent
-                        )
-                    had_pending = bool(self._grad_accum_step % grad_accum_steps)
                     self._flush_accumulation(torch, use_amp, max_grad_norm)
                     for step_idx in range(inner):
                         # A flush may change weights after the initial forward;

@@ -1,0 +1,26 @@
+{
+  "arm_id": "workflow-grpo",
+  "dropped_metrics": [],
+  "duration_s": 25.445,
+  "error": null,
+  "exit_code": 0,
+  "finished_at": "2026-11-18T14:39:39.916545+00:00",
+  "metrics": {
+    "baseline_success": 0.4921875,
+    "candidate_success": 0.6953125,
+    "improvement": 0.203125,
+    "optimizer_updates": 20,
+    "reload_verified": 1.0,
+    "train_seconds": 14.000732291999157
+  },
+  "package_version": "0.73.2",
+  "params": {
+    "updates": 20
+  },
+  "python": "3.12.12",
+  "run_id": "rl-seed-43",
+  "schema_version": 1,
+  "seed": 43,
+  "started_at": "2026-11-18T14:39:14.471346+00:00",
+  "status": "succeeded"
+}

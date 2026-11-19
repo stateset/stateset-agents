@@ -89,13 +89,14 @@ async def test_lifespan_service_uses_application_capacity(monkeypatch):
     async def no_op(*args):
         pass
 
+    async def acquire(*args):
+        return SimpleNamespace(aclose=no_op)
+
     config = APIConfig(training_max_concurrent_jobs=3)
     monkeypatch.setattr(main, "get_config", lambda: config)
     monkeypatch.delenv("STATESET_DEFAULT_CHECKPOINT", raising=False)
-    monkeypatch.setattr(distributed_cache, "init_cache", no_op)
-    monkeypatch.setattr(distributed_cache, "close_cache", no_op)
-    monkeypatch.setattr(persistence, "init_database", no_op)
-    monkeypatch.setattr(persistence, "close_database", no_op)
+    monkeypatch.setattr(distributed_cache, "acquire_cache", acquire)
+    monkeypatch.setattr(persistence, "acquire_database", acquire)
     app = FastAPI()
     app.state.config = config
     app.state.agent_service = object()

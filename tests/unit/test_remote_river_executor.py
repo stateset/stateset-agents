@@ -229,6 +229,14 @@ class TestSubmit:
         assert executor.status(handle) is JobStatus.SUCCEEDED
         assert client.sessions == []
         assert any("dry run" in line for line in executor.logs(handle))
+        spec.output_dir.mkdir()
+        pointer = spec.output_dir / "river_checkpoint.json"
+        pointer.write_text("previous checkpoint")
+        spec.dry_run = False
+        result = executor.wait(handle)
+        assert result.is_preview and result.output_dir is None
+        assert pointer.read_text() == "previous checkpoint"
+        assert not (spec.output_dir / "stateset_manifest.json").exists()
 
     def test_empty_dataset_fails_without_calling_river(self, tmp_path, client):
         empty = tmp_path / "empty.jsonl"
@@ -844,15 +852,23 @@ class TestRiverHarvest:
         assert SamplingModel.sample_calls[0]["temperature"] == 0.0
         assert SamplingModel.sample_calls[1]["n"] == 4
 
-    def test_dry_run_writes_only_the_summary(self, tmp_path):
+    def test_dry_run_preserves_the_live_summary(self, tmp_path):
         client = SamplingClient()
         executor = self._executor(client, tmp_path)
+        output = tmp_path / "harvest"
+        output.mkdir()
+        summary = output / "harvest_summary.json"
+        summary.write_bytes(b"previous harvest")
 
         result = executor.wait(executor.submit(self._spec(tmp_path, dry_run=True)))
 
         assert result.status is JobStatus.SUCCEEDED
-        assert (tmp_path / "harvest" / "harvest_summary.json").exists()
+        assert summary.read_bytes() == b"previous harvest"
+        assert json.loads((output / "harvest_preview.json").read_text())["dry_run"]
         assert not (tmp_path / "harvest" / "harvest.jsonl").exists()
+        assert result.is_preview
+        assert result.output_dir == tmp_path / "harvest"
+        assert not (result.output_dir / "river_checkpoint.json").exists()
         assert client.sessions == []
 
 

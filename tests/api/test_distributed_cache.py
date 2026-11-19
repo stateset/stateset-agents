@@ -31,6 +31,14 @@ from stateset_agents.api.distributed_cache import (
     get_cache,
     init_cache,
 )
+from tests.api.cache_doubles import ReadPipeline
+
+
+def read_client(**kwargs):
+    client = SimpleNamespace(**kwargs)
+    client.pipeline = lambda **kwargs: ReadPipeline(client)
+    return client
+
 
 # ============================================================================
 # Cache Configuration Tests
@@ -387,7 +395,7 @@ class TestHybridCache:
             health_check_interval=0,
         )
         cache = HybridCache(config)
-        client = SimpleNamespace(get=AsyncMock(return_value=b'"remote"'))
+        client = read_client(get=AsyncMock(return_value=b'"remote"'))
         attempts = 0
 
         async def connect() -> bool:
@@ -450,7 +458,7 @@ class TestHybridCache:
         """A healthy Redis miss is authoritative after another pod deletes a key."""
         await hybrid_cache._memory.set("deleted", "stale")
         hybrid_cache._redis._connected = True
-        hybrid_cache._redis._client = SimpleNamespace(
+        hybrid_cache._redis._client = read_client(
             get=AsyncMock(return_value=None),
             exists=AsyncMock(return_value=0),
         )
@@ -472,7 +480,7 @@ class TestHybridCache:
         """A failed Redis read still permits the local availability fallback."""
         await hybrid_cache._memory.set("key", "local")
         hybrid_cache._redis._connected = True
-        hybrid_cache._redis._client = SimpleNamespace(
+        hybrid_cache._redis._client = read_client(
             get=AsyncMock(side_effect=OSError("Redis unavailable")),
             exists=AsyncMock(side_effect=OSError("Redis unavailable")),
         )
@@ -489,7 +497,7 @@ class TestHybridCache:
         """A healthy Redis hit refreshes the local copy."""
         await hybrid_cache._memory.set("key", "stale")
         hybrid_cache._redis._connected = True
-        hybrid_cache._redis._client = SimpleNamespace(
+        hybrid_cache._redis._client = read_client(
             get=AsyncMock(return_value=b'"fresh"'),
         )
         monkeypatch.setattr(

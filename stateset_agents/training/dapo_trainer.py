@@ -16,19 +16,24 @@ GitHub: https://github.com/BytedTsinghua-SIA/DAPO
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from copy import deepcopy
 from typing import Any, cast
 
 import numpy as np
 import torch
 
 from . import objectives, rl_losses
+from .adamw_weights import model_adamw
 from .dapo_config import DAPOConfig
+from .reward_advantages import reward_tensor
 from .runtime_state import TrainingRuntime, validate_training_config
 from .trainer_runtime import (
     SharedModelManager,
     build_group_batch,
+    group_old_logprobs,
     hf_generate_group,
 )
+from .trainer_utils import _clip_gradient_norm, deterministic_scoring
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +144,7 @@ def _load_vllm_backend() -> bool:
         GenerationResult = _GenerationResult
         VLLM_BACKEND_AVAILABLE = _VLLM_BACKEND_AVAILABLE
         _vllm_backend_loaded = True
-        return True
+        return VLLM_BACKEND_AVAILABLE
     except (ImportError, RuntimeError) as e:
         logger.warning(f"Failed to load vLLM backend: {e}")
         _vllm_backend_loaded = True
@@ -301,6 +306,7 @@ class DAPOTrainer(TrainingRuntime):
         tokenizer: Any,
         reward_fn: Callable[[str, str], float | Awaitable[float]],
         verifier_fn: Callable[[str, str], bool] | None = None,
+        ref_model: Any | None = None,
     ):
         # Ensure transformers is loaded for scheduler
         _load_transformers_dapo()
@@ -323,6 +329,10 @@ class DAPOTrainer(TrainingRuntime):
             aggregate="token_mean" if config.use_token_level_loss else "seq_mean",
         )
         self.model = model
+        self.ref_model = None
+        if self._objective.kl_coef > 0:
+            reference = model if ref_model is None else ref_model
+            self.ref_model = deepcopy(reference).requires_grad_(False).eval()
         self.tokenizer = tokenizer
         self.reward_fn = reward_fn
         self.verifier_fn = verifier_fn  # For binary correctness (e.g., math)
@@ -336,7 +346,7 @@ class DAPOTrainer(TrainingRuntime):
         self._vllm_initialized = False
 
         # Setup vLLM if configured
-        if config.use_vllm and VLLM_BACKEND_AVAILABLE:
+        if config.use_vllm:
             self._setup_vllm()
 
         # Reward shaper for length penalty
@@ -358,7 +368,7 @@ class DAPOTrainer(TrainingRuntime):
         if not params:
             self._stub_param = torch.nn.Parameter(torch.zeros(1))
             params = [self._stub_param]
-        self.optimizer = torch.optim.AdamW(
+        self.optimizer = model_adamw(
             params,
             lr=config.learning_rate,
             betas=(config.adam_beta1, config.adam_beta2),
@@ -425,6 +435,11 @@ class DAPOTrainer(TrainingRuntime):
             max_tokens=self.config.max_completion_length,
             temperature=self.config.temperature,
             top_p=self.config.top_p,
+            logprobs_mode=(
+                "processed_logprobs"
+                if self.config.old_logprobs_source == "sampler"
+                else "raw_logprobs"
+            ),
             dtype="bfloat16" if self.config.bf16 else "float16",
         )
 
@@ -468,11 +483,57 @@ class DAPOTrainer(TrainingRuntime):
             token_log_probs: Log prob for each token [batch, seq_len]
             token_counts: Number of response tokens per sequence [batch]
         """
-        outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
+        with deterministic_scoring(self.model):
+            outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
         masked_log_probs, shift_response_mask = rl_losses.gather_token_logprobs(
             outputs.logits, input_ids, response_mask, dtype=self._logprob_dtype
         )
         return masked_log_probs, shift_response_mask.sum(dim=-1)
+
+    def _rollout_logprobs(
+        self,
+        responses: list[dict[str, Any]],
+        ids: torch.Tensor,
+        attention: torch.Tensor,
+        mask: torch.Tensor,
+    ) -> torch.Tensor:
+        return group_old_logprobs(
+            responses,
+            mask,
+            self.config,
+            lambda: self.compute_token_log_probs(ids, attention, mask)[0],
+        )
+
+    def _regularized_group_loss(
+        self,
+        ids: torch.Tensor,
+        attention: torch.Tensor,
+        response_mask: torch.Tensor,
+        old: torch.Tensor,
+        advantages: torch.Tensor,
+        population: tuple[int, int],
+    ) -> torch.Tensor:
+        """Contribute one whole prompt group to the regularized batch objective."""
+        from .causal_likelihood import regularized_policy_scores
+
+        current, terms = regularized_policy_scores(
+            self.model,
+            self.ref_model,
+            ids,
+            attention,
+            response_mask,
+            self._objective,
+            self._logprob_dtype,
+        )
+        loss, _ = self.compute_dapo_loss_from_log_probs(
+            current,
+            old,
+            advantages,
+            response_mask[:, 1:],
+            batch_population=population,
+            **terms,
+        )
+        return loss
 
     def compute_importance_ratio(
         self,
@@ -509,18 +570,31 @@ class DAPOTrainer(TrainingRuntime):
         old_log_probs: torch.Tensor,
         advantages: torch.Tensor,
         response_mask: torch.Tensor,
+        *,
+        logp_ref: torch.Tensor | None = None,
+        kl: torch.Tensor | None = None,
+        entropy: torch.Tensor | None = None,
+        batch_population: tuple[int, int] | None = None,
     ) -> tuple[torch.Tensor, dict[str, float]]:
         """DAPO objective from per-token log-probs via ``objectives.policy_loss``.
 
         ``advantages`` is one value per sequence ``[G]`` (broadcast over
         tokens) or per token ``[G, T]``.
         """
+        if self._objective.entropy_coef > 0 and entropy is None:
+            raise ValueError(
+                "The DAPO entropy bonus requires per-token categorical entropy"
+            )
         result = objectives.policy_loss(
             logp_cur=current_log_probs,
             mask=response_mask,
             advantages=advantages,
             objective=self._objective,
             logp_old=old_log_probs,
+            logp_ref=logp_ref,
+            kl=kl,
+            entropy=entropy,
+            batch_population=batch_population,
         )
         return result.loss, result.metrics
 
@@ -535,9 +609,8 @@ class DAPOTrainer(TrainingRuntime):
 
         L = -(1/sum(|o_i|)) * sum_i sum_t min(r_t * A, clip(r_t, 1-eps_low, 1+eps_high) * A)
 
-        Ratio-based entry point kept for callers holding ratios; ``train_step``
-        uses :meth:`compute_dapo_loss_from_log_probs`. Both evaluate the same
-        :class:`~stateset_agents.training.objectives.PolicyObjective`.
+        This ratio-only entry point evaluates the policy surrogate. The training
+        path can additionally score reference likelihoods and categorical entropy.
         """
         per_token = objectives.surrogate(
             self._objective, importance_ratios, advantages, importance_ratios
@@ -610,6 +683,23 @@ class DAPOTrainer(TrainingRuntime):
                         "cumulative_logprob": result.cumulative_logprob,
                     }
                 )
+                if self.config.old_logprobs_source == "sampler":
+                    if (
+                        getattr(
+                            result,
+                            "logprobs_mode",
+                            getattr(
+                                getattr(generator, "config", None),
+                                "logprobs_mode",
+                                None,
+                            ),
+                        )
+                        != "processed_logprobs"
+                    ):
+                        raise ValueError(
+                            "DAPO requires processed vLLM probabilities in sampler mode"
+                        )
+                    responses[-1]["sampler_log_probs"] = result.token_logprobs
 
             logger.debug(f"vLLM generated {len(responses)} responses for DAPO")
             return responses
@@ -667,6 +757,15 @@ class DAPOTrainer(TrainingRuntime):
         (accuracy not 0 or 1).
         """
         collected_samples: list[dict[str, Any]] = []
+        generator = self.vllm_generator
+        if (
+            prompts
+            and target_batch_size > 0
+            and self._vllm_initialized
+            and generator is not None
+            and self.config.rollout_sync
+        ):
+            generator.sync_weights(self.model)
         prompts_processed = 0
         prompts_filtered = 0
 
@@ -678,6 +777,9 @@ class DAPOTrainer(TrainingRuntime):
 
             # Generate group
             group_responses = await self.generate_group_responses(prompt)
+            if not group_responses:
+                prompts_filtered += 1
+                continue
 
             # Score the group first: without a verifier, accuracy and the
             # dynamic-sampling filter are both derived from these rewards.
@@ -712,11 +814,6 @@ class DAPOTrainer(TrainingRuntime):
                     shaped_reward = base_reward
                 rewards.append(shaped_reward)
 
-            rewards_tensor = torch.tensor(rewards, device=self.device)
-
-            # Group-relative advantages
-            advantages = self.compute_group_advantages(rewards_tensor)
-
             # Freeze old-policy log probs at rollout time (before any inner updates
             # mutate the model), so importance ratios are computed against the
             # policy that actually generated these responses.
@@ -725,22 +822,39 @@ class DAPOTrainer(TrainingRuntime):
                 batch_attention_mask,
                 batch_response_mask,
             ) = self._build_batch_tensors(group_responses)
-            with torch.no_grad():
-                old_token_log_probs, _ = self.compute_token_log_probs(
-                    batch_input_ids, batch_attention_mask, batch_response_mask
-                )
+            old_token_log_probs = self._rollout_logprobs(
+                group_responses,
+                batch_input_ids,
+                batch_attention_mask,
+                batch_response_mask,
+            )
 
             # Store sample
             sample = {
                 "prompt": prompt,
                 "responses": group_responses,
                 "rewards": rewards,
-                "advantages": advantages,
                 "accuracy": accuracy,
                 "old_token_log_probs": old_token_log_probs,
             }
+            if self._objective.advantage != "batch_norm":
+                sample["advantages"] = self.compute_group_advantages(
+                    reward_tensor(rewards, self.device)
+                ).to(self.device)
             collected_samples.append(sample)
 
+        if collected_samples and self._objective.advantage == "batch_norm":
+            rewards_by_group = [sample["rewards"] for sample in collected_samples]
+            sizes = [len(group) for group in rewards_by_group]
+            flat = [r for group in rewards_by_group for r in group]
+            ids = [i for i, group in enumerate(rewards_by_group) for _ in group]
+            advantages = objectives.compute_advantages(flat, ids, self._objective).to(
+                self.device
+            )
+            for sample, group_adv in zip(
+                collected_samples, advantages.split(sizes), strict=True
+            ):
+                sample["advantages"] = group_adv
         filter_ratio = prompts_filtered / max(prompts_processed, 1)
         logger.debug(
             f"Dynamic sampling: {prompts_filtered}/{prompts_processed} filtered ({filter_ratio:.1%})"
@@ -801,10 +915,12 @@ class DAPOTrainer(TrainingRuntime):
             # with callers that don't populate this key.
             old_token_log_probs = sample.get("old_token_log_probs")
             if old_token_log_probs is None:
-                with torch.no_grad():
-                    old_token_log_probs, _ = self.compute_token_log_probs(
-                        batch_input_ids, batch_attention_mask, batch_response_mask
-                    )
+                old_token_log_probs = self._rollout_logprobs(
+                    responses,
+                    batch_input_ids,
+                    batch_attention_mask,
+                    batch_response_mask,
+                )
             prepared.append(
                 (
                     batch_input_ids,
@@ -821,39 +937,49 @@ class DAPOTrainer(TrainingRuntime):
         # batch's tokens (or rows) makes the accumulated gradient exactly the
         # batch-level loss, with one optimizer step per inner update.
         by_tokens = self._objective.aggregate == "token_mean"
-        sizes = [
-            float(p[2][:, 1:].sum()) if by_tokens else float(p[2].shape[0])
-            for p in prepared
-        ]
+        shifted_masks = [p[2][:, 1:] for p in prepared]
+        if not all(((m == 0) | (m == 1)).all() for m in shifted_masks):
+            raise ValueError("DAPO requires binary response masks")
+        token_counts = [int(m.count_nonzero().item()) for m in shifted_masks]
+        sizes = token_counts if by_tokens else [p[2].shape[0] for p in prepared]
         total_size = sum(sizes)
+        population = (sum(p[2].shape[0] for p in prepared), sum(token_counts))
+        regularized = self._objective.entropy_coef > 0 or self._objective.kl_coef > 0
 
-        # Multiple gradient updates per rollout batch (mu updates)
-        for _ in range(max(1, self.config.num_gradient_updates)):
+        # With no sampled actions even a zero-gradient AdamW step can move
+        # parameters through its existing moments or decoupled weight decay.
+        updates = max(1, self.config.num_gradient_updates) if any(token_counts) else 0
+        for _ in range(updates):
             self.optimizer.zero_grad()
             batch_loss = 0.0
-            for (ids, attn, resp_mask, old_lp, advantages), size in zip(
-                prepared, sizes, strict=True
-            ):
-                if size <= 0:
-                    continue
-                current_token_log_probs, _ = self.compute_token_log_probs(
-                    ids, attn, resp_mask
-                )
-                # Clip-Higher surrogate + aggregation through the objective.
-                loss, _objective_metrics = self.compute_dapo_loss_from_log_probs(
-                    current_token_log_probs,
-                    old_lp,
-                    advantages,
-                    resp_mask[:, 1:],  # Shift for next-token prediction
-                )
-                weighted = loss * (size / total_size)
-                weighted.backward()
-                batch_loss += weighted.item()
+            try:
+                for (ids, attn, resp_mask, old_lp, advantages), size, tokens in zip(
+                    prepared, sizes, token_counts, strict=True
+                ):
+                    if not tokens:
+                        continue
+                    if regularized:
+                        weighted = self._regularized_group_loss(
+                            ids, attn, resp_mask, old_lp, advantages, population
+                        )
+                    else:
+                        current, _ = self.compute_token_log_probs(ids, attn, resp_mask)
+                        loss, _ = self.compute_dapo_loss_from_log_probs(
+                            current, old_lp, advantages, resp_mask[:, 1:]
+                        )
+                        weighted = loss * (size / total_size)
+                    if not torch.isfinite(weighted):
+                        raise ValueError("DAPO batch loss must be finite")
+                    weighted.backward()
+                    batch_loss += weighted.item()
 
-            # Gradient clipping
-            _params = list(self.model.parameters())
-            if _params:
-                torch.nn.utils.clip_grad_norm_(_params, self.config.max_grad_norm)
+                gradients = [
+                    p.grad for p in self.model.parameters() if p.grad is not None
+                ]
+                _clip_gradient_norm(gradients, self.config.max_grad_norm, torch)
+            except BaseException:
+                self.optimizer.zero_grad(set_to_none=True)
+                raise
 
             # Update
             self.optimizer.step()

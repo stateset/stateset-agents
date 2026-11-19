@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -528,3 +530,127 @@ def test_cli_accepts_resume_flag(
         ]
     )
     assert code == 0 and seen["resume"] is True
+
+
+def _source_bundle(tmp_path: Path) -> tuple[Path, str]:
+    repo = tmp_path / "source"
+    repo.mkdir()
+    subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+    (repo / "source.py").write_text("print('candidate')\n")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.test",
+            "commit",
+            "-m",
+            "candidate",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    revision = subprocess.check_output(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True
+    ).strip()
+    bundle = tmp_path / "candidate.bundle"
+    subprocess.run(
+        ["git", "-C", str(repo), "bundle", "create", str(bundle), "HEAD"],
+        check=True,
+        capture_output=True,
+    )
+    return bundle, revision
+
+
+@pytest.mark.parametrize("invalid", ["missing", "corrupt", "wrong-commit", "symlink"])
+def test_invalid_source_bundle_rejected_before_allocation(
+    tmp_path: Path, invalid: str
+) -> None:
+    bundle, revision = _source_bundle(tmp_path)
+    manifest = launcher.load_launcher_manifest(_write_inputs(tmp_path), tmp_path)
+    manifest["harness_revision"] = revision
+    if invalid == "missing":
+        bundle = tmp_path / "missing.bundle"
+    elif invalid == "corrupt":
+        bundle.write_bytes(b"not a git bundle")
+    elif invalid == "wrong-commit":
+        manifest["harness_revision"] = SHA
+    else:
+        link = tmp_path / "linked.bundle"
+        link.symlink_to(bundle)
+        bundle = link
+    api = _Api()
+    with pytest.raises(launcher.RunPodShootoutError, match="source bundle"):
+        launcher.execute(
+            manifest,
+            tmp_path / "out",
+            launcher.build_plan(manifest, _catalog()),
+            api=api,
+            ssh=_Ssh(),
+            public_key="ssh-ed25519 AAAA",
+            source_bundle=bundle,
+        )
+    assert not hasattr(api, "create_kwargs")
+
+
+def test_source_bundle_is_uploaded_verified_and_recorded(tmp_path: Path) -> None:
+    bundle, revision = _source_bundle(tmp_path)
+    manifest = launcher.load_launcher_manifest(_write_inputs(tmp_path), tmp_path)
+    manifest["harness_revision"] = revision
+    ssh, api = _UploadSsh(), _Api()
+    out = tmp_path / "out"
+    launcher.execute(
+        manifest,
+        out,
+        launcher.build_plan(manifest, _catalog()),
+        api=api,
+        ssh=ssh,
+        public_key="ssh-ed25519 AAAA",
+        source_bundle=bundle,
+        lease_dir=tmp_path / "leases",
+        ledger_path=tmp_path / "ledger.jsonl",
+        poll_seconds=0,
+    )
+    digest = hashlib.sha256(bundle.read_bytes()).hexdigest()
+    assert (bundle.name, launcher._REMOTE_SOURCE_BUNDLE) in ssh.uploads
+    checksum_index = next(i for i, c in enumerate(ssh.commands) if digest in c)
+    clone_index = next(i for i, c in enumerate(ssh.commands) if "git clone" in c)
+    assert checksum_index < clone_index
+    assert launcher._REMOTE_SOURCE_BUNDLE in ssh.commands[clone_index]
+    assert launcher._REPOSITORY_URL not in ssh.commands[clone_index]
+    record = json.loads((out / "runpod-provider.json").read_text())
+    assert record["source_bundle_sha256"] == digest
+    assert record["harness_revision"] == revision
+    assert api.terminated == ["pod-123"]
+
+
+def test_prewarm_failure_retains_diagnostics_and_terminates(tmp_path: Path) -> None:
+    class PrewarmFails(_Ssh):
+        def run(self, command: str) -> tuple[int, str]:
+            if "print(1)" in command:
+                return 1, "GPU contract failed"
+            return super().run(command)
+
+    manifest = launcher.load_launcher_manifest(_write_inputs(tmp_path), tmp_path)
+    api, ssh = _Api(), PrewarmFails()
+    out = tmp_path / "out"
+    with pytest.raises(launcher.RunPodConformanceError, match="GPU contract failed"):
+        launcher.execute(
+            manifest,
+            out,
+            launcher.build_plan(manifest, _catalog()),
+            api=api,
+            ssh=ssh,
+            public_key="ssh-ed25519 AAAA",
+            lease_dir=tmp_path / "leases",
+            ledger_path=tmp_path / "ledger.jsonl",
+        )
+    assert ssh.downloads == 1
+    assert api.terminated == ["pod-123"]
+    record = json.loads((out / "runpod-provider.json").read_text())
+    assert record["status"] == "failed" and record["termination_confirmed"]
+    assert not any("nohup" in c and "shootout.py" in c for c in ssh.commands)

@@ -33,8 +33,9 @@ class FakeTokenizer:
 class FakeModel:
     device = "cpu"
 
-    def __init__(self, scores):
+    def __init__(self, scores, logits=None):
         self.scores = scores
+        self.logits = logits
         self.generation_kwargs = None
 
     def to(self, _device):
@@ -45,7 +46,9 @@ class FakeModel:
 
     def generate(self, **kwargs):
         self.generation_kwargs = kwargs
-        return SimpleNamespace(sequences=torch.tensor([[1, 2]]), scores=self.scores)
+        return SimpleNamespace(
+            sequences=torch.tensor([[1, 2]]), scores=self.scores, logits=self.logits
+        )
 
 
 @pytest.mark.asyncio
@@ -137,3 +140,25 @@ async def test_fallback_honors_explicit_greedy_generation_override():
     assert model.generation_kwargs["temperature"] == 1.0
     assert model.generation_kwargs["max_new_tokens"] == 2
     assert model.generation_kwargs["top_k"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("temperature", [0, 0.7])
+@pytest.mark.parametrize("mode", ["processed_logprobs", "raw_logprobs"])
+async def test_fallback_reports_requested_probability_measure(temperature, mode):
+    import math
+
+    config = VLLMConfig(model_name="model", temperature=temperature, logprobs_mode=mode)
+    fallback = HuggingFaceGeneratorFallback(config, device="cpu")
+    fallback.tokenizer = FakeTokenizer()
+    processed = torch.tensor([[-math.inf, 0.0, math.log(2)]])
+    raw = torch.tensor([[0.0, 0.0, 0.0]])
+    model = FakeModel([processed], [raw])
+    fallback.model = model
+    fallback._initialized = True
+
+    result = (await fallback.generate("prompt"))[0]
+    expected = 1 / 3 if mode == "raw_logprobs" else (2 / 3 if temperature else 1)
+    assert result.logprobs_mode == mode
+    assert model.generation_kwargs["output_logits"] == (mode == "raw_logprobs")
+    assert result.token_logprobs == pytest.approx([math.log(expected)])

@@ -155,6 +155,7 @@ _COUNTERS = (
     "_grad_accum_step",
     "steps_without_improvement",
     "value_warmup_complete",
+    "value_warmup_updates",
     "metrics_history",
     "training_metrics",
     "best_eval_metric",
@@ -171,7 +172,8 @@ def _validate_counters(counters: Any, trainer: Any = None) -> None:
             name
             for name in _COUNTERS
             if hasattr(trainer, name)
-            and name not in {"_current_task_id", "_next_episode"}
+            and name
+            not in {"_current_task_id", "_next_episode", "value_warmup_updates"}
         }
         if required - set(counters):
             raise ValueError("Checkpoint is missing initialized learner counters")
@@ -320,13 +322,15 @@ def _module_state_schema(module: Any, saved: Any, torch: Any) -> None:
 
 
 def _component_identities(components: dict[str, Any], torch: Any) -> dict[str, Any]:
+    from .adamw_weights import ModelAdamW
     from .scheduler_identity import scheduler_identity
 
     identities = {}
     for name, component in components.items():
-        identity: dict[str, Any] = {
-            "kind": f"{type(component).__module__}.{type(component).__qualname__}"
-        }
+        # Legacy AdamW checkpoints use the same update and parameter order.
+        # The slot validator checks the working-weight format separately.
+        cls = torch.optim.AdamW if type(component) is ModelAdamW else type(component)
+        identity: dict[str, Any] = {"kind": f"{cls.__module__}.{cls.__qualname__}"}
         if isinstance(component, torch.optim.lr_scheduler.LRScheduler) or isinstance(
             component, torch.optim.lr_scheduler.ReduceLROnPlateau
         ):
@@ -519,8 +523,10 @@ def _validate_optimizer_groups(optimizer: Any, saved: Any, torch: Any) -> None:
     user-defined methods. Tensor hyperparameters must be materialized, dense,
     real, finite and single-element; builtin optimizer loading owns its copies.
     """
+    from .adamw_weights import ModelAdamW
+
     cls = type(optimizer)
-    if cls not in {torch.optim.SGD, torch.optim.Adam, torch.optim.AdamW}:
+    if cls not in {torch.optim.SGD, torch.optim.Adam, torch.optim.AdamW, ModelAdamW}:
         raise ValueError("Custom checkpoint optimizer types are unsupported")
     if (
         type(saved) is not dict
@@ -623,7 +629,7 @@ def _validate_optimizer_groups(optimizer: Any, saved: Any, torch: Any) -> None:
                     "Incompatible checkpoint optimizer group tensor/foreach controls"
                 )
             if (
-                cls is torch.optim.AdamW
+                cls in {torch.optim.AdamW, ModelAdamW}
                 and group.get("decoupled_weight_decay", True) is not True
             ):
                 raise ValueError("Invalid checkpoint optimizer group AdamW decay mode")
@@ -643,12 +649,6 @@ def _prepare_components(
     prepared: dict[str, Any] = {}
     for name, component in components.items():
         if isinstance(component, torch.optim.Optimizer):
-            if type(component) not in {
-                torch.optim.SGD,
-                torch.optim.Adam,
-                torch.optim.AdamW,
-            }:
-                raise ValueError("Custom checkpoint optimizer types are unsupported")
             _validate_optimizer_groups(component, saved[name], torch)
             prepared[name] = _optimizer_stage(component, saved[name], torch)
             memo[id(component)] = prepared[name]
@@ -985,6 +985,34 @@ class TrainingRuntime:
             counters = _plain_counter_snapshot(state["counters"])
             _validate_rng(state.get("rng"), torch)
             _validate_rollout_state(state.get("rollout_state"))
+            from .dapo_config import DAPOConfig
+            from .vapo_config import VAPOConfig
+
+            if isinstance(self.config, (DAPOConfig, VAPOConfig)):
+                denominator_config = {
+                    "old_logprobs_source": "recompute",
+                    "allow_missing_sampler_logprobs": False,
+                }
+                if isinstance(self.config, DAPOConfig) and self.config.use_vllm:
+                    denominator_config["rollout_sync"] = True
+                for name, default in denominator_config.items():
+                    if state["config"].get(name, default) != getattr(self.config, name):
+                        raise ValueError(f"Checkpoint config mismatch for {name}")
+            if isinstance(self.config, VAPOConfig):
+                goal = self.config.value_warmup_steps
+                if state["config"].get("value_warmup_steps", goal) != goal:
+                    raise ValueError(
+                        "Checkpoint config mismatch for value_warmup_steps"
+                    )
+                # Older checkpoints stored only the flag: warmup ran in one call.
+                counters.setdefault(
+                    "value_warmup_updates",
+                    goal if counters["value_warmup_complete"] else 0,
+                )
+                if counters["value_warmup_updates"] > goal:
+                    raise ValueError(
+                        "Checkpoint warmup updates exceed configured steps"
+                    )
             adaptive_kl = _prepare_adaptive_kl(
                 self, state.get("adaptive_kl_controller")
             )

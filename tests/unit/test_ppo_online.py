@@ -2,6 +2,7 @@
 
 import copy
 import json
+from decimal import Decimal, localcontext
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -109,6 +110,38 @@ async def test_eos_action_is_included_once_and_keeps_its_likelihood(online):
         row["action_ids"] == [7] and row["termination"] == "eos"
         for row in receipt(result, 0)["rows"]
     )
+
+
+@pytest.mark.parametrize("action", [0, 2])
+async def test_receipt_and_batched_check_use_the_supplied_multinomial_weights(
+    online, monkeypatch, action
+):
+    online.config.temperature = 1
+    online.config.max_completion_length = 1
+    online.config.num_generations = online.config.mini_batch_size = 1
+    with torch.no_grad():
+        online.model.projection.weight.zero_()
+        bias = online.model.projection.bias
+        bias.fill_(-1000)
+        bias[:3] = torch.tensor([0, -20, -103], dtype=bias.dtype)
+    draws = []
+
+    def select(weights, count):
+        assert count == 1 and weights[action] > 0
+        draws.append(weights.detach().tolist())
+        return torch.tensor([action], device=weights.device)
+
+    monkeypatch.setattr(torch, "multinomial", select)
+    result = await online.train(["a"], num_episodes=1)
+    record = receipt(result, 0)
+    assert record["behavior_log_probs_source"] == "normalized_multinomial_weights"
+    assert record["rows"][0]["action_ids"] == [action] and len(draws) == 1
+    with localcontext() as ctx:
+        ctx.prec = 120
+        weights = list(map(Decimal.from_float, draws[0]))
+        expected = (weights[action] / sum(weights)).ln()
+    [observed] = record["rows"][0]["behavior_log_probs"]
+    assert observed == pytest.approx(float(expected), rel=3e-15, abs=0)
 
 
 async def test_checkpoint_reload_reproduces_next_sampling_and_update(online, tmp_path):

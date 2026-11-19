@@ -363,10 +363,10 @@ def test_ewc_retains_statistics_precision_for_low_precision_policy():
     expected = (
         0.1
         * (
-            manager._ewc_fisher["weight"]
-            * (model.weight - manager._ewc_params["weight"]).square()
+            manager._ewc_fisher["weight"].double()
+            * (model.weight.double() - manager._ewc_params["weight"].double()).square()
         ).sum()
-    )
+    ).float()
     actual = manager.compute_ewc_penalty(SimpleNamespace(model=model))
     assert actual.dtype == torch.float32
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)

@@ -5,20 +5,28 @@ This module provides advanced monitoring capabilities including metrics collecti
 alerting, health checks, and integration with external monitoring systems.
 """
 
+from __future__ import annotations
+
 import asyncio
+import contextvars
+import copy
+import inspect
 import logging
+import math
 import statistics
 import threading
 import time
 import uuid
 from collections import defaultdict, deque
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, cast
+
+from stateset_agents.utils.async_calls import drain_owned_operation, run_sync_owned
 
 # Optional imports for enhanced functionality
 try:
@@ -145,66 +153,456 @@ class Alert:
         }
 
 
+class UtilityHealthState(str, Enum):
+    """Admission and cleanup ownership of utility health checks."""
+
+    READY = "ready"
+    CLOSING = "closing"
+    CLOSED = "closed"
+    FAILED = "failed"
+
+
+_health_probe_context: contextvars.ContextVar[tuple[object, ...]] = (
+    contextvars.ContextVar("utility_health_probe_owners", default=())
+)
+
+
+@dataclass(eq=False)
+class _UtilityHealthProbe:
+    name: str
+    critical: bool
+    loop: asyncio.AbstractEventLoop
+    task: asyncio.Task[dict[str, Any]] | None = None
+    observers: int = 0
+    cancel_requested: bool = False
+    waiting_for_sync: bool = False
+    worker_ident: int | None = None
+    executor: ThreadPoolExecutor | None = None
+    done: threading.Event = field(default_factory=threading.Event)
+    cleanup_error: BaseException | None = None
+
+
+class _HealthOwner:
+    """Share one blocking cleanup outcome, with an asynchronous observer API."""
+
+    def __init__(self) -> None:
+        self._health_lock = threading.Condition(threading.RLock())
+        self._health_state = UtilityHealthState.READY
+        self._health_close_started = False
+        self._health_close_done = False
+        self._health_close_error: BaseException | None = None
+        self._health_closer_ident: int | None = None
+
+    @property
+    def state(self) -> UtilityHealthState:
+        """Inspect admission without invoking a dependency."""
+        with self._health_lock:
+            return self._health_state
+
+    def _owned_probes(self) -> list[_UtilityHealthProbe]:
+        raise NotImplementedError
+
+    def _owns_current_execution(self) -> bool:
+        try:
+            current = asyncio.current_task()
+        except RuntimeError:
+            current = None
+        with self._health_lock:
+            if (
+                self._health_close_started
+                and not self._health_close_done
+                and self._health_closer_ident == threading.get_ident()
+            ):
+                return True
+            return any(
+                (current is not None and probe.task is current)
+                or probe.worker_ident == threading.get_ident()
+                or probe in _health_probe_context.get()
+                for probe in self._owned_probes()
+            )
+
+    def _assert_not_probe(self) -> None:
+        if self._owns_current_execution():
+            raise RuntimeError("A health probe cannot close or await its own owner")
+
+    def _assert_can_close(self) -> None:
+        self._assert_not_probe()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        if any(probe.loop is loop for probe in self._owned_probes()):
+            raise RuntimeError("Use aclose() to drain health probes on this event loop")
+
+    def _stop_admission(self) -> None:
+        with self._health_lock:
+            if not self._health_close_done:
+                self._health_state = UtilityHealthState.CLOSING
+
+    def get_status(self) -> dict[str, Any]:
+        """Return a detached view of probe admission and retained work."""
+        with self._health_lock:
+            probes = self._owned_probes()
+            return {
+                "state": self._health_state.value,
+                "active_probes": len(probes),
+                "cancelling_probes": sum(probe.cancel_requested for probe in probes),
+                "observers": sum(probe.observers for probe in probes),
+                "pending_checks": [probe.name for probe in probes],
+                "cleanup_error_type": (
+                    type(self._health_close_error).__name__
+                    if self._health_close_error
+                    else None
+                ),
+            }
+
+    def _close_owned(self) -> None:
+        raise NotImplementedError
+
+    def close(self) -> None:
+        """Stop admission and join probes once, retaining cleanup failures."""
+        self._assert_can_close()
+        with self._health_lock:
+            if self._health_close_started:
+                while not self._health_close_done:
+                    self._health_lock.wait()
+                if self._health_close_error is not None:
+                    raise self._health_close_error
+                return
+            self._health_close_started = True
+            self._health_closer_ident = threading.get_ident()
+            self._stop_admission()
+        error: BaseException | None = None
+        try:
+            self._close_owned()
+        except BaseException as exc:
+            error = exc
+        finally:
+            with self._health_lock:
+                self._health_close_error = error
+                self._health_state = (
+                    UtilityHealthState.FAILED if error else UtilityHealthState.CLOSED
+                )
+                self._health_close_done = True
+                self._health_lock.notify_all()
+        if error is not None:
+            raise error
+
+    async def aclose(self) -> None:
+        """Drain probes off-loop before propagating caller cancellation."""
+        self._assert_not_probe()
+        self._stop_admission()
+        await run_sync_owned(self.close)
+
+
 @dataclass
-class HealthCheck:
-    """Health check definition"""
+class HealthCheck(_HealthOwner):
+    """A health definition with one owned probe shared by concurrent observers.
+
+    Close the check before closing its event loop or dependencies. A request
+    deadline retires that observer; synchronous calls and async cleanup remain
+    owned until they finish. ``None`` marks an unconfigured dependency.
+    """
 
     name: str
-    check_func: Callable[[], bool]
+    check_func: Callable[[], bool | Awaitable[bool]] | None
     timeout: float = 5.0
     critical: bool = False
+    unavailable_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        super().__init__()
+        self._probe: _UtilityHealthProbe | None = None
+
+    def _owned_probes(self) -> list[_UtilityHealthProbe]:
+        with self._health_lock:
+            return (
+                [self._probe] if self._probe and not self._probe.done.is_set() else []
+            )
+
+    @staticmethod
+    def _observation(
+        name: str,
+        critical: bool,
+        status: str,
+        duration: float = 0.0,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "name": name,
+            "status": status,
+            "duration_seconds": duration,
+            "critical": critical,
+            "timestamp": datetime.now().isoformat(),
+        }
+        if error is not None:
+            result["error"] = error
+        return result
 
     async def run(self) -> dict[str, Any]:
-        """Run the health check"""
-        start_time = time.time()
-
-        try:
-            if asyncio.iscoroutinefunction(self.check_func):
-                result = await asyncio.wait_for(self.check_func(), timeout=self.timeout)
-            else:
-                # Do not use the event loop's default executor here. Its worker
-                # lifetime is tied to loop teardown, which can make short-lived
-                # loops wait indefinitely after an otherwise completed check.
-                executor = ThreadPoolExecutor(max_workers=1)
-                try:
-                    result = await asyncio.wait_for(
-                        asyncio.get_running_loop().run_in_executor(
-                            executor, self.check_func
-                        ),
-                        timeout=self.timeout,
+        """Observe a shared probe within this call's captured deadline."""
+        self._assert_not_probe()
+        with self._health_lock:
+            if self._health_state is not UtilityHealthState.READY:
+                return self._observation(
+                    self.name,
+                    self.critical,
+                    "unavailable",
+                    error=f"Health check is {self._health_state.value}",
+                )
+            timeout = self.timeout
+            if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+                raise TypeError(
+                    "Health check timeout must be a finite nonnegative number"
+                )
+            if not math.isfinite(timeout) or timeout < 0:
+                raise ValueError("Health check timeout must be finite and nonnegative")
+            probe = self._probe
+            if probe is not None and probe.task is not None and probe.task.done():
+                self._probe_done(probe, probe.task)
+                if probe.cleanup_error is not None:
+                    return self._observation(
+                        probe.name,
+                        probe.critical,
+                        "unavailable",
+                        error="Previous health check cleanup failed",
                     )
-                finally:
-                    executor.shutdown(wait=False, cancel_futures=True)
+            if probe is not None and not probe.done.is_set():
+                if probe.cancel_requested:
+                    return self._observation(
+                        probe.name,
+                        probe.critical,
+                        "unavailable",
+                        error="Previous health check cleanup is still in progress",
+                    )
+                if probe.loop is not asyncio.get_running_loop():
+                    raise RuntimeError(
+                        "Active health probes belong to another event loop"
+                    )
+            else:
+                check_func = self.check_func
+                if check_func is None:
+                    return self._observation(
+                        self.name,
+                        self.critical,
+                        "unavailable",
+                        error=self.unavailable_reason
+                        or "Health check is not configured",
+                    )
+                if not callable(check_func):
+                    raise TypeError("Health check must be callable or None")
+                probe = _UtilityHealthProbe(
+                    self.name, self.critical, asyncio.get_running_loop()
+                )
+                self._probe = probe
+                operation = self._run_probe(probe, check_func)
+                try:
+                    probe.task = asyncio.create_task(operation)
+                except BaseException:
+                    operation.close()
+                    self._probe = None
+                    raise
+                probe.task.add_done_callback(lambda task: self._probe_done(probe, task))
+            probe.observers += 1
+        assert probe.task is not None
+        try:
+            done, _ = await asyncio.wait({probe.task}, timeout=timeout)
+            if not done:
+                return self._observation(
+                    probe.name,
+                    probe.critical,
+                    "timeout",
+                    timeout,
+                    "Health check timed out",
+                )
+            if probe.task.cancelled():
+                return self._observation(
+                    probe.name,
+                    probe.critical,
+                    "cancelled",
+                    error="Health probe was cancelled",
+                )
+            return copy.deepcopy(probe.task.result())
+        finally:
+            with self._health_lock:
+                probe.observers -= 1
+                if not probe.done.is_set() and probe.observers == 0:
+                    self._cancel_probe(probe)
 
-            duration = time.time() - start_time
+    def _cancel_probe(self, probe: _UtilityHealthProbe) -> None:
+        if probe.cancel_requested or probe.done.is_set():
+            return
+        probe.cancel_requested = True
 
-            return {
-                "name": self.name,
-                "status": "healthy" if result else "unhealthy",
-                "duration_seconds": duration,
-                "critical": self.critical,
-                "timestamp": datetime.now().isoformat(),
-            }
+        def cancel() -> None:
+            # A synchronous callable can return an awaitable. Retain its waiter
+            # until that result is retrieved and safely consumed or closed.
+            if (
+                probe.task is not None
+                and not probe.task.done()
+                and not probe.waiting_for_sync
+            ):
+                probe.task.cancel()
 
-        except asyncio.TimeoutError:
-            return {
-                "name": self.name,
-                "status": "timeout",
-                "duration_seconds": self.timeout,
-                "critical": self.critical,
-                "timestamp": datetime.now().isoformat(),
-                "error": "Health check timed out",
-            }
+        probe.loop.call_soon_threadsafe(cancel)
 
-        except MONITORING_EXCEPTIONS as e:
-            return {
-                "name": self.name,
-                "status": "error",
-                "duration_seconds": time.time() - start_time,
-                "critical": self.critical,
-                "timestamp": datetime.now().isoformat(),
-                "error": str(e),
-            }
+    async def _run_sync(
+        self, probe: _UtilityHealthProbe, check_func: Callable[[], Any]
+    ) -> Any:
+        executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="utility-health"
+        )
+        probe.executor = executor
+
+        def invoke() -> Any:
+            with self._health_lock:
+                probe.worker_ident = threading.get_ident()
+            try:
+                return check_func()
+            finally:
+                with self._health_lock:
+                    probe.worker_ident = None
+
+        async def wait_owned(future: asyncio.Future[Any]) -> Any:
+            while not future.done():
+                try:
+                    await asyncio.wait({future})
+                except asyncio.CancelledError:
+                    probe.cancel_requested = True
+            return future.result()
+
+        probe.waiting_for_sync = True
+        result: Any = None
+        try:
+            context = contextvars.copy_context()
+            future = asyncio.get_running_loop().run_in_executor(
+                executor, context.run, invoke
+            )
+            result = await wait_owned(future)
+            return result
+        finally:
+            try:
+                operation = asyncio.to_thread(
+                    executor.shutdown, wait=True, cancel_futures=True
+                )
+                try:
+                    cleanup = asyncio.create_task(operation)
+                except BaseException:
+                    operation.close()
+                    raise
+                await wait_owned(cleanup)
+                probe.executor = None
+            except BaseException as error:
+                probe.cleanup_error = error
+                if inspect.isawaitable(result):
+                    await self._discard_awaitable(result)
+                raise
+            finally:
+                probe.waiting_for_sync = False
+
+    @staticmethod
+    async def _discard_awaitable(result: Awaitable[Any]) -> None:
+        if (
+            inspect.iscoroutine(result)
+            and inspect.getcoroutinestate(result) == inspect.CORO_CREATED
+        ):
+            result.close()
+        else:
+            task = asyncio.ensure_future(result)
+            task.cancel()
+
+            async def drain() -> None:
+                await asyncio.gather(task, return_exceptions=True)
+
+            await drain_owned_operation(drain())
+
+    async def _run_probe(
+        self, probe: _UtilityHealthProbe, check_func: Callable[[], Any]
+    ) -> dict[str, Any]:
+        token = _health_probe_context.set((*_health_probe_context.get(), probe))
+        try:
+            return await self._measure_probe(probe, check_func)
+        finally:
+            _health_probe_context.reset(token)
+
+    async def _measure_probe(
+        self, probe: _UtilityHealthProbe, check_func: Callable[[], Any]
+    ) -> dict[str, Any]:
+        probe.task = asyncio.current_task()
+        # Never invoke user code under an admission lock with an eager factory.
+        await asyncio.sleep(0)
+        start = time.monotonic()
+        try:
+            if self._is_retired(probe):
+                raise asyncio.CancelledError
+            if inspect.iscoroutinefunction(check_func) or inspect.iscoroutinefunction(
+                getattr(check_func, "__call__", None)  # noqa: B004
+            ):
+                result = check_func()
+            else:
+                result = await self._run_sync(probe, check_func)
+            if inspect.isawaitable(result):
+                if self._is_retired(probe):
+                    await self._discard_awaitable(result)
+                    raise asyncio.CancelledError
+                result = await result
+            if self._is_retired(probe):
+                raise asyncio.CancelledError
+            return self._observation(
+                probe.name,
+                probe.critical,
+                "healthy" if result else "unhealthy",
+                time.monotonic() - start,
+            )
+        except MONITORING_EXCEPTIONS as error:
+            return self._observation(
+                probe.name,
+                probe.critical,
+                "error",
+                time.monotonic() - start,
+                str(error),
+            )
+
+    def _is_retired(self, probe: _UtilityHealthProbe) -> bool:
+        # Admission can change from another thread or while awaiting a callback.
+        with self._health_lock:
+            return probe.cancel_requested
+
+    def _probe_done(
+        self, probe: _UtilityHealthProbe, task: asyncio.Task[dict[str, Any]]
+    ) -> None:
+        if not task.cancelled():
+            task.exception()  # Retrieve failures even when all observers timed out.
+        with self._health_lock:
+            probe.done.set()
+            if probe.cleanup_error is not None:
+                self._health_state = UtilityHealthState.FAILED
+                self._health_close_error = probe.cleanup_error
+
+    def get_status(self) -> dict[str, Any]:
+        """Inspect probe work and any executor whose cleanup is unconfirmed."""
+        with self._health_lock:
+            status = super().get_status()
+            status["name"] = self.name
+            status["configured"] = callable(self.check_func)
+            status["executor_owned"] = (
+                self._probe is not None and self._probe.executor is not None
+            )
+            return status
+
+    def _close_owned(self) -> None:
+        with self._health_lock:
+            probe = self._probe
+            if probe is None:
+                return
+            self._cancel_probe(probe)
+        while not probe.done.wait(timeout=0.1):
+            if not probe.loop.is_running():
+                raise RuntimeError(
+                    "Health probe cleanup is unconfirmed; its event loop stopped"
+                )
+        if probe.cleanup_error is not None:
+            raise probe.cleanup_error
 
 
 @dataclass
@@ -232,10 +630,195 @@ class ApplicationMetrics:
     error_count: int = 0
 
 
-class MetricsCollector:
+class ThreadMonitorState(str, Enum):
+    """Admission and cleanup ownership of an automatic monitoring thread."""
+
+    RUNNING = "running"
+    CLOSING = "closing"
+    CLOSED = "closed"
+    FAILED = "failed"
+
+
+class MonitoringStartupError(RuntimeError):
+    """Retain a partially initialized monitor when rollback reports a failure."""
+
+    def __init__(self, owner: Any) -> None:
+        super().__init__("Monitoring startup failed; inspect the retained owner")
+        self.owner = owner
+
+
+class _ThreadOwner:
+    """Own one automatic worker and one synchronous cleanup outcome."""
+
+    def __init__(self) -> None:
+        self._lifecycle = threading.Condition(threading.RLock())
+        self._stop_event = threading.Event()
+        self._worker_done = threading.Event()
+        self._worker_done.set()
+        self._thread: threading.Thread | None = None
+        self._worker_error: BaseException | None = None
+        self._state = ThreadMonitorState.RUNNING
+        self._close_started = False
+        self._close_done = False
+        self._close_error: BaseException | None = None
+        self._closer_ident: int | None = None
+
+    @property
+    def state(self) -> ThreadMonitorState:
+        """Observe worker admission and cleanup without starting work."""
+        with self._lifecycle:
+            return self._state
+
+    def get_status(self) -> dict[str, Any]:
+        """Return a detached view of worker and cleanup ownership."""
+        with self._lifecycle:
+            return {
+                "state": self._state.value,
+                "thread_alive": self._thread is not None and self._thread.is_alive(),
+                "worker_pending": not self._worker_done.is_set(),
+                "stop_requested": self._stop_event.is_set(),
+                "worker_error_type": (
+                    type(self._worker_error).__name__ if self._worker_error else None
+                ),
+                "cleanup_error_type": (
+                    type(self._close_error).__name__ if self._close_error else None
+                ),
+            }
+
+    def _owns_current_thread(self) -> bool:
+        with self._lifecycle:
+            return self._thread is threading.current_thread() or (
+                self._close_started
+                and not self._close_done
+                and self._closer_ident == threading.get_ident()
+            )
+
+    def _assert_can_close(self) -> None:
+        if self._owns_current_thread():
+            raise RuntimeError(
+                "A monitoring worker cannot close or replace its own owner"
+            )
+
+    def _start_worker(self, name: str, operation: Callable[[], None]) -> None:
+        def run() -> None:
+            error: BaseException | None = None
+            try:
+                operation()
+                if not self._stop_event.is_set():
+                    error = RuntimeError("Monitoring worker stopped unexpectedly")
+            except BaseException as exc:
+                error = exc
+            finally:
+                with self._lifecycle:
+                    if error is not None:
+                        self._worker_error = self._worker_error or error
+                        if self._state is ThreadMonitorState.RUNNING:
+                            self._state = ThreadMonitorState.FAILED
+                    self._worker_done.set()
+                    self._lifecycle.notify_all()
+                if error is not None:
+                    logging.getLogger(__name__).error(
+                        "%s worker failed (%s)", name, type(error).__name__
+                    )
+
+        with self._lifecycle:
+            if self._state is not ThreadMonitorState.RUNNING:
+                raise RuntimeError(f"Monitoring owner is {self._state.value}")
+            if self._thread is not None:
+                return
+            thread = threading.Thread(target=run, daemon=True, name=name)
+            self._thread = thread
+            self._worker_done.clear()
+            try:
+                thread.start()
+            except BaseException as error:
+                self._worker_error = error
+                self._state = ThreadMonitorState.FAILED
+                self._stop_event.set()
+                if thread.ident is None:
+                    self._worker_done.set()
+                raise
+
+    def _request_stop(self) -> None:
+        with self._lifecycle:
+            if not self._close_done:
+                self._state = ThreadMonitorState.CLOSING
+                self._stop_event.set()
+
+    def _close_resources(self) -> None:
+        """Release dependencies only after this owner's worker has joined."""
+
+    def close(self) -> None:
+        """Stop and join owned work once; concurrent callers share its outcome.
+
+        This blocks until the worker's current sample or callback returns. Use
+        ``aclose`` when calling from an event loop.
+        """
+        self._assert_can_close()
+        with self._lifecycle:
+            if self._close_started:
+                while not self._close_done:
+                    self._lifecycle.wait()
+                if self._close_error is not None:
+                    raise self._close_error
+                return
+            self._close_started = True
+            self._closer_ident = threading.get_ident()
+            self._request_stop()
+
+        error: BaseException | None = None
+        try:
+            if self._thread is not None and self._thread.ident is not None:
+                self._thread.join()
+            if not self._worker_done.is_set():
+                raise RuntimeError("Monitoring worker cleanup is unconfirmed")
+            try:
+                self._close_resources()
+            except BaseException as exc:
+                error = exc
+            error = self._worker_error or error
+        except BaseException as exc:
+            # An interrupted join must not close dependencies of a live worker.
+            error = exc
+        finally:
+            with self._lifecycle:
+                self._close_error = error
+                self._state = (
+                    ThreadMonitorState.FAILED if error else ThreadMonitorState.CLOSED
+                )
+                self._close_done = True
+                self._lifecycle.notify_all()
+        if error is not None:
+            raise error
+
+    async def aclose(self) -> None:
+        """Drain synchronous cleanup off-loop despite repeated caller cancellation."""
+        self._assert_can_close()
+        self._request_stop()
+        await run_sync_owned(self.close)
+
+    def _rollback_startup(self, startup_error: BaseException) -> None:
+        try:
+            self.close()
+        except BaseException as error:
+            control = (
+                error
+                if not isinstance(error, Exception)
+                else startup_error if not isinstance(startup_error, Exception) else None
+            )
+            if control is not None:
+                cast(Any, control).monitoring_owner = self
+                if control is error:
+                    raise
+                raise control from error
+            raise MonitoringStartupError(self) from error
+
+
+class MetricsCollector(_ThreadOwner):
     """Collects and manages metrics with thread-safe operations"""
 
     def __init__(self, enable_prometheus: bool = True):
+        super().__init__()
         self.enable_prometheus = enable_prometheus and HAS_PROMETHEUS
         self.metrics: dict[str, list[Metric]] = defaultdict(list)
         self.prometheus_metrics: dict[str, Any] = {}
@@ -250,11 +833,14 @@ class MetricsCollector:
         self.app_metrics = ApplicationMetrics()
 
         # Initialize Prometheus metrics
-        if self.enable_prometheus:
-            self._setup_prometheus_metrics()
-
-        # Start system metrics collection
-        self._start_system_monitoring()
+        try:
+            if self.enable_prometheus:
+                self._setup_prometheus_metrics()
+            # Preserve automatic startup, retaining the worker until close.
+            self._start_system_monitoring()
+        except BaseException as error:
+            self._rollback_startup(error)
+            raise
 
     def _setup_prometheus_metrics(self):
         """Setup Prometheus metrics"""
@@ -307,6 +893,8 @@ class MetricsCollector:
 
     def _start_system_monitoring(self):
         """Start system metrics collection in background"""
+        if self.state is not ThreadMonitorState.RUNNING:
+            raise RuntimeError(f"Monitoring owner is {self.state.value}")
         if not HAS_PSUTIL:
             return
 
@@ -314,7 +902,7 @@ class MetricsCollector:
         monitoring_logger = logging.getLogger(__name__ + ".system_monitoring")
 
         def collect_system_metrics():
-            while True:
+            while not self._stop_event.is_set():
                 try:
                     # CPU usage
                     cpu_percent = psutil.cpu_percent(interval=1)
@@ -347,21 +935,27 @@ class MetricsCollector:
                         self.prometheus_metrics["memory_usage"].set(memory.used)
 
                 except MONITORING_EXCEPTIONS + PSUTIL_EXCEPTIONS as e:
+                    if self._stop_event.is_set():
+                        raise
                     monitoring_logger.warning(f"Error collecting system metrics: {e}")
 
-                time.sleep(30)  # Collect every 30 seconds
+                self._stop_event.wait(30)  # Wake promptly when close requests stop.
 
         # Start in background thread
-        thread = threading.Thread(target=collect_system_metrics, daemon=True)
-        thread.start()
+        self._start_worker("utility-system-metrics", collect_system_metrics)
 
     def record_metric(self, metric: Metric):
         """Record a metric"""
-        self.metrics[metric.name].append(metric)
+        metric = copy.deepcopy(metric)
 
         # Update Prometheus metrics
         if self.enable_prometheus and metric.name in self.prometheus_metrics:
             prom_metric = self.prometheus_metrics[metric.name]
+            label_names = getattr(prom_metric, "_labelnames", ())
+            if label_names:
+                prom_metric = prom_metric.labels(
+                    **{name: metric.labels.get(name, "") for name in label_names}
+                )
 
             if metric.type == MetricType.COUNTER:
                 prom_metric.inc(metric.value)
@@ -369,6 +963,8 @@ class MetricsCollector:
                 prom_metric.set(metric.value)
             elif metric.type == MetricType.HISTOGRAM:
                 prom_metric.observe(metric.value)
+        with self._lock:
+            self.metrics[metric.name].append(metric)
 
     def increment_counter(
         self, name: str, value: float = 1.0, labels: dict[str, str] | None = None
@@ -399,6 +995,10 @@ class MetricsCollector:
 
     def get_metrics_summary(self) -> dict[str, Any]:
         """Get summary of all metrics"""
+        with self._lock:
+            return self._metrics_summary()
+
+    def _metrics_summary(self) -> dict[str, Any]:
         summary: dict[str, Any] = {
             "timestamp": datetime.now().isoformat(),
             "system_metrics": {},
@@ -493,7 +1093,7 @@ class MetricsCollector:
                 custom_metrics[metric_name] = {
                     "type": latest_metric.type.value,
                     "value": latest_metric.value,
-                    "labels": latest_metric.labels,
+                    "labels": copy.deepcopy(latest_metric.labels),
                     "timestamp": latest_metric.timestamp.isoformat(),
                 }
 
@@ -613,26 +1213,87 @@ class AlertManager:
         }
 
 
-class HealthChecker:
-    """Manages health checks"""
+class HealthChecker(_HealthOwner):
+    """Own registered checks and their probes until explicit shutdown."""
 
-    def __init__(self):
+    def __init__(self) -> None:
+        super().__init__()
         self.health_checks: list[HealthCheck] = []
+        self._owned_checks: dict[int, HealthCheck] = {}
 
-    def add_health_check(self, health_check: HealthCheck):
-        """Add a health check"""
-        self.health_checks.append(health_check)
+    def add_health_check(self, health_check: HealthCheck) -> None:
+        """Register a check and retain cleanup ownership if it is later removed."""
+        with self._health_lock:
+            if self._health_state is not UtilityHealthState.READY:
+                raise RuntimeError("Health checker is closing or closed")
+            self.health_checks.append(health_check)
+            self._owned_checks[id(health_check)] = health_check
+
+    def _checks_snapshot(self) -> list[HealthCheck]:
+        with self._health_lock:
+            for check in self.health_checks:
+                self._owned_checks[id(check)] = check
+            return list(self._owned_checks.values())
+
+    def _owned_probes(self) -> list[_UtilityHealthProbe]:
+        return [
+            probe
+            for check in self._checks_snapshot()
+            for probe in check._owned_probes()
+        ]
+
+    def _stop_admission(self) -> None:
+        with self._health_lock:
+            super()._stop_admission()
+            for check in self._checks_snapshot():
+                check._stop_admission()
+
+    def _close_owned(self) -> None:
+        error: BaseException | None = None
+        for check in self._checks_snapshot():
+            try:
+                check.close()
+            except BaseException as exc:
+                error = error or exc
+        if error is not None:
+            raise error
+
+    def get_status(self) -> dict[str, Any]:
+        """Inspect current registrations and retained check cleanup owners."""
+        with self._health_lock:
+            status = super().get_status()
+            status["registered_checks"] = [check.name for check in self.health_checks]
+            status["owned_checks"] = [
+                check.get_status() for check in self._checks_snapshot()
+            ]
+            return status
 
     async def run_all_checks(self) -> dict[str, Any]:
-        """Run all health checks"""
+        """Observe a captured registration list without owning caller deadlines."""
+        self._assert_not_probe()
+        with self._health_lock:
+            self._checks_snapshot()
+            checks = tuple(self.health_checks)
         results = []
 
-        for check in self.health_checks:
-            result = await check.run()
+        for check in checks:
+            with self._health_lock:
+                accepting = self._health_state is UtilityHealthState.READY
+                state = self._health_state.value
+            result = (
+                await check.run()
+                if accepting
+                else check._observation(
+                    check.name,
+                    check.critical,
+                    "unavailable",
+                    error=f"Health checker is {state}",
+                )
+            )
             results.append(result)
 
         # Overall health status
-        all_healthy = all(r["status"] == "healthy" for r in results)
+        all_healthy = bool(results) and all(r["status"] == "healthy" for r in results)
 
         critical_failing = any(
             r["status"] != "healthy" and r["critical"] for r in results
@@ -641,7 +1302,11 @@ class HealthChecker:
         overall_status = (
             "healthy"
             if all_healthy
-            else ("critical" if critical_failing else "degraded")
+            else (
+                "critical"
+                if critical_failing
+                else "degraded" if results else "unavailable"
+            )
         )
 
         return {
@@ -659,7 +1324,7 @@ class HealthChecker:
         }
 
 
-class MonitoringService:
+class MonitoringService(_ThreadOwner):
     """Main monitoring service that orchestrates all monitoring functionality"""
 
     def __init__(
@@ -670,73 +1335,185 @@ class MonitoringService:
         enable_health_checks: bool = True,
         enable_alerts: bool = True,
     ):
+        super().__init__()
         self.enable_prometheus = enable_prometheus
         self.prometheus_port = prometheus_port
         self.enable_health_checks = enable_health_checks
         self.enable_alerts = enable_alerts
 
-        # Initialize components
-        self.metrics_collector = MetricsCollector(enable_prometheus)
-        self.alert_manager = AlertManager() if enable_alerts else None
-        self.health_checker = HealthChecker() if enable_health_checks else None
-
-        # Logger for this service
         self._logger = logging.getLogger(__name__ + ".MonitoringService")
+        self._prometheus_server: Any | None = None
+        self._prometheus_thread: threading.Thread | None = None
+        self._listener_unmanaged = False
+        self._listener_error: BaseException | None = None
+        self._listener_start_attempted = False
+        self._listener_start_done = threading.Event()
+        self._listener_start_done.set()
+        self._listener_starter_ident: int | None = None
 
-        # Start Prometheus server
-        if enable_prometheus and HAS_PROMETHEUS:
+        try:
+            self.metrics_collector = MetricsCollector(enable_prometheus)
+            self.alert_manager = AlertManager() if enable_alerts else None
+            self.health_checker = HealthChecker() if enable_health_checks else None
+            self._start_prometheus()
+            self._setup_default_health_checks()
+            self._setup_default_alert_rules()
+            self._start_monitoring_loop()
+        except BaseException as error:
+            self._rollback_startup(error)
+            raise
+
+    def _start_prometheus(self) -> None:
+        with self._lifecycle:
+            if self._state is not ThreadMonitorState.RUNNING:
+                raise RuntimeError(f"Monitoring owner is {self._state.value}")
+            if self._listener_start_attempted:
+                return
+            self._listener_start_attempted = True
+            if not (self.enable_prometheus and HAS_PROMETHEUS):
+                return
+            self._listener_start_done.clear()
+            self._listener_starter_ident = threading.get_ident()
+            port = self.prometheus_port
+        try:
+            result = start_http_server(port)
+            if result is None:
+                # Older clients start a server without returning its handles.
+                # Preserve startup while making unconfirmed cleanup explicit.
+                self._listener_unmanaged = True
+                raise RuntimeError("Prometheus client did not return listener handles")
+            self._prometheus_server, self._prometheus_thread = result
+            self._logger.info("Prometheus metrics server started on port %s", port)
+        except (OSError, ValueError, RuntimeError) as e:
+            self._listener_error = e
+            self._logger.error("Unable to manage Prometheus metrics listener: %s", e)
+        finally:
+            with self._lifecycle:
+                self._listener_starter_ident = None
+                self._listener_start_done.set()
+
+    def _owns_current_thread(self) -> bool:
+        collector = getattr(self, "metrics_collector", None)
+        health_checker = getattr(self, "health_checker", None)
+        return (
+            super()._owns_current_thread()
+            or self._prometheus_thread is threading.current_thread()
+            or self._listener_starter_ident == threading.get_ident()
+            or (collector is not None and collector._owns_current_thread())
+            or (health_checker is not None and health_checker._owns_current_execution())
+        )
+
+    def _assert_can_close(self) -> None:
+        super()._assert_can_close()
+        health_checker = getattr(self, "health_checker", None)
+        if health_checker is not None:
+            health_checker._assert_can_close()
+
+    def _request_stop(self) -> None:
+        super()._request_stop()
+        health_checker = getattr(self, "health_checker", None)
+        if health_checker is not None:
+            health_checker._stop_admission()
+
+    async def aclose(self) -> None:
+        """Drain health probes and background threads before releasing resources."""
+        _ThreadOwner._assert_can_close(self)
+        self._request_stop()
+        await run_sync_owned(self.close)
+
+    def get_status(self) -> dict[str, Any]:
+        """Inspect the worker, metric collector, and owned Prometheus listener."""
+        status = super().get_status()
+        collector = getattr(self, "metrics_collector", None)
+        status["metrics_collector"] = (
+            collector.get_status() if collector is not None else None
+        )
+        health_checker = getattr(self, "health_checker", None)
+        status["health_checker"] = (
+            health_checker.get_status() if health_checker is not None else None
+        )
+        with self._lifecycle:
+            listener_thread = self._prometheus_thread
+            status["prometheus"] = {
+                "starting": not self._listener_start_done.is_set(),
+                "server_owned": self._prometheus_server is not None,
+                "thread_alive": listener_thread is not None
+                and listener_thread.is_alive(),
+                "cleanup_unconfirmed": self._listener_unmanaged,
+                "error_type": (
+                    type(self._listener_error).__name__
+                    if self._listener_error
+                    else None
+                ),
+            }
+        return status
+
+    def _close_listener(self) -> None:
+        if self._listener_unmanaged:
+            raise RuntimeError(
+                "Prometheus listener cleanup is unconfirmed; no handles were returned"
+            )
+        if self._prometheus_server is None:
+            return
+        try:
+            self._prometheus_server.shutdown()
             try:
-                start_http_server(prometheus_port)
-                self._logger.info(
-                    f"Prometheus metrics server started on port {prometheus_port}"
-                )
-            except (OSError, ValueError, RuntimeError) as e:
-                self._logger.error(f"Failed to start Prometheus server: {e}")
+                self._prometheus_server.server_close()
+            finally:
+                if self._prometheus_thread is not None:
+                    self._prometheus_thread.join()
+        except BaseException as error:
+            self._listener_error = error
+            raise
+        self._prometheus_server = None
+        self._prometheus_thread = None
 
-        # Setup default health checks
-        self._setup_default_health_checks()
-
-        # Setup default alert rules
-        self._setup_default_alert_rules()
-
-        # Start monitoring loop
-        self._start_monitoring_loop()
+    def _close_resources(self) -> None:
+        self._listener_start_done.wait()
+        health_checker = getattr(self, "health_checker", None)
+        if health_checker is not None:
+            # Unconfirmed probes may still use these dependencies. Retain them
+            # if draining health work fails, rather than claiming shutdown.
+            health_checker.close()
+        error: BaseException | None = None
+        collector = getattr(self, "metrics_collector", None)
+        if collector is not None:
+            try:
+                collector.close()
+            except BaseException as exc:
+                error = exc
+        try:
+            self._close_listener()
+        except BaseException as exc:
+            error = error or exc
+        if error is not None:
+            raise error
 
     def _setup_default_health_checks(self):
         """Setup default health checks"""
         if not self.health_checker:
             return
 
-        # Database health check
-        def database_check():
-            # This would check database connectivity
-            return True
-
         self.health_checker.add_health_check(
-            HealthCheck("database", database_check, critical=True)
+            HealthCheck("database", None, critical=True)
         )
 
-        # Cache health check
-        def cache_check():
-            # This would check cache connectivity
-            return True
-
-        self.health_checker.add_health_check(
-            HealthCheck("cache", cache_check, critical=False)
-        )
+        self.health_checker.add_health_check(HealthCheck("cache", None, critical=False))
 
         # System resources check
         def system_resources_check():
-            if not HAS_PSUTIL:
-                return True
-
             cpu_percent = psutil.cpu_percent()
             memory_percent = psutil.virtual_memory().percent
 
             return cpu_percent < 90 and memory_percent < 90
 
         self.health_checker.add_health_check(
-            HealthCheck("system_resources", system_resources_check, critical=False)
+            HealthCheck(
+                "system_resources",
+                system_resources_check if HAS_PSUTIL else None,
+                critical=False,
+                unavailable_reason="psutil is not installed",
+            )
         )
 
     def _setup_default_alert_rules(self):
@@ -790,7 +1567,7 @@ class MonitoringService:
         """Start the monitoring loop"""
 
         def monitoring_loop():
-            while True:
+            while not self._stop_event.is_set():
                 try:
                     # Get current metrics
                     metrics = self.metrics_collector.get_metrics_summary()
@@ -800,13 +1577,14 @@ class MonitoringService:
                         self.alert_manager.check_alerts(metrics)
 
                 except MONITORING_EXCEPTIONS as e:
+                    if self._stop_event.is_set():
+                        raise
                     self._logger.warning(f"Error in monitoring loop: {e}")
 
-                time.sleep(60)  # Check every minute
+                self._stop_event.wait(60)
 
         # Start in background thread
-        thread = threading.Thread(target=monitoring_loop, daemon=True)
-        thread.start()
+        self._start_worker("utility-monitoring", monitoring_loop)
 
     @contextmanager
     def track_request(self, method: str, endpoint: str):
@@ -829,8 +1607,9 @@ class MonitoringService:
             )
 
             # Update app metrics
-            self.metrics_collector.app_metrics.requests_total += 1
-            self.metrics_collector.app_metrics.response_times.append(duration)
+            with self.metrics_collector._lock:
+                self.metrics_collector.app_metrics.requests_total += 1
+                self.metrics_collector.app_metrics.response_times.append(duration)
 
         except MONITORING_EXCEPTIONS as e:
             # Record failed request
@@ -844,7 +1623,8 @@ class MonitoringService:
             )
 
             # Update app metrics
-            self.metrics_collector.app_metrics.error_count += 1
+            with self.metrics_collector._lock:
+                self.metrics_collector.app_metrics.error_count += 1
 
             raise
 
@@ -888,6 +1668,7 @@ class MonitoringService:
         """Get comprehensive dashboard data"""
         return {
             "timestamp": datetime.now().isoformat(),
+            "lifecycle": self.get_status(),
             "metrics": await self.get_metrics(),
             "health": await self.get_health_status(),
             "alerts": await self.get_alerts(),
@@ -896,16 +1677,38 @@ class MonitoringService:
 
 # Global monitoring instance
 _global_monitoring: MonitoringService | None = None
+_global_monitoring_lock = threading.RLock()
+_global_replacing = False
+_global_initializing = False
+_global_creation_error: BaseException | None = None
 
 
 def get_monitoring_service() -> MonitoringService:
     """Get global monitoring service"""
-    global _global_monitoring
+    global _global_monitoring, _global_initializing, _global_creation_error
 
-    if _global_monitoring is None:
-        _global_monitoring = MonitoringService()
-
-    return _global_monitoring
+    with _global_monitoring_lock:
+        if _global_replacing or _global_initializing:
+            raise RuntimeError(
+                "Global monitoring initialization or replacement is in progress"
+            )
+        if _global_creation_error is not None:
+            raise _global_creation_error
+        if _global_monitoring is not None:
+            return _global_monitoring
+        _global_initializing = True
+    try:
+        owner = MonitoringService()
+        with _global_monitoring_lock:
+            _global_monitoring = owner
+        return owner
+    except BaseException as error:
+        with _global_monitoring_lock:
+            _global_creation_error = error
+        raise
+    finally:
+        with _global_monitoring_lock:
+            _global_initializing = False
 
 
 def setup_monitoring(
@@ -915,13 +1718,48 @@ def setup_monitoring(
     enable_alerts: bool = True,
 ) -> MonitoringService:
     """Setup global monitoring"""
-    global _global_monitoring
+    global _global_monitoring, _global_replacing, _global_creation_error
 
-    _global_monitoring = MonitoringService(
-        enable_prometheus=enable_prometheus,
-        prometheus_port=prometheus_port,
-        enable_health_checks=enable_health_checks,
-        enable_alerts=enable_alerts,
-    )
-
-    return _global_monitoring
+    with _global_monitoring_lock:
+        if _global_replacing or _global_initializing:
+            raise RuntimeError(
+                "Global monitoring initialization or replacement is in progress"
+            )
+        previous = _global_monitoring
+        failed_owner = getattr(
+            _global_creation_error,
+            "owner",
+            getattr(_global_creation_error, "monitoring_owner", None),
+        )
+        for owner in (previous, failed_owner):
+            check_owner = getattr(owner, "_assert_can_close", None)
+            if check_owner is not None:
+                check_owner()
+        _global_replacing = True
+    creating = False
+    try:
+        # Do not hold the registry lock while joining callbacks. A callback that
+        # asks for the global service gets an explicit transition error.
+        if previous is not None:
+            previous.close()
+        if failed_owner is not None and failed_owner is not previous:
+            failed_owner.close()
+        creating = True
+        replacement = MonitoringService(
+            enable_prometheus=enable_prometheus,
+            prometheus_port=prometheus_port,
+            enable_health_checks=enable_health_checks,
+            enable_alerts=enable_alerts,
+        )
+        with _global_monitoring_lock:
+            _global_monitoring = replacement
+            _global_creation_error = None
+        return replacement
+    except BaseException as error:
+        if creating:
+            with _global_monitoring_lock:
+                _global_creation_error = error
+        raise
+    finally:
+        with _global_monitoring_lock:
+            _global_replacing = False

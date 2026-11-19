@@ -6,18 +6,31 @@ the test-suite and supports basic training job and conversation workflows.
 
 from __future__ import annotations
 
+import copy
 import logging
 import time
 import uuid
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import datetime
+from threading import RLock
 from typing import Any, Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from stateset_agents.core.conversation import ConversationResetError
+from stateset_agents.core.multiturn_context import ConversationConflict
+
 from ..auth import RequestContext, get_request_context
 from ..config import get_config
+from ..conversation_lifecycle import ConversationOperation, GatewayConversations
+from ..conversation_store import (
+    ConversationStore,
+    ConversationStoreUnavailable,
+    StoredConversationNotFound,
+)
 from ..dependencies import get_inference_service
 from ..messages_models import MessageInput, MessagesRequest
 from ..services.inference_service import InferenceService
@@ -32,6 +45,7 @@ V1_CONVERSATION_TTL_SECONDS = 24 * 60 * 60
 V1_MAX_TRAINING_JOBS = 1000
 V1_MAX_TRAINING_IDEMPOTENCY_KEYS = 2000
 V1_MAX_CONVERSATIONS = 500
+_OWNER_CREATION_LOCK = RLock()
 
 
 class TrainingRequestV1(BaseModel):
@@ -102,6 +116,14 @@ def _require_app_state(request: Request, attr: str, default: Any) -> Any:
     if not hasattr(request.app.state, attr):
         setattr(request.app.state, attr, default)
     return getattr(request.app.state, attr)
+
+
+def _conversation_owner(request: Request) -> GatewayConversations:
+    with _OWNER_CREATION_LOCK:
+        owner: GatewayConversations = _require_app_state(
+            request, "v1_conversation_operations", GatewayConversations()
+        )
+        return owner
 
 
 def _cleanup_timed_state(
@@ -489,6 +511,89 @@ async def cancel_training_v1(
     )
 
 
+@contextmanager
+def _store_errors() -> Iterator[None]:
+    try:
+        yield
+    except StoredConversationNotFound as error:
+        raise HTTPException(status_code=404, detail="Conversation not found") from error
+    except ConversationStoreUnavailable as error:
+        raise HTTPException(
+            status_code=503, detail="Conversation storage unavailable"
+        ) from error
+    except (ConversationConflict, ConversationResetError) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@contextmanager
+def _conversation_operation(
+    request: Request,
+    conversation_id: str,
+    user_id: str,
+) -> Iterator[tuple[ConversationOperation, Callable[[], None]]]:
+    store: ConversationStore | None = getattr(
+        request.app.state, "v1_conversation_store", None
+    )
+    if store is not None:
+        with (
+            _store_errors(),
+            store.operation(
+                conversation_id,
+                user_id,
+                lambda: getattr(request.app.state, "v1_conversation_store", None)
+                is store,
+            ) as operation,
+        ):
+            yield operation, lambda: None
+        return
+    owner = _conversation_owner(request)
+    with owner.lock:
+        conversations, conversation_access, now = _get_timed_state(
+            request,
+            "v1_conversations",
+            "v1_conversations_access",
+            ttl_seconds=V1_CONVERSATION_TTL_SECONDS,
+            max_items=V1_MAX_CONVERSATIONS,
+        )
+        convo = conversations.get(conversation_id)
+        if convo is not None and not _is_v1_conversation_owner(convo, user_id):
+            raise HTTPException(status_code=404, detail="Conversation not found")
+
+        if convo is None:
+            convo = {"messages": [], "user_id": user_id}
+            conversations[conversation_id] = convo
+            _touch_timed_state(conversation_access, conversation_id, now)
+            _cleanup_timed_state(
+                conversations,
+                conversation_access,
+                ttl_seconds=V1_CONVERSATION_TTL_SECONDS,
+                now=now,
+                max_items=V1_MAX_CONVERSATIONS,
+            )
+        else:
+            convo_user = convo.get("user_id")
+            if convo_user is None:
+                convo["user_id"] = user_id
+            _touch_timed_state(conversation_access, conversation_id, now)
+
+    def current() -> bool:
+        return (
+            getattr(request.app.state, "v1_conversations", None) is conversations
+            and getattr(request.app.state, "v1_conversation_operations", None) is owner
+            and getattr(request.app.state, "v1_conversations_access", None)
+            is conversation_access
+            and conversations.get(conversation_id) is convo
+            and convo.get("user_id") == user_id
+            and conversation_access.get(conversation_id, 0)
+            >= time.time() - V1_CONVERSATION_TTL_SECONDS - 1.0
+        )
+
+    with owner.operation((conversation_id,), convo, current) as operation:
+        yield operation, lambda: _touch_timed_state(
+            conversation_access, conversation_id, time.time()
+        )
+
+
 @router.post(
     "/conversations",
     response_model=ConversationResponseV1,
@@ -500,7 +605,19 @@ async def chat_v1(
     service: InferenceService = Depends(get_inference_service),
     ctx: RequestContext = Depends(get_request_context),
 ) -> ConversationResponseV1:
-    """Create or continue a v1 conversation."""
+    """Create or continue a v1 conversation with explicit request ownership."""
+    try:
+        return await _chat_v1(request, payload, service, ctx)
+    except (ConversationConflict, ConversationResetError) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+async def _chat_v1(
+    request: Request,
+    payload: ConversationRequestV1,
+    service: InferenceService,
+    ctx: RequestContext,
+) -> ConversationResponseV1:
     config = get_config()
     max_messages = int(config.validation.max_conversation_messages)
     if max_messages < 1:
@@ -518,46 +635,6 @@ async def chat_v1(
             status_code=422,
             detail="Provide either 'message' or 'messages'",
         )
-
-    conversations, conversation_access, now = _get_timed_state(
-        request,
-        "v1_conversations",
-        "v1_conversations_access",
-        ttl_seconds=V1_CONVERSATION_TTL_SECONDS,
-        max_items=V1_MAX_CONVERSATIONS,
-    )
-    conversation_id = payload.conversation_id or str(uuid.uuid4())
-    user_id = ctx.user.user_id
-    convo = conversations.get(conversation_id)
-    if convo is not None and not _is_v1_conversation_owner(convo, user_id):
-        raise HTTPException(status_code=404, detail="Conversation not found")
-
-    if convo is None:
-        convo = {"messages": [], "user_id": user_id}
-        conversations[conversation_id] = convo
-        _touch_timed_state(conversation_access, conversation_id, now)
-        _cleanup_timed_state(
-            conversations,
-            conversation_access,
-            ttl_seconds=V1_CONVERSATION_TTL_SECONDS,
-            now=now,
-            max_items=V1_MAX_CONVERSATIONS,
-        )
-    else:
-        convo_user = convo.get("user_id")
-        if convo_user is None:
-            convo["user_id"] = user_id
-        _touch_timed_state(conversation_access, conversation_id, now)
-
-    history = convo.get("messages")
-    if not isinstance(history, list):
-        history = []
-        convo["messages"] = history
-
-    history = _trim_messages(
-        [msg for msg in history if isinstance(msg, dict)], max_messages
-    )
-    convo["messages"] = history
 
     if payload.message is not None:
         user_text = payload.message.strip()
@@ -595,8 +672,6 @@ async def chat_v1(
         if len(user_text) > config.validation.max_message_length:
             raise HTTPException(status_code=422, detail="Message too long")
 
-    messages = _trim_messages(history + incoming_messages, max_messages)
-
     model = payload.model.strip() if isinstance(payload.model, str) else None
     if model == "":
         model = None
@@ -612,125 +687,157 @@ async def chat_v1(
                 detail="No model specified. Set payload.model or INFERENCE_DEFAULT_MODEL.",
             )
 
-    logger.info(
-        "v1.conversations request received",
-        extra={
-            "request_id": request_id,
-            "conversation_id": conversation_id,
-            "user_id": ctx.user.user_id,
-            "model": model,
-            "message_count": len(messages),
-            "is_stub": service.is_stub,
-        },
-    )
-
-    try:
-        openai_request = MessagesRequest(
-            model=model,
-            messages=[MessageInput(**message) for message in messages],
-            max_tokens=payload.max_tokens,
-            temperature=payload.temperature,
+    conversation_id = payload.conversation_id or str(uuid.uuid4())
+    user_id = ctx.user.user_id
+    with _conversation_operation(request, conversation_id, user_id) as (
+        operation,
+        touch,
+    ):
+        history = operation.messages
+        if not isinstance(history, list):
+            history = []
+        history = _trim_messages(
+            [msg for msg in history if isinstance(msg, dict)], max_messages
         )
-        openai_payload = await service.create_openai_response(openai_request)
-    except ValueError as exc:
-        logger.warning(
-            "v1.conversations invalid request payload",
+        messages = _trim_messages(history + incoming_messages, max_messages)
+
+        logger.info(
+            "v1.conversations request received",
             extra={
                 "request_id": request_id,
                 "conversation_id": conversation_id,
                 "user_id": ctx.user.user_id,
-                "error": str(exc),
+                "model": model,
+                "message_count": len(messages),
+                "is_stub": service.is_stub,
             },
         )
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except httpx.HTTPStatusError as exc:
-        status_code = getattr(exc.response, "status_code", None)
-        detail = _extract_inference_error_text(exc)
-        if isinstance(status_code, int) and status_code >= 500:
-            logger.error(
-                "v1.conversations upstream service error",
+
+        try:
+            openai_request = MessagesRequest(
+                model=model,
+                messages=[MessageInput(**message) for message in messages],
+                max_tokens=payload.max_tokens,
+                temperature=payload.temperature,
+            )
+            openai_payload = await operation.run(
+                lambda: service.create_openai_response(openai_request)
+            )
+        except (
+            ConversationConflict,
+            ConversationResetError,
+            ConversationStoreUnavailable,
+        ):
+            raise
+        except ValueError as exc:
+            logger.warning(
+                "v1.conversations invalid request payload",
+                extra={
+                    "request_id": request_id,
+                    "conversation_id": conversation_id,
+                    "user_id": ctx.user.user_id,
+                    "error": str(exc),
+                },
+            )
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except httpx.HTTPStatusError as exc:
+            status_code = getattr(exc.response, "status_code", None)
+            detail = _extract_inference_error_text(exc)
+            if isinstance(status_code, int) and status_code >= 500:
+                logger.error(
+                    "v1.conversations upstream service error",
+                    extra={
+                        "request_id": request_id,
+                        "conversation_id": conversation_id,
+                        "user_id": ctx.user.user_id,
+                        "status_code": status_code,
+                    },
+                )
+                raise HTTPException(
+                    status_code=502, detail="Inference backend unavailable"
+                ) from exc
+
+            logger.warning(
+                "v1.conversations upstream request rejected",
                 extra={
                     "request_id": request_id,
                     "conversation_id": conversation_id,
                     "user_id": ctx.user.user_id,
                     "status_code": status_code,
+                    "detail": detail,
+                },
+            )
+            raise HTTPException(status_code=422, detail=detail) from exc
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "v1.conversations upstream unavailable",
+                extra={
+                    "request_id": request_id,
+                    "conversation_id": conversation_id,
+                    "user_id": ctx.user.user_id,
+                    "error": str(exc),
                 },
             )
             raise HTTPException(
                 status_code=502, detail="Inference backend unavailable"
             ) from exc
+        except Exception as exc:
+            logger.exception(
+                "v1.conversations unexpected inference failure",
+                extra={
+                    "request_id": request_id,
+                    "conversation_id": conversation_id,
+                    "user_id": ctx.user.user_id,
+                },
+            )
+            raise HTTPException(
+                status_code=500, detail="Internal server error"
+            ) from exc
 
-        logger.warning(
-            "v1.conversations upstream request rejected",
+        response_text = _extract_response_text(openai_payload)
+        if not response_text:
+            response_text = ""
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        if elapsed_ms <= 0:
+            elapsed_ms = 1
+
+        tokens_used = _extract_usage_tokens(openai_payload.get("usage"))
+        if tokens_used <= 0:
+            tokens_used = _approx_tokens(user_text) + _approx_tokens(response_text)
+
+        response = ConversationResponseV1(
+            conversation_id=conversation_id,
+            response=response_text,
+            tokens_used=tokens_used,
+            processing_time_ms=elapsed_ms,
+        )
+
+        with operation.guard():
+            operation.publish(
+                {
+                    "messages": _trim_messages(
+                        history
+                        + incoming_messages
+                        + [{"role": "assistant", "content": response_text}],
+                        max_messages,
+                    )
+                },
+                response=True,
+            )
+            touch()
+        logger.info(
+            "v1.conversations request completed",
             extra={
                 "request_id": request_id,
                 "conversation_id": conversation_id,
                 "user_id": ctx.user.user_id,
-                "status_code": status_code,
-                "detail": detail,
+                "elapsed_ms": elapsed_ms,
+                "tokens_used": tokens_used,
+                "response_chars": len(response_text),
             },
         )
-        raise HTTPException(status_code=422, detail=detail) from exc
-    except httpx.HTTPError as exc:
-        logger.warning(
-            "v1.conversations upstream unavailable",
-            extra={
-                "request_id": request_id,
-                "conversation_id": conversation_id,
-                "user_id": ctx.user.user_id,
-                "error": str(exc),
-            },
-        )
-        raise HTTPException(
-            status_code=502, detail="Inference backend unavailable"
-        ) from exc
-    except Exception as exc:
-        logger.exception(
-            "v1.conversations unexpected inference failure",
-            extra={
-                "request_id": request_id,
-                "conversation_id": conversation_id,
-                "user_id": ctx.user.user_id,
-            },
-        )
-        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
-    response_text = _extract_response_text(openai_payload)
-    if not response_text:
-        response_text = ""
-    # Append only after successful inference so failed requests do not pollute
-    # conversation state.
-    convo["messages"].extend(incoming_messages)
-    convo["messages"].append({"role": "assistant", "content": response_text})
-    convo["messages"] = _trim_messages(convo["messages"], max_messages)
-    _touch_timed_state(conversation_access, conversation_id, time.time())
-
-    elapsed_ms = int((time.monotonic() - start) * 1000)
-    if elapsed_ms <= 0:
-        elapsed_ms = 1
-
-    tokens_used = _extract_usage_tokens(openai_payload.get("usage"))
-    if tokens_used <= 0:
-        tokens_used = _approx_tokens(user_text) + _approx_tokens(response_text)
-
-    logger.info(
-        "v1.conversations request completed",
-        extra={
-            "request_id": request_id,
-            "conversation_id": conversation_id,
-            "user_id": ctx.user.user_id,
-            "elapsed_ms": elapsed_ms,
-            "tokens_used": tokens_used,
-            "response_chars": len(response_text),
-        },
-    )
-
-    return ConversationResponseV1(
-        conversation_id=conversation_id,
-        response=response_text,
-        tokens_used=tokens_used,
-        processing_time_ms=elapsed_ms,
-    )
+        return response
 
 
 @router.get(
@@ -743,18 +850,63 @@ async def get_conversation_v1(
     ctx: RequestContext = Depends(get_request_context),
 ) -> dict[str, Any]:
     """Get a v1 conversation transcript."""
-    conversations, conversation_access, now = _get_timed_state(
-        request,
-        "v1_conversations",
-        "v1_conversations_access",
-        ttl_seconds=V1_CONVERSATION_TTL_SECONDS,
-        max_items=V1_MAX_CONVERSATIONS,
+    store: ConversationStore | None = getattr(
+        request.app.state, "v1_conversation_store", None
     )
-    convo = conversations.get(conversation_id)
-    if not convo or not _is_v1_conversation_owner(convo, ctx.user.user_id):
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    _touch_timed_state(conversation_access, conversation_id, now)
-    return {"conversation_id": conversation_id, "messages": convo.get("messages", [])}
+    if store is not None:
+        with _store_errors():
+            record = store.read(conversation_id, ctx.user.user_id)
+            return {"conversation_id": conversation_id, "messages": record["messages"]}
+    owner = _conversation_owner(request)
+    with owner.lock:
+        conversations, conversation_access, now = _get_timed_state(
+            request,
+            "v1_conversations",
+            "v1_conversations_access",
+            ttl_seconds=V1_CONVERSATION_TTL_SECONDS,
+            max_items=V1_MAX_CONVERSATIONS,
+        )
+        convo = conversations.get(conversation_id)
+        if not convo or not _is_v1_conversation_owner(convo, ctx.user.user_id):
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        _touch_timed_state(conversation_access, conversation_id, now)
+        return {
+            "conversation_id": conversation_id,
+            "messages": copy.deepcopy(convo.get("messages", [])),
+        }
+
+
+@router.get(
+    "/conversations/{conversation_id}/status",
+    summary="Conversation operation status (v1)",
+)
+async def get_conversation_status_v1(
+    request: Request,
+    conversation_id: str,
+    ctx: RequestContext = Depends(get_request_context),
+) -> dict[str, Any]:
+    """Inspect owned work without exposing transcript content or provider errors."""
+    store: ConversationStore | None = getattr(
+        request.app.state, "v1_conversation_store", None
+    )
+    if store is not None:
+        with _store_errors():
+            stored_record = store.read(conversation_id, ctx.user.user_id)
+            return {"conversation_id": conversation_id, **stored_record["_lifecycle"]}
+    owner = _conversation_owner(request)
+    with owner.lock:
+        conversations, access, now = _get_timed_state(
+            request,
+            "v1_conversations",
+            "v1_conversations_access",
+            ttl_seconds=V1_CONVERSATION_TTL_SECONDS,
+            max_items=V1_MAX_CONVERSATIONS,
+        )
+        record = conversations.get(conversation_id)
+        if record is None or not _is_v1_conversation_owner(record, ctx.user.user_id):
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        _touch_timed_state(access, conversation_id, now)
+        return {"conversation_id": conversation_id, **owner.inspect(record)}
 
 
 @router.delete(
@@ -767,16 +919,59 @@ async def end_conversation_v1(
     ctx: RequestContext = Depends(get_request_context),
 ) -> dict[str, Any]:
     """End a v1 conversation."""
-    conversations, conversation_access, _ = _get_timed_state(
-        request,
-        "v1_conversations",
-        "v1_conversations_access",
-        ttl_seconds=V1_CONVERSATION_TTL_SECONDS,
-        max_items=V1_MAX_CONVERSATIONS,
+    store: ConversationStore | None = getattr(
+        request.app.state, "v1_conversation_store", None
     )
-    if conversation_id not in conversations:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    if not _is_v1_conversation_owner(conversations[conversation_id], ctx.user.user_id):
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    _delete_timed_state(conversations, conversation_access, conversation_id)
-    return {"status": "ended", "conversation_id": conversation_id}
+    if store is not None:
+        with _store_errors():
+            store.delete(conversation_id, ctx.user.user_id)
+            return {"status": "ended", "conversation_id": conversation_id}
+    owner = _conversation_owner(request)
+    with owner.lock:
+        conversations, conversation_access, _ = _get_timed_state(
+            request,
+            "v1_conversations",
+            "v1_conversations_access",
+            ttl_seconds=V1_CONVERSATION_TTL_SECONDS,
+            max_items=V1_MAX_CONVERSATIONS,
+        )
+        if conversation_id not in conversations:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        if not _is_v1_conversation_owner(
+            conversations[conversation_id], ctx.user.user_id
+        ):
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        owner.retire(conversations[conversation_id])
+        _delete_timed_state(conversations, conversation_access, conversation_id)
+        return {"status": "ended", "conversation_id": conversation_id}
+
+
+class ConversationAcknowledgementV1(BaseModel):
+    """Identify the interrupted request whose uncertainty the caller accepts."""
+
+    operation_id: str = Field(min_length=1, max_length=128)
+
+
+@router.post(
+    "/conversations/{conversation_id}/acknowledge",
+    summary="Acknowledge interrupted conversation work (v1)",
+)
+async def acknowledge_conversation_v1(
+    request: Request,
+    conversation_id: str,
+    payload: ConversationAcknowledgementV1,
+    ctx: RequestContext = Depends(get_request_context),
+) -> dict[str, Any]:
+    """Allow later turns after explicit reconciliation; never replay generation."""
+    store: ConversationStore | None = getattr(
+        request.app.state, "v1_conversation_store", None
+    )
+    if store is None:
+        raise HTTPException(
+            status_code=409, detail="Durable conversation recovery is not enabled"
+        )
+    with _store_errors():
+        status = store.acknowledge(
+            conversation_id, ctx.user.user_id, payload.operation_id
+        )
+        return {"conversation_id": conversation_id, **status}

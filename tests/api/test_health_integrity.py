@@ -1,8 +1,9 @@
 """Health results reflect measured checks and are isolated per application."""
 
 import asyncio
-import time
+import threading
 
+import httpx
 import pytest
 from fastapi import FastAPI
 
@@ -61,17 +62,28 @@ def test_probe_exception_and_timeout_report_unhealthy(monkeypatch):
         assert client.get("/health").status_code == 503
 
 
-def test_blocking_probe_does_not_block_response_deadline(monkeypatch):
+@pytest.mark.asyncio
+async def test_blocking_probe_does_not_block_response_deadline(monkeypatch):
     monkeypatch.setattr(metrics, "HEALTH_TIMEOUT_SECONDS", 0.01)
     checker = HealthChecker()
+    release = threading.Event()
 
     def slow_sync():
-        time.sleep(0.2)
+        assert release.wait(timeout=3)
         return True
 
     checker.add_check("blocking", slow_sync)
-    with SyncASGIClient(application(checker)) as client:
-        assert client.get("/health").status_code == 503
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=application(checker)),
+            base_url="http://test",
+        ) as client:
+            response = await asyncio.wait_for(client.get("/health"), timeout=2)
+        assert response.status_code == 503
+        assert checker.get_status()["active_probes"] == 1
+    finally:
+        release.set()
+        await checker.aclose()
 
 
 @pytest.mark.asyncio

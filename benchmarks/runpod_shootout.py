@@ -23,12 +23,15 @@ keeps its own protocol, model, dataset, and implementation pins.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
 import re
 import shlex
+import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from collections.abc import Mapping, Sequence
@@ -75,6 +78,7 @@ _REMOTE_SHOOTOUT_MANIFEST = "/workspace/shootout-manifest.json"
 _REMOTE_OUTPUT = "/workspace/shootout-output"
 _REMOTE_EXIT = "/workspace/shootout.exit"
 _REMOTE_LOG = "/workspace/shootout.log"
+_REMOTE_SOURCE_BUNDLE = "/workspace/stateset-source.bundle"
 DEFAULT_POLL_SECONDS = 120
 _ALLOWED_TIERS = frozenset({"SECURE", "COMMUNITY"})
 _REQUIRED_EXECUTION = (
@@ -92,6 +96,35 @@ _REQUIRED_EXECUTION = (
 
 class RunPodShootoutError(ConformanceError):
     """Raised when a shootout launch is malformed, over budget, or fails."""
+
+
+def validate_source_bundle(path: Path, revision: str) -> str:
+    """Verify a standalone Git bundle contains the pinned commit before spending."""
+    if path.is_symlink() or not path.is_file():
+        raise RunPodShootoutError("source bundle must be a regular, non-symlink file")
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    try:
+        with tempfile.TemporaryDirectory(prefix="stateset-source-check-") as directory:
+            repo = Path(directory) / "source.git"
+            subprocess.run(
+                ["git", "clone", "--bare", str(path.resolve()), str(repo)],
+                check=True,
+                capture_output=True,
+                timeout=120,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "cat-file", "-e", f"{revision}^{{commit}}"],
+                check=True,
+                capture_output=True,
+                timeout=30,
+            )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise RunPodShootoutError(
+            "source bundle must be standalone and contain the pinned harness commit"
+        ) from exc
+    if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+        raise RunPodShootoutError("source bundle changed during validation")
+    return digest
 
 
 def _utc_now() -> str:
@@ -405,6 +438,7 @@ def execute(
     ledger_path: Path | None = None,
     poll_seconds: float = DEFAULT_POLL_SECONDS,
     resume: bool = False,
+    source_bundle: Path | None = None,
 ) -> Path:
     """Provision exactly one pod, run the shootout, retrieve evidence, terminate.
 
@@ -418,6 +452,11 @@ def execute(
             f"refusing to overwrite output: {output_dir} (pass --resume to "
             "finish a matrix whose completed runs are already there)"
         )
+    bundle_digest = (
+        validate_source_bundle(source_bundle, str(manifest["harness_revision"]))
+        if source_bundle is not None
+        else None
+    )
     resumed = (
         _resumable_evidence(
             output_dir,
@@ -436,6 +475,7 @@ def execute(
     termination_confirmed = False
     status = "failed"
     remote_code: int | None = None
+    remote_ready = False
     try:
         pod = api.create_pod(
             name=f"stateset-shootout-{uuid.uuid4().hex[:8]}",
@@ -481,13 +521,25 @@ def execute(
         _arm_self_destruct(
             ssh, api, pod_id, _remaining(lifetime, started_at, "watchdog arming")
         )
+        remote_ready = True
+        output_dir.mkdir(parents=True, exist_ok=resume)
         ssh.upload_secret(
             json.dumps(shootout, sort_keys=True), _REMOTE_SHOOTOUT_MANIFEST
         )
         revision = shlex.quote(str(manifest["harness_revision"]))
         repo = shlex.quote(_REMOTE_REPOSITORY)
+        source = _REPOSITORY_URL
+        if source_bundle is not None:
+            ssh.upload(source_bundle, _REMOTE_SOURCE_BUNDLE)
+            source = _REMOTE_SOURCE_BUNDLE
+            checksum_line = f"{bundle_digest}  {_REMOTE_SOURCE_BUNDLE}"
+            _run_checked(
+                ssh,
+                f"printf '%s\\n' {shlex.quote(checksum_line)} | sha256sum --check -",
+                "source bundle checksum",
+            )
         steps = [
-            f"git clone --filter=blob:none {shlex.quote(_REPOSITORY_URL)} {repo}",
+            f"git clone --filter=blob:none {shlex.quote(source)} {repo}",
             f"git -C {repo} checkout --detach {revision}",
             f"python -m pip install --quiet -e {repo}'[training]'",
         ]
@@ -534,7 +586,6 @@ def execute(
             f"> {shlex.quote(_REMOTE_LOG)} 2>&1 < /dev/null &)",
             "shootout launch",
         )
-        output_dir.mkdir(parents=True, exist_ok=resume)
         remote_code = _poll_until_exit(
             ssh,
             output_dir,
@@ -562,6 +613,11 @@ def execute(
         return output_dir
     finally:
         termination_error: Exception | None = None
+        if remote_ready and status == "failed":
+            try:
+                ssh.download_dir(_REMOTE_OUTPUT, output_dir)
+            except Exception as exc:
+                print(f"partial evidence retrieval failed: {exc}", file=sys.stderr)
         if pod_id:
             try:
                 api.terminate_pod(pod_id)
@@ -600,6 +656,7 @@ def execute(
                 "manifest_sha256": plan["manifest_sha256"],
                 "shootout_manifest_sha256": plan["shootout_manifest_sha256"],
                 "harness_revision": manifest["harness_revision"],
+                "source_bundle_sha256": bundle_digest,
                 "container_image": execution["container_image"],
                 "status": status,
                 "remote_exit_code": remote_code,
@@ -631,6 +688,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--ssh-public-key", type=Path)
+    parser.add_argument(
+        "--source-bundle",
+        type=Path,
+        help="upload a standalone Git bundle containing the pinned commit",
+    )
     parser.add_argument("--poll-seconds", type=float, default=DEFAULT_POLL_SECONDS)
     parser.add_argument(
         "--resume",
@@ -642,6 +704,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         manifest = load_launcher_manifest(args.manifest, args.root)
         plan = build_plan(manifest, fetch_catalog())
+        if args.source_bundle is not None:
+            plan["source_bundle_sha256"] = validate_source_bundle(
+                args.source_bundle, str(manifest["harness_revision"])
+            )
         if args.plan_output:
             write_json_once(args.plan_output, plan)
         print(json.dumps(plan, indent=2, sort_keys=True))
@@ -674,6 +740,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             public_key=public_key,
             poll_seconds=args.poll_seconds,
             resume=bool(args.resume),
+            source_bundle=args.source_bundle,
         )
     except (
         RunPodShootoutError,

@@ -94,8 +94,8 @@ GitHub Security Advisories.
 
 ### Current development-tool dependency blocker
 
-As of October 20, 2026, upstream Semgrep pins `mcp==1.29.0`, including
-the latest checked release, 1.181.0. That SDK version is affected by
+As of October 21, 2026, upstream Semgrep pins `mcp==1.29.0`, including
+the latest checked release, 1.182.0. That SDK version is affected by
 [CVE-2026-59951 / GHSA-84m7-p3x7-pcfv](https://github.com/modelcontextprotocol/python-sdk/security/advisories/GHSA-84m7-p3x7-pcfv):
 unbounded sessions in stateful Streamable HTTP servers. The patched 1.x
 version is 1.30.0. Our optional product MCP server uses stdio, and its

@@ -20,12 +20,14 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
+from fractions import Fraction
 from typing import Any, cast
 
 logger = logging.getLogger(__name__)
@@ -383,7 +385,7 @@ class ResultCache:
 
     def _hash_key(self, query: str, response: str, criteria: str) -> str:
         """Create hash key for cache."""
-        content = f"{query}|{response}|{criteria}"
+        content = json.dumps([query, response, criteria], separators=(",", ":"))
         return hashlib.md5(content.encode(), usedforsecurity=False).hexdigest()
 
     def get(self, query: str, response: str, criteria: str) -> Any | None:
@@ -398,10 +400,13 @@ class ResultCache:
 
     def set(self, query: str, response: str, criteria: str, result: Any) -> None:
         """Set cache entry."""
+        if self.max_size <= 0:
+            return
         key = self._hash_key(query, response, criteria)
 
-        # Evict if full
-        while len(self.cache) >= self.max_size:
+        if key in self.cache:
+            self.access_order.remove(key)
+        elif len(self.cache) >= self.max_size:
             oldest = self.access_order.pop(0)
             del self.cache[oldest]
 
@@ -421,7 +426,9 @@ class LLMJudgeBase(ABC):
         """Call the LLM API."""
         pass
 
-    def _parse_json_response(self, response: str) -> dict[str, Any]:
+    def _parse_json_response(
+        self, response: str, *, unit_rubric: bool = False
+    ) -> dict[str, Any]:
         """Parse JSON from LLM response."""
         # Try to extract JSON from response
         try:
@@ -442,17 +449,21 @@ class LLMJudgeBase(ABC):
             except json.JSONDecodeError:
                 pass
 
-        # Fallback: extract score number
-        score_match = re.search(r"(\d+\.?\d*)", response)
+        # Prefer a labelled score over unrelated numbers in an explanation.
+        number = (
+            r"[-+]?(?:(?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?|(?:infinity|inf|nan)\b)"
+        )
+        score_match = re.search(rf"\bscore\s*[:=]\s*({number})", response, re.I)
+        if score_match is None:
+            score_match = re.search(rf"(?<!\w)({number})", response, re.I)
         if score_match:
             score = float(score_match.group(1))
-            # Normalize if needed
-            if score > self.config.score_max:
-                score = score / 10.0  # Assume 0-10 scale
+            # Legacy free-text ratings on a ten-point scale for the unit rubric.
+            if unit_rubric and 1 < score <= 10:
+                score /= 10.0
             return {"score": score, "reasoning": "Extracted from response"}
 
-        # Default
-        return {"score": 0.5, "reasoning": "Failed to parse response"}
+        return {"reasoning": "Failed to parse response"}
 
     def _build_criteria_text(self) -> str:
         """Build criteria description text."""
@@ -699,19 +710,20 @@ class LLMJudge:
         Returns:
             Normalized score in [0, 1]
         """
-        # Check cache
-        criteria_key = ",".join([c.value for c in self.config.criteria])
-        if self.cache:
-            cached = self.cache.get(query, response, criteria_key)
-            if cached is not None:
-                return float(cached)
-
         # Build evaluation prompt
         system_prompt = self.config.system_prompt or DEFAULT_SYSTEM_PROMPT
         template = self.config.evaluation_template or DEFAULT_SINGLE_EVAL_TEMPLATE
 
         criteria_text = self.backend._build_criteria_text()
 
+        low, high = float(self.config.score_min), float(self.config.score_max)
+        normalize = self.config.normalize_scores
+        if normalize and not (
+            math.isfinite(low) and math.isfinite(high) and low < high
+        ):
+            raise ValueError(
+                "Normalized judge scores require finite bounds with score_min < score_max"
+            )
         user_prompt = template.format(
             query=query,
             response=response,
@@ -725,19 +737,44 @@ class LLMJudge:
             {"role": "user", "content": user_prompt},
         ]
 
+        criteria_key = json.dumps(
+            [
+                system_prompt,
+                user_prompt,
+                self.config.model_name,
+                self.config.temperature,
+                normalize,
+                low,
+                high,
+            ],
+            separators=(",", ":"),
+        )
+        if self.cache:
+            cached = self.cache.get(query, response, criteria_key)
+            if cached is not None:
+                return float(cached)
+
         # Call API
         result_text = await self.backend._call_api(messages)
 
         # Parse result
-        result = self.backend._parse_json_response(result_text)
-        score = float(result.get("score", 0.5))
+        result = self.backend._parse_json_response(
+            result_text, unit_rubric=normalize and low == 0 and high == 1
+        )
+        if "score" not in result:
+            # The neutral fallback is already in output units. It is not an
+            # observation on the configured rubric and can be retried.
+            return 0.5
+        score = float(result["score"])
 
-        # Normalize
-        if self.config.normalize_scores:
-            score = (score - self.config.score_min) / (
-                self.config.score_max - self.config.score_min
-            )
-            score = max(0.0, min(1.0, score))
+        if not math.isfinite(score):
+            raise ValueError("Judge score must be finite")
+        if normalize:
+            # Compute the ratio from exact binary inputs. Even a finite score
+            # interval can have a width outside the floating-point range.
+            bottom, top = Fraction.from_float(low), Fraction.from_float(high)
+            bounded = Fraction.from_float(min(high, max(low, score)))
+            score = float((bounded - bottom) / (top - bottom))
 
         # Cache
         if self.cache:
@@ -761,7 +798,9 @@ class LLMJudge:
             List of scores
         """
         # Create tasks
-        tasks = [self.evaluate(q, r) for q, r in zip(queries, responses, strict=False)]
+        if len(queries) != len(responses):
+            raise ValueError("Judge evaluation requires one response per query")
+        tasks = [self.evaluate(q, r) for q, r in zip(queries, responses, strict=True)]
 
         # Run with concurrency limit
         semaphore = asyncio.Semaphore(self.config.max_concurrent)

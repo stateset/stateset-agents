@@ -59,10 +59,19 @@ class TestRunHarvestJob:
         with pytest.raises(ValueError, match="no expect/forbid checks"):
             run_harvest_job(payload)
 
-    def test_dry_run_writes_the_summary_and_reports_it(self, tmp_path):
-        summary = run_harvest_job(self._payload(tmp_path))
+    @pytest.mark.parametrize("explicit", [True, False])
+    def test_preview_preserves_the_live_summary(self, tmp_path, monkeypatch, explicit):
+        monkeypatch.setattr(
+            "stateset_agents.training.harvest.gpu_available", lambda: False
+        )
+        output = tmp_path / "out"
+        output.mkdir()
+        live_summary = output / "harvest_summary.json"
+        live_summary.write_bytes(b"previous harvest")
+        summary = run_harvest_job(self._payload(tmp_path, dry_run=explicit))
         assert summary["dry_run"] is True
-        on_disk = json.loads((tmp_path / "out" / "harvest_summary.json").read_text())
+        assert live_summary.read_bytes() == b"previous harvest"
+        on_disk = json.loads((output / "harvest_preview.json").read_text())
         assert on_disk["kept"] == 0
         assert on_disk["prompts"] == 1
 
@@ -89,7 +98,7 @@ class TestRunHarvestJob:
             timeout=120,
         )
         assert result.returncode == 0, result.stderr
-        assert (tmp_path / "out" / "harvest_summary.json").exists()
+        assert (tmp_path / "out" / "harvest_preview.json").exists()
 
 
 class TestSpecHarvestArgs:
@@ -149,7 +158,7 @@ class TestLocalExecutorHarvest:
         executor = LocalExecutor()
         result = executor.wait(executor.submit(spec))
         assert result.status is JobStatus.SUCCEEDED, "\n".join(result.logs)
-        assert (tmp_path / "out" / "harvest_summary.json").exists()
+        assert (tmp_path / "out" / "harvest_preview.json").exists()
 
 
 class TestRunPodHarvestCommands:

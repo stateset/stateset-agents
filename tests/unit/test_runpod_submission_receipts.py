@@ -14,6 +14,7 @@ import pytest
 from stateset_agents.remote.executor import RemoteExecutionError, SubmissionReceiptError
 from stateset_agents.remote.job import JobStatus, RemoteJobSpec
 from stateset_agents.remote.runpod import RunPodApi, RunPodExecutor
+from stateset_agents.remote.runpod_recovery import PodLease
 from tests.unit.test_remote_runpod_executor import FakePodApi, FakeSsh
 
 
@@ -25,19 +26,28 @@ def append_receipt(path, event):
         os.fsync(stream.fileno())
 
 
-def crash_submission(root, boundary):
+def crash_submission(root, boundary, ready, release):
     root = Path(root)
+
+    def crash():
+        ready.set()
+        if not release.wait(20):
+            os._exit(18)
+        os._exit(17)
 
     class Api(FakePodApi):
         def create_pod(self, **kwargs):
             result = super().create_pod(**kwargs)
+            (root / "provider.json").write_text(
+                json.dumps({"id": result["id"], "name": kwargs["name"]})
+            )
             if boundary == "before_id":
-                os._exit(17)
+                crash()
             return result
 
     class Ssh(FakeSsh):
         def wait_until_reachable(self, *_args):
-            os._exit(17)
+            crash()
 
     executor = RunPodExecutor(
         api=Api(),
@@ -166,14 +176,13 @@ def test_receipt_failure_fails_closed_without_automatic_reprovision(
         assert ssh.uploaded == []
     assert executor._jobs == {}
     if failure_event != "allocation_intent":
-        assert executor._last_duration_s is not None
         ledger = [
             json.loads(line) for line in executor.ledger_path.read_text().splitlines()
         ]
         assert len(ledger) == 1 and ledger[0]["status"] == "failed"
         assert ledger[0]["duration_s"] >= 0
     else:
-        assert executor._last_duration_s is None and not executor.ledger_path.exists()
+        assert not executor.ledger_path.exists()
 
 
 def test_primary_transport_failure_survives_cleanup_receipt_failure_without_retry(
@@ -195,9 +204,24 @@ def test_primary_transport_failure_survives_cleanup_receipt_failure_without_retr
     assert len(api.created) == 1 and api.terminated == ["pod-abc"]
 
 
+def test_catalog_refusal_creates_no_allocation_intent_or_ledger_row(submission):
+    executor, spec, api, ssh, events = submission
+    spec.max_cost_usd = 0.5
+    spec.timeout_s = 3600
+    spec.cloud_type = "COMMUNITY"
+    spec.gpu_count = 2
+    api.catalog_rate = 0.3
+    with pytest.raises(RemoteExecutionError, match="catalog.*above the --max-cost"):
+        executor.submit(spec)
+    assert api.price_requests == [(executor.DEFAULT_GPU, "COMMUNITY")]
+    assert events == [] and not api.created and not ssh.uploaded
+    assert not executor.ledger_path.exists()
+
+
 def test_budget_refusal_still_reports_allocated_pod_cleanup(submission):
     executor, spec, api, ssh, events = submission
     api.cost_per_hr, spec.max_cost_usd = 100.0, 0.01
+    api.catalog_rate = 0.05
     with pytest.raises(RemoteExecutionError):
         executor.submit(spec)
     assert [event["event"] for event in events] == [
@@ -206,6 +230,46 @@ def test_budget_refusal_still_reports_allocated_pod_cleanup(submission):
         "cleanup_acknowledged",
     ]
     assert api.terminated == ["pod-abc"] and ssh.uploaded == []
+
+
+@pytest.mark.parametrize("second_rate, expected_pods", [(3600, 1), (1800, 2)])
+def test_retry_checks_both_rates_against_remaining_budget(
+    submission, monkeypatch, second_rate, expected_pods
+):
+    executor, spec, api, ssh, events = submission
+    spec.max_cost_usd, spec.timeout_s = 5, 4
+    api.cost_per_hr = 3600
+    rates = iter([3600, second_rate])
+    monkeypatch.setattr(api, "get_gpu_rate", lambda *_: next(rates))
+    cleanup_clock(monkeypatch, api, [2, 0.25])
+    ssh.run_failures_left = 1
+
+    with pytest.raises(RemoteExecutionError, match="ceiling of \\$3"):
+        executor.submit(spec)
+    assert len(api.created) == len(api.terminated) == expected_pods
+    assert (
+        len([e for e in events if e["event"] == "allocation_intent"]) == expected_pods
+    )
+    assert len(ssh.uploaded) == 1 and len(ssh.commands) == 1
+    assert cost_rows(executor)[0]["cost_usd"] == 2
+
+
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_uncertain_cleanup_stops_budgeted_work_without_an_observer(
+    submission, interrupted
+):
+    executor, spec, api, ssh, _events = submission
+    executor.set_submission_observer(None)
+    api.cost_per_hr, spec.max_cost_usd = 1, 1
+    ssh.run_failures_left = int(interrupted)
+
+    def unavailable(_pod):
+        raise OSError("unconfirmed deletion")
+
+    api.terminate_pod = unavailable
+    with pytest.raises(RemoteExecutionError, match="cleanup is unconfirmed"):
+        executor.submit(spec)
+    assert len(api.created) == 1 and len(executor.orphaned_leases()) == 1
 
 
 def test_failed_lease_retains_original_error_and_reports_acknowledged_cleanup(
@@ -217,7 +281,7 @@ def test_failed_lease_retains_original_error_and_reports_acknowledged_cleanup(
     def fail(*_args):
         raise primary
 
-    monkeypatch.setattr(executor, "_write_lease", fail)
+    monkeypatch.setattr(PodLease, "record_id", fail)
     with pytest.raises(RemoteExecutionError) as error:
         executor.submit(spec)
     assert error.value is primary and api.terminated == ["pod-abc"]
@@ -243,7 +307,7 @@ def test_malformed_allocated_identity_retains_intent_without_inventing_an_id(
     assert len(api.created) == 1 and api.terminated == [] and ssh.uploaded == []
     assert len(events) == 1 and events[0]["resource_id"] is None
     assert "PRIVATE" not in str(error.value) and "PRIVATE" not in json.dumps(events)
-    assert executor._last_duration_s is None and not executor.ledger_path.exists()
+    assert not executor.ledger_path.exists()
 
 
 def test_failed_termination_records_uncertainty_and_retains_cleanup_lease(submission):
@@ -265,6 +329,9 @@ def test_existing_transport_retry_has_separate_attempt_receipts(submission):
     assert executor.wait(executor.submit(spec)).succeeded
     allocated = [event for event in events if event["event"] == "allocated"]
     assert [event["attempt"] for event in allocated] == [1, 2]
+    names = [event["resource_name"] for event in allocated]
+    assert len(set(names)) == 2
+    assert names == [request["name"] for request in api.created]
     assert [event["resource_id"] for event in allocated] == ["pod-abc", "pod-abc2"]
     assert api.terminated == ["pod-abc", "pod-abc2"]
 
@@ -274,14 +341,26 @@ def test_process_death_retains_intent_or_identity_without_false_cleanup(
     tmp_path, boundary
 ):
     (tmp_path / "data.jsonl").write_text('{"messages":[]}\n')
-    process = multiprocessing.get_context("spawn").Process(
-        target=crash_submission, args=(str(tmp_path), boundary)
+    context = multiprocessing.get_context("spawn")
+    ready, release = context.Event(), context.Event()
+    process = context.Process(
+        target=crash_submission, args=(str(tmp_path), boundary, ready, release)
     )
+    api = FakePodApi()
+    api.list_pods = lambda: [json.loads((tmp_path / "provider.json").read_text())]
+    recovery = RunPodExecutor(lease_dir=tmp_path / "leases", api=api)
+
     process.start()
     try:
+        assert ready.wait(15)
+        assert [row.status for row in recovery.recover_training()] == ["busy"]
+        assert recovery.cleanup_orphans() == []
+        assert api.terminated == []
+        release.set()
         process.join(15)
         assert not process.is_alive() and process.exitcode == 17
     finally:
+        release.set()
         if process.is_alive():
             process.terminate()
             process.join(5)
@@ -302,6 +381,10 @@ def test_process_death_retains_intent_or_identity_without_false_cleanup(
             RunPodExecutor(lease_dir=tmp_path / "leases").orphaned_leases()[0]["pod_id"]
             == "pod-abc"
         )
+
+    assert recovery.cleanup_orphans() == ["pod-abc"]
+    assert recovery.cleanup_orphans() == []
+    assert api.terminated == ["pod-abc"]
 
 
 def test_reviewed_release_can_disable_environment_wheel_without_disabling_explicit_wheel(
@@ -537,7 +620,7 @@ def test_prework_failure_records_owned_allocation_once_and_preserves_diagnosis(
         def fail_lease(*_args):
             raise primary
 
-        monkeypatch.setattr(executor, "_write_lease", fail_lease)
+        monkeypatch.setattr(PodLease, "record_id", fail_lease)
     elif boundary == "allocated_receipt":
 
         def observe(event):
@@ -548,6 +631,7 @@ def test_prework_failure_records_owned_allocation_once_and_preserves_diagnosis(
         executor.set_submission_observer(observe)
     else:
         spec.max_cost_usd = 0.01
+        api.catalog_rate = 0.05
 
     with pytest.raises((OSError, RemoteExecutionError)) as caught:
         executor.submit(spec)
@@ -570,7 +654,7 @@ def test_prework_failure_records_owned_allocation_once_and_preserves_diagnosis(
     assert events[-1]["event"] == "cleanup_acknowledged"
 
 
-@pytest.mark.parametrize("quote", ["NaN", float("inf"), float("-inf"), -1.0])
+@pytest.mark.parametrize("quote", ["NaN", float("inf"), float("-inf"), -1.0, 0, True])
 def test_invalid_quote_refuses_budget_before_work_and_retains_unknown_cost(
     submission, monkeypatch, quote
 ):
@@ -619,7 +703,7 @@ def test_accounting_error_does_not_replace_primary_failure_or_repeat_cleanup(
         accounted.append(args)
         raise ValueError("synthetic accounting error")
 
-    monkeypatch.setattr(executor, "_write_lease", fail_lease)
+    monkeypatch.setattr(PodLease, "record_id", fail_lease)
     monkeypatch.setattr(executor, "_record_cost", fail_accounting)
     cleanup_clock(monkeypatch, api, [2.0])
     with pytest.raises(OSError) as caught:
@@ -680,4 +764,4 @@ def test_ambiguous_allocation_failure_never_repeats_post_or_fabricates_cost(
     assert len(events) == 1 and events[0]["event"] == "allocation_intent"
     assert events[0]["resource_id"] is None
     assert ssh.uploaded == [] and executor._jobs == {}
-    assert executor._last_duration_s is None and not executor.ledger_path.exists()
+    assert not executor.ledger_path.exists()

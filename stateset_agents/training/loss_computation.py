@@ -17,11 +17,12 @@ from typing import Any
 import numpy as np
 
 from ..core.chat_masking import assistant_char_spans
+from ..core.generation_evidence import recorded_sampler_scores
 from ..exceptions import LOSS_EXCEPTIONS
 from . import rl_losses  # noqa: F401  (re-exported; tests spy on it)
 from . import objectives
 from .ddp_population import run_token_local, token_policy
-from .distributed_advantages import prepare_reward_batch, validate_advantages
+from .distributed_advantages import prepare_reward_population, validate_advantages
 from .grpo_accumulation import NormalizedLoss
 from .metric_reduction import LossMetricReduction
 from .trainer_utils import get_amp, get_functional, get_torch, require_torch
@@ -105,37 +106,44 @@ def _clipped_trajectory_loss(
 # --- batched per-token path ---------------------------------------------------
 
 
-def _token_rows_for_group(group: Any) -> list[tuple[list[int], list[int], int]] | None:
-    """Rows ``(prompt_ids, response_ids, trajectory_index)`` for every assistant
-    turn in ``group``; ``None`` when any trajectory lacks token metadata (the
-    caller then takes the sequence-level path)."""
-    rows: list[tuple[list[int], list[int], int]] = []
-    for ti, trajectory in enumerate(getattr(group, "trajectories", [])):
-        found = False
-        for turn in getattr(trajectory, "turns", []):
-            role = (
-                turn.get("role")
-                if isinstance(turn, dict)
-                else getattr(turn, "role", None)
-            )
-            if role != "assistant":
-                continue
-            md = (
-                turn.get("metadata")
-                if isinstance(turn, dict)
-                else getattr(turn, "metadata", None)
-            )
-            md = md or {}
-            prompt_ids, token_ids = md.get("prompt_token_ids"), md.get("token_ids")
-            if not prompt_ids or not token_ids:
-                return None
-            from .rollout_contract import SampledTurn
+def _trajectory_token_rows(
+    trajectory: Any, index: int, *, reject_partial: bool = False
+) -> list[tuple[list[int], list[int], int]] | None:
+    """Read each assistant turn's recorded context and actions in rollout order."""
+    from .rollout_contract import SampledTurn
 
-            sampled = SampledTurn.from_metadata(md)
-            rows.append((list(sampled.prompt_token_ids), list(sampled.token_ids), ti))
-            found = True
-        if not found:
+    records = []
+    for turn in getattr(trajectory, "turns", []):
+        if isinstance(turn, dict):
+            role, metadata = turn.get("role"), turn.get("metadata")
+        else:
+            role, metadata = getattr(turn, "role", None), getattr(
+                turn, "metadata", None
+            )
+        if role == "assistant":
+            records.append(metadata or {})
+    recorded = reject_partial and any(
+        "prompt_token_ids" in md or "token_ids" in md for md in records
+    )
+    rows = []
+    for md in records:
+        if not md.get("prompt_token_ids") or not md.get("token_ids"):
+            if recorded:
+                raise ValueError("Incomplete recorded EWC trajectory")
             return None
+        sampled = SampledTurn.from_metadata(md)
+        rows.append((list(sampled.prompt_token_ids), list(sampled.token_ids), index))
+    return rows or None
+
+
+def _token_rows_for_group(group: Any) -> list[tuple[list[int], list[int], int]] | None:
+    """Return recorded assistant rows if every trajectory supplies token IDs."""
+    rows = []
+    for index, trajectory in enumerate(getattr(group, "trajectories", [])):
+        trajectory_rows = _trajectory_token_rows(trajectory, index)
+        if trajectory_rows is None:
+            return None
+        rows.extend(trajectory_rows)
     return rows or None
 
 
@@ -169,26 +177,27 @@ def _legacy_group_advantages(
     With ``advantage_normalization`` the centred advantages are scaled by their
     population std, as on the sequence path.
     """
-    torch = require_torch()
+    from stateset_agents.core.reward_moments import RewardMoments
+
+    from .reward_advantages import standardized_rewards
+
     baseline_type = getattr(config, "baseline_type", "group_mean")
-    if baseline_type == "group_median":
-        baseline = rewards.median()
-    elif baseline_type == "global_mean" and global_reward_mean is not None:
-        if update_global_stats is not None:
-            update_global_stats(float(rewards.mean().item()), len(rewards))
-        baseline = torch.tensor(
-            global_reward_mean, dtype=rewards.dtype, device=rewards.device
-        )
-    else:
-        baseline = rewards.mean()
-    advantages = rewards - baseline
+    stats = RewardMoments(rewards.detach().tolist())
+    if (
+        baseline_type == "global_mean"
+        and global_reward_mean is not None
+        and update_global_stats is not None
+    ):
+        update_global_stats(stats.mean, len(rewards))
     if normalize is None:
         normalize = bool(getattr(config, "advantage_normalization", True))
-    if normalize and advantages.numel() > 1:
-        std = advantages.std(correction=0)
-        if torch.isfinite(std) and std > 0:
-            advantages = (advantages - advantages.mean()) / (std + 1e-8)
-    return advantages
+    if normalize and stats.variance_numerator:
+        return standardized_rewards(rewards, 1e-8)
+    if baseline_type == "group_median":
+        return rewards - rewards.median()
+    if baseline_type == "global_mean" and global_reward_mean is not None:
+        return rewards - global_reward_mean
+    return rl_losses.group_advantages(rewards, normalize=False)
 
 
 def _token_advantages(
@@ -241,7 +250,7 @@ def _token_batch_advantages(
     torch = require_torch()
     if not trajectory_groups and model is None:
         return []
-    rewards_by_group, count, mean, std = prepare_reward_batch(
+    rewards_by_group, population = prepare_reward_population(
         trajectory_groups,
         config,
         objective,
@@ -263,20 +272,21 @@ def _token_batch_advantages(
                     for index, rewards in enumerate(rewards_by_group)
                 ]
             )
-            batch_norm = objective.advantage == "batch_norm"
-            estimator = (
-                objective.with_(advantage="group_mean") if batch_norm else objective
-            )
-            advantages = objectives.compute_advantages(
-                torch.cat(rewards_by_group), group_ids, estimator
-            )
-            if batch_norm:
-                scale = torch.tensor(std, dtype=torch.float32, device=device)
-                advantages = (
-                    torch.zeros_like(advantages)
-                    if scale <= objective.advantage_eps
-                    else advantages / (scale + objective.advantage_eps)
-                )
+            rewards = torch.cat(rewards_by_group)
+            if objective.advantage == "batch_norm":
+                from .reward_advantages import grouped_advantages
+
+                advantages = grouped_advantages(
+                    rewards,
+                    group_ids,
+                    "batch_norm",
+                    objective.advantage_eps,
+                    population=population,
+                ).to(device)
+            else:
+                advantages = objectives.compute_advantages(
+                    rewards, group_ids, objective
+                ).to(device)
             result = list(
                 advantages.split([len(rewards) for rewards in rewards_by_group])
             )
@@ -290,7 +300,7 @@ def _token_batch_advantages(
                 )
                 for rewards in rewards_by_group
             ]
-        return result
+        return [a.to(device=device, dtype=torch.float32) for a in result]
 
     result = run_token_local(model, "advantages", local_advantages)
     validate_advantages(result, model, device)
@@ -300,7 +310,11 @@ def _token_batch_advantages(
         and global_reward_mean is not None
         and update_global_stats is not None
     ):
-        run_token_local(model, "baseline", lambda: update_global_stats(mean, count))
+        run_token_local(
+            model,
+            "baseline",
+            lambda: update_global_stats(population.mean, population.count),
+        )
     return result
 
 
@@ -312,6 +326,7 @@ def _forward_token_rows(
     *,
     grad: bool,
     want_entropy: bool = False,
+    logprob_dtype: Any = None,
 ) -> tuple[Any, Any, Any | None]:
     """Pad ``rows`` and run ``model`` in chunks of ``chunk_size`` rows.
 
@@ -334,7 +349,9 @@ def _forward_token_rows(
             resp[i, len(p) : seq.numel()] = 1.0
         with torch.set_grad_enabled(grad):
             logits = token_policy(model)(input_ids=ids, attention_mask=attn).logits
-            lp, m = rl_losses.gather_token_logprobs(logits, ids, resp)
+            lp, m = rl_losses.gather_token_logprobs(
+                logits, ids, resp, dtype=logprob_dtype
+            )
             if want_entropy:
                 shifted = logits[:, :-1, :].float()
                 lsm = torch.log_softmax(shifted, dim=-1)
@@ -396,7 +413,7 @@ def sampler_old_logprobs(trajectory_groups: list[Any], device: Any) -> list[Any]
         per_row: list[list[float]] = []
         for turn in _assistant_turns(group):
             md = turn.get("metadata") if isinstance(turn, dict) else turn.metadata
-            lp = (md or {}).get("sampler_log_probs")
+            lp = recorded_sampler_scores(md or {})
             if lp is None:
                 return None
             per_row.append([float(x) for x in lp])
@@ -414,6 +431,57 @@ def sampler_old_logprobs(trajectory_groups: list[Any], device: Any) -> list[Any]
             tensor[i, start : start + len(r)] = torch.tensor(lp, dtype=torch.float32)
         out.append(tensor)
     return out or None
+
+
+class _FrozenRolloutScores(list[Any]):
+    """Detached inner-update denominators and the source used to obtain them."""
+
+    def __init__(self, scores: list[Any], source: str) -> None:
+        super().__init__(scores)
+        self.source = source
+
+
+def _requested_sampler_scores(
+    groups: list[Any], config: Any, model: Any, device: Any
+) -> list[Any] | None:
+    from .rollout_contract import require_explicit_fallback
+
+    if not groups and getattr(model, "_stateset_rollout_source", None) == "sampler":
+        return []
+    scores = sampler_old_logprobs(groups, device)
+    if scores is None:
+        require_explicit_fallback(
+            config,
+            "allow_missing_sampler_logprobs",
+            "Rollouts lack sampler log probabilities",
+        )
+    return scores
+
+
+def freeze_rollout_logprobs(
+    trajectory_groups: list[Any], config: Any, agent: Any
+) -> list[Any] | None:
+    """Freeze the configured token denominator before the first optimizer step."""
+    if getattr(config, "old_logprobs_source", "recompute") != "sampler":
+        return compute_token_old_logprobs(trajectory_groups, config, agent)
+
+    groups = [g for g in trajectory_groups if getattr(g, "trajectories", None)]
+    if (
+        not groups
+        and getattr(agent.model, "_stateset_token_forward", False) is not True
+    ) or any(_token_rows_for_group(group) is None for group in groups):
+        return None
+    scores = _requested_sampler_scores(
+        groups, config, agent.model, _resolve_model_device(agent, require_torch())
+    )
+    if scores is not None:
+        return _FrozenRolloutScores(scores, "sampler")
+    snapshot = compute_token_old_logprobs(groups, config, agent)
+    return (
+        None
+        if snapshot is None
+        else _FrozenRolloutScores(snapshot, "recompute_fallback")
+    )
 
 
 def _assistant_turns(group: Any) -> list[Any]:
@@ -447,9 +515,8 @@ def _compute_token_path_loss(
 ) -> dict[str, Any]:
     """Batched per-token GRPO over stored token ids for every group.
 
-    ``old_logprobs`` (from :func:`compute_token_old_logprobs`) makes the
-    ratio off-policy for later inner updates; ``None`` means on-policy
-    (``logp_old = logp_cur.detach()``).
+    A supplied denominator is frozen across updates. Without one the config
+    selects recorded sampler scores or the detached current token scores.
     """
     torch = require_torch()
     device = _resolve_model_device(agent, torch)
@@ -469,27 +536,17 @@ def _compute_token_path_loss(
                 f"old_logprobs has {len(old_logprobs)} entries for "
                 f"{len(rows_per_group)} groups; snapshot and loss must see the same groups"
             )
+        if isinstance(old_logprobs, _FrozenRolloutScores):
+            return old_logprobs.source
         old_source = "snapshot" if old_logprobs is not None else "recompute"
-        if old_logprobs is None and (
-            str(getattr(config, "old_logprobs_source", "recompute")) == "sampler"
+        if (
+            old_logprobs is None
+            and getattr(config, "old_logprobs_source", "recompute") == "sampler"
         ):
-            old_logprobs = (
-                []
-                if not trajectory_groups
-                and getattr(agent.model, "_stateset_rollout_source", None) == "sampler"
-                else sampler_old_logprobs(trajectory_groups, device)
+            old_logprobs = _requested_sampler_scores(
+                trajectory_groups, config, agent.model, device
             )
-            if old_logprobs is not None:
-                old_source = "sampler"
-            else:
-                from .rollout_contract import require_explicit_fallback
-
-                require_explicit_fallback(
-                    config,
-                    "allow_missing_sampler_logprobs",
-                    "Rollouts lack sampler log probabilities",
-                )
-                old_source = "recompute_fallback"
+            old_source = "sampler" if old_logprobs is not None else "recompute_fallback"
         return old_source
 
     old_source = run_token_local(agent.model, "old-source", local_old_source)
@@ -718,59 +775,51 @@ def compute_grpo_loss(
     normalize_adv = getattr(config, "advantage_normalization", True)
     reward_clip = getattr(config, "reward_clip", None)
 
-    for group in trajectory_groups:
-        if not group.trajectories:
-            continue
+    from .reward_advantages import reward_tensor, standardized_rewards
 
-        # Extract rewards and optionally clip
-        rewards = torch.tensor(
-            [t.total_reward for t in group.trajectories],
-            dtype=torch.float32,
-            device=device,
-        )
-        if reward_clip is not None:
-            rewards = torch.clamp(
-                rewards, min=-float(reward_clip), max=float(reward_clip)
-            )
-
-        # Select baseline. A configured objective preset owns the estimator.
-        if getattr(config, "objective", None) is not None:
-            baseline = rewards - objectives.compute_advantages(
-                rewards,
-                torch.zeros_like(rewards, dtype=torch.long),
-                _grpo_objective(config).with_(advantage_eps=1e-8),
-            )
-            normalize_adv = False  # the preset already normalised (or not)
-        elif baseline_type in ("group_median", "global_mean"):
-            baseline = rewards - _legacy_group_advantages(
+    populated = [g for g in trajectory_groups if g.trajectories]
+    groups_of_rewards = [
+        reward_tensor([t.total_reward for t in group.trajectories], device)
+        for group in populated
+    ]
+    if reward_clip is not None:
+        groups_of_rewards = [
+            r.clamp(-float(reward_clip), float(reward_clip)) for r in groups_of_rewards
+        ]
+    preset = getattr(config, "objective", None) is not None
+    if preset and populated:
+        sizes = [len(r) for r in groups_of_rewards]
+        ids = [i for i, group in enumerate(groups_of_rewards) for _ in group]
+        objective = _grpo_objective(config)
+        preset_advantages = objectives.compute_advantages(
+            torch.cat(groups_of_rewards), ids, objective
+        ).split(sizes)
+    for i, (group, rewards) in enumerate(
+        zip(populated, groups_of_rewards, strict=True)
+    ):
+        if preset:
+            advantages = preset_advantages[i]
+        elif baseline_type == "leave_one_out":
+            n = len(rewards)
+            if normalize_adv and n > 1:
+                # LOO multiplies every centered reward by n/(n-1). Express
+                # the additive epsilon in centered-reward units before scaling.
+                advantages = standardized_rewards(rewards, 1e-8 * ((n - 1) / n))
+            else:
+                advantages = objectives.compute_advantages(
+                    rewards,
+                    torch.zeros_like(rewards, dtype=torch.long),
+                    objectives.OBJECTIVES["rloo"],
+                )
+        else:
+            advantages = _legacy_group_advantages(
                 rewards,
                 config,
                 global_reward_mean=global_reward_mean,
                 update_global_stats=update_global_stats,
-                normalize=False,  # normalized below with every other baseline
+                normalize=normalize_adv,
             )
-        elif baseline_type == "leave_one_out":
-            # RLOO baseline: r_i minus the mean of the other rewards. For a
-            # single sample the library returns advantage 0, i.e. baseline r.
-            baseline = rewards - objectives.compute_advantages(
-                rewards,
-                torch.zeros_like(rewards, dtype=torch.long),
-                objectives.OBJECTIVES["rloo"],
-            )
-        else:  # group_mean (default)
-            baseline = rewards.mean()
-
-        advantages = rewards - baseline
-
-        # Normalize advantages if configured and variance > 0
-        if normalize_adv and advantages.numel() > 1:
-            # Avoid torch warnings for small tensors by using correction=0.
-            try:
-                std = advantages.std(correction=0)
-            except TypeError:  # Older PyTorch.
-                std = advantages.std(unbiased=False)
-            if torch.isfinite(std) and std > 0:
-                advantages = (advantages - advantages.mean()) / (std + 1e-8)
+        advantages = advantages.to(device=device, dtype=torch.float32)
 
         all_advantages_for_logging.extend(advantages.detach().cpu().tolist())
 
@@ -836,8 +885,9 @@ def compute_ppo_ratio(
     length. Dividing by `token_count` first yields a bounded, O(1)
     sequence-mean ratio, matching standard PPO/GRPO implementations.
     """
-    torch = get_torch() or require_torch()
-    return torch.exp((new_log_prob_sum - old_log_prob_sum) / max(token_count, 1))
+    return rl_losses.safe_exp_ratio(
+        (new_log_prob_sum - old_log_prob_sum) / max(token_count, 1)
+    )
 
 
 def compute_entropy_bonus(logits: Any, response_mask: Any) -> Any:
@@ -856,11 +906,7 @@ def compute_entropy_bonus(logits: Any, response_mask: Any) -> Any:
     mask = response_mask
     if mask is None:
         return token_entropy.mean()
-    mask = mask.to(dtype=token_entropy.dtype)
-    denom = mask.sum()
-    if denom.item() == 0:
-        return token_entropy.mean()
-    return (token_entropy * mask).sum() / denom
+    return rl_losses.masked_mean(token_entropy, mask)
 
 
 # NOT a drop-in replacement: `compute_entropy_bonus(logits, response_mask)`
@@ -912,7 +958,7 @@ def _compute_group_policy_loss(
     ):
         try:
             inputs, labels = _prepare_inputs_and_labels(trajectory, agent, config)
-            if torch.is_tensor(labels) and not bool(labels.ne(-100).any()):
+            if torch.is_tensor(labels) and not bool(labels[..., 1:].ne(-100).any()):
                 continue  # nothing to supervise (e.g. reply truncated away)
 
             # Forward pass to get log probabilities
@@ -930,7 +976,7 @@ def _compute_group_policy_loss(
                 old_log_prob = None
                 token_count = 0
                 if torch.is_tensor(labels):
-                    loss_mask = labels.ne(-100)
+                    loss_mask = labels[..., 1:].ne(-100)
                     token_count = int(loss_mask.sum().item())
 
                 log_probs = getattr(trajectory, "log_probs", None)
@@ -1062,27 +1108,17 @@ def compute_enhanced_grpo_loss(
     all_losses = []
     all_advantages = []
     all_kl_divs = []
+    from .reward_advantages import reward_tensor, standardized_rewards
+
     objective = _grpo_objective(config)
 
     for group in trajectory_groups:
         if not group.trajectories:
             continue
 
-        # Extract rewards for this group
-        rewards = torch.tensor(
-            [t.total_reward for t in group.trajectories],
-            dtype=torch.float32,
-            device=device,
-        )
-
-        # GRPO: Use group mean as baseline
-        baseline = rewards.mean()
-        advantages = rewards - baseline
-
-        # Historical unbiased-std normalisation; the `grpo` preset in
-        # objectives.py uses correction=0 (see docs/OBJECTIVES.md).
-        if len(advantages) > 1 and advantages.std() > 0:
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        rewards = reward_tensor([t.total_reward for t in group.trajectories], device)
+        # This compatibility loss uses sample deviation.
+        advantages = standardized_rewards(rewards, 1e-8, correction=1).to(device)
 
         all_advantages.extend(advantages.tolist())
 
@@ -1091,7 +1127,7 @@ def compute_enhanced_grpo_loss(
             zip(group.trajectories, advantages, strict=False)
         ):
             inputs, labels = _prepare_inputs_and_labels(trajectory, agent, config)
-            if torch.is_tensor(labels) and not bool(labels.ne(-100).any()):
+            if torch.is_tensor(labels) and not bool(labels[..., 1:].ne(-100).any()):
                 continue  # nothing to supervise (e.g. reply truncated away)
 
             # Forward pass
@@ -1133,7 +1169,7 @@ def compute_enhanced_grpo_loss(
 
                 token_count = 0
                 if torch.is_tensor(labels):
-                    token_count = int(labels.ne(-100).sum().item())
+                    token_count = int(labels[..., 1:].ne(-100).sum().item())
 
                 if clip_ratio > 0 and old_log_prob is not None and token_count > 0:
                     policy_loss = _clipped_trajectory_loss(
@@ -1146,10 +1182,12 @@ def compute_enhanced_grpo_loss(
                 # penalty to compute — it's an expensive (batch, seq, vocab)
                 # materialization that's otherwise dead weight.
                 if beta > 0 and reference_model is not None:
-                    log_probs = outputs.logits.log_softmax(dim=-1)
+                    log_probs = outputs.logits[..., :-1, :].float().log_softmax(dim=-1)
                     with torch.no_grad():
                         ref_outputs = reference_model(**inputs)
-                        ref_log_probs = ref_outputs.logits.log_softmax(dim=-1)
+                        ref_log_probs = (
+                            ref_outputs.logits[..., :-1, :].float().log_softmax(dim=-1)
+                        )
 
                     # Token-wise KL(p || p_ref) = sum_v p(v) * (log p(v) - log p_ref(v))
                     kl_per_token = (log_probs.exp() * (log_probs - ref_log_probs)).sum(
@@ -1158,11 +1196,8 @@ def compute_enhanced_grpo_loss(
 
                     # Prefer masking to the same tokens contributing to the LM loss.
                     if torch.is_tensor(labels):
-                        loss_mask = labels.ne(-100)
-                        if loss_mask.any():
-                            kl_div = (kl_per_token * loss_mask).sum() / loss_mask.sum()
-                        else:
-                            kl_div = kl_per_token.mean()
+                        loss_mask = labels[..., 1:].ne(-100)
+                        kl_div = rl_losses.masked_mean(kl_per_token, loss_mask)
                     else:  # pragma: no cover - non-tensor labels (stub tokenizer)
                         kl_div = kl_per_token.mean()
                     all_kl_divs.append(kl_div)

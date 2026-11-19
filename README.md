@@ -22,8 +22,32 @@
 
 👉 Start here: the one‑page, boring path is in [QUICKSTART.md](QUICKSTART.md). It covers:
 
-- pip install → ingest sample logs → improve (grade/curate) → one GRPO dry‑run (stub/HF) → serve
-- remote training defaults to Modal (unverified; fail‑closed), with other providers still available
+- install → ingest sample logs → grade/curate → prepare training data → preview SFT and serving
+- run the offline workflow from an installed wheel; choose remote providers explicitly
+
+## Fan out RL training to StateSet Swarm
+
+Give three GRPO seeds the same 20-update budget. Each sandbox trains a policy
+for a synthetic refund workflow, evaluates it on 128 cases, and reloads its
+checkpoint. The coordinator collects the three results on a local Git branch.
+
+From this checkout, with the host CLI installed and `COORD` pointing to the
+built StateSet Sandbox coordinator, run the following. Planning is free.
+The `node` command launches three hosted tasks with a $1 model budget each,
+plus sandbox compute. [Setup and local replay](examples/swarm/README.md)
+
+```bash
+RUN=$(mktemp -d "${TMPDIR:-/tmp}/stateset-rl-XXXXXXXX")
+stateset-agents swarm plan rl-seeds > "$RUN.plan.json"
+node "$COORD" run "$RUN.plan.json" "$RUN" --max-parallel 3 --publish
+git worktree add --detach "$RUN-results" "swarm/${RUN##*/}"
+stateset-agents swarm report rl-seeds --results "$RUN-results/swarm-results"
+```
+
+In a local CPU replay, successful cases went from **67 to 86** for seed 42,
+**63 to 89** for seed 43, and **64 to 41** for seed 44. All three checkpoints
+reloaded. The `starter` recipe pairs one RL run with a verified weight edit.
+[Per-seed results](examples/swarm/evidence/local-cpu/) · [Swarm recipe library](examples/swarm/README.md)
 
 ---
 
@@ -34,7 +58,7 @@ StateSet Agents is a production‑oriented RL stack for training and serving LLM
 - **Environments** for conversational and task‑oriented episodes.
 - **Trajectories** and value/advantage utilities tailored to dialogue.
 - Composable **reward functions** (heuristic, domain, multi‑objective, neural, LLM‑judge, and a proof‑backed [StateSet NSR verifier](docs/NSR_INTEGRATION.md) for RLVR‑style verifiable rewards).
-- A family of **group‑based policy‑optimization trainers** (GRPO, GSPO, GEPO, DAPO, VAPO) plus PPO and RLAIF; all trainers evaluate one declarative [`PolicyObjective`](docs/OBJECTIVES.md) (GRPO, Dr. GRPO, BNPO, DAPO, GSPO, GSPO-token, GEPO, RLOO, REINFORCE++-baseline, CISPO, PPO) verified against loop references, Hypothesis invariants, and TRL 1.12.
+- A family of **group‑based policy‑optimization trainers** (GRPO, GSPO, GEPO, DAPO, VAPO), plus PPO and standalone RLAIF. RLAIF optimizes reward-weighted response log likelihood. The declarative [`PolicyObjective`](docs/OBJECTIVES.md) (GRPO, Dr. GRPO, BNPO, DAPO, GSPO, GSPO-token, GEPO, RLOO, REINFORCE++-baseline, CISPO, PPO) is verified against loop references, Hypothesis invariants, and TRL 1.12.
 - **Offline RL algorithms** for learning from logged conversations (BCQ, BEAR, CQL, IQL, Decision Transformer).
 - **Sim‑to‑Real transfer** for training in simulation and deploying to real users (domain randomization, system identification, progressive transfer).
 - **Continual learning + long‑term planning** utilities (replay/LwF/EWC, plan context injection).
@@ -125,10 +149,10 @@ serving, and provider claims.
   exact generated token ids with per-token ratios, KL, entropy, and optional
   PPO-style inner updates; before `v0.50.0` they recorded no log-probs and
   trained as unclipped REINFORCE on re-tokenised text.
-- **Engine rollouts stay on-policy:** `MultiTurnAgent.set_rollout_backend`
+- **Rollout engine synchronization.** `MultiTurnAgent.set_rollout_backend`
   samples through vLLM, the trainers push the policy's weights into the engine
-  after every optimizer step, and `old_logprobs_source="sampler"` importance-
-  corrects rollouts from a lagging engine. Proven live on vLLM 0.28 / A40 for
+  after every optimizer step, and `old_logprobs_source="sampler"` uses the
+  recorded sampling probabilities at each visited prefix. Proven live on vLLM 0.28 / A40 for
   full weights and a LoRA adapter: the engine-vs-policy log-prob gap of the
   sampled tokens returns to bf16 noise after the sync (retained in
   [`benchmark_results/vllm_rollout_check/`](benchmark_results/vllm_rollout_check/README.md)).
@@ -161,7 +185,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python candidate:** `stateset-agents==0.67.0`, tagged but not published.
+- **Current Python candidate:** `stateset-agents==0.74.0`, publication pending.
   Publication status and retained runs are listed in
   [release evidence](docs/RELEASE_EVIDENCE.md).
 - **Latest verified PyPI release:** `stateset-agents==0.66.1`, checked October 20,
@@ -472,7 +496,13 @@ coverage, live hardware attempts, and successful inference by provider.
   checkouts before invoking an evaluator. Every model-consuming stage is bound,
   and standalone execution verifies the checkout's exact suite revision.
 
-**v0.67.0 (latest candidate; publication blocked):**
+**v0.74.0 (latest candidate; publication pending):**
+
+- This release captures the complete `feat/a-plus-verification` branch workspace based on the 0.67.0 source line. The 0.73.x release series has a separate history.
+- Add Lean proofs and CPU checks for offline RL critic updates, CQL proposal sampling, and deterministic checkpoint replay.
+- Extend training verification, provider integrations and resource cleanup checks across the framework.
+
+**v0.67.0:**
 
 - Add the fine-tuning terminal studio, agent CLI and HTTP controls, with durable run ownership, checkpoint inspection and validation/test separation.
 - Add synthetic ecommerce, logistics and SaaS dataset generation with isolated splits and retained provenance; independent domain review remains required.
@@ -529,7 +559,7 @@ coverage, live hardware attempts, and successful inference by provider.
 
 **v0.52.0:**
 
-- Engine rollouts stay on-policy: both GRPO trainers push the policy's weights into the attached rollout backend after every optimizer step (`TrainingConfig.rollout_sync`); turns record the policy version that sampled them, and a backend that cannot take weights is reported once as stale instead of silently sampling from an old policy. `TrainingConfig.old_logprobs_source="sampler"` importance-corrects rollouts from a lagging or numerically different engine.
+- Both GRPO trainers push the policy's weights into the attached rollout backend after every optimizer step (`TrainingConfig.rollout_sync`); turns record the policy version that sampled them, and a backend that cannot take weights is reported once as stale instead of silently sampling from an old policy. `TrainingConfig.old_logprobs_source="sampler"` uses the recorded conditional token probabilities across learner updates.
 - Proven live on vLLM 0.28 / NVIDIA A40 for full weights and a LoRA adapter (`benchmark_results/vllm_rollout_check/`): the engine-vs-policy log-prob gap of the sampled tokens returns to bf16 noise after `VLLMGenerator.sync_weights`. `VLLMGenerator` finds the engine model through any vLLM layout, keeps the V1 engine core in-process, and maps PEFT's `.base_layer` weight names.
 - Fixed: `from stateset_agents.training import train` returned the `train` submodule once anything had imported it (the API service and CLI do).
 - Paid comparison runs are observable while they run (live per-run logs, a status line per launcher poll) and resumable after a pod lifetime cut (`runpod_shootout.py --resume`); resume now accepts only exact-manifest and exact-harness evidence. The legacy v3 protocol (Qwen2.5-1.5B, 200 steps, 256-problem eval) and its L40S envelopes are retained in `benchmarks/`; the corrected matrix must use a fresh protocol and rerun every pair.
@@ -544,7 +574,7 @@ coverage, live hardware attempts, and successful inference by provider.
 **v0.50.0:**
 
 - Per-token GRPO: `MultiTurnAgent.generate_turn` returns the assistant turn with the exact prompt token ids, sampled response ids, and the model's log-probs of those ids; both GRPO trainers request turns and train on one padded forward pass per group with per-token ratios, any token-level objective preset, k3 KL, and entropy on the same logits (sequence-level fallback preserved). Previously the GRPO trainers recorded no log-probs and trained as unclipped REINFORCE on re-tokenised text.
-- `TrainingConfig.num_gradient_updates`: PPO/DAPO-style inner updates against frozen old-policy log-probs on the GRPO token path, so the trust region engages from the second update; metrics report `inner_updates`, `ratio_mean`, `ratio_mean_last`, `clip_fraction`.
+- `TrainingConfig.num_gradient_updates`: PPO/DAPO-style inner updates against frozen old-policy log-probs on the GRPO token path. With sampler scores, clipping can engage on the first update. Metrics report `inner_updates`, `ratio_mean`, `ratio_mean_last`, `clip_fraction`.
 - One `StarterSpec` per packaged model family (`training/starter_factory.py`): the twelve starters shrink from ~5,000 to ~2,000 lines with every public name, default, and validation rule unchanged, and a contract test enforces the per-family surface.
 - `benchmarks/runpod_shootout.py`: a budget-bounded, self-destructing RunPod launcher for `benchmarks/shootout.py`, with the v2 48-step three-seed Qwen2.5-0.5B GSM8K protocol comparing StateSet's TRL-backed GRPO, native GSPO, and direct TRL.
 
@@ -1369,7 +1399,7 @@ asyncio.run(main())
 ```bash
 pip install "stateset-agents==0.66.1" # latest verified PyPI release
 # Tagged candidate; publication is blocked. Post-tag fixes require their own commit.
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.67.0"
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.74.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1557,6 +1587,12 @@ locally but have no deployment path today — the router is gated behind auth
 and the `API_ENABLE_TRAINING_LAB` flag (off by default).
 
 ### API serving (/v1/messages)
+
+For hosted **Qwen4-Max**, set `INFERENCE_BACKEND=qwencloud` and supply a
+Singapore `DASHSCOPE_API_KEY`. The preset selects `qwen4-max` and QwenCloud's
+Singapore API endpoint. Use `/v1/chat/completions` to preserve reasoning history,
+tool calls, and multimodal inputs. See the [Qwen4-Max guide](docs/QWEN4_MAX.md)
+for gateway and direct Python examples.
 
 ```bash
 export INFERENCE_BACKEND=vllm
@@ -1766,8 +1802,8 @@ trained_agent = await train(
 Rollouts can come from an inference engine instead of Hugging Face
 `generate`: `agent.set_rollout_backend(VLLMGenerator(...))`. The trainers
 push the policy's weights into the engine after every optimizer step
-(`rollout_sync`), and `old_logprobs_source="sampler"` importance-corrects
-rollouts from an engine that lags the policy (`docs/OBJECTIVES.md`).
+(`rollout_sync`), and `old_logprobs_source="sampler"` uses the recorded token probabilities
+when forming ratios on fresh and replayed groups. [Replay gradient assumptions](formal/README.md#replayed-group-gradients)
 
 `stateset-agents train --list-objectives` prints every preset with its
 advantage estimator, ratio level, clip, aggregation, and KL estimator.
@@ -2233,7 +2269,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest candidate `v0.67.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest candidate `v0.74.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 
@@ -2288,6 +2324,14 @@ agreement, retains per-case regressions, and gates on independent source groups
 and optional latency/cost limits. Synthetic starter data cannot pass this gate.
 See [Industry fine-tuning](docs/INDUSTRY_FINETUNING.md) for training, prediction
 callbacks, CLI evaluation, and the distinction from autonomous task success.
+
+## Private improvement workflow
+
+Use `stateset-agents workflow --help` for reviewed dataset intake, River experiments,
+paired quality gates, and staging deployment recovery. Customer data and artifacts
+must live outside Git checkouts. Start with the offline synthetic fixture in the
+[private workflow guide](docs/private-improvement-workflow.md). The public evidence
+catalog preserves failed replications and unknown costs alongside successful pilots.
 
 ## Contributing
 

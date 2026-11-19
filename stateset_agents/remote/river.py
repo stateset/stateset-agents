@@ -37,10 +37,12 @@ import logging
 import math
 import os
 import random
+import statistics
 import threading
 import time
 from asyncio import CancelledError
 from collections.abc import Callable, Iterator
+from copy import copy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -50,6 +52,7 @@ from stateset_agents.remote.executor import RemoteExecutionError, RemoteExecutor
 from stateset_agents.remote.job import JobHandle, JobStatus, RemoteJobSpec
 from stateset_agents.remote.ledger import CostEntry, record_entry
 from stateset_agents.remote.river_batches import (
+    _rl_datum,
     build_group_rl_datums,
     build_sft_batch,
     validate_base_model,
@@ -170,7 +173,7 @@ class _RlMode:
 
     #: Previous generation's ``river://`` weights, or None to start from base.
     checkpoint: str | None
-    #: Written to ``rl_report.json`` when the spec is a dry run.
+    #: Written to ``rl_preview.json`` when the spec is a dry run.
     dry_run_report: dict[str, Any]
     #: (model) -> {"passed", "total", "results"}, or None with no eval set.
     greedy_eval: Callable[[Any], dict[str, Any] | None]
@@ -219,6 +222,7 @@ class RiverExecutor(RemoteExecutor):
     """
 
     name = "river"
+    supports_dry_run = True
     supports_sft_seed = True
     supported_job_kinds = frozenset({"sft", "harvest", "rl"})
     result_kind = "hosted_pointer"
@@ -381,6 +385,11 @@ class RiverExecutor(RemoteExecutor):
             self._submit_lock.release()
 
     def _submit_with_cleanup(self, spec: RemoteJobSpec) -> JobHandle:
+        spec = copy(spec)
+        if spec.job_kind == "rl" and spec.max_cost_usd is not None:
+            raise ValueError(
+                "River cannot enforce a dollar ceiling. Use max_generated_tokens."
+            )
         self.validate_spec(spec)
         self._counter += 1
         job_id = f"river-{self._counter}"
@@ -609,11 +618,11 @@ class RiverExecutor(RemoteExecutor):
                 record["scores"] = [
                     {"passed": s.passed, "components": s.components} for s in scores
                 ]
-                mean_rewards.append(sum(rewards) / len(rewards))
+                mean_rewards.append(statistics.mean(rewards))
                 if all(r == rewards[0] for r in rewards):
                     record["skip_reason"] = "zero_variance"
                     continue
-                mean = sum(rewards) / len(rewards)
+                mean = mean_rewards[-1]
                 for records, reward in zip(branch_records, rewards, strict=True):
                     data.extend(_episode_rl_datums(records, reward - mean))
             return data, mean_rewards, audit
@@ -660,10 +669,6 @@ class RiverExecutor(RemoteExecutor):
         if not isinstance(raw_prompts, list) or not raw_prompts:
             raise ValueError("River RL dataset must be a nonempty JSON list")
         config = RiverRLConfig.from_knobs(spec.harvest)
-        if spec.max_cost_usd is not None:
-            raise ValueError(
-                "River cannot enforce a dollar ceiling; use max_generated_tokens"
-            )
         if not all(isinstance(p, dict) for p in raw_prompts):
             raise ValueError("River RL tasks must be objects with explicit scoring")
         episode_mode = "turns" in raw_prompts[0]
@@ -758,7 +763,7 @@ class RiverExecutor(RemoteExecutor):
                 record["scores"] = [
                     {"passed": s.passed, "components": s.components} for s in scores
                 ]
-                mean_rewards.append(sum(rewards) / len(rewards))
+                mean_rewards.append(statistics.mean(rewards))
                 if all(r == rewards[0] for r in rewards):
                     record["skip_reason"] = "zero_variance"
                 data.extend(build_group_rl_datums(prompt_ids, samples, rewards))
@@ -824,7 +829,7 @@ class RiverExecutor(RemoteExecutor):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         if spec.dry_run:
-            (output_dir / "harvest_summary.json").write_text(
+            (output_dir / "harvest_preview.json").write_text(
                 json.dumps(summary, indent=2)
             )
             logs.append("dry run: harvest plan only, nothing sampled")
@@ -1397,7 +1402,10 @@ class RiverExecutor(RemoteExecutor):
         """
         return (self._job(handle).duration_s, None)
 
-    def fetch(self, handle: JobHandle, dest: Path | None = None) -> Path:
+    def _is_preview(self, handle: JobHandle) -> bool:
+        return self._job(handle).spec.dry_run
+
+    def fetch(self, handle: JobHandle, dest: Path | None = None) -> Path | None:
         """Write the checkpoint pointer and manifest; return the directory.
 
         There is nothing to download: the trained LoRA lives on River. What
@@ -1410,6 +1418,12 @@ class RiverExecutor(RemoteExecutor):
             raise RemoteExecutionError(
                 f"job {handle.job_id} is not finished successfully; nothing to fetch",
                 provider=self.name,
+            )
+        if job.spec.dry_run:
+            # Harvest/RL previews write their report at submission. Never publish
+            # an empty checkpoint pointer or replace an existing manifest.
+            return (
+                job.spec.output_dir if job.spec.job_kind in {"harvest", "rl"} else None
             )
         return self._write_checkpoint_artifacts(job, dest)
 
@@ -1890,17 +1904,11 @@ def _episode_rl_datums(
     datums: list[dict[str, Any]] = []
     for turn in branch_turns:
         validate_record(turn)
-        prompt_ids = turn.get("prompt_ids") or []
-        tokens = turn.get("tokens") or []
-        logprobs = turn.get("logprobs") or []
-        pad = [0.0] * (len(prompt_ids) - 1)
+        tokens = turn["tokens"]
         datums.append(
-            {
-                "input_ids": list(prompt_ids) + list(tokens),
-                "old_logprobs": pad + list(logprobs) + [0.0],
-                "advantages": pad + [advantage] * len(tokens) + [0.0],
-                "attention_mask": [1] * (len(prompt_ids) + len(tokens)),
-            }
+            _rl_datum(
+                turn["prompt_ids"], tokens, turn["logprobs"], [advantage] * len(tokens)
+            )
         )
     return datums
 

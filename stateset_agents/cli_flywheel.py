@@ -86,8 +86,8 @@ def flywheel(
     max_cost: float | None = typer.Option(
         None,
         help=(
-            "Hard dollar ceiling for the WHOLE run; each rental is refused "
-            "if its worst case would break what remains."
+            "RunPod training budget in USD shared across probes, harvest, "
+            "training, retries, and repeats."
         ),
     ),
     provider: str = typer.Option(
@@ -284,7 +284,12 @@ def flywheel(
             )
         elif ctx.get_parameter_source("reward_threshold").name == "COMMANDLINE":
             raise typer.BadParameter("--reward-threshold requires --reward")
+        report_name = "rl_preview.json" if dry_run else "rl_report.json"
+        repeats_report_name = (
+            "rl_repeats_preview.json" if dry_run else "rl_repeats_report.json"
+        )
         runs = []
+        rates: list[float] = []
         try:
             for repeat in range(repeats):
                 run_output = (
@@ -343,25 +348,30 @@ def flywheel(
                     _echo(f"  {line}")
                 if not result.succeeded:
                     raise RuntimeError("RL run failed")
-                report = json.loads((run_output / "rl_report.json").read_text())
-                best = report.get("best_eval") or {}
+                if result.is_preview != dry_run:
+                    raise RuntimeError(
+                        "RL result does not match the requested execution mode"
+                    )
+                report = json.loads((run_output / report_name).read_text())
+                best = {} if dry_run else report.get("best_eval") or {}
                 runs.append(
                     {
                         "seed": seed + repeat,
                         "output_dir": str(run_output),
                         "passed": best.get("passed"),
                         "total": best.get("total"),
-                        "best_round": report.get("best_round"),
+                        "best_round": None if dry_run else report.get("best_round"),
                     }
                 )
                 if repeats > 1:
-                    rates = [r["passed"] / r["total"] for r in runs if r["total"]]
+                    if best.get("total"):
+                        rates.append(best["passed"] / best["total"])
                     atomic_json(
-                        output_root / "rl_repeats_report.json",
+                        output_root / repeats_report_name,
                         {
                             "runs": runs,
                             "requested": repeats,
-                            "completed": len(runs),
+                            "completed": 0 if dry_run else len(runs),
                             "dry_run": dry_run,
                             "pass_rate_mean": statistics.mean(rates) if rates else None,
                             "pass_rate_std": (
@@ -371,19 +381,29 @@ def flywheel(
                             "pass_rate_max": max(rates) if rates else None,
                         },
                     )
-        except (StateSetError, ValueError, RuntimeError) as exc:
+        except (StateSetError, ValueError, RuntimeError, OSError) as exc:
             _echo(str(exc))
             raise typer.Exit(code=1) from exc
         _echo(
-            f"Report: {output_root / ('rl_report.json' if repeats == 1 else 'rl_repeats_report.json')}"
+            f"Report: {output_root / (report_name if repeats == 1 else repeats_report_name)}"
         )
         return
 
+    if dry_run:
+        try:
+            plan = (
+                run_flywheel_repeats(config, executor, repeats)
+                if repeats > 1
+                else run_flywheel(config, executor)
+            )
+        except (StateSetError, ValueError) as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        _echo(json.dumps(plan, indent=2))
+        return
     _echo(
         f"Flywheel: {base_model} on {provider}, up to {generations} "
         f"generation(s)"
         + (f", ceiling ${max_cost:.2f}" if max_cost is not None else "")
-        + ("  [dry run]" if dry_run else "")
     )
     try:
         if repeats > 1:

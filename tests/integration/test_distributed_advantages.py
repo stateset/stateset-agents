@@ -6,6 +6,7 @@ import asyncio
 import copy
 import itertools
 import json
+import math
 import os
 import sys
 import time
@@ -197,7 +198,14 @@ def _worker(rank, directory):
             )
 
         edge_cases = []
-        for case in ["constant", "singleton", "offset", "tiny"]:
+        for case in [
+            "constant",
+            "singleton",
+            "offset",
+            "tiny",
+            "sub_spacing",
+            "cancellation",
+        ]:
             edge_config = copy.deepcopy(config)
             edge_config.objective = "reinforce_pp_baseline"
             edge_config.reward_clip = None
@@ -214,17 +222,32 @@ def _worker(rank, directory):
                         )
                     elif case == "tiny":
                         trajectory.total_reward *= 1e-10
+                    elif case == "sub_spacing":
+                        trajectory.total_reward = 1e12 + trajectory.total_reward
+            if case == "cancellation":
+                for group, data in zip(
+                    groups, ([1.0, 3.0], [1e30, 1.0, -1e30]), strict=True
+                ):
+                    for trajectory, value in zip(group.trajectories, data, strict=True):
+                        trajectory.total_reward = value
+            from fractions import Fraction
+
             rewards = [
-                torch.tensor(
-                    [t.total_reward for t in g.trajectories], dtype=torch.float32
-                )
-                for g in groups
+                [Fraction(t.total_reward) for t in group.trajectories]
+                for group in groups
             ]
-            std = torch.cat(rewards).double().std(correction=0).float()
-            expected = (
-                (rewards[rank] - rewards[rank].mean()) / (std + 1e-8)
-                if std > 1e-8
-                else torch.zeros_like(rewards[rank])
+            all_rewards = rewards[0] + rewards[1]
+            mean = sum(all_rewards) / len(all_rewards)
+            std = math.sqrt(
+                sum((x - mean) ** 2 for x in all_rewards) / len(all_rewards)
+            )
+            local_mean = sum(rewards[rank]) / len(rewards[rank])
+            expected = torch.tensor(
+                [
+                    float(x - local_mean) / (std + 1e-8) if std > 1e-8 else 0.0
+                    for x in rewards[rank]
+                ],
+                dtype=torch.float32,
             )
             actual = _token_batch_advantages(
                 [groups[rank]],
@@ -233,7 +256,7 @@ def _worker(rank, directory):
                 "cpu",
                 model=trainer.agent.model,
             )[0]
-            torch.testing.assert_close(actual, expected, rtol=1e-6, atol=1e-7)
+            torch.testing.assert_close(actual, expected, rtol=1e-6, atol=0)
             edge_cases.append(
                 {
                     "case": case,

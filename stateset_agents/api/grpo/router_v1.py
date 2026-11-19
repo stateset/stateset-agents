@@ -9,6 +9,8 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
+from stateset_agents.core.conversation import ConversationResetError
+from stateset_agents.core.multiturn_context import ConversationConflict
 from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
 
 from ..logging_config import get_logger
@@ -26,6 +28,7 @@ from .models import (
     GRPOTrainingRequest,
     GRPOTrainingResponse,
 )
+from .state import TERMINAL_JOB_STATUSES
 
 logger = get_logger(__name__)
 
@@ -68,6 +71,10 @@ def create_v1_router(
         ctx=Depends(verify_request),
     ):
         """Start GRPO training (API v1)."""
+        if training_handler.is_closing:
+            raise HTTPException(
+                status_code=503, detail="Training service is shutting down"
+            )
         response = await training_handler.start_training(
             request,
             ctx.user_id,
@@ -123,7 +130,7 @@ def create_v1_router(
         job_id: str,
         ctx=Depends(verify_request),
     ):
-        """Cancel training job (API v1)."""
+        """Stop further iterations; an in-flight iteration may still finish."""
         if not training_handler.cancel_job(
             job_id,
             ctx.user_id,
@@ -152,6 +159,8 @@ def create_v1_router(
             )
         except PermissionError as e:
             raise HTTPException(status_code=403, detail=str(e)) from e
+        except (ConversationConflict, ConversationResetError) as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
         except ValueError as e:
             if "not found" in str(e).lower():
                 raise HTTPException(status_code=404, detail=str(e)) from e
@@ -192,6 +201,10 @@ def create_v1_router(
         ctx=Depends(verify_request),
     ):
         """Submit batch training jobs (API v1)."""
+        if training_handler.is_closing:
+            raise HTTPException(
+                status_code=503, detail="Training service is shutting down"
+            )
         batch_id = f"batch_{uuid.uuid4().hex[:12]}"
         results = []
         accepted = 0
@@ -298,22 +311,22 @@ def create_v1_router(
         already_completed = []
 
         for job_id in request.job_ids:
-            response = training_handler.get_job_status(
+            if training_handler.cancel_job(
                 job_id,
                 ctx.user_id,
                 ctx.roles,
-            )
-            if not response:
-                not_found.append(job_id)
-            elif response.status in ("completed", "failed", "cancelled"):
-                already_completed.append(job_id)
+            ):
+                cancelled.append(job_id)
             else:
-                training_handler.cancel_job(
+                response = training_handler.get_job_status(
                     job_id,
                     ctx.user_id,
                     ctx.roles,
                 )
-                cancelled.append(job_id)
+                if response and response.status in TERMINAL_JOB_STATUSES:
+                    already_completed.append(job_id)
+                else:
+                    not_found.append(job_id)
 
         return BatchCancelResponse(
             cancelled=cancelled,

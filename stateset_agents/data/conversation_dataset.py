@@ -10,12 +10,17 @@ import dataclasses
 import hashlib
 import json
 import logging
+import math
 import random
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from fractions import Fraction
+from numbers import Integral
 from typing import TYPE_CHECKING, Any, Optional, cast
 
 import numpy as np
+
+from .reward_columns import reward_array
 
 try:
     import torch
@@ -45,6 +50,19 @@ def _load_sentence_transformer_cls() -> Any:
 logger = logging.getLogger(__name__)
 
 HF_PARSE_EXCEPTIONS = (AttributeError, KeyError, TypeError, ValueError)
+
+
+def _source_reward(value: Any) -> float:
+    """Keep integer reward bits until the operation that consumes the label."""
+    return int(value) if isinstance(value, Integral) else float(value)
+
+
+def _sum_rewards(values: list[float]) -> float:
+    """Accumulate a decision's rewards before rounding the published label."""
+    total = sum((Fraction(_source_reward(v)) for v in values), Fraction())
+    if total.denominator == 1 and any(isinstance(v, Integral) for v in values):
+        return total.numerator
+    return float(total)
 
 
 def _require_torch():
@@ -95,15 +113,14 @@ class TrajectoryData:
     is_simulated: bool = False
     domain_label: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    returns_discount: float | None = field(default=None, repr=False, compare=False)
 
     def compute_returns_to_go(self, gamma: float = 0.99) -> list[float]:
-        """Compute returns-to-go for Decision Transformer"""
-        returns = []
-        running_return = 0.0
-        for reward in reversed(self.turn_rewards):
-            running_return = reward + gamma * running_return
-            returns.append(running_return)
-        self.returns_to_go = list(reversed(returns))
+        """Compute one independently rounded discounted suffix per conversation turn."""
+        from .discounted_returns import discounted_returns
+
+        self.returns_to_go = discounted_returns(self.turn_rewards, gamma)
+        self.returns_discount = float(gamma)
         return self.returns_to_go
 
 
@@ -290,7 +307,7 @@ class ConversationDataset(TorchDataset):
                 turn = ConversationTurnData(
                     role=turn_data.get("role", "user"),
                     content=turn_data.get("content", ""),
-                    reward=float(turn_data.get("reward", 0.0)),
+                    reward=_source_reward(turn_data.get("reward", 0)),
                     timestamp=turn_data.get("timestamp"),
                     metadata=turn_data.get("metadata", {}),
                 )
@@ -300,11 +317,21 @@ class ConversationDataset(TorchDataset):
             if not turns:
                 return None
 
+            cached = data.get("returns_to_go")
+            discount = data.get("returns_discount")
+            if cached is not None and not isinstance(cached, (list, tuple)):
+                raise ValueError("Cached returns_to_go must be a sequence")
             return TrajectoryData(
                 trajectory_id=data.get("trajectory_id", f"traj_{idx}"),
                 turns=turns,
-                total_reward=float(data.get("total_reward", sum(turn_rewards))),
+                total_reward=(
+                    _source_reward(data["total_reward"])
+                    if "total_reward" in data
+                    else _sum_rewards(turn_rewards)
+                ),
                 turn_rewards=turn_rewards,
+                returns_to_go=None if cached is None else [float(v) for v in cached],
+                returns_discount=None if discount is None else float(discount),
                 is_simulated=data.get("is_simulated", False),
                 domain_label=data.get("domain_label"),
                 metadata=data.get("metadata", {}),
@@ -483,48 +510,73 @@ class ConversationDataset(TorchDataset):
                 - "minmax": (r - min) / (max - min)
                 - "percentile": clip to 5-95 percentile, then standard
         """
-        all_rewards = []
-        for t in self.trajectories:
-            all_rewards.extend(t.turn_rewards)
+        from ..core.reward_moments import RewardMoments
+        from .discounted_returns import discounted_returns
 
-        if not all_rewards:
+        values: list[float | Fraction] = [
+            _source_reward(r) for traj in self.trajectories for r in traj.turn_rewards
+        ]
+        if not values:
             return
+        if not all(map(math.isfinite, values)):
+            raise ValueError("Reward normalization requires finite rewards")
 
-        all_rewards = np.array(all_rewards)
+        epsilon = 1e-8
+        if method == "minmax":
+            low, high = Fraction(min(values)), Fraction(max(values))
+            width = high - low + Fraction(epsilon)
+            normalized = [float((Fraction(r) - low) / width) for r in values]
+        elif method in ("standard", "percentile"):
+            if method == "percentile":
+                ordered = sorted(values)
 
-        if method == "standard":
-            mean = np.mean(all_rewards)
-            std = np.std(all_rewards) + 1e-8
+                def quantile(twentieths: int) -> Fraction:
+                    i, frac = divmod((len(values) - 1) * twentieths, 20)
+                    if not frac:
+                        return Fraction(ordered[i])
+                    return (
+                        (20 - frac) * Fraction(ordered[i])
+                        + frac * Fraction(ordered[i + 1])
+                    ) / 20
 
-            def normalize(r: float) -> float:
-                return float((r - mean) / std)
-
-        elif method == "minmax":
-            min_r: float = float(np.min(all_rewards))
-            max_r: float = float(np.max(all_rewards))
-            range_r = max_r - min_r + 1e-8
-
-            def normalize(r: float) -> float:
-                return float((r - min_r) / range_r)
-
-        elif method == "percentile":
-            p5 = np.percentile(all_rewards, 5)
-            p95 = np.percentile(all_rewards, 95)
-            clipped = np.clip(all_rewards, p5, p95)
-            mean = np.mean(clipped)
-            std = np.std(clipped) + 1e-8
-
-            def normalize(r: float) -> float:
-                return float((np.clip(r, p5, p95) - mean) / std)
-
+                p5, p95 = quantile(1), quantile(19)
+                values = [min(max(r, p5), p95) for r in values]
+            moments = RewardMoments(values)
+            scale = max(epsilon, moments.scale())
+            p, q = scale.as_integer_ratio()
+            denom = moments.deviation(scale) + epsilon / scale
+            normalized = [
+                (res * q / (moments.denominator * p)) / denom
+                for res in moments.residuals
+            ]
         else:
             raise ValueError(f"Unknown normalization method: {method}")
 
-        # Apply normalization (raw totals stay available for raw-scale filters)
+        # Stage new labels before publishing any new rewards.
+        offset = 0
+        updates = []
         for traj in self.trajectories:
+            end = offset + len(traj.turn_rewards)
+            rewards = normalized[offset:end]
+            gamma = (
+                self.config.discount_factor
+                if traj.returns_discount is None
+                else traj.returns_discount
+            )
+            rtg = (
+                discounted_returns(rewards, gamma)
+                if traj.returns_to_go is not None
+                else None
+            )
+            updates.append((traj, rewards, gamma, rtg))
+            offset = end
+        for traj, rewards, gamma, rtg in updates:
             traj.metadata.setdefault("raw_total_reward", float(traj.total_reward))
-            traj.turn_rewards = [float(normalize(r)) for r in traj.turn_rewards]
-            traj.total_reward = sum(traj.turn_rewards)
+            traj.turn_rewards = rewards
+            traj.total_reward = math.fsum(rewards)
+            if rtg is not None:
+                traj.returns_to_go = rtg
+                traj.returns_discount = gamma
 
         # Clear cached statistics
         self._statistics = None
@@ -532,8 +584,14 @@ class ConversationDataset(TorchDataset):
 
     def compute_all_returns(self, gamma: float = 0.99) -> None:
         """Compute returns-to-go for all trajectories"""
-        for traj in self.trajectories:
-            traj.compute_returns_to_go(gamma)
+        from .discounted_returns import discounted_returns
+
+        labels = [
+            discounted_returns(traj.turn_rewards, gamma) for traj in self.trajectories
+        ]
+        for traj, rtg in zip(self.trajectories, labels, strict=True):
+            traj.returns_to_go = rtg
+            traj.returns_discount = float(gamma)
 
     def filter_by_quality(self, min_reward: float) -> "ConversationDataset":
         """
@@ -636,7 +694,7 @@ class ConversationDataset(TorchDataset):
                         "history": messages[:index],
                         "action": messages[index]["content"],
                         "next_history": messages[:end],
-                        "reward": float(sum(trajectory.turn_rewards[index:end])),
+                        "reward": _sum_rewards(trajectory.turn_rewards[index:end]),
                         "done": offset == len(positions) - 1,
                     }
                 )
@@ -714,7 +772,7 @@ class ConversationDataset(TorchDataset):
         return {
             "states": np.asarray(states),
             "actions": np.asarray(actions),
-            "rewards": np.asarray(rewards),
+            "rewards": reward_array(rewards),
             "next_states": np.asarray(next_states),
             "dones": np.asarray(dones),
         }

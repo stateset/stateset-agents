@@ -7,6 +7,7 @@ domains and training stages.
 
 import copy
 import logging
+import math
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, cast
@@ -72,7 +73,10 @@ class RewardNormalizer:
         self.target_mean = target_mean
         self.target_std = target_std
         self.clip_range = clip_range
+        if buffer_size <= 0:
+            raise ValueError("buffer_size must be positive")
         self.buffer_size = buffer_size
+        self._samples_seen = 0
 
         # Running statistics
         self.reward_buffer: deque[float] = deque(maxlen=buffer_size)
@@ -84,7 +88,14 @@ class RewardNormalizer:
         Uses online Welford's algorithm for the first 100 observations to
         avoid the bootstrap discontinuity when periodic stats kick in.
         """
+        if not math.isfinite(reward):
+            raise ValueError("Reward calibration requires a finite observation")
         self.reward_buffer.append(reward)
+        self._samples_seen += 1
+        if self._samples_seen > self.buffer_size and self.buffer_size <= 100:
+            # A replacement changes both extrema and the centered sum of squares.
+            self._update_statistics()
+            return
 
         # Online Welford update for smooth bootstrap
         n = len(self.reward_buffer)
@@ -106,7 +117,7 @@ class RewardNormalizer:
             self.stats.count = n
 
         # Full buffer refresh every 100 samples (for percentile accuracy)
-        if n % 100 == 0:
+        if self._samples_seen % 100 == 0:
             self._update_statistics()
 
     def _update_statistics(self):
@@ -119,40 +130,30 @@ class RewardNormalizer:
 
     def normalize(self, reward: float, stats: RewardStatistics | None = None) -> float:
         """Normalize a reward value (with ``stats``, or the running statistics)."""
-        live = self.stats
-        if stats is not None:
-            self.stats = stats
-        try:
-            return self._normalize(reward)
-        finally:
-            self.stats = live
-
-    def _normalize(self, reward: float) -> float:
-        if self.stats.count == 0:
+        stats = self.stats if stats is None else stats
+        if stats.count == 0:
             return reward
 
         if self.method == "z_score":
             # Z-score normalization
-            if self.stats.std > 0:
+            if stats.std > 0:
                 normalized = (
-                    (reward - self.stats.mean) / self.stats.std
+                    (reward - stats.mean) / stats.std
                 ) * self.target_std + self.target_mean
             else:
                 normalized = reward
 
         elif self.method == "min_max":
             # Min-max normalization to [0, 1]
-            if self.stats.max > self.stats.min:
-                normalized = (reward - self.stats.min) / (
-                    self.stats.max - self.stats.min
-                )
+            if stats.max > stats.min:
+                normalized = (reward - stats.min) / (stats.max - stats.min)
             else:
                 normalized = 0.5
 
         elif self.method == "percentile":
             # Percentile-based normalization (robust to outliers)
-            p5 = self.stats.percentiles.get(5, self.stats.min)
-            p95 = self.stats.percentiles.get(95, self.stats.max)
+            p5 = stats.percentiles.get(5, stats.min)
+            p95 = stats.percentiles.get(95, stats.max)
             if p95 > p5:
                 normalized = (reward - p5) / (p95 - p5)
             else:
@@ -203,6 +204,8 @@ class CalibratedRewardFunction(RewardFunction):
             method="z_score", clip_range=(-3.0, 3.0)
         )
         self.auto_calibrate = auto_calibrate
+        if calibration_interval <= 0:
+            raise ValueError("calibration_interval must be positive")
         self.calibration_interval = calibration_interval
 
         self.call_count = 0

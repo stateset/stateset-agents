@@ -175,6 +175,18 @@ async def test_tool_agent_ignores_trailing_inline_json():
 
 
 @pytest.mark.asyncio
+async def test_tool_agent_does_not_hide_trailing_text_after_a_prose_prefix():
+    calls = []
+    agent = ToolAgent(
+        AgentConfig(model_name="stub://prefixed-json"),
+        tools=[{"name": "run", "function": lambda: calls.append(True)}],
+    )
+    response = 'Result: {"tool":"run","parameters":{}} trailing prose'
+    assert await agent._process_tool_calls(response) == response
+    assert calls == []
+
+
+@pytest.mark.asyncio
 async def test_tool_agent_falls_back_to_context_for_context_tools():
     def context_only(context):
         if context is None:

@@ -5,11 +5,13 @@ load base model + LoRA adapter there, chat over SSH, and terminate the pod on
 exit. No ports are opened beyond the SSH one RunPod exposes, and nothing
 persists — when the session ends the pod dies and billing stops.
 
-**The pod is terminated on every exit path.** Same discipline as
+**Pod termination is attempted on every exit path.** Same discipline as
 :mod:`stateset_agents.remote.runpod`, and for the same reason: a leaked pod
 bills by the hour until someone notices. ``close()`` is idempotent, wired
 into the context-manager protocol, and registered with ``atexit`` as a
-best-effort backstop.
+best-effort backstop. A failed termination retains the pod ID and exit hook;
+``state`` reports ``cleanup_pending`` so callers can retry ``close()`` or
+terminate the pod through the provider. A session owns at most one pod.
 
 The remote side is :mod:`stateset_agents.remote.chat_repl`, launched as one
 LONG-RUNNING ``ssh`` subprocess with piped stdio — ``SshTransport.run`` is
@@ -22,6 +24,7 @@ from __future__ import annotations
 
 import atexit
 import json
+import logging
 import shlex
 import subprocess
 import tarfile
@@ -29,7 +32,10 @@ import tempfile
 import time
 import uuid
 from collections.abc import Callable
+from contextlib import ExitStack
+from enum import Enum
 from pathlib import Path
+from threading import RLock
 from typing import IO, Any, cast
 
 from stateset_agents.remote.executor import RemoteExecutionError
@@ -39,15 +45,34 @@ from stateset_agents.remote.runpod import (
     RunPodApi,
     SshTransport,
     package_pin,
+    pod_hourly_rate,
+)
+from stateset_agents.remote.runpod_recovery import (
+    PodLease,
+    session_lease_dir,
+    valid_pod_id,
 )
 
-__all__ = ["RemoteChatSession"]
+__all__ = ["ChatSessionState", "RemoteChatSession"]
+
+logger = logging.getLogger(__name__)
 
 _REMOTE_ADAPTER_DIR = f"{_REMOTE_WORKDIR}/adapter"
 _REMOTE_ADAPTER_TAR = f"{_REMOTE_WORKDIR}/adapter.tar.gz"
 
 #: Builds the persistent ssh process. Injectable so tests never spawn ssh.
 PopenFactory = Callable[[list[str]], Any]
+
+
+class ChatSessionState(str, Enum):
+    """Local chat ownership; cleanup remains pending until termination returns."""
+
+    NEW = "new"
+    STARTING = "starting"
+    READY = "ready"
+    CLOSING = "closing"
+    CLEANUP_PENDING = "cleanup_pending"
+    CLOSED = "closed"
 
 
 def _default_popen(cmd: list[str]) -> Any:
@@ -81,6 +106,7 @@ class RemoteChatSession:
         package_version: str | None = None,
         poll_interval_s: float = 10.0,
         popen_factory: PopenFactory | None = None,
+        lease_dir: Path | None = None,
     ) -> None:
         self._api = api
         self._ssh = ssh
@@ -94,6 +120,11 @@ class RemoteChatSession:
         self.package_version = package_version
         self.poll_interval_s = poll_interval_s
         self._popen_factory = popen_factory or _default_popen
+        self._lease_dir = (
+            lease_dir if lease_dir is not None else session_lease_dir("chat")
+        )
+        self._lease: PodLease | None = None
+        self._ownership = ExitStack()
 
         self._pod_id: str | None = None
         self._pod_started_at: float | None = None
@@ -101,13 +132,35 @@ class RemoteChatSession:
         self._base_model: str | None = None
         self._gpu: str | None = None
         self._process: Any = None
-        self._closed = False
+        self._state = ChatSessionState.NEW
+        # Keep start/ask/close from racing over the same pod and protocol stream.
+        # Startup cleanup re-enters close(), so this must be reentrant.
+        self._operation_lock = RLock()
         # Client-side mirror of the conversation. The pod keeps the
         # authoritative history for generation, but every prompt and reply
         # passes through ask(), so the transcript can be rebuilt locally —
         # no round-trip to a pod that may already be dead.
         self._messages: list[dict[str, str]] = []
         self._session_meta: dict[str, Any] = {}
+
+    @property
+    def state(self) -> ChatSessionState:
+        """Return the local lifecycle state without contacting the provider."""
+        return self._state
+
+    @property
+    def pod_id(self) -> str | None:
+        """Return the owned pod ID, retained when cleanup needs another attempt."""
+        return self._pod_id
+
+    @property
+    def _closed(self) -> bool:
+        """Preserve the former closed flag without a second source of truth."""
+        return self._state in {
+            ChatSessionState.CLOSING,
+            ChatSessionState.CLEANUP_PENDING,
+            ChatSessionState.CLOSED,
+        }
 
     # -- lazily resolved collaborators (mirrors RunPodExecutor) ------------
 
@@ -170,13 +223,43 @@ class RemoteChatSession:
         """Rent the pod, install the package, ship the adapter, boot the REPL.
 
         Blocks until the remote model has loaded and answered with its
-        ``{"ready": true}`` line. On any failure the pod is terminated before
-        the exception propagates.
+        ``{"ready": true}`` line. On failure, cleanup is attempted before the
+        exception propagates. Once provisioning begins, use a new session for
+        another start; retry pending cleanup on the original session.
         """
-        api = self._require_api()
-        public_key = self._require_public_key()
-        ssh = self._require_ssh()
+        with self._operation_lock:
+            if self._state is not ChatSessionState.NEW:
+                raise RemoteExecutionError(
+                    f"chat session cannot start from {self._state.value}; "
+                    "create a new RemoteChatSession for another chat",
+                    provider=self.provider,
+                )
+            self._state = ChatSessionState.STARTING
+            try:
+                api = self._require_api()
+                public_key = self._require_public_key()
+                ssh = self._require_ssh()
+            except BaseException:
+                # No provisioning attempt yet: configuration can be corrected.
+                self._state = ChatSessionState.NEW
+                raise
+            try:
+                self._start(api, public_key, ssh, base_model, adapter_dir, gpu)
+            except BaseException:
+                self.close()
+                raise
+            self._state = ChatSessionState.READY
 
+    def _start(
+        self,
+        api: Any,
+        public_key: str,
+        ssh: Any,
+        base_model: str,
+        adapter_dir: Path | None,
+        gpu: str | None,
+    ) -> None:
+        """Provision and boot while the caller owns the operation lock."""
         self._session_meta = {
             "source": "chat-remote",
             "base_model": base_model,
@@ -185,9 +268,12 @@ class RemoteChatSession:
             "started_at": time.time(),
         }
 
-        session_id = uuid.uuid4().hex[:12]
+        name = f"stateset-chat-{uuid.uuid4().hex[:12]}"
+        lease = PodLease(self._lease_dir / f"{name}.json")
+        self._ownership.enter_context(lease.starting())
+        self._lease = lease
         pod = api.create_pod(
-            name=f"stateset-chat-{session_id}",
+            name=name,
             image=self.image,
             gpu_type_id=gpu or self.DEFAULT_GPU,
             ports=["22/tcp"],
@@ -196,45 +282,44 @@ class RemoteChatSession:
         )
         self._base_model = base_model
         self._gpu = gpu or self.DEFAULT_GPU
-        self._pod_id = str(pod["id"])
+        pod_id = pod.get("id") if isinstance(pod, dict) else None
+        if not valid_pod_id(pod_id):
+            raise RemoteExecutionError(
+                f"RunPod returned no usable ID for {name}. Inspect runpod-orphans --chat.",
+                provider=self.provider,
+            )
+        self._pod_id = pod_id
         # Billing starts at creation; the ledger needs both ends.
         self._pod_started_at = time.time()
-        try:
-            raw_price = pod.get("costPerHr")
-            self._pod_cost_per_hr = float(raw_price) if raw_price is not None else None
-        except (TypeError, ValueError):
-            self._pod_cost_per_hr = None
+        self._pod_cost_per_hr = pod_hourly_rate(pod.get("costPerHr"))
         # From here on the pod exists and bills; the backstop must be armed
         # before anything that can raise.
         atexit.register(self.close)
+        lease.record_id(pod_id)
 
-        try:
-            host, port = self._wait_for_ssh_endpoint(api, self._pod_id)
-            ssh.wait_until_reachable(host, port, self.ready_timeout_s)
+        host, port = self._wait_for_ssh_endpoint(api, self._pod_id)
+        ssh.wait_until_reachable(host, port, self.ready_timeout_s)
 
-            if self.wheel:
-                ssh.upload(self.wheel, f"{_REMOTE_WORKDIR}/{self.wheel.name}")
-            pin = package_pin(self.wheel, self.package_version)
-            self._run_checked(ssh, f"pip install --quiet '{pin}'")
+        if self.wheel:
+            ssh.upload(self.wheel, f"{_REMOTE_WORKDIR}/{self.wheel.name}")
+        pin = package_pin(self.wheel, self.package_version)
+        self._run_checked(ssh, f"pip install --quiet '{pin}'")
 
-            command = [
-                "python",
-                "-m",
-                "stateset_agents.remote.chat_repl",
-                "--base-model",
-                shlex.quote(base_model),
-            ]
-            if adapter_dir is not None:
-                self._upload_adapter(ssh, Path(adapter_dir))
-                command += ["--adapter", _REMOTE_ADAPTER_DIR]
+        command = [
+            "python",
+            "-m",
+            "stateset_agents.remote.chat_repl",
+            "--base-model",
+            shlex.quote(base_model),
+        ]
+        if adapter_dir is not None:
+            self._upload_adapter(ssh, Path(adapter_dir))
+            command += ["--adapter", _REMOTE_ADAPTER_DIR]
 
-            self._process = self._popen_factory(
-                self._ssh_argv(ssh, host, port, " ".join(command))
-            )
-            self._await_ready()
-        except BaseException:
-            self.close()
-            raise
+        self._process = self._popen_factory(
+            self._ssh_argv(ssh, host, port, " ".join(command))
+        )
+        self._await_ready()
 
     def _run_checked(self, ssh: Any, command: str) -> None:
         exit_code, output = ssh.run(command)
@@ -343,8 +428,12 @@ class RemoteChatSession:
         Generation history lives on the pod; a client-side mirror feeds
         :attr:`transcript`.
         """
+        with self._operation_lock:
+            return self._ask(prompt, timeout_s)
+
+    def _ask(self, prompt: str, timeout_s: int) -> str:
         process = self._process
-        if process is None or self._closed:
+        if process is None or self._state is not ChatSessionState.READY:
             raise RemoteExecutionError(
                 "chat session is not open", provider=self.provider
             )
@@ -419,33 +508,71 @@ class RemoteChatSession:
             pass
 
     def close(self) -> None:
-        """End the ssh channel and terminate the pod. Safe to call twice."""
-        if self._closed:
+        """Close the channel and attempt termination; retry if cleanup is pending.
+
+        Provider errors are logged without masking an existing chat/start error.
+        Inspect ``state`` and ``pod_id`` when termination cannot be confirmed.
+        """
+        with self._operation_lock:
+            self._close()
+
+    def _close(self) -> None:
+        if self._state in {ChatSessionState.CLOSED, ChatSessionState.CLOSING}:
             return
-        self._closed = True
-        atexit.unregister(self.close)
+        self._state = ChatSessionState.CLOSING
 
         process, self._process = self._process, None
-        if process is not None:
-            try:
-                if process.stdin is not None:
-                    process.stdin.close()  # EOF → chat_repl exits 0
-                process.wait(timeout=10)
-            except Exception:
+        try:
+            if process is not None:
                 try:
-                    process.kill()
+                    if process.stdin is not None:
+                        process.stdin.close()  # EOF → chat_repl exits 0
+                    process.wait(timeout=10)
                 except Exception:
-                    pass
+                    try:
+                        process.kill()
+                    except Exception:
+                        pass
+        finally:
+            self._terminate_pod()
 
-        pod_id, self._pod_id = self._pod_id, None
+    def _terminate_pod(self) -> None:
+        """Release ownership only after the provider accepts termination."""
+        pod_id = self._pod_id
+        if pod_id is None and self._lease is not None:
+            self._state = ChatSessionState.CLEANUP_PENDING
+            self._ownership.close()
+            logger.warning(
+                "Allocation of %s is unconfirmed. Inspect stateset-agents runpod-orphans --chat.",
+                self._lease.path.stem,
+            )
+            return
+        if pod_id is not None:
+            try:
+                self._require_api().terminate_pod(pod_id)
+            except BaseException as error:
+                self._state = ChatSessionState.CLEANUP_PENDING
+                logger.warning(
+                    "Chat pod %s termination is unconfirmed; retry close() or "
+                    "terminate it through RunPod. Billing may continue.",
+                    pod_id,
+                )
+                if not isinstance(error, Exception):
+                    raise
+                return
+            self._pod_id = None
+            try:
+                if self._lease is not None:
+                    self._lease.clear()
+            except RemoteExecutionError as error:
+                logger.warning("Chat pod %s deletion was accepted. %s", pod_id, error)
+            finally:
+                self._lease = None
+                self._ownership.close()
+        self._state = ChatSessionState.CLOSED
+        atexit.unregister(self.close)
         if pod_id is not None:
             self._record_cost(pod_id)
-        if pod_id is not None and self._api is not None:
-            # Unconditional and last: an orphaned pod bills by the hour.
-            try:
-                self._api.terminate_pod(pod_id)
-            except Exception:
-                pass  # best effort — never mask the original failure
 
     def __enter__(self) -> RemoteChatSession:
         return self

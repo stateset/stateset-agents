@@ -430,6 +430,23 @@ def test_wandb_flags_reach_gspo_config_for_non_starter_preset():
     assert cfg_without_wandb.report_to == "none"
 
 
+def test_preview_describes_resolved_overrides():
+    preset = get_preset("llama3")
+    config = finetune_gspo.build_gspo_config(
+        preset,
+        task="customer_service",
+        output_dir="out",
+        learning_rate=1e-5,
+        use_4bit=False,
+        use_8bit=False,
+    )
+    preview = finetune_gspo.preview_payload("llama3", preset, config)
+    assert preview["learning_rate"] == 1e-5
+    assert preview["use_4bit"] is False
+    assert preview["use_8bit"] is False
+    assert preview["bf16"] == config.bf16
+
+
 def test_wandb_flags_reach_gspo_config_via_cli(monkeypatch):
     """End-to-end: --wandb on the driver's real-run path must produce a
     GSPOConfig with W&B reporting enabled."""

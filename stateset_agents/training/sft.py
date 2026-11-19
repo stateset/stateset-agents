@@ -36,7 +36,10 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from stateset_agents.core.chat_masking import assistant_token_mask
+from stateset_agents.core.chat_masking import (
+    assistant_token_mask,
+    truncates_weighted_target,
+)
 from stateset_agents.core.lora_targets import (
     NON_TEXT_STACK_MARKERS as _NON_TEXT_STACK_MARKERS,
 )
@@ -50,6 +53,7 @@ from stateset_agents.data.finetuning import (
     validate_finetuning_split,
 )
 from stateset_agents.data.source import DatasetSourceIdentity, SFTDatasetIdentity
+from stateset_agents.remote.job import WORKER_PREVIEW_EXIT
 from stateset_agents.training.lineage import (
     AdapterManifest,
     write_manifest,
@@ -304,14 +308,22 @@ def tokenize_sft_row(
 
     System prompts, user turns and tool results are context, not targets
     (training on them teaches the model to write its own tool outputs).
-    Truncation keeps the first ``max_length`` tokens; a row with no supervised
-    token left is dropped (``None``). Templates whose renders rewrite earlier
-    turns fall back to full-sequence labels with a one-time warning.
+    Truncation keeps the first ``max_length`` tokens. Weighted rows must retain
+    every supervised token. A row without a usable target returns ``None``.
+    If a template prevents faithful masking,
+    explicitly weighted rows raise an error. Legacy rows fall back to
+    full-sequence labels with a one-time warning.
     """
     global _warned_unmasked_sft
+    if max_length < 2:
+        raise ValueError("max_length must be at least 2 for next-token training")
     tools = _row_tools(row)
     masked = assistant_token_mask(tokenizer, row["messages"], tools=tools)
     if masked is None:
+        if any("weight" in message for message in row["messages"]):
+            raise ValueError(
+                "Cannot locate the supervised assistant tokens in this weighted chat row"
+            )
         if not _warned_unmasked_sft:
             logger.warning(
                 "Chat template rewrites earlier turns; SFT labels fall back to "
@@ -325,6 +337,8 @@ def tokenize_sft_row(
         assistant = [True] * len(ids)
     else:
         ids, assistant = masked
+    if truncates_weighted_target(row["messages"], assistant, max_length):
+        return None
     ids, assistant = ids[:max_length], assistant[:max_length]
     if not any(assistant):
         return None
@@ -963,15 +977,16 @@ def run_sft(
     records = [record for record in tokenized if record is not None]
     if len(records) < len(tokenized):
         logger.warning(
-            "Dropped %d of %d SFT rows whose assistant tokens were truncated "
-            "away at max_length=%d.",
+            "Dropped %d of %d SFT rows at max_length=%d. Rows need assistant "
+            "targets, and weighted rows must retain every selected token.",
             len(tokenized) - len(records),
             len(tokenized),
             max_length,
         )
     if not records:
         raise ValueError(
-            f"No SFT row keeps an assistant token within max_length={max_length}."
+            f"No trainable SFT rows at max_length={max_length}. Check the assistant "
+            "weights and increase max_length if it cuts a selected action."
         )
     dataset = Dataset.from_list(records)
 
@@ -1160,7 +1175,8 @@ def run_sft_job(payload: dict[str, Any]) -> dict[str, Any]:
     are reported as a non-zero ``returncode`` with the captured output, so
     the calling executor has one uniform thing to interpret.
 
-    Returns ``{"returncode": int, "logs": list[str], "output_dir": str}``.
+    Returns exit status, logs, output directory, and whether this job produced
+    a verified trained adapter. Successful previews have ``trained=False``.
     """
     job = {k: v for k, v in payload.items() if k not in _PROVIDER_ONLY_KEYS}
     output_dir = Path(job["output_dir"])
@@ -1173,6 +1189,7 @@ def run_sft_job(payload: dict[str, Any]) -> dict[str, Any]:
     logger.setLevel(logging.INFO)
 
     returncode = 0
+    trained = False
     try:
         with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
             seed = _training_seed(42 if job.get("seed") is None else job["seed"])
@@ -1224,6 +1241,7 @@ def run_sft_job(payload: dict[str, Any]) -> dict[str, Any]:
                         lora_r=job["lora_r"],
                         dataset_identity=dataset_identity,
                     )
+                    trained = True
                     returncode = _apply_eval_gate(job.get("eval_prompts"), output_dir)
     except Exception as exc:  # reported, never raised — see docstring
         logger.error("SFT job failed: %s", exc)
@@ -1236,6 +1254,7 @@ def run_sft_job(payload: dict[str, Any]) -> dict[str, Any]:
         "returncode": returncode,
         "logs": buffer.getvalue().splitlines(),
         "output_dir": str(output_dir),
+        "trained": trained,
     }
 
 
@@ -1258,6 +1277,7 @@ def build_parser() -> Any:
         help="Hugging Face base model name (e.g. Qwen/Qwen3.5-0.8B).",
     )
     parser.add_argument("--output-dir", type=Path, default=Path("outputs/sft_v1"))
+    parser.add_argument("--signal-preview", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--num-epochs", type=int, default=3)
     parser.add_argument("--lora-r", type=int, default=16)
     parser.add_argument("--lora-alpha", type=int, default=32)
@@ -1366,6 +1386,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if outcome["returncode"] != 0:
         return int(outcome["returncode"])
+
+    if not outcome.get("trained", False):
+        print("Preview complete. No training was performed or checkpoint created.")
+        print("Install training extras and rerun without --dry-run on a supported GPU.")
+        return WORKER_PREVIEW_EXIT if args.signal_preview else 0
 
     path = outcome["output_dir"]
     print()

@@ -6,6 +6,8 @@ sim-to-real transfer in conversational agents.
 """
 
 import logging
+import math
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
@@ -75,71 +77,83 @@ class SimToRealMetrics:
         return cls(**{k: v for k, v in data.items() if hasattr(cls, k)})
 
 
+def _histogram_probabilities(
+    p: np.ndarray, q: np.ndarray, epsilon: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Normalize each histogram independently, then apply per-bin smoothing."""
+    if not math.isfinite(epsilon) or epsilon < 0:
+        raise ValueError("epsilon must be finite and nonnegative")
+    if np.shape(p) != np.shape(q):
+        raise ValueError("histograms must have the same shape")
+
+    def probabilities(values: np.ndarray) -> np.ndarray:
+        if np.iscomplexobj(values):
+            raise ValueError("histograms require real masses")
+        mass = np.asarray(values, dtype=np.longdouble).ravel()
+        if not mass.size or not np.all(np.isfinite(mass)) or np.any(mass < 0):
+            raise ValueError("histograms require nonempty, finite, nonnegative masses")
+        peak = mass.max()
+        if peak == 0:
+            raise ValueError("each histogram must have positive total mass")
+        scaled = mass / peak
+        prob: np.ndarray = scaled / scaled.sum()
+        if epsilon:
+            smoothed = prob + epsilon
+            scaled = smoothed / smoothed.max()
+            prob = scaled / scaled.sum()
+        return prob
+
+    return probabilities(p), probabilities(q)
+
+
 def compute_kl_divergence(
-    p: np.ndarray,
-    q: np.ndarray,
-    epsilon: float = 1e-10,
+    p: np.ndarray, q: np.ndarray, epsilon: float = 1e-10
 ) -> float:
+    """Forward KL in nats. Positive epsilon smooths each normalized histogram.
+
+    With zero smoothing a positive source mass outside the target support
+    gives infinity. Bins with zero mass in both distributions contribute zero.
     """
-    Compute KL divergence D_KL(P || Q).
-
-    Args:
-        p: True distribution
-        q: Approximating distribution
-        epsilon: Small value to avoid log(0)
-
-    Returns:
-        KL divergence value
-    """
-    p = np.asarray(p, dtype=np.float64)
-    q = np.asarray(q, dtype=np.float64)
-
-    # Normalize
-    p = p / (p.sum() + epsilon)
-    q = q / (q.sum() + epsilon)
-
-    # Add epsilon to avoid log(0)
-    p = p + epsilon
-    q = q + epsilon
-
-    return float(np.sum(p * np.log(p / q)))
-
-
-def compute_js_divergence(
-    p: np.ndarray,
-    q: np.ndarray,
-    epsilon: float = 1e-10,
-) -> float:
-    """
-    Compute Jensen-Shannon divergence.
-
-    JS(P || Q) = 0.5 * D_KL(P || M) + 0.5 * D_KL(Q || M)
-    where M = 0.5 * (P + Q)
-
-    Args:
-        p: First distribution
-        q: Second distribution
-        epsilon: Small value to avoid log(0)
-
-    Returns:
-        JS divergence value (0 to 1)
-    """
-    p = np.asarray(p, dtype=np.float64)
-    q = np.asarray(q, dtype=np.float64)
-
-    # Normalize
-    p = p / (p.sum() + epsilon)
-    q = q / (q.sum() + epsilon)
-
-    # Compute mixture
-    m = 0.5 * (p + q)
-
-    # JS divergence
-    js = 0.5 * compute_kl_divergence(p, m, epsilon) + 0.5 * compute_kl_divergence(
-        q, m, epsilon
+    source, target = _histogram_probabilities(p, q, epsilon)
+    if np.any((source > 0) & (target == 0)):
+        return math.inf
+    positive = (source > 0) & (target > 0)
+    a, b = source[positive], target[positive]
+    delta = a - b
+    # The linear correction sums to zero over normalized distributions.
+    # Its nonnegative per-bin form avoids cancelling large signed terms.
+    close = np.abs(delta) <= 0.001 * b
+    u = delta[close] / b[close]
+    near = (
+        b[close] * u**2 * (1 / 2 + u * (-1 / 6 + u * (1 / 12 + u * (-1 / 20 + u / 30))))
     )
+    far = a[~close] * (np.log(a[~close]) - np.log(b[~close])) - delta[~close]
+    return float(near.sum() + far.sum() + target[source == 0].sum())
 
-    return float(js)
+
+def compute_js_divergence(p: np.ndarray, q: np.ndarray, epsilon: float = 0.0) -> float:
+    """Balanced Jensen-Shannon divergence in nats, from zero to log(2).
+
+    Positive epsilon adds a pseudocount to each normalized bin before mixing.
+    The default includes disjoint supports and ignores shared zero bins.
+    """
+    source, target = _histogram_probabilities(p, q, epsilon)
+    total = source + target
+    active = total > 0
+    a, b, total = source[active], target[active], total[active]
+    u = (a - b) / total
+    close = np.abs(u) <= 0.5
+    # Each cell is its mixture mass times the divergence of the posterior
+    # label probability from chance. This form preserves the quadratic term
+    # when the two frequencies are almost equal.
+    v = u[close]
+    near = (total[close] / 2) * (v * np.arctanh(v) + np.log1p(-(v * v)) / 2)
+    mix = total[~close] / 2
+    far = np.longdouble(0)
+    for mass in (a[~close], b[~close]):
+        positive = mass > 0
+        far += (mass[positive] * (np.log(mass[positive]) - np.log(mix[positive]))).sum()
+    return float(near.sum() + far / 2)
 
 
 def compute_mmd(
@@ -147,38 +161,47 @@ def compute_mmd(
     y: np.ndarray,
     sigma: float = 1.0,
 ) -> float:
-    """
-    Compute Maximum Mean Discrepancy with RBF kernel.
+    """Biased empirical Gaussian MMD squared, including same-sample diagonals."""
+    if not math.isfinite(sigma) or sigma <= 0:
+        raise ValueError("Gaussian bandwidth must be finite and positive")
+    if np.iscomplexobj(x) or np.iscomplexobj(y):
+        raise ValueError("Gaussian features must be real")
+    x, y = np.asarray(x, dtype=np.longdouble), np.asarray(y, dtype=np.longdouble)
+    if x.ndim == 1:
+        x = x[:, None]
+    if y.ndim == 1:
+        y = y[:, None]
+    if (
+        x.ndim != 2
+        or y.ndim != 2
+        or not x.size
+        or not y.size
+        or x.shape[1] != y.shape[1]
+    ):
+        raise ValueError("MMD needs nonempty sample sets of equal feature width")
+    if not np.isfinite(x).all() or not np.isfinite(y).all():
+        raise ValueError("Gaussian features must be finite")
 
-    Args:
-        x: Samples from first distribution
-        y: Samples from second distribution
-        sigma: RBF kernel bandwidth
+    def kernel_means(
+        a: np.ndarray, b: np.ndarray
+    ) -> tuple[np.longdouble, np.longdouble]:
+        # Bound temporary storage in samples x samples x features.
+        chunk = max(1, (1 << 18) // b.size)
+        anchors = 0
+        correction = np.longdouble(0)
+        for start in range(0, len(a), chunk):
+            scaled = (a[start : start + chunk, None, :] - b[None, :, :]) / sigma
+            exponent = -np.square(scaled).sum(axis=-1) / 2
+            near = exponent > -math.log(2)
+            anchors += int(np.count_nonzero(near))
+            correction += np.expm1(exponent[near]).sum() + np.exp(exponent[~near]).sum()
+        count = len(a) * len(b)
+        return np.longdouble(anchors) / count, correction / count
 
-    Returns:
-        MMD value
-    """
-    x = np.asarray(x).reshape(-1, 1) if x.ndim == 1 else x
-    y = np.asarray(y).reshape(-1, 1) if y.ndim == 1 else y
-
-    def rbf_kernel(a, b, sigma):
-        sq_dist = np.sum((a[:, np.newaxis] - b[np.newaxis, :]) ** 2, axis=-1)
-        return np.exp(-sq_dist / (2 * sigma**2))
-
-    k_xx = rbf_kernel(x, x, sigma)
-    k_yy = rbf_kernel(y, y, sigma)
-    k_xy = rbf_kernel(x, y, sigma)
-
-    n_x = x.shape[0]
-    n_y = y.shape[0]
-
-    mmd = (
-        k_xx.sum() / (n_x * n_x)
-        + k_yy.sum() / (n_y * n_y)
-        - 2 * k_xy.sum() / (n_x * n_y)
-    )
-
-    return float(max(0, mmd))
+    xx, yy, xy = (kernel_means(a, b) for a, b in ((x, x), (y, y), (x, y)))
+    base = (xx[0] - xy[0]) + (yy[0] - xy[0])
+    correction = (xx[1] - xy[1]) + (yy[1] - xy[1])
+    return max(0.0, float(base + correction))
 
 
 def compute_distribution_divergence(
@@ -217,8 +240,8 @@ def compute_distribution_divergence(
 
     bins = np.linspace(min_val, max_val, num_bins + 1)
 
-    sim_hist, _ = np.histogram(sim_array, bins=bins, density=True)
-    real_hist, _ = np.histogram(real_array, bins=bins, density=True)
+    sim_hist, _ = np.histogram(sim_array, bins=bins)
+    real_hist, _ = np.histogram(real_array, bins=bins)
 
     if method == "kl":
         return compute_kl_divergence(real_hist, sim_hist)
@@ -244,7 +267,7 @@ def compute_response_statistics(
     """
     response_lengths = []
     turn_counts = []
-    vocabulary: set[str] = set()
+    word_counts: Counter[str] = Counter()
     rewards = []
 
     for traj in trajectories:
@@ -256,7 +279,7 @@ def compute_response_statistics(
                 content = getattr(turn, "content", "")
                 words = content.lower().split()
                 response_lengths.append(len(words))
-                vocabulary.update(words)
+                word_counts.update(words)
 
         if hasattr(traj, "total_reward"):
             rewards.append(traj.total_reward)
@@ -264,8 +287,9 @@ def compute_response_statistics(
     return {
         "response_lengths": response_lengths,
         "turn_counts": turn_counts,
-        "vocabulary_size": len(vocabulary),
-        "vocabulary": vocabulary,
+        "vocabulary_size": len(word_counts),
+        "vocabulary": set(word_counts),
+        "word_counts": word_counts,
         "rewards": rewards,
         "mean_response_length": np.mean(response_lengths) if response_lengths else 0,
         "std_response_length": np.std(response_lengths) if response_lengths else 0,
@@ -336,14 +360,12 @@ class SimToRealEvaluator:
                 method="mmd",
             )
 
-        # Vocabulary divergence (Jaccard distance)
-        if sim_stats["vocabulary"] and real_stats["vocabulary"]:
-            sim_vocab = sim_stats["vocabulary"]
-            real_vocab = real_stats["vocabulary"]
-            intersection = len(sim_vocab & real_vocab)
-            union = len(sim_vocab | real_vocab)
-            metrics["vocabulary_js_divergence"] = 1.0 - (
-                intersection / union if union > 0 else 0
+        sim_words, real_words = sim_stats["word_counts"], real_stats["word_counts"]
+        if sim_words and real_words:
+            words = sorted(sim_words.keys() | real_words.keys())
+            metrics["vocabulary_js_divergence"] = compute_js_divergence(
+                np.array([sim_words[word] for word in words]),
+                np.array([real_words[word] for word in words]),
             )
 
         # Reward correlation

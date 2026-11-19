@@ -21,44 +21,30 @@ import logging
 import math
 import os
 import random
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, cast
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+
+from stateset_agents.core.generation_evidence import sampled_weight_logprob
 
 from . import objectives, rl_losses
+from .adamw_weights import model_adamw
+from .advantage_estimation import gae_targets, normalize_advantages, terminal_rewards
+from .causal_likelihood import log_probs_from_offsets
 from .config import TrainingConfig
 from .runtime_state import TrainingRuntime, validate_training_config
+from .trainer_utils import clip_parameter_gradients
+from .trainer_utils import deterministic_scoring as _deterministic_scoring
+from .trainer_utils import encode_prompt_completions
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
-
-
-@contextmanager
-def _deterministic_scoring(*models: nn.Module | None) -> Iterator[None]:
-    """Disable stochastic layers without disabling gradients; restore all modes."""
-    modes = {
-        module: module.training
-        for model in models
-        if model is not None
-        for module in model.modules()
-    }
-    try:
-        for model in models:
-            if model is not None:
-                model.eval()
-        yield
-    finally:
-        # Restore mixed submodule modes as well as the root's flag.
-        for module, training in modes.items():
-            module.training = training
 
 
 try:
@@ -279,31 +265,48 @@ def compute_gae(
         advantages: [batch, seq_len]
         returns: [batch, seq_len]
     """
-    batch_size, seq_len = rewards.shape
-    device = rewards.device
+    return gae_targets(rewards, values, gamma, gae_lambda)
 
-    advantages = torch.zeros_like(rewards)
-    returns = torch.zeros_like(rewards)
 
-    # Compute advantages in reverse order
-    last_gae = torch.zeros(batch_size, device=device)
-    last_value = torch.zeros(batch_size, device=device)
+def _behavior_kl(current: torch.Tensor, old: torch.Tensor, mask: torch.Tensor) -> float:
+    """Estimate KL(behavior || current) over the retained behavior actions."""
+    active = mask != 0
+    device = "cpu" if current.device.type == "mps" else current.device
+    gap = current.detach()[active].to(
+        device=device, dtype=torch.float64
+    ) - old.detach()[active].to(device=device, dtype=torch.float64)
+    if not gap.numel() or not torch.isfinite(gap).all():
+        raise FloatingPointError(
+            "PPO behavior likelihoods must be finite on sampled actions"
+        )
+    return float(rl_losses._mean_k3(gap).item())
 
-    for t in reversed(range(seq_len)):
-        # TD error
-        delta = rewards[:, t] + gamma * last_value - values[:, t]
 
-        # GAE
-        last_gae = delta + gamma * gae_lambda * last_gae
-        advantages[:, t] = last_gae
-
-        # Update for next iteration
-        last_value = values[:, t]
-
-    # Returns = advantages + values
-    returns = advantages + values
-
-    return advantages, returns
+def _categorical_log_probs(logits: torch.Tensor, temperature: float) -> torch.Tensor:
+    """Temperature-scaled categorical scores shared by the collector and learner."""
+    limits = torch.finfo(torch.float32)
+    wide = (
+        logits.dtype == torch.float64
+        or temperature < limits.tiny
+        or temperature > limits.max / 1024
+    )
+    host = wide and logits.device.type == "mps"
+    scores = (
+        logits.to(device="cpu", dtype=torch.float64)
+        if host
+        else logits.double() if wide else logits.float()
+    )
+    peak, pivot = scores.max(-1, keepdim=True)
+    centered = scores - peak
+    scaled = centered / temperature
+    if temperature > 1:
+        scaled = torch.where(
+            torch.isneginf(centered), scores / temperature - peak / temperature, scaled
+        )
+    result = log_probs_from_offsets(scaled, pivot).masked_fill(
+        ~peak.isfinite(), math.nan
+    )
+    return result.to(device=logits.device, dtype=torch.float32) if host else result
 
 
 class PPOTrainer(TrainingRuntime):
@@ -366,14 +369,14 @@ class PPOTrainer(TrainingRuntime):
         ).to(self.device)
 
         # Optimizers
-        self.policy_optimizer = torch.optim.AdamW(
+        self.policy_optimizer = model_adamw(
             self.model.parameters(),
             lr=config.learning_rate,
             betas=(config.adam_beta1, config.adam_beta2),
             weight_decay=config.weight_decay,
         )
 
-        self.value_optimizer = torch.optim.AdamW(
+        self.value_optimizer = model_adamw(
             self.value_head.parameters(),
             lr=config.learning_rate * 2,  # Value head often needs higher LR
             betas=(config.adam_beta1, config.adam_beta2),
@@ -444,6 +447,9 @@ class PPOTrainer(TrainingRuntime):
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
         temperature: float = 1.0,
+        *,
+        action_mask: torch.Tensor | None = None,
+        sampling_weights: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Compute per-token log probabilities.
@@ -456,21 +462,25 @@ class PPOTrainer(TrainingRuntime):
         logits = outputs.logits
 
         # Shift for next-token prediction
-        shift_logits = logits[:, :-1, :].float().contiguous() / temperature
-        shift_labels = input_ids[:, 1:].contiguous()
-
-        # Log probabilities
-        log_probs_all = F.log_softmax(shift_logits, dim=-1)
-        probs = F.softmax(shift_logits, dim=-1)
-
-        # Gather log probs for actual tokens
-        token_log_probs = log_probs_all.gather(
-            dim=-1, index=shift_labels.unsqueeze(-1)
-        ).squeeze(-1)
-
-        # Entropy
-        entropy = -(probs * log_probs_all).sum(dim=-1)
-
+        shift_logits = logits[:, :-1, :]
+        shift_labels = input_ids[:, 1:]
+        if action_mask is not None:
+            inactive = action_mask == 0
+            shift_logits = shift_logits.masked_fill(inactive.unsqueeze(-1), 0)
+            shift_labels = shift_labels.masked_fill(inactive, 0)
+        log_probs_all = _categorical_log_probs(shift_logits, temperature)
+        weights = log_probs_all.exp()
+        token_log_probs = (
+            sampled_weight_logprob(weights, shift_labels)
+            if sampling_weights
+            else log_probs_all.gather(-1, shift_labels.unsqueeze(-1)).squeeze(-1)
+        )
+        entropy = -(
+            weights * log_probs_all.masked_fill(log_probs_all.isneginf(), 0)
+        ).sum(-1)
+        if action_mask is not None:
+            token_log_probs = token_log_probs.masked_fill(inactive, 0)
+            entropy = entropy.masked_fill(inactive, 0)
         return token_log_probs, entropy
 
     def compute_kl_divergence(
@@ -479,11 +489,12 @@ class PPOTrainer(TrainingRuntime):
         reference_log_probs: torch.Tensor,
         mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """k3 estimate of KL(pi_cur || pi_ref) over response tokens.
+        """Mean sampled k3 penalty against the frozen reference.
 
-        Replaces the naive ``log pi - log pi_ref`` mean, whose gradient has
-        zero expectation and therefore never pulled the policy toward the
-        reference.
+        Each response has equal weight when a mask is supplied. Its expected
+        per-prefix value equals KL(current || reference) on current-policy
+        draws with common support. Reused behavior actions give a fixed-sample
+        surrogate after the policy changes.
         """
         if mask is None:
             return rl_losses.k3_kl(current_log_probs, reference_log_probs)
@@ -532,25 +543,14 @@ class PPOTrainer(TrainingRuntime):
             returns: Computed returns
             mask: Token mask
         """
-        # Clipped values
-        clipped_values = old_values + torch.clamp(
-            values - old_values,
-            -self.config.value_clip_eps,
+        return rl_losses.critic_value_loss(
+            values,
+            old_values,
+            returns,
+            mask,
             self.config.value_clip_eps,
+            half_square=True,
         )
-
-        # Value losses
-        vf_loss1 = (values - returns) ** 2
-        vf_loss2 = (clipped_values - returns) ** 2
-
-        # Take maximum (pessimistic)
-        loss = 0.5 * torch.max(vf_loss1, vf_loss2)
-
-        if mask is not None:
-            loss = loss * mask
-            return loss.sum() / mask.sum().clamp(min=1)
-
-        return loss.mean()
 
     @staticmethod
     def build_response_mask(
@@ -581,22 +581,16 @@ class PPOTrainer(TrainingRuntime):
         the mask are zeroed so padding after a response neither bootstraps nor
         earns reward, and advantages are normalized over response actions only.
         """
-        idx = torch.arange(action_mask.shape[1], device=action_mask.device)
-        last = torch.where(action_mask > 0, idx, -1).max(dim=1).values
-        token_rewards = torch.zeros_like(action_mask)
-        rows = torch.nonzero(last >= 0).flatten()
-        token_rewards[rows, last[rows]] = rewards.to(token_rewards.dtype)[rows]
-
+        token_rewards = terminal_rewards(rewards, action_mask)
         advantages, returns = compute_gae(
             token_rewards,
-            old_values * action_mask,
+            old_values.masked_fill(action_mask == 0, 0),
             gamma=self.config.gamma,
             gae_lambda=self.config.gae_lambda,
         )
-        valid = advantages[action_mask > 0]
-        if valid.numel() > 1:
-            advantages = (advantages - valid.mean()) / (valid.std() + 1e-8)
-        return advantages * action_mask, returns
+        return normalize_advantages(advantages, action_mask > 0), returns.masked_fill(
+            action_mask == 0, 0
+        )
 
     async def train_step(
         self,
@@ -675,59 +669,14 @@ class PPOTrainer(TrainingRuntime):
         if not torch.isfinite(rewards_tensor).all():
             raise ValueError("PPO rewards must remain finite in the learner dtype")
 
-        # One extra token detects an overlong prompt without allocating an
-        # unbounded prompt batch. Never label a truncated prompt's tail as a
-        # response merely because the full text has a larger token budget.
-        prompt_encodings = self.tokenizer(
+        input_ids, attention_mask, prompt_lengths = encode_prompt_completions(
+            self.tokenizer,
             prompts,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=self.config.max_prompt_length + 1,
+            completions,
+            max_prompt_length=self.config.max_prompt_length,
+            max_completion_length=self.config.max_completion_length,
+            device=self.device,
         )
-        prompt_lengths = prompt_encodings["attention_mask"].sum(dim=1)
-        if (prompt_lengths > self.config.max_prompt_length).any():
-            raise ValueError(
-                "PPO prompts exceed max_prompt_length; truncate them explicitly"
-            )
-
-        # Tokenize inputs
-        full_texts = [p + c for p, c in zip(prompts, completions, strict=True)]
-        encodings = self.tokenizer(
-            full_texts,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=self.config.max_prompt_length
-            + self.config.max_completion_length
-            + 1,
-        )
-
-        # A BPE merge or an injected special token can change the separately
-        # tokenized prompt. Length alone cannot locate the completion boundary.
-        for row in range(len(prompts)):
-            prompt_ids = prompt_encodings["input_ids"][row][
-                prompt_encodings["attention_mask"][row].bool()
-            ]
-            full_ids = encodings["input_ids"][row][
-                encodings["attention_mask"][row].bool()
-            ]
-            if prompt_ids.numel() == 0 or not torch.equal(
-                prompt_ids, full_ids[: prompt_ids.numel()]
-            ):
-                raise ValueError(
-                    "PPO prompt token boundary is ambiguous in combined text"
-                )
-            if (
-                full_ids.numel() - prompt_ids.numel()
-                > self.config.max_completion_length
-            ):
-                raise ValueError(
-                    "PPO completions exceed max_completion_length; truncated rewards are invalid"
-                )
-
-        input_ids = encodings["input_ids"].to(self.device)
-        attention_mask = encodings["attention_mask"].to(self.device)
 
         response_mask = self.build_response_mask(
             attention_mask,
@@ -754,18 +703,27 @@ class PPOTrainer(TrainingRuntime):
     ) -> dict[str, float]:
         """Update retained token actions; online callers supply behavior scores."""
 
+        response_mask_shift = response_mask[:, 1:]
         # Get initial values and log probs (for old policy)
         with torch.no_grad():
             if old_log_probs is None:
                 old_log_probs, _ = self.compute_log_probs(
-                    input_ids, attention_mask, temperature
+                    input_ids,
+                    attention_mask,
+                    temperature,
+                    action_mask=response_mask_shift,
                 )
             if old_values is None:
                 hidden_states = self.get_hidden_states(input_ids, attention_mask)
+                hidden_states = hidden_states[:, :-1].masked_fill(
+                    (response_mask_shift == 0).unsqueeze(-1), 0
+                )
                 old_values = self.value_head(
                     hidden_states.to(next(self.value_head.parameters()).dtype)
-                ).squeeze(-1)[:, :-1]
+                ).squeeze(-1)
 
+        old_values = old_values.detach()
+        old_log_probs = old_log_probs.detach().masked_fill(response_mask_shift == 0, 0)
         advantages, returns = self.compute_episode_advantages(
             rewards_tensor, response_mask[:, 1:], old_values
         )
@@ -778,17 +736,30 @@ class PPOTrainer(TrainingRuntime):
         total_entropy = 0.0
         total_clip_fraction = 0.0
 
-        response_mask_shift = response_mask[:, 1:]
+        completed_epochs = 0
+        accepted_kl = 0.0
 
         for _ in range(self.config.num_ppo_epochs):
             # Forward pass
             log_probs, entropy = self.compute_log_probs(
-                input_ids, attention_mask, temperature
+                input_ids, attention_mask, temperature, action_mask=response_mask_shift
             )
+            if self.config.target_kl is not None:
+                drift = _behavior_kl(log_probs, old_log_probs, response_mask_shift)
+                if drift > self.config.target_kl:
+                    if completed_epochs == 0:
+                        raise ValueError(
+                            "PPO behavior KL exceeds target_kl before the first update"
+                        )
+                    break
+                accepted_kl = drift
             hidden_states = self.get_hidden_states(input_ids, attention_mask)
+            hidden_states = hidden_states[:, :-1].masked_fill(
+                (response_mask_shift == 0).unsqueeze(-1), 0
+            )
             values = self.value_head(
                 hidden_states.to(next(self.value_head.parameters()).dtype)
-            ).squeeze(-1)[:, :-1]
+            ).squeeze(-1)
 
             # Policy loss
             policy_loss, clip_fraction = self.ppo_loss(
@@ -821,8 +792,10 @@ class PPOTrainer(TrainingRuntime):
                     ref_outputs = self.ref_model(
                         input_ids=input_ids, attention_mask=attention_mask
                     )
-                    ref_logits = ref_outputs.logits[:, :-1, :].float() / temperature
-                    ref_log_probs = F.log_softmax(ref_logits, dim=-1)
+                    ref_logits = ref_outputs.logits[:, :-1, :].masked_fill(
+                        (response_mask_shift == 0).unsqueeze(-1), 0
+                    )
+                    ref_log_probs = _categorical_log_probs(ref_logits, temperature)
                     ref_token_log_probs = ref_log_probs.gather(
                         dim=-1, index=input_ids[:, 1:].unsqueeze(-1)
                     ).squeeze(-1)
@@ -849,15 +822,11 @@ class PPOTrainer(TrainingRuntime):
             total_loss.backward()
 
             try:
-                torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(),
-                    self.config.max_grad_norm,
-                    error_if_nonfinite=True,
+                clip_parameter_gradients(
+                    self.model.parameters(), self.config.max_grad_norm
                 )
-                torch.nn.utils.clip_grad_norm_(
-                    self.value_head.parameters(),
-                    self.config.max_grad_norm,
-                    error_if_nonfinite=True,
+                clip_parameter_gradients(
+                    self.value_head.parameters(), self.config.max_grad_norm
                 )
             except RuntimeError as exc:
                 self.policy_optimizer.zero_grad(set_to_none=True)
@@ -870,13 +839,14 @@ class PPOTrainer(TrainingRuntime):
             if proposed_kl_coef is not None and self.kl_controller is not None:
                 self.kl_controller.kl_coef = proposed_kl_coef
 
+            completed_epochs += 1
             total_policy_loss += policy_loss.item()
             total_value_loss += vf_loss.item()
             total_entropy += entropy_bonus.item()
             total_clip_fraction += clip_fraction.item()
 
         # Average over epochs
-        num_epochs = self.config.num_ppo_epochs
+        num_epochs = completed_epochs
         avg_policy_loss = total_policy_loss / num_epochs
         avg_value_loss = total_value_loss / num_epochs
         avg_entropy = total_entropy / num_epochs
@@ -893,8 +863,17 @@ class PPOTrainer(TrainingRuntime):
             "value_loss": avg_value_loss,
             "entropy": avg_entropy,
             "clip_fraction": avg_clip_fraction,
-            "average_reward": float(rewards_tensor.double().mean().item()),
+            "average_reward": float(
+                rewards_tensor.detach()
+                .to(device="cpu", dtype=torch.float64)
+                .mean()
+                .item()
+            ),
         }
+
+        metrics["ppo_epochs"] = float(completed_epochs)
+        if self.config.target_kl is not None:
+            metrics["approx_kl"] = accepted_kl
 
         # Update history
         for key, value in metrics.items():

@@ -65,7 +65,7 @@ def render_summary(
     per_transcript: list[dict[str, Any]] = []
 
     for path, rows in transcripts:
-        scores = [float(r["score"]) for r in rows if "score" in r]
+        scores = [float(r["score"]) for r in rows if r.get("score") is not None]
         if not scores:
             continue
         all_scores.extend(scores)
@@ -81,8 +81,12 @@ def render_summary(
             }
         )
 
+    total_turns = sum(len(rows) for _, rows in transcripts)
+    lines.append(f"**Transcripts:** {len(transcripts)}")
+    lines.append(f"**Total assistant turns:** {total_turns}")
+    lines.append(f"**Ungradable turns:** {total_turns - len(all_scores)}")
     if not all_scores:
-        lines.append("_No assistant turns found across the transcripts._")
+        lines.append("_No gradable assistant turns found across the transcripts._")
         return "\n".join(lines)
 
     grand_mean = statistics.mean(all_scores)
@@ -90,8 +94,6 @@ def render_summary(
     n_perfect = sum(1 for s in all_scores if s >= 0.999)
     n_zero = sum(1 for s in all_scores if s < 0.001)
 
-    lines.append(f"**Transcripts:** {len(per_transcript)}")
-    lines.append(f"**Total assistant turns:** {len(all_scores)}")
     lines.append(f"**Grand mean score:** {grand_mean:.3f} ± {grand_std:.3f}")
     lines.append(
         f"**Perfect (≥0.999):** {n_perfect}/{len(all_scores)} ({100 * n_perfect / len(all_scores):.1f}%)"
@@ -105,7 +107,7 @@ def render_summary(
     per_transcript.sort(key=lambda r: r["mean"], reverse=True)
     lines.append("## Per-transcript breakdown")
     lines.append("")
-    lines.append("| Transcript | Turns | Mean | Min | Max | Perfect | Zero |")
+    lines.append("| Transcript | Graded turns | Mean | Min | Max | Perfect | Zero |")
     lines.append("|------------|-------|------|-----|-----|---------|------|")
     for row in per_transcript:
         lines.append(

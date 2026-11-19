@@ -4,21 +4,20 @@ Thin orchestrator over existing, tested pieces:
 
 * ``stateset_agents.data.trajectory_ingest`` — converts OpenAI/LangChain logs
   into transcript JSONLs (same shape ``chat --history`` writes).
-* ``scripts/grade_transcript.py`` — scores every assistant turn with a reward
+* ``stateset_agents.data.grade_transcript`` — scores every assistant turn with a reward
   function and curates high-scoring (prompt, response) pairs.
-* ``scripts/sft_from_curated.py`` / ``examples/finetune_gspo.py`` — the two
-  training paths that consume the curated set (referenced, not reimplemented,
-  in the generated ``next_steps.md``).
+* ``stateset_agents.training.sft`` — the training path that consumes the curated
+  set (referenced, not reimplemented, in the generated ``next_steps.md``).
 
 No new grading or curation logic lives here — every phase below imports and
-calls the functions those scripts already define and test.
+calls the packaged grading and training functions.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-import sys
+import shlex
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -29,15 +28,6 @@ from stateset_agents import cli as _cli
 from stateset_agents.cli import app
 
 _echo = _cli._echo
-
-# `scripts/` isn't a package (no __init__.py) — the existing test suite
-# (tests/unit/test_trajectory_ingest.py) already imports grade_transcript.py
-# the same way: add scripts/ to sys.path and import it directly. This keeps
-# grade_transcript.py as the single source of truth for grading/curation
-# logic instead of duplicating it here.
-_SCRIPTS_DIR = str(Path(__file__).resolve().parents[1] / "scripts")
-if _SCRIPTS_DIR not in sys.path:
-    sys.path.insert(0, _SCRIPTS_DIR)
 
 # "nsr" is network-backed but deterministic and rule-based (a symbolic
 # verifier, not an LLM judge), so it is allowed where judge rewards are
@@ -108,14 +98,42 @@ def _collect_transcript_files(transcripts_dir: Path) -> list[Path]:
     return files
 
 
-async def _grade_all(transcript_files: list[Path], reward: Any) -> list[dict[str, Any]]:
-    """Grade every transcript file, returning one summary dict per file."""
-    import grade_transcript as gt  # local import: sys.path was patched above
+async def _grade_all(
+    transcript_files: list[Path],
+    reward: Any,
+    reward_name: str,
+    context_path: Path | None,
+) -> list[dict[str, Any]]:
+    """Load aligned reference rows and grade the assistant turns in each file."""
+    from stateset_agents.data import grade_transcript as gt
 
+    if (
+        context_path is not None
+        and not context_path.is_dir()
+        and len(transcript_files) != 1
+    ):
+        raise ImproveUsageError(
+            "For multiple transcripts, --context-file must be a directory of matching JSONL files"
+        )
     per_transcript: list[dict[str, Any]] = []
     for path in transcript_files:
         turns = gt.load_transcript(path)
-        rows = await gt.grade_transcript(turns, [], reward)
+        sidecar = (
+            context_path / path.name
+            if context_path and context_path.is_dir()
+            else context_path
+        )
+        try:
+            contexts = gt.load_contexts(
+                sidecar, expected_count=sum(t["role"] == "assistant" for t in turns)
+            )
+        except (ValueError, OSError) as exc:
+            raise ImproveDataError(
+                f"Invalid grading contexts for {path.name}: {exc}"
+            ) from exc
+        rows = await gt.grade_transcript(
+            turns, contexts, reward, reward_name=reward_name
+        )
         per_transcript.append({"path": path, "turns": turns, "rows": rows})
     return per_transcript
 
@@ -133,33 +151,45 @@ def _build_summary(
 
     for entry in per_transcript:
         rows = entry["rows"]
-        scores = [float(r["score"]) for r in rows]
+        scores = [float(r["score"]) for r in rows if r["score"] is not None]
         all_scores.extend(scores)
         for row in rows:
             for key, value in (row.get("breakdown") or {}).items():
-                breakdown_totals.setdefault(key, []).append(float(value))
+                if isinstance(value, (int, float)):
+                    breakdown_totals.setdefault(key, []).append(float(value))
         transcript_summaries.append(
             {
                 "name": entry["path"].name,
                 "assistant_turns": len(rows),
-                "mean_score": (sum(scores) / len(scores)) if scores else 0.0,
+                "ungradable_turns": [
+                    {
+                        "assistant_turn_idx": row["assistant_turn_idx"],
+                        "reason": row["explanation"],
+                    }
+                    for row in rows
+                    if row["score"] is None
+                ],
+                "mean_score": (sum(scores) / len(scores)) if scores else None,
                 "above_threshold": sum(1 for s in scores if s >= threshold),
             }
         )
 
-    mean_score = (sum(all_scores) / len(all_scores)) if all_scores else 0.0
+    mean_score = (sum(all_scores) / len(all_scores)) if all_scores else None
+    total_turns = sum(row["assistant_turns"] for row in transcript_summaries)
     reward_breakdown = {
         key: (sum(values) / len(values)) if values else 0.0
         for key, values in breakdown_totals.items()
     }
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "reward": reward_name,
         "threshold": threshold,
         "transcript_count": len(per_transcript),
-        "assistant_turn_count": len(all_scores),
+        "assistant_turn_count": total_turns,
+        "graded_turn_count": len(all_scores),
+        "ungradable_turn_count": total_turns - len(all_scores),
         "mean_score": mean_score,
         "above_threshold_count": sum(1 for s in all_scores if s >= threshold),
         "reward_breakdown": reward_breakdown,
@@ -170,83 +200,98 @@ def _build_summary(
 
 
 def _render_next_steps(summary: dict[str, Any], output_dir: Path) -> str:
+    """Render executable installed-package commands with safely quoted paths."""
     curated_path = output_dir / CURATED_FILENAME
-    sft_dataset_path = output_dir / "sft_train.jsonl"
-    sft_output_dir = output_dir / "sft_v1"
+    curated = shlex.quote(str(curated_path))
+    dataset = shlex.quote(str(output_dir / "sft_train.jsonl"))
+    checkpoint = shlex.quote(str(output_dir / "sft_v1"))
+    output = shlex.quote(str(output_dir))
+    reward = shlex.quote(str(summary["reward"]))
+    needs_reference = summary["reward"] in ("gsm8k", "tool_calling")
+    round2_reference = " --context-file round2-references/" if needs_reference else ""
+    reference_note = (
+        " Create matching reference files in `round2-references/` before grading."
+        if needs_reference
+        else ""
+    )
+    mean = (
+        f"{summary['mean_score']:.3f}"
+        if summary["mean_score"] is not None
+        else "unavailable"
+    )
+    preamble = (
+        "# Next steps — train on the curated set\n\n"
+        f"Curated **{summary['curated_count']}** examples from "
+        f"{summary['assistant_turn_count']} assistant turns "
+        f"at threshold {summary['threshold']}. Mean score: {mean}.\n\n"
+        f"Dataset: `{curated_path}`. Exact conversation duplicates are removed, "
+        "so curated_count may be lower than above_threshold_count.\n\n"
+    )
+    if not summary["curated_count"]:
+        if needs_reference and summary.get("ungradable_turn_count"):
+            preamble += (
+                "Review the reasons in `improve_summary.json` and supply one grading "
+                "reference per assistant turn using `--context-file`.\n\n"
+            )
+        return preamble + (
+            "No examples passed curation. Review improve_summary.json and the "
+            "source conversations before preparing a training dataset.\n"
+        )
+    return preamble + f"""## Prepare chat-format training data
 
-    lines = [
-        "# Next steps — train on the curated set",
-        "",
-        f"`stateset-agents improve` curated **{summary['curated_count']}** "
-        f"example(s) (score >= {summary['threshold']}) out of "
-        f"{summary['assistant_turn_count']} graded assistant turn(s), "
-        f"mean score {summary['mean_score']:.3f}, into:",
-        "",
-        f"    {curated_path}",
-        "",
-        "(`curated_count` in improve_summary.json can be lower than "
-        "`above_threshold_count` — curation dedups by exact (prompt, "
-        "response) pairs across transcripts within this run, so an "
-        "identical pair appearing in two transcripts is only written once.)",
-        "",
-        "## Option A — supervised fine-tune (fast, CPU-friendly path check)",
-        "",
-        "```bash",
-        "python scripts/prepare_sft_dataset.py \\",
-        f"    --input {curated_path} --format chat \\",
-        f"    --output {sft_dataset_path} --min-score {summary['threshold']} --dedup",
-        "",
-        "python scripts/sft_from_curated.py \\",
-        f"    --dataset {sft_dataset_path} \\",
-        "    --base-model Qwen/Qwen3.5-0.8B \\",
-        f"    --output-dir {sft_output_dir} \\",
-        "    --num-epochs 3 --lora-r 16",
-        "```",
-        "",
-        "No GPU? This is the only step that needs one. Run the same job on "
-        "rented compute instead (requires `pip install "
-        '"stateset-agents[modal]"`):',
-        "",
-        "```bash",
-        "stateset-agents train-remote \\",
-        "    --provider modal --gpu A100 \\",
-        f"    --dataset {sft_dataset_path} \\",
-        "    --base-model Qwen/Qwen3.5-0.8B \\",
-        f"    --output-dir {sft_output_dir}",
-        "```",
-        "",
-        "## Option B — continue with RL (GSPO) using the same reward",
-        "",
-        "GSPO trains against the reward function live (an environment + "
-        "reward, not a static dataset), so it does not take a --dataset "
-        "flag. Option A above is how the curated set itself gets consumed; "
-        "to keep training with reinforcement learning under the same "
-        f"reward (`{summary['reward']}`), point the driver at a model "
-        "preset and the same task label:",
-        "",
-        "```bash",
-        "python examples/finetune_gspo.py \\",
-        "    --model qwen3.5-0.8b \\",
-        f"    --task {summary['reward']}",
-        "```",
-        "",
-        "(Add `--no-dry-run` once you're ready for a real, GPU-backed run; "
-        "see `--list-models` for other presets and docs/COOKBOOK.md Recipe 1 "
-        "for wiring custom scenarios.)",
-        "",
-        "Then chat with whichever checkpoint you trained and grade again — "
-        "note `improve run --transcripts` takes a **directory** of "
-        "transcript files (one conversation per file), so collect the new "
-        "session(s) into a directory before regrading:",
-        "",
-        "```bash",
-        "mkdir -p round2",
-        f"stateset-agents chat --checkpoint {sft_output_dir} --history round2/session.jsonl",
-        f"stateset-agents improve run --transcripts round2/ --reward "
-        f"{summary['reward']} --output {output_dir}",
-        "```",
-    ]
-    return "\n".join(lines) + "\n"
+These commands work with an installed package; no repository checkout is required.
+Review the examples for correctness before training. Heuristic scores alone do
+not establish that a response follows your business policy.
+
+```bash
+python -m stateset_agents.data.prepare_sft_dataset --input {curated} --format chat --output {dataset} --min-score {summary['threshold']} --dedup
+```
+
+## Preview local training
+
+This validates the dataset and prints an SFT plan. It does not train or create a checkpoint.
+
+```bash
+python -m stateset_agents.training.sft --dataset {dataset} --base-model Qwen/Qwen3.5-0.8B --output-dir {checkpoint} --num-epochs 3 --lora-r 16 --dry-run
+```
+
+To train on a supported local GPU, install `stateset-agents[training]` and rerun
+without `--dry-run`. Inspect the training result and held-out evaluation before serving.
+
+## Preview remote training
+
+RunPod has retained live training evidence; see the provider guide for its tested
+configurations and limitations. This command only prints a resource plan and
+allocates no compute. A live run needs credentials and an explicit cost budget.
+
+```bash
+stateset-agents train-remote --provider runpod --dataset {dataset} --base-model Qwen/Qwen3.5-0.8B --output-dir {checkpoint} --plan-only
+```
+
+The CLI's compatibility default remains Modal; its live transport is unverified.
+Choose the provider explicitly. `--dry-run` on a remote provider can still allocate
+compute; `--plan-only` is the non-billable planning command.
+
+## Explore RL configuration
+
+This prints a GSPO preset without loading weights or training. The task argument
+labels the configuration; it does not wire a task-specific environment or reward.
+See the training guide to connect your scenarios and reward before an RL run.
+
+```bash
+python -m stateset_agents.training.gspo_preview --model qwen3.5-0.8b --task {reward}
+```
+
+## Evaluate and capture another conversation
+
+After the checkpoint passes your evaluation, capture another conversation.{reference_note}
+
+```bash
+mkdir -p round2
+stateset-agents chat --checkpoint {checkpoint} --history round2/session.jsonl
+stateset-agents improve run --transcripts round2/ --reward {reward}{round2_reference} --output {output}
+```
+"""
 
 
 def _load_persona(persona_path: str) -> dict[str, Any]:
@@ -302,7 +347,7 @@ def _build_reward(
     dependencies installed) — otherwise this logs and degrades gracefully to
     the pure rule-based reward, keeping the loop offline-safe.
     """
-    import grade_transcript as gt  # local import: sys.path was patched above
+    from stateset_agents.data import grade_transcript as gt
 
     try:
         reward_fn = gt.get_reward(reward, persona=persona)
@@ -331,7 +376,11 @@ def _build_reward(
     from stateset_agents.rewards.llm_judge_adapter import LLMJudgeRewardWithFallback
 
     log("LLM judge active: blending judge scores with the rule-based reward.")
-    return LLMJudgeRewardWithFallback(judge=judge, heuristic=reward_fn)
+    return LLMJudgeRewardWithFallback(
+        judge=judge,
+        heuristic=reward_fn,
+        require_reference_match=reward in ("gsm8k", "tool_calling"),
+    )
 
 
 class ImproveUsageError(ValueError):
@@ -351,6 +400,7 @@ async def run_improve_async(
     format: str = "transcripts",
     persona: str | None = None,
     llm_judge: bool = False,
+    context_file: str | None = None,
     echo: Any = None,
 ) -> dict[str, Any]:
     """Run the grade -> curate -> retrain loop and return the summary dict.
@@ -406,6 +456,9 @@ async def run_improve_async(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Phase 1: ingest (only when the source isn't already transcript JSONL).
+    context_path = Path(context_file) if context_file else None
+    if context_path is not None and not context_path.exists():
+        raise ImproveDataError(f"Grading context path not found: {context_path}")
     if fmt in ("openai", "langchain"):
         if not transcripts_path.is_file():
             raise ImproveUsageError(
@@ -427,16 +480,20 @@ async def run_improve_async(
                 f"{transcripts_path}"
             )
         transcript_files = _collect_transcript_files(transcripts_path)
+        if context_path is not None and context_path.is_file():
+            transcript_files = [
+                p for p in transcript_files if p.resolve() != context_path.resolve()
+            ]
         if not transcript_files:
             raise ImproveDataError(
                 f"No .jsonl transcript files found in {transcripts_path}"
             )
 
     # Phase 2: grade.
-    import grade_transcript as gt  # local import: sys.path was patched above
+    from stateset_agents.data import grade_transcript as gt
 
     reward_fn = _build_reward(reward, persona_config, llm_judge, _log)
-    per_transcript = await _grade_all(transcript_files, reward_fn)
+    per_transcript = await _grade_all(transcript_files, reward_fn, reward, context_path)
     total_turns = sum(len(e["rows"]) for e in per_transcript)
     if total_turns == 0:
         raise ImproveDataError("No assistant turns found across the given transcripts.")
@@ -467,7 +524,7 @@ async def run_improve_async(
     _log(
         f"Graded {summary['transcript_count']} transcript(s), "
         f"{summary['assistant_turn_count']} assistant turn(s), "
-        f"mean score {summary['mean_score']:.3f}."
+        f"{summary['ungradable_turn_count']} ungradable."
     )
     _log(f"Curated {curated_count} example(s) (>= {threshold}) -> {curated_path}")
     _log(f"Summary  -> {summary_path}")
@@ -487,6 +544,7 @@ def run_improve(
     format: str = "transcripts",
     persona: str | None = None,
     llm_judge: bool = False,
+    context_file: str | None = None,
     echo: Any = None,
 ) -> dict[str, Any]:
     """Synchronous CLI wrapper around :func:`run_improve_async`."""
@@ -499,6 +557,7 @@ def run_improve(
             format=format,
             persona=persona,
             llm_judge=llm_judge,
+            context_file=context_file,
             echo=echo,
         )
     )
@@ -554,6 +613,11 @@ def improve(
         "'openai', or 'langchain' (ingested first via stateset_agents.data."
         "trajectory_ingest).",
     ),
+    context_file: str | None = typer.Option(
+        None,
+        "--context-file",
+        help="Per-assistant-turn JSONL, or a directory with one matching file per transcript.",
+    ),
     persona: str | None = typer.Option(
         None,
         "--persona",
@@ -607,6 +671,7 @@ def improve(
             format=format,
             persona=persona,
             llm_judge=llm_judge,
+            context_file=context_file,
             echo=_echo,
         )
     except ImproveUsageError as exc:

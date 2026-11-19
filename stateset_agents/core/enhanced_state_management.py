@@ -13,7 +13,11 @@ import uuid
 from collections import defaultdict
 from collections.abc import Callable
 from contextlib import asynccontextmanager
+from copy import deepcopy
+from enum import Enum
 from typing import Any, TypeVar, cast
+
+from stateset_agents.utils.async_calls import drain_owned_operation
 
 from .enhanced_state_cache import (
     MONGODB_AVAILABLE,
@@ -33,6 +37,14 @@ from .enhanced_state_cache import (
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+
+def _copy_snapshot_value(value: T) -> T:
+    """Copy snapshot values using Python's copy protocol, without alias fallback."""
+    try:
+        return deepcopy(value)
+    except Exception as exc:
+        raise TypeError("State snapshots require values that support deepcopy") from exc
 
 
 class StateManager:
@@ -91,8 +103,18 @@ class StateManager:
         notify_watchers: bool = True,
         create_snapshot: bool = False,
     ) -> bool:
-        """Set state value with consistency guarantees"""
+        """Set a value, optionally capturing detached history at this write.
+
+        Snapshot values must support ``copy.deepcopy``. Copy failures raise
+        TypeError before changing state, cache, history, or notifying watchers.
+        Ordinary writes retain their existing reference semantics.
+        """
         async with self.locks[key]:
+            snapshot_data = None
+            if create_snapshot and self.enable_versioning:
+                candidate = dict(self.state)
+                candidate[key] = value
+                snapshot_data = _copy_snapshot_value(candidate)
             old_value = self.state.get(key)
 
             # Update local state
@@ -106,8 +128,8 @@ class StateManager:
             await self.cache_backend.set(key, value, ttl)
 
             # Create snapshot if requested
-            if create_snapshot and self.enable_versioning:
-                await self._create_snapshot()
+            if snapshot_data is not None:
+                self._record_snapshot(snapshot_data)
 
             # Notify watchers
             if notify_watchers:
@@ -203,15 +225,19 @@ class StateManager:
             self.change_log = self.change_log[-self.max_change_log :]
 
     async def _create_snapshot(self) -> str:
-        """Create a state snapshot"""
+        """Create detached history, publishing only after a successful copy."""
         if not self.enable_versioning:
             return ""
 
+        return self._record_snapshot(_copy_snapshot_value(self.state))
+
+    def _record_snapshot(self, state_data: dict[str, Any]) -> str:
+        """Publish already detached state and advance the version once."""
         snapshot_id = str(uuid.uuid4())
         snapshot = StateSnapshot(
             snapshot_id=snapshot_id,
             timestamp=time.time(),
-            state_data=dict(self.state),  # Deep copy
+            state_data=state_data,
             metadata={"version": self.state_version},
         )
 
@@ -225,7 +251,11 @@ class StateManager:
         return snapshot_id
 
     async def restore_snapshot(self, snapshot_id: str) -> bool:
-        """Restore state from snapshot"""
+        """Restore a fresh copy, leaving saved history available for later restores.
+
+        Copy failures raise TypeError before changing live state or cache.
+        Cache synchronization retains its existing nontransactional behavior.
+        """
         if not self.enable_versioning:
             return False
 
@@ -236,13 +266,14 @@ class StateManager:
             return False
 
         async with self.global_lock:
+            restored_state = _copy_snapshot_value(snapshot.state_data)
             # Clear current state
             old_state = dict(self.state)
             self.state.clear()
             self.dirty_keys.clear()
 
             # Restore snapshot state
-            self.state.update(snapshot.state_data)
+            self.state.update(restored_state)
             self.state_version = snapshot.metadata.get("version", 1)
 
             # Update cache
@@ -260,8 +291,8 @@ class StateManager:
             return True
 
     def get_snapshots(self) -> list[StateSnapshot]:
-        """Get list of available snapshots"""
-        return self.snapshots.copy()
+        """Get detached snapshots, including their data and metadata."""
+        return _copy_snapshot_value(self.snapshots)
 
     def get_change_log(self, since: float | None = None) -> list[dict[str, Any]]:
         """Get change log since timestamp"""
@@ -422,6 +453,16 @@ class ConversationManager(ConversationStateManager):
     """Compatibility alias for ``ConversationStateManager``."""
 
 
+class StateServiceState(Enum):
+    """Maintenance and shutdown lifecycle of a state service."""
+
+    NEW = "new"
+    RUNNING = "running"
+    CLOSING = "closing"
+    CLOSED = "closed"
+    FAILED = "failed"
+
+
 class DistributedStateService:
     """Complete distributed state management service"""
 
@@ -434,7 +475,7 @@ class DistributedStateService:
         consistency_level: ConsistencyLevel = ConsistencyLevel.EVENTUAL,
         cache_serializer: str = "json",
         allow_pickle: bool = False,
-    ):
+    ) -> None:
         # Setup cache backends
         local_cache = (
             InMemoryCacheBackend(max_size=10000) if enable_local_cache else None
@@ -472,10 +513,21 @@ class DistributedStateService:
 
         # Background tasks
         self._background_tasks: list[asyncio.Task[None]] = []
+        self._health_checks: set[asyncio.Task[dict[str, Any]]] = set()
+        self._stop_event = asyncio.Event()
+        self._shutdown_task: asyncio.Task[None] | None = None
+        self._state = StateServiceState.NEW
         self._start_background_tasks()
 
-    def _start_background_tasks(self):
+    @property
+    def state(self) -> StateServiceState:
+        """Return lifecycle state without probing or modifying the cache."""
+        return self._state
+
+    def _start_background_tasks(self) -> None:
         """Start background maintenance tasks"""
+        if self._stop_event.is_set():
+            raise RuntimeError(f"State service is {self._state.value}")
         if self._background_tasks:
             return
         try:
@@ -486,10 +538,11 @@ class DistributedStateService:
 
         self._background_tasks.append(loop.create_task(self._periodic_sync()))
         self._background_tasks.append(loop.create_task(self._periodic_cleanup()))
+        self._state = StateServiceState.RUNNING
 
-    async def _periodic_sync(self):
+    async def _periodic_sync(self) -> None:
         """Periodically sync state with cache"""
-        while True:
+        while not self._stop_event.is_set():
             try:
                 await self.state_manager.sync_with_cache()
                 await asyncio.sleep(30)  # Sync every 30 seconds
@@ -497,9 +550,9 @@ class DistributedStateService:
                 logger.error(f"Periodic sync failed: {e}")
                 await asyncio.sleep(60)
 
-    async def _periodic_cleanup(self):
+    async def _periodic_cleanup(self) -> None:
         """Periodically clean up expired data"""
-        while True:
+        while not self._stop_event.is_set():
             try:
                 # Cleanup conversations
                 cleaned = (
@@ -514,48 +567,122 @@ class DistributedStateService:
                 await asyncio.sleep(1800)  # Retry in 30 minutes
 
     async def health_check(self) -> dict[str, Any]:
-        """Get service health status"""
+        """Probe an open service, retaining probe ownership through cancellation."""
+        if self._stop_event.is_set():
+            return {"status": "unhealthy", "lifecycle_state": self._state.value}
+        task = asyncio.create_task(self._probe_health())
+        self._health_checks.add(task)
+
+        async def join() -> dict[str, Any]:
+            return await task
+
+        try:
+            return await drain_owned_operation(join())
+        finally:
+            self._health_checks.discard(task)
+
+    async def _probe_health(self) -> dict[str, Any]:
+        """Perform a previously admitted cache probe."""
         try:
             # Test cache backend
-            test_key = "health_check_test"
+            test_key = f"health_check:{uuid.uuid4()}"
             test_value = {"timestamp": time.time()}
 
             await self.cache_backend.set(test_key, test_value, ttl=60)
-            retrieved_value = await self.cache_backend.get(test_key)
-            await self.cache_backend.delete(test_key)
+            try:
+                retrieved_value = await self.cache_backend.get(test_key)
+            finally:
+                await self.cache_backend.delete(test_key)
 
-            cache_healthy = retrieved_value is not None
+            cache_healthy = retrieved_value == test_value
 
             # Get stats
             state_stats = self.state_manager.get_stats()
+            status = "healthy" if cache_healthy else "unhealthy"
+            if self._stop_event.is_set():
+                status = "unhealthy"
+            elif cache_healthy and self.get_status()["failed_background_tasks"]:
+                status = "degraded"
 
             return {
-                "status": "healthy" if cache_healthy else "unhealthy",
+                "status": status,
+                "lifecycle_state": self._state.value,
                 "cache_backend": type(self.cache_backend).__name__,
                 "cache_healthy": cache_healthy,
                 "state_stats": state_stats,
-                "background_tasks": len(self._background_tasks),
+                "background_tasks": sum(
+                    not task.done() for task in self._background_tasks
+                ),
                 "consistency_level": self.consistency_level.value,
                 "cache_strategy": self.cache_strategy.value,
             }
         except STATE_EXCEPTIONS as e:
-            return {"status": "error", "error": str(e)}
+            return {
+                "status": "error",
+                "error": str(e),
+                "lifecycle_state": self._state.value,
+            }
 
-    async def shutdown(self):
-        """Graceful shutdown"""
-        # Cancel background tasks
-        for task in self._background_tasks:
-            task.cancel()
+    def get_status(self) -> dict[str, Any]:
+        """Observe lifecycle and owned work without accessing cache backends."""
+        return {
+            "state": self._state.value,
+            "background_tasks": sum(not task.done() for task in self._background_tasks),
+            "failed_background_tasks": sum(
+                task.done() and not task.cancelled() and task.exception() is not None
+                for task in self._background_tasks
+            ),
+            "health_checks": sum(not task.done() for task in self._health_checks),
+        }
 
-        # Final sync
+    async def shutdown(self) -> None:
+        """Join maintenance and probes before final sync and local cache clearing.
+
+        All callers share one outcome. Failed cleanup keeps the owner and its
+        cache available for diagnosis; repeated calls do not replay effects.
+        Call from outside service-owned tasks after stopping external writers.
+        """
+        current = asyncio.current_task()
+        if current in self._background_tasks or current in self._health_checks:
+            raise RuntimeError(
+                "State service shutdown must run outside its owned tasks"
+            )
+        if self._shutdown_task is None:
+            self._state = StateServiceState.CLOSING
+            self._stop_event.set()
+            self._shutdown_task = asyncio.create_task(self._shutdown_once())
+        task = self._shutdown_task
+
+        async def join() -> None:
+            await task
+
+        await drain_owned_operation(join())
+
+    async def _shutdown_once(self) -> None:
+        """Run each cleanup stage only after preceding ownership has settled."""
         try:
-            await self.state_manager.sync_with_cache()
-        except STATE_EXCEPTIONS as e:
-            logger.error(f"Final sync failed: {e}")
-
-        # Clear cache if needed
-        if isinstance(self.cache_backend, InMemoryCacheBackend):
-            await self.cache_backend.clear()
+            background = tuple(self._background_tasks)
+            for task in background:
+                if not task.done():
+                    task.cancel()
+            outcomes = await asyncio.gather(*background, return_exceptions=True)
+            await asyncio.gather(*self._health_checks, return_exceptions=True)
+            for outcome in outcomes:
+                if isinstance(outcome, BaseException) and not isinstance(
+                    outcome, asyncio.CancelledError
+                ):
+                    raise outcome
+            results = await self.state_manager.sync_with_cache()
+            if any(not success for success in results.values()):
+                raise RuntimeError("Final state synchronization failed; cache retained")
+            if isinstance(self.cache_backend, InMemoryCacheBackend):
+                if not await self.cache_backend.clear():
+                    raise RuntimeError("Local cache cleanup was not confirmed")
+            self._background_tasks.clear()
+            self._state = StateServiceState.CLOSED
+        except BaseException:
+            self._state = StateServiceState.FAILED
+            raise
 
 
 # Global state service instance
@@ -565,8 +692,9 @@ _state_service: DistributedStateService | None = None
 def get_state_service() -> DistributedStateService:
     """Get or create global state service"""
     global _state_service
-    if _state_service is None:
+    if _state_service is None or _state_service.state == StateServiceState.CLOSED:
         _state_service = DistributedStateService()
+    _state_service._start_background_tasks()
     return _state_service
 
 
@@ -649,6 +777,7 @@ __all__ = [
     "RedisCacheBackend",
     "STATE_EXCEPTIONS",
     "StateManager",
+    "StateServiceState",
     "StateSnapshot",
     "get_state_service",
     "managed_state_context",

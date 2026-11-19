@@ -14,6 +14,7 @@ import math
 from dataclasses import asdict
 from typing import Any
 
+from ..core.generation_evidence import recorded_sampler_scores
 from .ddp_control import ddp_learner_poisoned
 
 LEARNER_PREFLIGHT_PROTOCOL = "stateset-native-learner-preflight-v5"
@@ -36,7 +37,10 @@ def _vocabulary(model: Any) -> tuple[int | None, int | None]:
     sizes = []
     for getter in ("get_input_embeddings", "get_output_embeddings"):
         method = getattr(model, getter, None)
-        embedding = method() if callable(method) else None
+        try:
+            embedding = method() if callable(method) else None
+        except NotImplementedError:
+            embedding = None
         weight = getattr(embedding, "weight", None)
         size = (
             weight.shape[0]
@@ -45,6 +49,20 @@ def _vocabulary(model: Any) -> tuple[int | None, int | None]:
         )
         sizes.append(None if size is None else _integer(size, minimum=1))
     return sizes[0], sizes[1]
+
+
+def _check_token_vocabulary(
+    rows: list[tuple[list[int], list[int], int]],
+    vocabulary: tuple[int | None, int | None],
+) -> None:
+    input_size, output_size = vocabulary
+    for prompt, response, _ in rows:
+        if input_size is not None and any(
+            token >= input_size for token in prompt + response
+        ):
+            raise ValueError("Sampled input token exceeds the model vocabulary")
+        if output_size is not None and any(token >= output_size for token in response):
+            raise ValueError("Sampled response token exceeds the output vocabulary")
 
 
 def _layout(model: Any) -> Any:
@@ -272,24 +290,14 @@ def _rollouts(trainer: Any, groups: list[Any]) -> dict[str, Any]:
     groups = [group for group in groups if getattr(group, "trajectories", None)]
     if not groups:
         return {"path": "empty", "source": "empty"}
-    input_size, output_size = _vocabulary(trainer.agent.model.module)
+    vocabulary = _vocabulary(trainer.agent.model.module)
     token_path, sampler_complete = True, True
     clip = getattr(config, "reward_clip", None)
     for group in groups:
         rows = _token_rows_for_group(group)
         token_path = token_path and rows is not None
         if rows is not None:
-            for prompt, response, _ in rows:
-                if input_size is not None and any(
-                    token >= input_size for token in prompt + response
-                ):
-                    raise ValueError("Sampled input token exceeds the model vocabulary")
-                if output_size is not None and any(
-                    token >= output_size for token in response
-                ):
-                    raise ValueError(
-                        "Sampled response token exceeds the output vocabulary"
-                    )
+            _check_token_vocabulary(rows, vocabulary)
         for trajectory in group.trajectories:
             reward = float(trajectory.total_reward)
             if not math.isfinite(reward):
@@ -310,7 +318,7 @@ def _rollouts(trainer: Any, groups: list[Any]) -> dict[str, Any]:
                     metadata = metadata or {}
                     sampler_complete = (
                         sampler_complete
-                        and metadata.get("sampler_log_probs") is not None
+                        and recorded_sampler_scores(metadata) is not None
                     )
                     # An earlier incomplete turn may have selected fallback;
                     # still validate every later turn with complete token IDs.
@@ -321,14 +329,14 @@ def _rollouts(trainer: Any, groups: list[Any]) -> dict[str, Any]:
             raise ValueError("DDP rollout lacks exact sampled-token metadata")
         _grpo_objective(config)
         source = "sequence"
-    elif getattr(config, "num_gradient_updates", 1) > 1:
-        source = "snapshot"
     elif getattr(config, "old_logprobs_source", "recompute") == "sampler":
         if not sampler_complete and not getattr(
             config, "allow_missing_sampler_logprobs", False
         ):
             raise ValueError("DDP rollout lacks required sampler likelihoods")
         source = "sampler" if sampler_complete else "recompute_fallback"
+    elif getattr(config, "num_gradient_updates", 1) > 1:
+        source = "snapshot"
     else:
         source = "recompute"
     return {"path": "token" if token_path else "sequence", "source": source}

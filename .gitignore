@@ -346,6 +346,7 @@ mlruns/
 *.sqlite3
 
 # Cache directories
+/.lake/
 .cache/
 .parquet_cache/
 .worktrees/
@@ -378,3 +379,9 @@ benchmark_results/framework_comparison_v*/raw/
 !benchmark_results/vllm_rollout_check/*.json
 !benchmark_results/vllm_rollout_check/*.md
 !benchmark_results/vllm_rollout_check/*.log
+
+# Customer data belongs outside the checkout; these are accidental-save guards.
+/customer-data/
+/private-data/
+/private-workspaces/
+*.customer.jsonl

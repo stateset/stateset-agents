@@ -35,6 +35,12 @@ def _learner(directory, optimizer="sgd"):
     trainer.agent.model = _Wrapper(trainer.agent.model)
     cls = torch.optim.SGD if optimizer == "sgd" else torch.optim.AdamW
     kwargs = {"momentum": 0.9} if optimizer == "sgd" else {}
+    if optimizer == "working_adamw":
+        from stateset_agents.training.adamw_weights import model_adamw
+
+        cls = model_adamw
+        trainer.agent.model.half()
+        trainer.reference_model.half()
     trainer.optimizer = cls(trainer.agent.model.parameters(), lr=0.1, **kwargs)
     trainer.lr_scheduler = _scheduler(trainer.optimizer, "lambda_closure", 0.9)
     for parameter in trainer.agent.model.parameters():
@@ -47,7 +53,7 @@ def _learner(directory, optimizer="sgd"):
     return trainer
 
 
-@pytest.mark.parametrize("optimizer", ["sgd", "adamw"])
+@pytest.mark.parametrize("optimizer", ["sgd", "adamw", "working_adamw"])
 def test_payload_roundtrip_preserves_slots_buffers_reference_and_rng(
     tmp_path, optimizer
 ):

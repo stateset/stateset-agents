@@ -68,6 +68,22 @@ Keep custom/sequence compatibility losses in separate accumulation windows;
 mixing them into a pending count-weighted window raises an error rather than
 silently changing its measure.
 
+Native L2 gradient clipping uses `min(1, max_grad_norm / (norm + 1e-6))`
+per parameter group selected by the trainer. PPO clips the policy and value
+head separately. Each group has its own cap, so if both reach it, their
+combined norm approaches `sqrt(2) * max_grad_norm`. The implementation
+computes the norm in bounded float64 chunks before storing clipped gradients
+in their original dtype. Coordinate rounding can take the stored norm slightly
+over the cap. A nonfinite gradient rejects its group's update.
+
+The native GRPO, GSPO, GEPO, DAPO, VAPO and PPO trainers keep FP16/BF16
+trainable weights and AdamW moments in float32 while publishing model weights
+in their original dtype. Checkpoints retain updates smaller than a published
+weight spacing. Each parameter's bias-correction clock advances when it has a
+gradient, including a zero gradient. A missing gradient skips that parameter's
+decay and moment update. GSPO and single-turn GRPO honor `adam_beta1` and
+`adam_beta2`. GSPO also honors `weight_decay`.
+
 Native token-path losses under `DistributedDataParallel` use counts summed over
 the wrapper's own process group. A shared window scale and the global
 trajectory/token denominator compensate for DDP's rank averaging. Policy and
@@ -114,8 +130,10 @@ group; when that scale is nonzero, centering cancels the running-mean offset.
 
 A fixed-size count/configuration-digest handshake checks reward validity,
 estimator settings, clipping, update intent and prior running state before the
-token-loss model forward. FP64 central moments provide the global population
-scale; counts remain exact int64. Nonfinite raw rewards are rejected even if
+token-loss model forward. Clipped scalar rewards retain binary64 precision
+within the supported float32 range. DDP ranks exchange the exact integer sum
+and sum of squares on the binary64 grid (804 bytes per rank), with int64
+counts. Population normalization rounds after group centering and division. Nonfinite raw rewards are rejected even if
 clipping could hide them. Peers also reject nonfinite computed advantages
 together before baseline mutation or backward. Reward-level agreement alone
 requires valid token-path batches on the same schedule. The native
@@ -554,10 +572,28 @@ are also rejected. Legacy snapshots used with group baselines reset unused globa
 statistics, and older replay snapshots without RNG state retain their supplied
 generator stream without claiming exact historical replay recovery.
 
+The native continual manager uses separate random streams for the replay count
+and the chosen groups. A version 2 manager checkpoint restores both streams.
+Loading version 1 preserves the reservoir and derives a new rounding stream
+from the saved count generator. Balanced replay visits named tasks in random
+order each round and uses unlabeled groups when the named pools run out.
+Reward-prioritized sampling uses replacement and keeps every finite-reward
+group eligible. With one fresh group, `replay_ratio=0.5` and equal group
+sizes, half the updates contain one replay group and its expected gradient
+weight is one quarter. [Selection and batch averaging](../formal/README.md#replay-selection-and-batch-averaging) [Replay sampling proofs](../formal/README.md#continual-grpo-replay)
+
 EWC's empirical Fisher estimate averages squared trajectory-loss gradients over
-accepted examples. `ewc_num_samples` caps attempted trajectories; failed examples
-do not dilute the denominator or trigger extra attempts. Empty/truncated assistant
-targets are skipped before forward, and nonfinite losses/gradients are excluded.
+accepted examples. Recorded rollouts use each assistant turn's saved prompt and
+response IDs. All response tokens in the trajectory share one denominator before
+the gradient is squared. Opposite token gradients can cancel. Incomplete ID
+records invalidate the whole trajectory. Text-only trajectories use the legacy
+tokenizer. It scores the full unpadded sequence when it cannot identify the
+assistant spans. The resulting diagonal depends on the observed examples.
+[Trajectory scores and Fisher information](../formal/README.md#trajectory-scores-and-fisher-information)
+
+`ewc_num_samples` caps attempted trajectories. Failed examples do not dilute
+the denominator or trigger extra attempts. Empty shifted supervision masks
+are skipped before forward, and nonfinite losses/gradients are excluded.
 Zero connected gradients remain valid observations. If no example is accepted,
 the prior Fisher statistics and task anchor remain unchanged.
 
@@ -578,6 +614,14 @@ Global Fisher is the accepted-count-weighted mean of local estimates. Empty
 global populations preserve prior Fisher and anchors without applying decay.
 Reduction prescales FP64 buckets capped at 4 MiB before writing FP32/FP64 master
 statistics. Invalid examples remain visible in the population report.
+
+The EWC penalty weights each squared displacement by half the configured
+strength and its Fisher entry. The CPU and CUDA paths widen lower-precision
+inputs before squaring. For FP64 inputs the trainer scales the displacement
+before squaring and halves very large displacements before subtraction.
+Zero Fisher entries therefore contribute zero even when the unweighted
+squared displacement would overflow. The scalar loss uses the promoted
+policy and memory dtype, with at least FP32 precision.
 
 Consolidation stages teacher/EWC state and private replay RNG streams before
 committing. Local buffers, module modes, global RNGs, optimizer state and pending
@@ -834,6 +878,23 @@ objectives are expressed without a special case.
 Every log-ratio is clamped to `±ratio_clamp` (default 20; GEPO 30) before
 `exp`, so one wildly off-policy token cannot make the loss non-finite.
 
+For StateSet GEPO, let `qᵢ` be the sampler probability of an entire response
+and `pᵢ` its learner probability. Before clipping, the row weight is
+`pᵢ · Σ qⱼ / Σ qⱼ²`, with both sums over that prompt's responses. If the
+learner matches the sampler and two responses have probabilities 1/3 and
+2/3, the weights are 0.6 and 1.2. Their sampler-weighted average is one
+and their arithmetic average is 0.9. The trainer reports the arithmetic
+average of the guarded coefficients used in its final inner update.
+
+The rollout freezes the sampler scores across inner updates. The loss
+subtracts a shared log-score offset before evaluating the denominator and
+uses each row's response boundary to score the learner. Under the default
+sequence mean, an empty row contributes zero loss and still counts in the
+row average. A batch with no retained actions leaves parameters, optimizer
+moments, scheduler and global step at their prior values. StateSet sums the
+retained token log probabilities. Equation 9 in the paper divides each sum
+by response length. [GEPO, §3](https://arxiv.org/html/2508.17850v1)
+
 ### Surrogate
 
 | `clip` | Per-element loss |
@@ -858,6 +919,28 @@ Every log-ratio is clamped to `±ratio_clamp` (default 20; GEPO 30) before
 | `k3_sequence` | k3 on length-normalised sequence log-probs, one value per row | mean over rows, after aggregation (GSPO) |
 | `external` | caller passes a per-token `kl` tensor (enhanced GRPO's exact full-vocab KL) | per token, before aggregation |
 | `none` | — | — |
+
+For normalized positive conditional policies on the same finite support, the
+expected on-policy token k3 equals forward KL. On fixed sampled actions, its
+expected gradient with respect to categorical logits is `p − q` for current
+policy `p` and reference `q`. The forward-KL gradient is
+`p · (log(p/q) − KL(p‖q))` coordinatewise. A differentiable, unclipped
+current-to-behavior action ratio in the k3 term recovers the forward-KL
+gradient when the behavior distribution covers the target support.
+If the current policy is supported on a subset S and the reference assigns
+positive mass outside it, the k3 expectation is `KL(p‖q) − q(Sᶜ)`. For
+importance weighting from a truncated behavior policy, the missing target
+contribution is the sum of `p(a) f(a)` over omitted actions. Sequence-geometric
+ratios and ratio saturation also change the estimator. The finite-action derivations are in
+[`ScoreFunction.lean`](../formal/lean/ScoreFunction.lean).
+
+For multi-step rollouts, a per-token importance ratio corrects the action
+distribution conditional on the sampled prefix. The prefixes still follow
+the behavior policy. With common support, multiplying the conditional
+ratios along the path also corrects prefix visitation. For example, if the
+first action reaches a rewarding state with probability ½ under the sampler
+and ¾ under the target, an exact ratio on the second action still weights
+that state's gradient by ½. [Finite-path proof](../formal/lean/ProviderLoss.lean)
 
 `entropy_coef` subtracts `entropy_coef · masked_mean(entropy)` when the
 caller supplies a differentiable per-token entropy tensor.
@@ -925,12 +1008,36 @@ Rules, implemented by `objectives.resolve_objective`:
   (`gspo`, `gspo_token`, and `gepo` for GEPO). Trainers with per-token
   log-probs (DAPO, VAPO, PPO) accept everything except `gepo`. An
   incompatible choice raises at construction and names the compatible presets.
-- VAPO and PPO keep their external GAE advantages and separate value losses;
-  the preset only changes the policy surrogate.
+- VAPO and PPO keep their external GAE advantages and separate value losses.
+  In VAPO, `entropy_coef` enables the categorical entropy bonus with either
+  the native or a named policy objective. An explicit
+  `objective_overrides["entropy_coef"]` takes precedence. Sampled and
+  full-vocabulary KL penalties use a frozen snapshot of the initial learner
+  or the optional `ref_model` passed to `VAPOTrainer`. Critic loss averages
+  over all active response tokens and positive LM loss averages over tokens
+  in responses accepted by the verifier.
 - An unknown name warns in `TrainingConfig.validate()` and raises at trainer
   construction and on the CLI, listing the valid presets.
 
 ## The GRPO trainers: per-token path and sequence fallback
+
+DAPO and VAPO share the `old_logprobs_source` setting with token GRPO.
+The default `recompute` freezes raw learner scores with dropout disabled.
+`sampler` freezes the processed generation probabilities on the sampled
+actions, including EOS. The current numerator is the raw learner probability.
+A top-p draw can therefore have a first ratio below one. Missing evidence
+requires `allow_missing_sampler_logprobs=True` to use a learner rescore.
+The ratio changes the conditional action measure on visited prefixes. A
+filtered-out action contributes no sample. [Transformers generation scores](https://huggingface.co/docs/transformers/main/internal/generation_utils)
+
+For new native agent turns, `sampler_log_probs` describes the draw and
+`model_log_probs` describes the unprocessed Hugging Face model output.
+Greedy draws have log probability zero. Older native turns marked
+`generated=True` can have raw values in the sampler field. The sampler path
+treats unmarked native Hugging Face and vLLM records as missing evidence.
+External backends supplying their own sampler probabilities retain the
+existing metadata contract. The vLLM generator requests processed log
+probabilities by default. [vLLM log probability modes](https://docs.vllm.ai/en/latest/api/vllm/config/model/)
 
 `MultiTurnGRPOTrainer` and `SingleTurnGRPOTrainer` ask the agent for a
 full assistant turn (`MultiTurnAgent.generate_turn`) whose metadata carries
@@ -939,9 +1046,10 @@ log-probs of those ids. When every trajectory in a group has that data, the
 loss takes the **token path**: one row per assistant turn, one padded
 forward pass per group in chunks of `generation_batch_size` rows, per-token
 log-probs from the stored ids (no re-tokenisation drift), advantages from
-the objective's estimator broadcast to each trajectory's rows, and
-`policy_loss` with `logp_old=None` (the trainers take one optimizer step per
-rollout batch, so this is exactly on-policy and equals the TRL convention).
+the objective's estimator broadcast to each trajectory's rows, and the
+configured old-policy denominator. In the default single-update recompute mode
+the ratio is one at the evaluated parameters. Fresh on-policy sampling also
+requires that the generator drew from that learner policy.
 The native objective on this path is the `grpo` preset with `clip_ratio` as
 the symmetric trust region; `objective` selects any preset, token-level ones
 included. With `beta > 0` and a reference model the enhanced path adds
@@ -949,10 +1057,9 @@ included. With `beta > 0` and a reference model the enhanced path adds
 `entropy_coef` uses the differentiable entropy of the same logits.
 
 `num_gradient_updates` (default 1) turns one rollout batch into that many
-optimizer steps: the old policy's per-token log-probs are frozen once
-(`compute_token_old_logprobs`, a no-grad forward on the stored ids) and each
-update re-evaluates the clipped objective against them, so ratios move away
-from 1 and the trust region engages exactly as in PPO and DAPO. Each inner
+optimizer steps. The trainer freezes the configured source for the batch and
+re-evaluates the objective after each parameter update. With a stale sampler
+denominator the first step can already trigger clipping. Each inner
 update is a full optimizer step; gradient accumulation applies to the
 single-update default only. Groups on the sequence fallback ignore the
 setting (a warning is logged once).
@@ -997,6 +1104,13 @@ model. Same-pass rescoring assumes fresh rollouts and cannot verify that an
 external engine is synchronized. GSPO-token previously ignored the setting;
 its default now follows GSPO, while `False` retains generator-score behavior.
 
+The native GSPO and GSPO-token sequence mean gives each prompt equal
+weight, including prompts with different numbers of responses. Setting
+`aggregate="token_mean"` divides by the scored tokens across the step.
+Setting `aggregate="seq_sum_const"` divides by the total response count
+times the configured completion limit. Both overrides average sequence k3
+over responses, and an empty response contributes zero policy tokens.
+
 ## Rollouts from an inference engine
 
 `MultiTurnAgent.set_rollout_backend(engine)` routes generation through any
@@ -1036,19 +1150,21 @@ policy; `agent.rollout_backend_error` keeps the reason and the trainers expose
 the last outcome as `last_rollout_sync`.
 
 **Correcting for a stale engine.** `TrainingConfig.old_logprobs_source`
-chooses the old policy on the token path. `"recompute"` (default) treats
-each rollout batch as exactly on-policy. `"sampler"` uses the log-probs the
-engine reported at sampling time as `logp_old`, so the importance ratio
-`exp(logp_cur - logp_sampler)` corrects for an engine that lags the policy or
-differs numerically (TRL's vLLM importance-sampling correction); the loss
-dict reports `old_logprobs_source` (`recompute`, `sampler`, or `snapshot`
-when `num_gradient_updates` froze its own old log-probs, which takes
-precedence). Missing requested sampler log-probs raise by default. Explicit
-`allow_missing_sampler_logprobs=True` permits recomputation and reports
-`"recompute_fallback"` in the loss metadata.
-Use `"sampler"` with `rollout_sync=False` for a deliberately asynchronous
-engine, and note that the engine's log-probs must be of the raw model
-distribution (temperature 1, no top-p) to match the training forward pass.
+chooses the denominator on the token path. The default `"recompute"` uses the
+learner and freezes a learner snapshot across repeated updates. `"sampler"`
+keeps the recorded conditional sampling probabilities for every optimizer
+step, including replayed groups. The loss reports `sampler`, `snapshot` or
+`recompute` for the corresponding source. Missing requested sampler scores
+require `allow_missing_sampler_logprobs=True`. That batch uses the learner
+denominator and reports `recompute_fallback`. An explicitly supplied low-level
+`old_logprobs` tensor list overrides the configured source.
+
+Sampler scores must describe the distribution that actually drew each token,
+including temperature and truncation. Each ratio compares the learner and
+sampler at the recorded prefix. In a group-normalized objective, the other
+responses also affect the advantage. Even at a single token with full support,
+the expected replay update can differ from the fresh-group update.
+[Exact replay gradient example](../formal/README.md#replayed-group-gradients)
 
 ## Which preset
 
@@ -1118,6 +1234,14 @@ Known differences, on purpose:
 | `PPOTrainer` | `ppo` with `kl="none"` (KL added in `train_step` with the adaptive coefficient) | `clip_eps`, `beta` |
 | GRPO (`loss_computation.py`, plain and enhanced) | `gspo` renamed `grpo_sequence` (sequence ratio, since rollouts store summed log-probs) | `seq_clip_ratio`, `clip_ratio`, `baseline_type` (`leave_one_out` → `rloo` advantages) |
 
+DAPO accepts optional entropy and KL coefficients through `objective_overrides`.
+For a positive KL coefficient, the trainer uses its frozen initial policy as
+the reference by default. Direct callers can pass a separate `ref_model` for
+the trainer to snapshot.
+The `external` KL mode computes the categorical forward KL over the vocabulary
+at each sampled response position. Entropy is averaged over all sampled tokens
+and sampled sequence KL over all response rows in the update.
+
 VAPO's value loss and positive-example LM loss, PPO's value loss, and
 enhanced GRPO's exact full-vocabulary KL remain in their trainers; the
 objective owns the policy term only.
@@ -1159,6 +1283,17 @@ fingerprints. It targets correctness, with CPU tiny-transformer and synthetic
 learning contracts; large-model throughput, GPU memory, distributed execution,
 quantized training and independent quality gains remain unverified. EOS and the
 configured token horizon both end an episode, with no truncation bootstrap.
+
+Online rollout receipts mark `behavior_log_probs_source="normalized_multinomial_weights"`
+when the scores come from the weights supplied to the draw. Older receipts
+stored the pre-exponentiation scores. The learner scores the differentiable
+temperature-scaled policy. Rounding a small sampling weight can change its
+normalized probability even before the first update.
+
+`target_kl` checks the sampled response-token mean before each PPO epoch.
+When response lengths depend on EOS, this mean has a random denominator.
+Every response can stop before a prefix where the policies differ. The
+measured drift can then be zero at any true path KL. [PPO stopping on sampled trajectories](../formal/README.md#ppo-stopping-on-sampled-trajectories)
 
 `train_step()` remains available for externally supplied text batches. It
 requires equal nonempty populations, finite numeric rewards, a positive inner

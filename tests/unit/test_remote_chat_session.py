@@ -9,14 +9,17 @@ asserts it was terminated. A leaked pod bills by the hour.
 from __future__ import annotations
 
 import json
+import multiprocessing
+import os
 import tarfile
 from collections import deque
 from pathlib import Path
 
 import pytest
 
-from stateset_agents.remote.chat_session import RemoteChatSession
+from stateset_agents.remote.chat_session import ChatSessionState, RemoteChatSession
 from stateset_agents.remote.executor import RemoteExecutionError
+from stateset_agents.remote.runpod_recovery import recover_pods, session_lease_dir
 
 
 class FakePodApi:
@@ -125,7 +128,9 @@ def adapter_dir(tmp_path):
 
 
 @pytest.fixture
-def make_session(api):
+def make_session(api, tmp_path):
+    sessions = []
+
     def build(process=None, ssh=None, **kwargs):
         process = process if process is not None else FakeChatProcess()
         launched: list[list[str]] = []
@@ -136,6 +141,7 @@ def make_session(api):
 
         kwargs.setdefault("public_key", "ssh-rsa AAAATESTKEY")
         kwargs.setdefault("poll_interval_s", 0)
+        kwargs.setdefault("lease_dir", tmp_path / "chat-leases")
         session = RemoteChatSession(
             api=api,
             ssh=ssh if ssh is not None else FakeSsh(),
@@ -143,12 +149,129 @@ def make_session(api):
             **kwargs,
         )
         session.launched = launched  # test-only spy
+        sessions.append(session)
         return session
 
-    return build
+    yield build
+    for session in sessions:
+        if session.state is ChatSessionState.READY:
+            session.close()
+
+
+def _crash_chat(root, boundary, ready, release):
+    """Hold a real session at an allocation boundary, then exit without finalizers."""
+
+    def crash():
+        ready.set()
+        os._exit(23 if release.wait(20) else 24)
+
+    class Api(FakePodApi):
+        def create_pod(self, **kwargs):
+            pod = super().create_pod(**kwargs)
+            (root / "provider.json").write_text(
+                json.dumps({"name": kwargs["name"], "id": pod["id"]})
+            )
+            if boundary == "before_id":
+                crash()
+            return pod
+
+    session = RemoteChatSession(
+        Api(),
+        FakeSsh(),
+        lease_dir=root / "leases",
+        public_key="fake",
+        popen_factory=lambda cmd: FakeChatProcess(replies=['{"response":"hello"}']),
+    )
+    session.start("test/model")
+    crash()
+
+
+@pytest.mark.parametrize("boundary", ["before_id", "interactive"])
+def test_recovery_skips_live_chat_and_cleans_it_once_after_process_exit(
+    tmp_path, boundary
+):
+    ctx = multiprocessing.get_context("spawn")
+    ready, release = ctx.Event(), ctx.Event()
+    process = ctx.Process(target=_crash_chat, args=(tmp_path, boundary, ready, release))
+    root = tmp_path / "leases"
+    api = FakePodApi()
+    api.list_pods = lambda: [json.loads((tmp_path / "provider.json").read_text())]
+    process.start()
+    try:
+        assert ready.wait(15)
+        rows = recover_pods(root, lambda: api, kind="chat", terminate=True)
+        assert [r.status for r in rows] == ["busy"]
+        assert api.terminated == []
+        release.set()
+        process.join(15)
+        assert process.exitcode == 23
+    finally:
+        release.set()
+        if process.is_alive():
+            process.terminate()
+            process.join(5)
+    record = json.loads(next(root.glob("*.json")).read_text())
+    assert record["pod_id"] == (None if boundary == "before_id" else "pod-chat")
+    assert recover_pods(root, lambda: api, kind="chat")[0].status == "recoverable"
+    assert api.terminated == []
+    assert (
+        recover_pods(root, lambda: api, kind="chat", terminate=True)[0].detail
+        == "pod-chat"
+    )
+    assert recover_pods(root, lambda: api, kind="chat", terminate=True) == []
+    assert api.terminated == ["pod-chat"]
+
+
+def test_chat_recovery_cli_uses_chat_records(tmp_path, monkeypatch, api):
+    from typer.testing import CliRunner
+
+    from stateset_agents.cli import app
+    from stateset_agents.remote.runpod_recovery import PodLease
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    name = "stateset-chat-123456789abc"
+    lease = PodLease(session_lease_dir("chat") / f"{name}.json")
+    with lease.starting():
+        lease.record_id("pod-chat")
+    monkeypatch.setattr(RemoteChatSession, "_require_api", lambda self: api)
+    api.list_pods = lambda: [{"name": name, "id": "pod-chat"}]
+    runner = CliRunner()
+    assert (
+        runner.invoke(
+            app, ["runpod-orphans", "--serving", "--chat", "--terminate"]
+        ).exit_code
+        == 2
+    )
+    report = runner.invoke(app, ["runpod-orphans", "--chat"])
+    assert report.exit_code == 0 and "recoverable  pod-chat" in report.output
+    assert api.terminated == []
+    assert (
+        runner.invoke(app, ["runpod-orphans", "--chat", "--terminate"]).exit_code == 0
+    )
+    assert api.terminated == ["pod-chat"]
 
 
 class TestStart:
+    def test_missing_allocation_id_leaves_recoverable_intent(
+        self, api, make_session, tmp_path
+    ):
+        def created_without_id(**kwargs):
+            api.created.append(kwargs)
+            return {"id": None}
+
+        api.create_pod = created_without_id
+        session = make_session()
+        with pytest.raises(RemoteExecutionError, match="runpod-orphans --chat"):
+            session.start("model")
+        assert session.state is ChatSessionState.CLEANUP_PENDING
+        assert api.terminated == []
+        api.list_pods = lambda: [{"name": api.created[0]["name"], "id": "found-chat"}]
+        results = recover_pods(
+            tmp_path / "chat-leases", lambda: api, kind="chat", terminate=True
+        )
+        assert results[0].status == "termination accepted"
+        assert api.terminated == ["found-chat"]
+
     def test_launches_the_repl_module_with_the_right_flags(
         self, make_session, adapter_dir
     ):
@@ -418,6 +541,255 @@ class TestClose:
 
         with pytest.raises(RemoteExecutionError, match="not open"):
             session.ask("hi")
+
+
+class TestLifecycle:
+    """A session must retain ownership until pod termination succeeds."""
+
+    def test_public_state_tracks_resource_ownership(
+        self, make_session, api, monkeypatch
+    ):
+        session = make_session()
+        assert session.state is ChatSessionState.NEW
+        assert session.pod_id is None
+        create, terminate = api.create_pod, api.terminate_pod
+
+        def creating(**kwargs):
+            assert session.state is ChatSessionState.STARTING
+            with pytest.raises(RemoteExecutionError, match="new RemoteChatSession"):
+                session.start("duplicate/model")
+            return create(**kwargs)
+
+        def terminating(pod_id):
+            assert session.state is ChatSessionState.CLOSING
+            assert session.pod_id == pod_id
+            session.close()  # Reentrant cleanup cannot submit another deletion.
+            terminate(pod_id)
+
+        monkeypatch.setattr(api, "create_pod", creating)
+        monkeypatch.setattr(api, "terminate_pod", terminating)
+        session.start("some/model")
+        assert session.state is ChatSessionState.READY
+        assert json.loads(json.dumps({"state": session.state})) == {"state": "ready"}
+        session.close()
+        assert session.state is ChatSessionState.CLOSED
+        assert session.pod_id is None
+        assert len(api.created) == 1
+        assert api.terminated == ["pod-chat"]
+
+    def test_preflight_failure_allows_configuration_correction(
+        self, make_session, api, monkeypatch
+    ):
+        session = make_session()
+        require_key = session._require_public_key
+
+        def missing_key():
+            raise RemoteExecutionError("missing public key", provider="runpod")
+
+        monkeypatch.setattr(session, "_require_public_key", missing_key)
+        with pytest.raises(RemoteExecutionError, match="missing public key"):
+            session.start("some/model")
+        assert session.state is ChatSessionState.NEW
+        assert api.created == []
+
+        monkeypatch.setattr(session, "_require_public_key", require_key)
+        session.start("some/model")
+        session.close()
+        assert api.terminated == ["pod-chat"]
+
+    def test_submission_error_does_not_allow_replaying_creation(
+        self, make_session, api, monkeypatch
+    ):
+        attempts = []
+
+        def unavailable(**kwargs):
+            attempts.append(kwargs)
+            raise OSError("submission response lost")
+
+        monkeypatch.setattr(api, "create_pod", unavailable)
+        session = make_session()
+        with pytest.raises(OSError, match="submission response lost"):
+            session.start("some/model")
+        with pytest.raises(RemoteExecutionError, match="new RemoteChatSession"):
+            session.start("some/model")
+        assert len(attempts) == 1
+
+    def test_second_start_cannot_orphan_the_first_pod(self, make_session, api):
+        session = make_session()
+        session.start("some/model")
+        try:
+            with pytest.raises(RemoteExecutionError, match="new RemoteChatSession"):
+                session.start("another/model")
+            assert len(api.created) == 1
+            assert session.transcript["metadata"]["base_model"] == "some/model"
+        finally:
+            session.close()
+        assert api.terminated == ["pod-chat"]
+
+    @pytest.mark.parametrize("started", [False, True])
+    def test_start_after_close_never_provisions(self, make_session, api, started):
+        session = make_session()
+        if started:
+            session.start("some/model")
+        session.close()
+        created = len(api.created)
+
+        with pytest.raises(RemoteExecutionError, match="new RemoteChatSession"):
+            session.start("another/model")
+
+        assert len(api.created) == created
+
+    def test_failed_termination_retains_cleanup_and_exit_hook(
+        self, make_session, api, monkeypatch, caplog
+    ):
+        import atexit
+
+        registered, unregistered = [], []
+        monkeypatch.setattr(atexit, "register", registered.append)
+        monkeypatch.setattr(atexit, "unregister", unregistered.append)
+        terminate = api.terminate_pod
+
+        def unavailable(pod_id):
+            raise OSError("provider unavailable")
+
+        monkeypatch.setattr(api, "terminate_pod", unavailable)
+        session = make_session()
+        session.start("some/model")
+        session.close()
+
+        assert session.state is ChatSessionState.CLEANUP_PENDING
+        assert registered == [session.close]
+        assert unregistered == []
+        assert session.pod_id == "pod-chat"
+        assert "pod-chat" in caplog.text
+        with pytest.raises(RemoteExecutionError, match="not open"):
+            session.ask("hi")
+        with pytest.raises(RemoteExecutionError, match="new RemoteChatSession"):
+            session.start("another/model")
+
+        monkeypatch.setattr(api, "terminate_pod", terminate)
+        session.close()
+        session.close()
+        assert api.terminated == ["pod-chat"]
+        assert session.pod_id is None
+        assert session.state is ChatSessionState.CLOSED
+        assert unregistered == [session.close]
+
+    def test_cleanup_failure_preserves_original_start_error(
+        self, make_session, api, monkeypatch
+    ):
+        terminate = api.terminate_pod
+
+        def unavailable(pod_id):
+            raise OSError("provider unavailable")
+
+        monkeypatch.setattr(api, "terminate_pod", unavailable)
+        session = make_session(ssh=FakeSsh(exit_code=1))
+        try:
+            with pytest.raises(RemoteExecutionError, match="remote command failed"):
+                session.start("some/model")
+            assert session.pod_id == "pod-chat"
+        finally:
+            monkeypatch.setattr(api, "terminate_pod", terminate)
+            session.close()
+        assert api.terminated == ["pod-chat"]
+
+    def test_cost_is_finalized_once_after_successful_cleanup(
+        self, make_session, api, monkeypatch
+    ):
+        session = make_session()
+        session.start("some/model")
+        recorded = []
+        monkeypatch.setattr(session, "_record_cost", recorded.append)
+        terminate = api.terminate_pod
+
+        def unavailable(pod_id):
+            raise OSError("provider unavailable")
+
+        monkeypatch.setattr(api, "terminate_pod", unavailable)
+        session.close()
+        session.close()
+        assert recorded == []
+
+        monkeypatch.setattr(api, "terminate_pod", terminate)
+        session.close()
+        session.close()
+        assert recorded == ["pod-chat"]
+        assert api.terminated == ["pod-chat"]
+
+    def test_interrupted_termination_remains_retryable(
+        self, make_session, api, monkeypatch
+    ):
+        session = make_session()
+        session.start("some/model")
+        terminate = api.terminate_pod
+
+        def interrupted(pod_id):
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(api, "terminate_pod", interrupted)
+        try:
+            with pytest.raises(KeyboardInterrupt):
+                session.close()
+            assert session.state is ChatSessionState.CLEANUP_PENDING
+            assert session.pod_id == "pod-chat"
+        finally:
+            monkeypatch.setattr(api, "terminate_pod", terminate)
+            session.close()
+        assert api.terminated == ["pod-chat"]
+
+    def test_interrupted_process_cleanup_still_terminates_pod(
+        self, make_session, api, monkeypatch
+    ):
+        process = FakeChatProcess()
+        session = make_session(process=process)
+        session.start("some/model")
+
+        def interrupted(timeout):
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(process, "wait", interrupted)
+        with pytest.raises(KeyboardInterrupt):
+            session.close()
+        assert api.terminated == ["pod-chat"]
+        assert session.state is ChatSessionState.CLOSED
+
+    def test_concurrent_starts_only_create_one_pod(
+        self, make_session, api, monkeypatch
+    ):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Event
+
+        session = make_session()
+        creating, proceed, second_started = Event(), Event(), Event()
+        create = api.create_pod
+
+        def blocked_create(**kwargs):
+            creating.set()
+            assert proceed.wait(timeout=5)
+            return create(**kwargs)
+
+        def second_start():
+            second_started.set()
+            session.start("another/model")
+
+        monkeypatch.setattr(api, "create_pod", blocked_create)
+        try:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                first = executor.submit(session.start, "some/model")
+                try:
+                    assert creating.wait(timeout=5)
+                    second = executor.submit(second_start)
+                    assert second_started.wait(timeout=5)
+                finally:
+                    proceed.set()
+                first.result(timeout=5)
+                with pytest.raises(RemoteExecutionError, match="new RemoteChatSession"):
+                    second.result(timeout=5)
+        finally:
+            session.close()
+        assert len(api.created) == 1
+        assert api.terminated == ["pod-chat"]
 
 
 class TestCostRecording:

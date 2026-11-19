@@ -15,6 +15,7 @@ import functools
 import importlib.util
 import logging
 import math
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -36,8 +37,10 @@ from stateset_agents.exceptions import MODEL_IO_EXCEPTIONS as MODEL_LOAD_EXCEPTI
 from stateset_agents.rewards.multi_objective_reward import (
     MultiObjectiveRewardFunction as MultiObjectiveReward,
 )
+from stateset_agents.training.trainer_utils import _clamped_cosine_lr
 
 from . import objectives, rl_losses
+from .adamw_weights import model_adamw
 from .gspo_config import GSPOConfig
 from .gspo_generation import (
     VLLM_AVAILABLE,
@@ -47,8 +50,10 @@ from .gspo_generation import (
     render_prompt_for_scoring,
     scoring_prompt_length,
 )
+from .reward_advantages import reward_tensor
 from .runtime_state import TrainingRuntime, validate_training_config
 from .trainer_runtime import SharedModelManager
+from .trainer_utils import clip_parameter_gradients
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +216,19 @@ def normalize_total_loss(total_loss: torch.Tensor, num_groups: int) -> torch.Ten
     return total_loss / max(num_groups, 1)
 
 
+@dataclass
+class _GSPOGroup:
+    """Scores and rewards for responses sampled at the same prompt."""
+
+    ratios: torch.Tensor
+    rewards: torch.Tensor
+    current: torch.Tensor
+    lengths: torch.Tensor
+    old: torch.Tensor
+    reference: torch.Tensor | None
+    tokens: list[torch.Tensor] | None = None
+
+
 class GSPOModelManager(SharedModelManager):
     """Manages model loading and LoRA configuration for GSPO training"""
 
@@ -348,14 +366,6 @@ class GSPOModelManager(SharedModelManager):
             raise
 
 
-def _clamped_cosine_lr(step: int, *, warmup_steps: int, total_steps: int) -> float:
-    """Linear warmup then half-cosine decay to 0, held at 0 past ``total_steps``."""
-    if step < warmup_steps:
-        return float(step) / float(max(1, warmup_steps))
-    progress = (step - warmup_steps) / float(max(1, total_steps - warmup_steps))
-    return 0.5 * (1.0 + math.cos(math.pi * min(1.0, progress)))
-
-
 class GSPOTrainer(TrainingRuntime):
     #: Preset evaluated when ``config.objective`` is unset; the token variant
     #: overrides this instead of reassigning ``_objective`` after ``__init__``.
@@ -404,7 +414,12 @@ class GSPOTrainer(TrainingRuntime):
                 "GSPOTrainer requires a model with at least one trainable "
                 "parameter; got a parameterless model."
             )
-        self.optimizer = torch.optim.AdamW(params, lr=config.learning_rate)
+        self.optimizer = model_adamw(
+            params,
+            lr=config.learning_rate,
+            betas=(config.adam_beta1, config.adam_beta2),
+            weight_decay=config.weight_decay,
+        )
 
         # Cosine schedule over the optimizer steps actually taken: train_step
         # makes exactly one per outer iteration. Progress is clamped so steps
@@ -459,12 +474,15 @@ class GSPOTrainer(TrainingRuntime):
         log_ratio_sum = current_log_probs - old_log_probs
 
         # Apply length normalization
-        normalized_log_ratio = log_ratio_sum / sequence_lengths
+        normalized_log_ratio = torch.where(
+            sequence_lengths > 0, log_ratio_sum / sequence_lengths.clamp_min(1), 0.0
+        )
 
         # Convert to ratio via exp, clamped: an inf ratio multiplied by an
         # advantage of exactly 0 (which a constant-reward group produces) is
         # NaN, and that NaN reaches the GSPO-token gate.
-        return rl_losses.safe_exp_ratio(normalized_log_ratio)
+        bound = getattr(getattr(self, "_objective", None), "ratio_clamp", 20.0)
+        return rl_losses.safe_exp_ratio(normalized_log_ratio, clamp=bound)
 
     def compute_group_advantages(
         self, rewards: Any
@@ -483,18 +501,13 @@ class GSPOTrainer(TrainingRuntime):
 
         Raises:
             ValueError: If rewards are empty, not a vector, or rewards,
-                float32 statistics, or computed advantages are non-finite.
+                their float32 representations, or computed advantages are non-finite.
         """
-        rewards_tensor = (
-            rewards
-            if isinstance(rewards, torch.Tensor)
-            else torch.as_tensor(rewards, dtype=torch.float32)
-        ).float()
-        _require_finite_vector(rewards_tensor, "GSPO rewards")
-        mean_reward = rewards_tensor.mean()
-        std_reward = rewards_tensor.std(unbiased=False)
-        if not bool(torch.isfinite(mean_reward) & torch.isfinite(std_reward)):
-            raise ValueError("GSPO reward statistics must be finite in float32")
+        from stateset_agents.core.reward_moments import RewardMoments
+
+        rewards_tensor = reward_tensor(rewards)
+        _require_finite_vector(rewards_tensor.float(), "GSPO rewards")
+        moments = RewardMoments(rewards_tensor.detach().tolist())
 
         # The configured objective's estimator (group-normalised by default);
         # this boundary validates inputs/results and adds the logging stats.
@@ -506,8 +519,8 @@ class GSPOTrainer(TrainingRuntime):
         _require_finite_vector(advantages, "GSPO advantages")
 
         stats = {
-            "mean_reward": float(mean_reward.item()),
-            "std_reward": float(std_reward.item()),
+            "mean_reward": moments.mean,
+            "std_reward": moments.deviation(),
             "max_reward": float(rewards_tensor.max().item()),
             "min_reward": float(rewards_tensor.min().item()),
         }
@@ -533,7 +546,10 @@ class GSPOTrainer(TrainingRuntime):
             else generation_log_probs
         )
         gaps = (
-            ((generation_log_probs - old_log_probs.detach()).abs() / sequence_lengths)
+            (
+                (generation_log_probs - old_log_probs.detach()).abs()
+                / sequence_lengths.clamp_min(1)
+            )
             .detach()
             .cpu()
             .tolist()
@@ -541,7 +557,7 @@ class GSPOTrainer(TrainingRuntime):
         return old_log_probs, gaps
 
     def _apply_optimizer_step(self, loss: torch.Tensor) -> None:
-        """Update only after scalar loss and clipped gradient norm are finite.
+        """Clip finite gradient coordinates before advancing the optimizer.
 
         Failed backward or clipping clears partial gradients. Optimizer and
         scheduler state are untouched until these checks pass.
@@ -554,9 +570,7 @@ class GSPOTrainer(TrainingRuntime):
             if not math.isfinite(max_norm) or max_norm < 0:
                 raise ValueError("max_grad_norm must be finite and nonnegative")
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(), max_norm, error_if_nonfinite=True
-            )
+            clip_parameter_gradients(self.model.parameters(), max_norm)
         except Exception:
             self.optimizer.zero_grad(set_to_none=True)
             raise
@@ -570,34 +584,101 @@ class GSPOTrainer(TrainingRuntime):
         current_log_probs: torch.Tensor,
         sequence_lengths: torch.Tensor,
         ref_log_probs: torch.Tensor | None = None,
+        old_log_probs: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """GSPO objective for one prompt group via ``objectives.policy_loss``.
 
-        The trainer scores sequences as summed log-probs plus lengths; the
-        objective consumes per-token rows, so each sequence is presented as a
-        single token carrying its length-normalised log-prob with a unit
-        mask. ``importance_ratios`` (already clamped by
-        ``compute_sequence_importance_ratio``) define the old log-prob the
-        objective recomputes the ratio from, so callers holding only ratios
-        keep working.
+        For a sequence advantage the surrogate is constant across a response.
+        Its row mean is sufficient for the native reduction. The other
+        reductions need the true token population even with a constant row.
+        Native updates retain the original score outside the log-ratio clamp.
         """
         lengths = sequence_lengths.to(current_log_probs.dtype).clamp(min=1.0)
-        logp_cur = (current_log_probs / lengths).unsqueeze(-1)
-        log_old = logp_cur.detach() - torch.log(importance_ratios.detach()).unsqueeze(
-            -1
+        mean = (current_log_probs / lengths).unsqueeze(-1)
+        if self._objective.aggregate == "seq_mean":
+            mask = (sequence_lengths > 0).unsqueeze(-1)
+        else:
+            width = int(sequence_lengths.max().item())
+            positions = torch.arange(width, device=current_log_probs.device)
+            mask = positions < sequence_lengths.unsqueeze(-1)
+        logp_cur = mean.expand_as(mask)
+        old = (
+            current_log_probs.detach() - torch.log(importance_ratios.detach()) * lengths
+            if old_log_probs is None
+            else old_log_probs.detach()
         )
-        ref = None
-        if self.config.beta > 0 and ref_log_probs is not None:
-            ref = (ref_log_probs / lengths).unsqueeze(-1)
+        # A unit mask represents the whole row only in the native reduction.
+        ref = ref_log_probs
+        if self._objective.aggregate == "seq_mean":
+            old = old / lengths
+            if ref is not None:
+                ref = ref / lengths
         result = objectives.policy_loss(
             logp_cur=logp_cur,
-            mask=torch.ones_like(logp_cur),
+            mask=mask,
             advantages=advantages,
             objective=self._objective,
-            logp_old=log_old,
+            logp_old=old,
             logp_ref=ref,
         )
         return result.loss
+
+    def _group_loss(self, group: _GSPOGroup, advantages: torch.Tensor) -> torch.Tensor:
+        return self.compute_gspo_loss(
+            group.ratios,
+            advantages,
+            group.current,
+            group.lengths,
+            group.reference,
+            group.old,
+        )
+
+    def _batch_loss(self, groups: list[_GSPOGroup]) -> tuple[torch.Tensor, int, int]:
+        """Apply the selected reward baseline and loss denominator over the step."""
+        if not groups:
+            raise ValueError("GSPO requires at least one prompt group")
+        if self._objective.advantage == "batch_norm":
+            rewards = torch.cat([g.rewards for g in groups])
+            sizes = [g.rewards.numel() for g in groups]
+            ids = torch.cat(
+                [
+                    torch.full_like(g.rewards, i, dtype=torch.long)
+                    for i, g in enumerate(groups)
+                ]
+            )
+            flat = objectives.compute_advantages(rewards, ids, self._objective)
+            _require_finite_vector(flat, "GSPO advantages")
+            advantages = list(flat.split(sizes))
+        else:
+            advantages = [self.compute_group_advantages(g.rewards)[0] for g in groups]
+        advantages = [
+            a.to(g.current.device) for a, g in zip(advantages, groups, strict=True)
+        ]
+        active = [int(torch.count_nonzero(a).item()) for a in advantages]
+
+        if self._objective.aggregate == "seq_mean" or len(groups) == 1:
+            # The compatibility trainers give each prompt equal native weight.
+            loss = torch.stack(
+                [
+                    self._group_loss(g, a)
+                    for g, a in zip(groups, advantages, strict=True)
+                ]
+            ).mean()
+        else:
+            # The policy and sequence KL may have different denominators. A
+            # single batch lets the canonical objective reduce both correctly.
+            refs = [g.reference for g in groups if g.reference is not None]
+            batch = _GSPOGroup(
+                ratios=torch.cat([g.ratios for g in groups]),
+                rewards=torch.cat([g.rewards for g in groups]),
+                current=torch.cat([g.current for g in groups]),
+                lengths=torch.cat([g.lengths for g in groups]),
+                old=torch.cat([g.old for g in groups]),
+                reference=torch.cat(refs) if refs else None,
+                tokens=[row for g in groups for row in (g.tokens or [])],
+            )
+            loss = self._group_loss(batch, torch.cat(advantages))
+        return loss, sum(active), active.count(0)
 
     def _compute_group_sequence_log_probs(
         self, prompt: str, responses: list[str]
@@ -673,9 +754,7 @@ class GSPOTrainer(TrainingRuntime):
             response_mask[:, response_start_idx:] = shift_mask[:, response_start_idx:]
 
         sequence_log_probs = (token_log_probs * response_mask).sum(dim=-1)
-        response_lengths = (
-            response_mask.sum(dim=-1).to(dtype=torch.float32).clamp(min=1.0)
-        )
+        response_lengths = response_mask.sum(dim=-1).to(dtype=torch.float32)
 
         return sequence_log_probs, response_lengths
 
@@ -696,7 +775,7 @@ class GSPOTrainer(TrainingRuntime):
         self.optimizer.zero_grad(set_to_none=True)
         model_device = _get_model_device(self.model)
 
-        total_loss = torch.tensor(0.0, device=model_device)
+        groups: list[_GSPOGroup] = []
         total_clipped = 0
         total_samples = 0
         all_rewards = []
@@ -704,9 +783,6 @@ class GSPOTrainer(TrainingRuntime):
         all_generation_gaps: list[float] = []
 
         processed_groups = 0
-        nonzero_advantages = 0
-        advantage_count = 0
-        zero_advantage_groups = 0
         for query in queries[:num_groups]:
             processed_groups += 1
             if isinstance(query, dict):
@@ -758,17 +834,10 @@ class GSPOTrainer(TrainingRuntime):
                 )
             )
 
-            rewards_tensor = torch.tensor(
-                rewards, dtype=torch.float32, device=model_device
-            )
+            rewards_tensor = reward_tensor(rewards, model_device)
             all_rewards.extend(rewards)
 
-            # Compute group advantages
-            advantages, reward_stats = self.compute_group_advantages(rewards_tensor)
-            active = int(torch.count_nonzero(advantages).item())
-            nonzero_advantages += active
-            advantage_count += advantages.numel()
-            zero_advantage_groups += int(active == 0)
+            _require_finite_vector(rewards_tensor.float(), "GSPO rewards")
 
             # Compute current log probs (with gradients) for each response
             (
@@ -786,38 +855,30 @@ class GSPOTrainer(TrainingRuntime):
             )
             all_importance_ratios.extend(importance_ratios.detach().cpu().tolist())
 
-            # Apply clipping to importance ratios
-            clipped_ratios = torch.clamp(
-                importance_ratios,
-                1 - self.config.clip_range_left,
-                1 + self.config.clip_range_right,
+            total_clipped += int(
+                objectives.clipped_positions(self._objective, importance_ratios)
+                .sum()
+                .item()
             )
-
-            # Count clipped sequences
-            num_clipped = (importance_ratios != clipped_ratios).sum().item()
-            total_clipped += num_clipped
             total_samples += len(responses)
 
             ref_log_probs = None
-            if self.config.beta > 0 and self.ref_model is not None:
+            if self._objective.kl_coef > 0 and self.ref_model is not None:
                 ref_log_probs = self._compute_batch_ref_log_probs(prompt, responses)
                 if model_device is not None:
                     ref_log_probs = ref_log_probs.to(model_device)
-            total_loss_item = self.compute_gspo_loss(
-                importance_ratios,
-                advantages,
-                current_log_probs,
-                sequence_lengths,
-                ref_log_probs,
+            groups.append(
+                _GSPOGroup(
+                    importance_ratios,
+                    rewards_tensor,
+                    current_log_probs,
+                    sequence_lengths,
+                    old_log_probs,
+                    ref_log_probs,
+                )
             )
 
-            # Accumulate loss
-            total_loss += total_loss_item
-
-        # Normalize accumulated loss by the number of processed query groups
-        # so gradient magnitude does not scale with batch composition.
-        total_loss = normalize_total_loss(total_loss, processed_groups)
-
+        total_loss, nonzero_advantages, zero_advantage_groups = self._batch_loss(groups)
         self._apply_optimizer_step(total_loss)
 
         # Compute metrics
@@ -832,7 +893,7 @@ class GSPOTrainer(TrainingRuntime):
             "clipping_fraction": clipping_fraction,
             "average_reward": avg_reward,
             "reward_std": float(np.std(all_rewards)) if all_rewards else 0.0,
-            "nonzero_advantage_fraction": nonzero_advantages / max(advantage_count, 1),
+            "nonzero_advantage_fraction": nonzero_advantages / max(total_samples, 1),
             "zero_advantage_group_fraction": zero_advantage_groups
             / max(processed_groups, 1),
             "advantage_group_count": float(processed_groups),
@@ -893,7 +954,7 @@ class GSPOTrainer(TrainingRuntime):
 
         response_start = max(prompt_length - 1, 0)
         if response_start >= token_log_probs.shape[-1]:
-            return float(token_log_probs.sum().item())
+            return 0.0
 
         response_log_probs = token_log_probs[..., response_start:]
         sequence_log_prob = float(response_log_probs.sum().item())

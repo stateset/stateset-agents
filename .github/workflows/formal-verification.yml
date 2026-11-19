@@ -13,10 +13,110 @@ on:
       - "lakefile.toml"
       - "lake-manifest.json"
       - "stateset_agents/training/async_rollouts.py"
+      - "stateset_agents/training/advantage_estimation.py"
+      - "stateset_agents/core/agent.py"
+      - "stateset_agents/core/generation_evidence.py"
+      - "stateset_agents/training/trainer_runtime.py"
+      - "stateset_agents/training/vllm_backend.py"
+      - "stateset_agents/training/rollout_contract.py"
+      - "stateset_agents/training/runtime_state.py"
+      - "tests/unit/test_gspo_exact_rollouts.py"
+      - "tests/unit/test_muse_spark.py"
+      - "stateset_agents/training/learner_preflight.py"
+      - "stateset_agents/training/config.py"
+      - "tests/unit/test_group_sampler_refinement.py"
+      - "tests/integration/test_trainer_ratio_invariants.py"
+      - "tests/unit/test_gepo_weight_refinement.py"
+      - "tests/unit/test_gepo_trainer_behavioral.py"
+      - "stateset_agents/training/gepo_weights.py"
+      - "tests/unit/test_group_reward_refinement.py"
+      - "stateset_agents/core/reward_moments.py"
+      - "stateset_agents/training/reward_advantages.py"
+      - "stateset_agents/training/distributed_advantages.py"
+      - "tests/integration/test_distributed_advantages.py"
+      - "tests/unit/test_token_capture.py"
+      - "tests/unit/test_hf_generator_fallback.py"
+      - "tests/unit/test_vllm_logprob_contract.py"
+      - "tests/unit/test_dapo_trainer_behavioral.py"
+      - "tests/unit/test_dapo_regularized_batch.py"
+      - "stateset_agents/core/value_function.py"
+      - "tests/unit/test_value_function_comprehensive.py"
+      - "stateset_agents/training/vapo_entrypoints.py"
+      - "stateset_agents/training/sim_to_real.py"
+      - "stateset_agents/evaluation/sim_to_real_metrics.py"
+      - "tests/unit/test_offline_rl_sim_to_real.py"
+      - "tests/unit/test_domain_adversarial_refinement.py"
+      - "tests/unit/test_replay_mixture_refinement.py"
+      - "tests/unit/test_replay_gradient_refinement.py"
+      - "tests/unit/test_replay_sampling_refinement.py"
+      - "tests/unit/test_feature_alignment_refinement.py"
+      - "tests/unit/test_vapo*.py"
+      - "stateset_agents/training/ppo_online.py"
+      - "stateset_agents/training/ppo_trainer.py"
+      - "tests/unit/test_ppo_math_refinement.py"
+      - "tests/unit/test_ppo_online.py"
+      - "tests/unit/test_grpo_optimizer_integrity.py"
+      - "stateset_agents/training/preference_loss.py"
+      - "tests/unit/test_preference_refinement.py"
+      - "tests/unit/test_actor_critic_refinement.py"
+      - "tests/unit/test_ppo*.py"
       - "stateset_agents/training/distributed_rollouts.py"
       - "stateset_agents/training/async_runtime.py"
       - "stateset_agents/training/objectives.py"
+      - "stateset_agents/training/loss_computation.py"
+      - "stateset_agents/training/*_trainer.py"
+      - "stateset_agents/training/offline_rl*.py"
+      - "stateset_agents/training/decision_transformer.py"
+      - "stateset_agents/training/transformer_reward_model.py"
+      - "stateset_agents/training/trainer_utils.py"
+      - "stateset_agents/training/kl_controllers.py"
+      - "stateset_agents/training/grpo_accumulation.py"
+      - "tests/integration/test_ddp_bank_rounding.py"
+      - "tests/unit/test_partial_accumulation_mean.py"
+      - "stateset_agents/rewards/llm_judge.py"
+      - "tests/unit/test_judge_score_refinement.py"
+      - "tests/unit/test_bayesian_reward_refinement.py"
+      - "tests/unit/test_new_features.py"
+      - "stateset_agents/rewards/bayesian_reward_model.py"
+      - "stateset_agents/training/continual_learning.py"
+      - "tests/unit/test_ewc_estimation.py"
+      - "stateset_agents/training/ddp_continual.py"
+      - "stateset_agents/experimental/adaptive_learning_controller.py"
+      - "stateset_agents/core/enhanced/advanced_rl_algorithms.py"
+      - "stateset_agents/core/rust_accelerator.py"
+      - "stateset_agents/data/conversation_dataset.py"
+      - "rust_core/src/**"
+      - "rust_core/Cargo.toml"
+      - "rust_core/Cargo.lock"
+      - "tests/unit/test_offline_target_policies.py"
+      - "tests/unit/test_logged_bellman_refinement.py"
+      - "tests/unit/test_auxiliary_critic_update.py"
+      - "tests/unit/test_offline_critic_steps.py"
+      - "tests/unit/test_cql_sampling_bias.py"
+      - "tests/unit/test_offline_extraction_refinement.py"
+      - "tests/unit/test_offline_policy_training.py"
+      - "stateset_agents/training/offline_grpo_trainer.py"
+      - "stateset_agents/training/causal_likelihood.py"
+      - "stateset_agents/training/adamw_weights.py"
+      - "stateset_agents/training/ddp_checkpoint_state.py"
+      - "tests/unit/test_adam_history.py"
+      - "tests/unit/test_rl_math_refinement.py"
+      - "stateset_agents/data/discounted_returns.py"
+      - "stateset_agents/data/reward_columns.py"
+      - "tests/unit/test_decision_returns.py"
+      - "tests/unit/test_decision_transformer_alignment.py"
+      - "tests/unit/test_gspo_update_integrity.py"
+      - "stateset_agents/training/gspo_generation.py"
+      - "stateset_agents/training/reward_calibration.py"
+      - "stateset_agents/remote/river.py"
+      - "stateset_agents/remote/river_batches.py"
+      - "stateset_agents/remote/river_rl.py"
+      - "stateset_agents/remote/river_rl_runner.py"
+      - "stateset_agents/remote/tinker.py"
+      - "tests/unit/test_provider_math_refinement.py"
       - "stateset_agents/training/rl_losses.py"
+      - "stateset_agents/training/integer_bellman.py"
+      - "stateset_agents/training/offline_rl_batches.py"
       - "stateset_agents/training/auto_research/**"
       - "stateset_agents/rewards/multi_objective_reward.py"
       - "stateset_agents/core/trajectory.py"
@@ -29,10 +129,110 @@ on:
       - "lakefile.toml"
       - "lake-manifest.json"
       - "stateset_agents/training/async_rollouts.py"
+      - "stateset_agents/training/advantage_estimation.py"
+      - "stateset_agents/core/agent.py"
+      - "stateset_agents/core/generation_evidence.py"
+      - "stateset_agents/training/trainer_runtime.py"
+      - "stateset_agents/training/vllm_backend.py"
+      - "stateset_agents/training/rollout_contract.py"
+      - "stateset_agents/training/runtime_state.py"
+      - "tests/unit/test_gspo_exact_rollouts.py"
+      - "tests/unit/test_muse_spark.py"
+      - "stateset_agents/training/learner_preflight.py"
+      - "stateset_agents/training/config.py"
+      - "tests/unit/test_group_sampler_refinement.py"
+      - "tests/integration/test_trainer_ratio_invariants.py"
+      - "tests/unit/test_gepo_weight_refinement.py"
+      - "tests/unit/test_gepo_trainer_behavioral.py"
+      - "stateset_agents/training/gepo_weights.py"
+      - "tests/unit/test_group_reward_refinement.py"
+      - "stateset_agents/core/reward_moments.py"
+      - "stateset_agents/training/reward_advantages.py"
+      - "stateset_agents/training/distributed_advantages.py"
+      - "tests/integration/test_distributed_advantages.py"
+      - "tests/unit/test_token_capture.py"
+      - "tests/unit/test_hf_generator_fallback.py"
+      - "tests/unit/test_vllm_logprob_contract.py"
+      - "tests/unit/test_dapo_trainer_behavioral.py"
+      - "tests/unit/test_dapo_regularized_batch.py"
+      - "stateset_agents/core/value_function.py"
+      - "tests/unit/test_value_function_comprehensive.py"
+      - "stateset_agents/training/vapo_entrypoints.py"
+      - "stateset_agents/training/sim_to_real.py"
+      - "stateset_agents/evaluation/sim_to_real_metrics.py"
+      - "tests/unit/test_offline_rl_sim_to_real.py"
+      - "tests/unit/test_domain_adversarial_refinement.py"
+      - "tests/unit/test_replay_mixture_refinement.py"
+      - "tests/unit/test_replay_gradient_refinement.py"
+      - "tests/unit/test_replay_sampling_refinement.py"
+      - "tests/unit/test_feature_alignment_refinement.py"
+      - "tests/unit/test_vapo*.py"
+      - "stateset_agents/training/ppo_online.py"
+      - "stateset_agents/training/ppo_trainer.py"
+      - "tests/unit/test_ppo_math_refinement.py"
+      - "tests/unit/test_ppo_online.py"
+      - "tests/unit/test_grpo_optimizer_integrity.py"
+      - "stateset_agents/training/preference_loss.py"
+      - "tests/unit/test_preference_refinement.py"
+      - "tests/unit/test_actor_critic_refinement.py"
+      - "tests/unit/test_ppo*.py"
       - "stateset_agents/training/distributed_rollouts.py"
       - "stateset_agents/training/async_runtime.py"
       - "stateset_agents/training/objectives.py"
+      - "stateset_agents/training/loss_computation.py"
+      - "stateset_agents/training/*_trainer.py"
+      - "stateset_agents/training/offline_rl*.py"
+      - "stateset_agents/training/decision_transformer.py"
+      - "stateset_agents/training/transformer_reward_model.py"
+      - "stateset_agents/training/trainer_utils.py"
+      - "stateset_agents/training/kl_controllers.py"
+      - "stateset_agents/training/grpo_accumulation.py"
+      - "tests/integration/test_ddp_bank_rounding.py"
+      - "tests/unit/test_partial_accumulation_mean.py"
+      - "stateset_agents/rewards/llm_judge.py"
+      - "tests/unit/test_judge_score_refinement.py"
+      - "tests/unit/test_bayesian_reward_refinement.py"
+      - "tests/unit/test_new_features.py"
+      - "stateset_agents/rewards/bayesian_reward_model.py"
+      - "stateset_agents/training/continual_learning.py"
+      - "tests/unit/test_ewc_estimation.py"
+      - "stateset_agents/training/ddp_continual.py"
+      - "stateset_agents/experimental/adaptive_learning_controller.py"
+      - "stateset_agents/core/enhanced/advanced_rl_algorithms.py"
+      - "stateset_agents/core/rust_accelerator.py"
+      - "stateset_agents/data/conversation_dataset.py"
+      - "rust_core/src/**"
+      - "rust_core/Cargo.toml"
+      - "rust_core/Cargo.lock"
+      - "tests/unit/test_offline_target_policies.py"
+      - "tests/unit/test_logged_bellman_refinement.py"
+      - "tests/unit/test_auxiliary_critic_update.py"
+      - "tests/unit/test_offline_critic_steps.py"
+      - "tests/unit/test_cql_sampling_bias.py"
+      - "tests/unit/test_offline_extraction_refinement.py"
+      - "tests/unit/test_offline_policy_training.py"
+      - "stateset_agents/training/offline_grpo_trainer.py"
+      - "stateset_agents/training/causal_likelihood.py"
+      - "stateset_agents/training/adamw_weights.py"
+      - "stateset_agents/training/ddp_checkpoint_state.py"
+      - "tests/unit/test_adam_history.py"
+      - "tests/unit/test_rl_math_refinement.py"
+      - "stateset_agents/data/discounted_returns.py"
+      - "stateset_agents/data/reward_columns.py"
+      - "tests/unit/test_decision_returns.py"
+      - "tests/unit/test_decision_transformer_alignment.py"
+      - "tests/unit/test_gspo_update_integrity.py"
+      - "stateset_agents/training/gspo_generation.py"
+      - "stateset_agents/training/reward_calibration.py"
+      - "stateset_agents/remote/river.py"
+      - "stateset_agents/remote/river_batches.py"
+      - "stateset_agents/remote/river_rl.py"
+      - "stateset_agents/remote/river_rl_runner.py"
+      - "stateset_agents/remote/tinker.py"
+      - "tests/unit/test_provider_math_refinement.py"
       - "stateset_agents/training/rl_losses.py"
+      - "stateset_agents/training/integer_bellman.py"
+      - "stateset_agents/training/offline_rl_batches.py"
       - "stateset_agents/training/auto_research/**"
       - "stateset_agents/rewards/multi_objective_reward.py"
       - "stateset_agents/core/trajectory.py"
@@ -58,6 +258,15 @@ jobs:
           lint: false
           use-github-cache: false
 
+      - name: Fetch compiled dependencies for the real-arithmetic proofs
+        run: |
+          lake exe cache get Mathlib/Analysis/SpecialFunctions/Log/Deriv.lean \
+            Mathlib/Analysis/SpecialFunctions/Trigonometric/Basic.lean \
+            Mathlib/Topology/MetricSpace/Contracting.lean \
+            Mathlib/Probability/Variance.lean \
+            Mathlib/Analysis/Calculus/ParametricIntegral.lean \
+            Mathlib/Tactic/{FieldSimp,Linarith,Positivity,Ring}.lean
+
       - name: Download pinned TLA+ tools
         run: |
           curl --fail --location --silent --show-error --retry 3 \
@@ -67,3 +276,75 @@ jobs:
 
       - name: Check TLA+ models and Lean proofs
         run: bash formal/check.sh "$RUNNER_TEMP/tla2tools.jar"
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Check extracted PyTorch graphs against Lean
+        run: |
+          python -m pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e .
+          python -m formal.check_torch_graphs
+
+      - name: Check the provider loss contracts with local SDK types
+        run: |
+          python -m pip install pytest pytest-asyncio river-client==0.11.0 tinker==0.39.2
+          python -c "import river_client, tinker"
+          python -m pytest -q -o addopts='' tests/unit/test_provider_math_refinement.py
+
+      - name: Check the offline critic updates and epoch reductions
+        run: |
+          python -m pytest -q -o addopts='' tests/unit/test_rl_math_refinement.py tests/unit/test_adam_history.py \
+            tests/unit/test_cql_bellman_target.py tests/unit/test_decision_transformer_alignment.py \
+            -k 'cql or iql or offline_epoch'
+
+      - name: Check Decision Transformer targets, context windows and optimizer updates
+        run: python -m pytest -q -o addopts='' tests/unit/test_decision_returns.py tests/unit/test_decision_transformer_alignment.py
+
+      - name: Check sampled offline policies, targets and checkpoint resume
+        run: python -m pytest -q -o addopts='' tests/unit/test_offline_target_policies.py tests/unit/test_logged_bellman_refinement.py tests/unit/test_auxiliary_critic_update.py tests/unit/test_offline_critic_steps.py tests/unit/test_cql_sampling_bias.py
+
+      - name: Check actor-critic updates, preferences and native return targets
+        run: |
+          cargo test --manifest-path rust_core/Cargo.toml --locked
+          python -m pip install ./rust_core 'transformers>=4.57.1'
+          python -c "from stateset_rl_core import compute_gae_targets"
+          python -m pytest -q -o addopts='' tests/unit/test_preference_refinement.py \
+            tests/unit/test_actor_critic_refinement.py tests/unit/test_ppo_math_refinement.py \
+            tests/unit/test_replay_mixture_refinement.py \
+            tests/unit/test_replay_gradient_refinement.py tests/unit/test_replay_sampling_refinement.py \
+            tests/unit/test_domain_adversarial_refinement.py tests/unit/test_feature_alignment_refinement.py \
+            tests/unit/test_offline_rl_sim_to_real.py::TestSimToRealMetrics \
+            tests/unit/test_ppo_online.py tests/unit/test_ppo_safety.py tests/unit/test_ppo_objective.py \
+            tests/unit/test_vapo_rust_gae_parity.py tests/unit/test_vapo_joint_update.py tests/unit/test_vapo_trainer_behavioral.py \
+            tests/unit/test_value_function_comprehensive.py tests/unit/test_ewc_estimation.py
+
+      - name: Check logged-action IQL policy extraction and checkpoint restore
+        run: python -m pytest -q -o addopts='' tests/unit/test_offline_extraction_refinement.py tests/unit/test_offline_policy_training.py
+
+      - name: Check prompt-group baselines and distributed reward normalization
+        run: python -m pytest -q -o addopts='' tests/unit/test_group_reward_refinement.py tests/integration/test_distributed_advantages.py
+
+      - name: Check sampled token probabilities and group-policy updates
+        run: |
+          python -m pytest -q -o addopts='' tests/unit/test_group_sampler_refinement.py \
+            tests/unit/test_token_capture.py tests/unit/test_hf_generator_fallback.py tests/unit/test_vllm_logprob_contract.py tests/unit/test_dapo_regularized_batch.py tests/unit/test_dapo_trainer_behavioral.py \
+            tests/unit/test_gspo_exact_rollouts.py tests/unit/test_muse_spark.py::test_recipient_parsing_keeps_exact_rollout_ids_and_probabilities
+
+      - name: Check native gradient rounding on two and three Gloo ranks
+        run: python -m pytest -q -o addopts='' tests/integration/test_ddp_bank_rounding.py
+
+      - name: Check GEPO weights, gradients and frozen sampler scores
+        run: python -m pytest -q -o addopts='' tests/unit/test_gepo_weight_refinement.py tests/unit/test_gepo_trainer_behavioral.py tests/integration/test_trainer_ratio_invariants.py
+
+      - name: Check native GRPO clipping and partial optimizer steps
+        run: python -m pytest -q -o addopts='' tests/unit/test_partial_accumulation_mean.py tests/unit/test_grpo_optimizer_integrity.py
+
+      - name: Check Gaussian reward training and predictive uncertainty
+        run: python -m pytest -q -o addopts='' tests/unit/test_bayesian_reward_refinement.py tests/unit/test_new_features.py::TestBayesianRewardModel
+
+      - name: Check judge calibration and standalone RLAIF SGD
+        run: |
+          python -m pytest -q -o addopts='' tests/unit/test_judge_score_refinement.py
+          python -m pytest -q -o addopts='' tests/unit/test_rl_math_refinement.py -k 'rlaif or masked_causal_scores'

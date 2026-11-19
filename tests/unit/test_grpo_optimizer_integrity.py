@@ -1,6 +1,7 @@
 """Real optimizer/AMP state must advance only for valid, committed updates."""
 
 import copy
+import math
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -149,22 +150,33 @@ def test_real_amp_overflow_skips_update_then_recovers(trainer, bad):
 
 
 @pytest.mark.parametrize("amp", [False, True])
-def test_finite_gradients_with_overflowing_norm_fail_before_step(trainer, amp):
+def test_finite_gradients_with_overflowing_native_norm_commit_clipped_step(
+    trainer, amp
+):
+    trainer.config.gradient_accumulation_steps = 1
     if amp:
         trainer.scaler = torch.amp.GradScaler("cpu", init_scale=1, growth_interval=2)
     backward(trainer)
-    trainer.agent.model.weight.grad.fill_(1e30)
-    before = snapshot(trainer)
-    scaler_before = copy.deepcopy(trainer.scaler.state_dict()) if amp else None
-    with pytest.raises(RuntimeError, match="non-finite"):
-        apply(trainer)
-    equal(before, snapshot(trainer))
+    weight = trainer.agent.model.weight
+    weight.grad.fill_(1e30)
+    before = weight.detach().clone()
+    g = weight.grad[0, 0].item()
+    expected = torch.full_like(weight, g / (math.hypot(g, g) + 1e-6))
+    assert apply(trainer) is True
+    torch.testing.assert_close(
+        trainer.optimizer.state[weight]["momentum_buffer"], expected
+    )
+    torch.testing.assert_close(weight, before - 0.1 * expected)
+    assert trainer.global_step == trainer.lr_scheduler.last_epoch == 1
+    assert weight.grad is None and trainer._grpo_accumulation is None
+    trainer.agent.sync_rollout_backend.assert_called_once()
     if amp:
-        equal(scaler_before, trainer.scaler.state_dict())
-    assert trainer.agent.model.weight.grad is None
-    # Rejected clipping must not strand GradScaler in an already-unscaled phase.
+        assert trainer.scaler.get_scale() == 1
+
     backward(trainer)
     assert apply(trainer) is True
+    if amp:
+        assert trainer.scaler.get_scale() == 2
 
 
 def test_scheduler_failure_keeps_committed_step_count(trainer):
@@ -211,7 +223,7 @@ async def test_multi_turn_metrics_count_only_committed_inner_updates(
 
     value.compute_grpo_loss = loss
     monkeypatch.setattr(
-        module, "compute_token_old_logprobs", lambda *args: [torch.zeros(1)]
+        module, "freeze_rollout_logprobs", lambda *args: [torch.zeros(1)]
     )
     metrics = await value.training_step([])
     expected = int(inner == 3)
@@ -258,7 +270,7 @@ async def test_single_turn_loop_rejects_or_skips_invalid_backward(
 
     monkeypatch.setattr(module, "compute_grpo_loss", loss)
     monkeypatch.setattr(
-        module, "compute_token_old_logprobs", lambda *args: [torch.zeros(1)]
+        module, "freeze_rollout_logprobs", lambda *args: [torch.zeros(1)]
     )
     before = snapshot(value)
     if amp:

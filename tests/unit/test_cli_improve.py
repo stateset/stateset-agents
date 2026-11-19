@@ -99,9 +99,12 @@ def _assert_command_parses(tokens: list[str]) -> None:
         return  # shell builtin, nothing to validate against a Python parser
 
     if exe == "python":
-        script = tokens[1]
-        argv: tuple[str, ...] = (sys.executable, script)
-        rest = tokens[2:]
+        if tokens[1] == "-m":
+            argv: tuple[str, ...] = (sys.executable, "-m", tokens[2])
+            rest = tokens[3:]
+        else:
+            argv = (sys.executable, tokens[1])
+            rest = tokens[2:]
     elif exe == "stateset-agents":
         # e.g. ["stateset-agents", "improve", "run", "--transcripts", ...] —
         # "improve" is the typer command; "run"/"status" is its positional
@@ -127,6 +130,43 @@ def _assert_command_parses(tokens: list[str]) -> None:
 
 GOOD_TURN = "I would be happy to help you with a refund for order 1234 right away."
 BAD_TURN = "idk"
+
+
+def test_next_steps_preserve_shell_sensitive_output_paths(tmp_path: Path) -> None:
+    from stateset_agents.cli_improve import _render_next_steps
+
+    output = tmp_path / "customer's logs $(touch should-not-exist)"
+    summary = {
+        "curated_count": 2,
+        "assistant_turn_count": 3,
+        "threshold": 0.7,
+        "mean_score": 0.8,
+        "reward": "customer_support",
+    }
+    commands = _extract_bash_commands(_render_next_steps(summary, output))
+    prepare = commands[0]
+    assert prepare[prepare.index("--input") + 1] == str(output / "curated.jsonl")
+    assert prepare[prepare.index("--output") + 1] == str(output / "sft_train.jsonl")
+    remote = next(command for command in commands if "train-remote" in command)
+    assert "--plan-only" in remote
+    assert "--dry-run" not in remote
+
+
+def test_empty_curation_does_not_recommend_training(tmp_path: Path) -> None:
+    from stateset_agents.cli_improve import _render_next_steps
+
+    result = _render_next_steps(
+        {
+            "curated_count": 0,
+            "assistant_turn_count": 1,
+            "threshold": 0.7,
+            "mean_score": 0.1,
+            "reward": "customer_support",
+        },
+        tmp_path,
+    )
+    assert "No examples passed curation" in result
+    assert not _extract_bash_commands(result)
 
 
 def _write_transcript(path: Path, good: bool, order_id: str) -> None:
@@ -203,9 +243,11 @@ class TestImproveRun:
         next_steps_path = output_dir / "next_steps.md"
         assert next_steps_path.exists()
         next_steps = next_steps_path.read_text(encoding="utf-8")
-        assert "scripts/sft_from_curated.py" in next_steps
-        assert "scripts/prepare_sft_dataset.py" in next_steps
-        assert "examples/finetune_gspo.py" in next_steps
+        assert "-m stateset_agents.training.sft" in next_steps
+        assert "-m stateset_agents.data.prepare_sft_dataset" in next_steps
+        assert "-m stateset_agents.training.gspo_preview" in next_steps
+        assert "python scripts/" not in next_steps
+        assert "python examples/" not in next_steps
         assert str(curated_path) in next_steps
 
     def test_next_steps_offers_a_path_for_users_without_a_gpu(

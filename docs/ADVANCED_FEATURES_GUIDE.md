@@ -255,7 +255,6 @@ from stateset_agents.training.offline_rl_algorithms import (
 config = CQLConfig(
     hidden_size=256,
     cql_alpha=1.0,
-    min_q_weight=5.0,
     learning_rate=3e-4,
     batch_size=256,
 )
@@ -340,7 +339,7 @@ for trajectory in collected_trajectories:
 
 ## 4. Bayesian Uncertainty Quantification
 
-Get confidence intervals and uncertainty estimates with reward predictions.
+The reward model reports a predictive mean and variance across equally weighted model and dropout draws. The interval uses the mean plus or minus 1.96 predictive standard deviations. Its nominal 95% coverage assumes a normal predictive distribution. The `epistemic_weight` and `aleatoric_weight` settings control how much each variance contributes to label-query priority. Both default to one.
 
 ### Features
 
@@ -384,9 +383,9 @@ result = await reward_fn.compute_reward(turns)
 print(f"Reward: {result.score:.3f}")
 print(f"Epistemic uncertainty: {result.breakdown['epistemic_uncertainty']:.3f}")
 print(f"Aleatoric uncertainty: {result.breakdown['aleatoric_uncertainty']:.3f}")
-print(f"95% CI: [{result.breakdown['confidence_interval_lower']:.3f}, "
+print(f"Approximate 95% predictive interval: [{result.breakdown['confidence_interval_lower']:.3f}, "
       f"{result.breakdown['confidence_interval_upper']:.3f}]")
-print(f"Confidence: {result.metadata['confidence']:.2%}")
+print(f"Inverse (1 + predictive variance): {result.metadata['confidence']:.3f}")
 
 if result.metadata['high_uncertainty']:
     print("⚠️  High uncertainty - consider getting human feedback")

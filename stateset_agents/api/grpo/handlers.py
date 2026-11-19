@@ -10,9 +10,10 @@ import time
 import uuid
 from collections import deque
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
+from stateset_agents.utils.async_calls import drain_owned_operation
 
 from ..logging_config import get_logger
 from .config import get_grpo_config
@@ -44,7 +45,7 @@ class TrainingHandler:
     Manages job creation, execution, status tracking, and cleanup.
     """
 
-    def __init__(self, services: dict[str, Any]):
+    def __init__(self, services: dict[str, Any]) -> None:
         """
         Initialize training handler.
 
@@ -55,6 +56,84 @@ class TrainingHandler:
         self.state = get_state_manager()
         self.metrics = get_grpo_metrics()
         self.config = get_grpo_config()
+        self._closing = False
+        self._workers: dict[asyncio.Future[None], asyncio.Task[Any] | None] = {}
+        self._close_task: asyncio.Task[None] | None = None
+
+    @property
+    def is_closing(self) -> bool:
+        """Return whether new training work is permanently disabled."""
+        return self._closing
+
+    @property
+    def is_closed(self) -> bool:
+        """Return whether the owned worker drain has completed successfully."""
+        task = self._close_task
+        return (
+            task is not None
+            and task.done()
+            and not task.cancelled()
+            and task.exception() is None
+        )
+
+    @property
+    def active_workers(self) -> int:
+        """Return workers still using engines, independently of public job status."""
+        return len(self._workers)
+
+    def close_admission(self) -> None:
+        """Stop new work and cancel local jobs, including callbacks not yet entered."""
+        if self._closing:
+            return
+        self._closing = True
+        for job in self.state.list_jobs():
+            if self.state.transition_job(job.job_id, "cancelled", expected_job=job):
+                logger.info("Cancelled training job: %s", job.job_id)
+
+    async def aclose(self) -> None:
+        """Join all owned workers before returning, even through caller cancellation.
+
+        Shutdown is cooperative: in-flight iterations may finish. Engines must
+        supply their own I/O timeouts; no engine may be released before this
+        boundary completes. Call this outside worker execution on the same loop.
+        """
+        self.close_admission()
+        if self._close_task is None:
+            self._close_task = asyncio.create_task(self._drain_workers())
+        task = self._close_task
+
+        async def join() -> None:
+            await task
+
+        await drain_owned_operation(join())
+
+    async def _drain_workers(self) -> None:
+        while self._workers:
+            await asyncio.wait(tuple(self._workers))
+
+    async def _run_iteration(
+        self, engine: Any, job: TrainingJob, prompts: list[str]
+    ) -> dict[str, Any]:
+        """On cancellation, interrupt once and own the engine's unwind to completion."""
+
+        async def invoke() -> dict[str, Any]:
+            # Admission can close after this task is queued but before it runs.
+            # The worker also rechecks ownership before consuming the result.
+            if not self.state.is_job_running(job):
+                return {}
+            return cast(dict[str, Any], await engine.train_iteration(prompts))
+
+        iteration = asyncio.create_task(invoke())
+        try:
+            return await asyncio.shield(iteration)
+        except asyncio.CancelledError:
+            iteration.cancel()
+
+            async def settle() -> None:
+                await asyncio.gather(iteration, return_exceptions=True)
+
+            await drain_owned_operation(settle())
+            raise
 
     @staticmethod
     def _is_admin_user(user_roles: list[str] | None = None) -> bool:
@@ -87,6 +166,8 @@ class TrainingHandler:
         Returns:
             Initial training response with job ID.
         """
+        if self._closing:
+            raise RuntimeError("Training service is shutting down")
         job_id = str(uuid.uuid4())
 
         # Create job in state manager
@@ -136,17 +217,29 @@ class TrainingHandler:
             use_neural_rewards: Whether to use neural reward models.
             use_ruler_rewards: Whether to use RULER judges.
         """
+        job = self.state.get_job(job_id)
+        if self._closing:
+            if job is not None:
+                self.state.transition_job(job_id, "cancelled", expected_job=job)
+            return
+        if job is None or not self.state.transition_job(
+            job_id, "running", expected_job=job
+        ):
+            return
+        completion: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        # Retain the task, but join only this worker's completion boundary;
+        # the surrounding ASGI request may have other work after training.
+        self._workers[completion] = asyncio.current_task()
         try:
-            self.state.update_job(job_id, status="running")
-
             engine = self.services.get("demo_engine")
             if not engine:
-                self.state.update_job(
+                if self.state.transition_job(
                     job_id,
-                    status="failed",
+                    "failed",
+                    expected_job=job,
                     error="No training engine available",
-                )
-                self.metrics.record_training_failed()
+                ):
+                    self.metrics.record_training_failed()
                 return
 
             total_trajectories = 0
@@ -154,18 +247,25 @@ class TrainingHandler:
             total_computation = 0.0
 
             for i in range(num_iterations):
-                result = await engine.train_iteration(prompts)
+                if not self.state.is_job_running(job):
+                    return
+                result = await self._run_iteration(engine, job, prompts)
+                if not self.state.is_job_running(job):
+                    return
 
                 total_trajectories += result.get("trajectories_generated", 0)
                 total_reward += result.get("average_reward", 0) * len(prompts)
                 total_computation += result.get("total_computation_used", 0)
 
-                self.state.update_job(
+                updated = self.state.update_job(
                     job_id,
                     iterations=i + 1,
                     trajectories=total_trajectories,
                     result=result,
+                    expected_job=job,
                 )
+                if updated is None or not self.state.is_job_running(job):
+                    return
 
                 # Small delay to allow other async operations
                 await asyncio.sleep(0.01)
@@ -174,7 +274,8 @@ class TrainingHandler:
                 total_reward / total_trajectories if total_trajectories else 0.0
             )
 
-            self.state.update_job(job_id, status="completed")
+            if not self.state.transition_job(job_id, "completed", expected_job=job):
+                return
             self.metrics.record_training_completed(
                 trajectories=total_trajectories,
                 computation=total_computation,
@@ -188,10 +289,20 @@ class TrainingHandler:
                 average_reward,
             )
 
-        except GRPO_HANDLER_EXCEPTIONS as e:
-            logger.exception("Training job %s failed", job_id)
-            self.state.update_job(job_id, status="failed", error=str(e))
-            self.metrics.record_training_failed()
+        except asyncio.CancelledError:
+            self.state.transition_job(job_id, "cancelled", expected_job=job)
+            raise
+        except Exception as e:
+            logger.exception("Training worker for job %s exited with an error", job_id)
+            if self.state.transition_job(
+                job_id, "failed", expected_job=job, error=str(e)
+            ):
+                self.metrics.record_training_failed()
+            if not isinstance(e, GRPO_HANDLER_EXCEPTIONS):
+                raise
+        finally:
+            self._workers.pop(completion, None)
+            completion.set_result(None)
 
     async def run_distributed_training(
         self,
@@ -209,23 +320,15 @@ class TrainingHandler:
             num_iterations: Number of iterations.
             distributed_config: Distributed training configuration.
         """
-        try:
-            self.state.update_job(job_id, status="running")
-
-            # For now, fall back to computational training
-            # Real distributed training would use multiple workers
-            await self.run_computational_training(
-                job_id=job_id,
-                prompts=prompts,
-                num_iterations=num_iterations,
-                use_neural_rewards=True,
-                use_ruler_rewards=False,
-            )
-
-        except GRPO_HANDLER_EXCEPTIONS as e:
-            logger.exception("Distributed training job %s failed", job_id)
-            self.state.update_job(job_id, status="failed", error=str(e))
-            self.metrics.record_training_failed()
+        # The computational fallback owns the single start claim and outcome.
+        # Real distributed training would use multiple workers.
+        await self.run_computational_training(
+            job_id=job_id,
+            prompts=prompts,
+            num_iterations=num_iterations,
+            use_neural_rewards=True,
+            use_ruler_rewards=False,
+        )
 
     def get_job_status(
         self,
@@ -281,7 +384,10 @@ class TrainingHandler:
         user_roles: list[str] | None = None,
     ) -> bool:
         """
-        Cancel a training job.
+        Commit local cancellation and stop further iterations.
+
+        An in-flight iteration may finish; its result is discarded after this
+        transition commits. This synchronous method does not wait for the engine.
 
         Args:
             job_id: Job identifier.
@@ -293,11 +399,7 @@ class TrainingHandler:
         if not job or not self._can_access_job(job, user_id, user_roles):
             return False
 
-        if job.status in ("completed", "failed", "cancelled"):
-            return False
-
-        self.state.update_job(job_id, status="cancelled")
-        return True
+        return self.state.transition_job(job_id, "cancelled", expected_job=job)
 
 
 class ConversationHandler:
@@ -399,9 +501,6 @@ class ConversationHandler:
                 strategy=request.strategy,
             )
 
-            conversation_context.add_turn(
-                {"role": "assistant", "content": response_text}
-            )
             context = (
                 multiturn_agent.get_conversation_summary(
                     conversation_context.conversation_id

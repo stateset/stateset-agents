@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import enum
 import json
+import math
 from dataclasses import InitVar, asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -56,6 +57,10 @@ _POSITIVE_FIELDS = (
     "timeout_s",
     "gpu_count",
 )
+
+
+# Private subprocess protocol. Standalone workers still exit zero on a preview.
+WORKER_PREVIEW_EXIT = 10
 
 
 class JobStatus(enum.Enum):
@@ -187,7 +192,7 @@ class RemoteJobSpec:
     #: Explicit SFT initialization/training seed. None preserves provider defaults
     #: (42 for packaged SFT, 0 for River). Harvest/RL own their seed protocols.
     seed: int | None = None
-    #: Used only while restoring metadata for an already submitted job. This
+    #: Offline plans and persisted job metadata may refer to absent inputs. This
     #: initialization flag is absent from serialized specs and worker arguments.
     _require_dataset: InitVar[bool] = True
 
@@ -241,8 +246,12 @@ class RemoteJobSpec:
 
         if self.network_volume_id is not None and not self.network_volume_id.strip():
             raise ValueError("network_volume_id must be non-empty when set")
-        if self.max_cost_usd is not None and self.max_cost_usd <= 0:
-            raise ValueError("max_cost_usd must be positive when set")
+        if self.max_cost_usd is not None and (
+            type(self.max_cost_usd) not in (int, float)
+            or not math.isfinite(self.max_cost_usd)
+            or self.max_cost_usd <= 0
+        ):
+            raise ValueError("max_cost_usd must be finite and positive when set")
 
         self.cloud_type = str(self.cloud_type).upper()
         if self.cloud_type not in _CLOUD_TYPES:
@@ -355,6 +364,8 @@ class RemoteJobResult:
     #: price — unknown, never free.
     duration_s: float | None = None
     cost_usd: float | None = None
+    #: Successful preview. Any artifacts are diagnostic reports.
+    is_preview: bool = False
 
     @property
     def succeeded(self) -> bool:

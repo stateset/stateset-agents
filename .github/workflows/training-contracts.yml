@@ -57,7 +57,7 @@ jobs:
           /tmp/wheel-env/bin/pip check
           cp scripts/verify_installed_wheel.py /tmp/verify_installed_wheel.py
           cd /tmp
-          /tmp/wheel-env/bin/python verify_installed_wheel.py --extra "$EXTRA"
+          /tmp/wheel-env/bin/python verify_installed_wheel.py --extra "$EXTRA" --quickstart "$GITHUB_WORKSPACE/QUICKSTART.md"
       - name: Exercise installed wheel policy updates and exact resume
         if: matrix.extra == 'training'
         env:
@@ -234,6 +234,10 @@ jobs:
         run: |
           pip install 'pillow>=10.0.0'
           pytest -n 0 -o addopts='' tests/unit/test_nemotron_vl.py
+      - name: Verify private workflow and recovery contracts
+        run: |
+          python scripts/check_private_workflow_data.py
+          pytest -n 0 -o addopts='' tests/unit/test_private_improvement.py
       - name: Verify logged-policy improvement contracts
         run: >-
           pytest -n 0 -o addopts=''

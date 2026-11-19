@@ -29,7 +29,13 @@ GEPO uses **group-level importance weights** instead of per-token (GRPO) or per-
 w_GEPO(y|x) = p(y|x) / E_q[q(y|x)]
 ```
 
-This exponentially reduces variance under high KL divergence, making training stable even with:
+StateSet computes the group denominator as `sum(q²) / sum(q)` with `q`
+given by exponentiated sampler sequence log-probability sums. The paper's
+equation 9 uses length-normalized sequence scores. The formal check covers
+the denominator identity. The variance analysis in the paper has additional
+distributional assumptions. [GEPO, §3](https://arxiv.org/html/2508.17850v1)
+
+The trainer supports these settings:
 - Network delays
 - Heterogeneous compute resources
 - Asynchronous training
@@ -113,7 +119,7 @@ Normalizes loss by total token count, not sample count:
 Loss = (1 / total_tokens) * sum(per_token_loss)
 ```
 
-Prevents longer sequences from dominating gradients.
+Each response token has equal weight. A longer response contributes more terms.
 
 #### 4. Overlong Reward Shaping
 
@@ -198,7 +204,7 @@ VAPO is the current state-of-the-art, achieving **60.4 on AIME 2024** (surpassin
 
 1. **Value Network Warmup**: Pretrain value network for 50 steps with Monte-Carlo returns
 2. **Decoupled GAE**: Separate lambda for critic (1.0) and policy (adaptive)
-3. **Length-Adaptive Lambda**: `lambda = 1 - 1/(alpha * length)`
+3. **Length-Adaptive Lambda**: `lambda = 1 - 1/(1 + alpha * length)`
 4. **Clip-Higher**: Asymmetric clipping like DAPO
 5. **Token-Level Loss**: Normalize by total tokens
 6. **Positive Example LM Loss**: Add NLL loss on correct samples
@@ -213,7 +219,7 @@ The lambda parameter in GAE controls bias-variance tradeoff:
 VAPO adapts lambda based on sequence length:
 
 ```python
-lambda_policy = 1 - 1 / (0.05 * sequence_length)
+lambda_policy = 1 - 1 / (1 + 0.05 * sequence_length)
 ```
 
 Short sequences get lower lambda (more bias, less variance).

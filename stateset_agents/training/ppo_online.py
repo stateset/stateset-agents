@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import torch
 
+from stateset_agents.core.generation_evidence import sampled_weight_logprob
 from stateset_agents.evaluation.agent_runs import content_hash
 from stateset_agents.evaluation.implementation import package_implementation
 
@@ -154,6 +155,8 @@ async def _collect(
 ) -> list[dict[str, Any]]:
     import torch
 
+    from .ppo_trainer import _categorical_log_probs
+
     config = trainer.config
     eos = getattr(trainer.tokenizer, "eos_token_id", None)
     eos_ids = [] if eos is None else eos if isinstance(eos, list) else [eos]
@@ -176,13 +179,16 @@ async def _collect(
                         attention_mask=torch.ones_like(ids),
                         output_hidden_states=True,
                     )
-                    logits = output.logits[0, -1].float() / config.temperature
+                    logits = output.logits[0, -1]
                     if not torch.isfinite(logits).all():
                         raise FloatingPointError(
                             "Online PPO sampling logits must be finite"
                         )
-                    likelihoods = torch.log_softmax(logits, dim=-1)
-                    action = int(torch.multinomial(likelihoods.exp(), 1).item())
+                    likelihoods = _categorical_log_probs(logits, config.temperature)
+                    weights = likelihoods.exp()
+                    selected = torch.multinomial(weights, 1).squeeze(0)
+                    action = int(selected.item())
+                    behavior_logp = sampled_weight_logprob(weights, selected)
                     hidden = output.hidden_states[-1][:, -1:].to(
                         next(trainer.value_head.parameters()).dtype
                     )
@@ -192,7 +198,7 @@ async def _collect(
                             "Online PPO behavior values must be finite"
                         )
                 actions.append(action)
-                log_probs.append(float(likelihoods[action].item()))
+                log_probs.append(float(behavior_logp.item()))
                 values.append(value)
                 prefix.append(action)
                 if action in eos_ids:
@@ -233,8 +239,13 @@ def _pack(trainer: Any, rows: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
     ids = torch.zeros((len(rows), width), dtype=torch.long, device=trainer.device)
     attention = torch.zeros_like(ids)
     response = torch.zeros_like(ids, dtype=torch.float32)
-    old_log_probs = torch.zeros_like(response[:, 1:])
-    old_values = torch.zeros_like(old_log_probs)
+    old_log_probs = torch.zeros_like(
+        response[:, 1:],
+        dtype=torch.float32 if ids.device.type == "mps" else torch.float64,
+    )
+    old_values = torch.zeros_like(
+        response[:, 1:], dtype=next(trainer.value_head.parameters()).dtype
+    )
     for i, row in enumerate(rows):
         start, end = len(row["prompt_ids"]), len(row["prompt_ids"]) + len(
             row["action_ids"]
@@ -245,10 +256,10 @@ def _pack(trainer: Any, rows: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
         attention[i, :end] = 1
         response[i, start:end] = 1
         old_log_probs[i, start - 1 : end - 1] = torch.tensor(
-            row["behavior_log_probs"], device=trainer.device
+            row["behavior_log_probs"], device=trainer.device, dtype=old_log_probs.dtype
         )
         old_values[i, start - 1 : end - 1] = torch.tensor(
-            row["behavior_values"], device=trainer.device
+            row["behavior_values"], device=trainer.device, dtype=old_values.dtype
         )
     rewards = torch.tensor(
         [r["reward"] for r in rows], dtype=torch.float32, device=trainer.device
@@ -376,6 +387,8 @@ async def train_online(
                             batch["input_ids"],
                             batch["attention_mask"],
                             config.temperature,
+                            action_mask=batch["response_mask"][:, 1:],
+                            sampling_weights=True,
                         )
                         hidden = trainer.get_hidden_states(
                             batch["input_ids"], batch["attention_mask"]
@@ -385,7 +398,10 @@ async def train_online(
                         ).squeeze(-1)[:, :-1]
                     mask = batch["response_mask"][:, 1:].bool()
                     if not torch.allclose(
-                        scored[mask], batch["old_log_probs"][mask], atol=1e-4, rtol=1e-4
+                        scored[mask],
+                        batch["old_log_probs"][mask].to(scored.dtype),
+                        atol=1e-4,
+                        rtol=1e-4,
                     ):
                         raise ValueError(
                             "PPO sampled and batched behavior likelihoods disagree"
@@ -411,6 +427,7 @@ async def train_online(
                         "behavior_state_sha256": identity,
                         "prompts_sha256": prompt_hash,
                         "temperature": config.temperature,
+                        "behavior_log_probs_source": "normalized_multinomial_weights",
                         "rows": rows,
                     }
                     _write(journal / f"rollout-{step}.json", record)

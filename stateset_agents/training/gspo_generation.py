@@ -15,6 +15,7 @@ from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.exceptions import INFERENCE_EXCEPTIONS as VLLM_EXCEPTIONS
 from stateset_agents.exceptions import MODEL_DEVICE_EXCEPTIONS
 
+from ..core.generation_evidence import recorded_sampler_scores
 from . import rl_losses
 from .gspo_config import GSPOConfig
 
@@ -341,6 +342,10 @@ class GSPOTrajectoryGenerator:
 
         Results without token-level data fall back to ``cumulative_logprob``.
         """
+        if getattr(result, "logprobs_mode", "processed_logprobs") == "raw_logprobs":
+            return await self._compute_sequence_log_prob(
+                rendered_prompt, result.response
+            )
         if not getattr(result, "token_logprobs", None) or (
             getattr(result, "response_token_ids", None) is None
         ):
@@ -369,7 +374,7 @@ class GSPOTrajectoryGenerator:
         otherwise ``None`` (the caller rescores at rollout time, which is the
         exact old-policy value).
         """
-        sampler = metadata.get("sampler_log_probs")
+        sampler = recorded_sampler_scores(metadata)
         token_ids = metadata.get("token_ids")
         tokenizer = getattr(self.agent, "tokenizer", None)
         if not sampler or token_ids is None or tokenizer is None:
@@ -439,7 +444,7 @@ class GSPOTrajectoryGenerator:
             for turn in turns:
                 content = str(getattr(turn, "content", ""))
                 metadata = getattr(turn, "metadata", None) or {}
-                sampler = metadata.get("sampler_log_probs")
+                sampler = recorded_sampler_scores(metadata)
                 exact = self._sampler_sequence_log_prob(
                     rendered_prompt, content, metadata
                 )
@@ -583,16 +588,6 @@ class GSPOTrajectoryGenerator:
         response_mask = torch.zeros_like(input_ids, dtype=torch.float32)
         if prompt_length < response_mask.shape[-1]:
             response_mask[..., prompt_length:] = 1.0
-
-        response_start = max(prompt_length - 1, 0)
-        if response_start >= input_ids.shape[-1] - 1:
-            # Degenerate case (prompt fills the window): fall back to the
-            # whole sequence rather than returning 0.
-            all_ones = torch.ones_like(input_ids, dtype=torch.float32)
-            token_log_probs, _ = rl_losses.gather_token_logprobs(
-                logits, input_ids, all_ones
-            )
-            return float(token_log_probs.sum().item())
 
         token_log_probs, _ = rl_losses.gather_token_logprobs(
             logits, input_ids, response_mask

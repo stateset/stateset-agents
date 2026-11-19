@@ -30,9 +30,10 @@ from .gspo_generation import (
 from .gspo_trainer import (
     GSPOConfig,
     GSPOTrainer,
+    _GSPOGroup,
     _require_finite_vector,
-    normalize_total_loss,
 )
+from .reward_advantages import reward_tensor
 from .runtime_state import _reject_unsupported_resume
 
 logger = logging.getLogger(__name__)
@@ -88,14 +89,9 @@ class GSPOTokenTrainer(GSPOTrainer):
         Returns:
             Token importance ratios (numerically equal to sequence ratio)
         """
-        # Detach sequence ratio (stop gradient)
-        detached_seq_ratio = sequence_importance_ratio.detach()
-
-        # The multiplication by π_θ / sg[π_θ] is implicit in how we compute gradients
-        # We return the detached sequence ratio which will be used for clipping
-        # but gradients will flow through token log probs in the loss computation
-
-        return detached_seq_ratio
+        return rl_losses.sequence_token_ratio(
+            sequence_importance_ratio, token_log_probs_current
+        )
 
     def compute_gspo_token_loss(
         self,
@@ -105,6 +101,7 @@ class GSPOTokenTrainer(GSPOTrainer):
         advantages: torch.Tensor,
         current_log_probs: torch.Tensor,
         ref_log_probs: torch.Tensor | None = None,
+        old_log_probs: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """GSPO-token objective for one prompt group via ``objectives.policy_loss``.
 
@@ -126,21 +123,33 @@ class GSPOTokenTrainer(GSPOTrainer):
         logp_cur = torch.stack(rows)
         lengths = sequence_lengths.to(logp_cur.dtype).clamp(min=1.0)
         # Recover sequence-sum old log-probs from the (detached) ratios.
-        old_sums = (
-            current_log_probs.detach() - torch.log(importance_ratios.detach()) * lengths
-        )
-        ref = None
-        if self.config.beta > 0 and ref_log_probs is not None:
-            ref = ref_log_probs
+        old_sums = old_log_probs
+        if old_sums is None:
+            old_sums = (
+                current_log_probs.detach()
+                - torch.log(importance_ratios.detach()) * lengths
+            )
         result = objectives.policy_loss(
             logp_cur=logp_cur,
             mask=mask,
             advantages=advantages,
             objective=self._objective,
             logp_old=old_sums,
-            logp_ref=ref,
+            logp_ref=ref_log_probs,
         )
         return result.loss
+
+    def _group_loss(self, group: _GSPOGroup, advantages: torch.Tensor) -> torch.Tensor:
+        assert group.tokens is not None
+        return self.compute_gspo_token_loss(
+            group.tokens,
+            group.lengths,
+            group.ratios,
+            advantages,
+            group.current,
+            group.reference,
+            group.old,
+        )
 
     async def train_step_token_level(
         self, queries: list[str | dict[str, Any]], num_groups: int = 1
@@ -163,16 +172,13 @@ class GSPOTokenTrainer(GSPOTrainer):
         self.optimizer.zero_grad(set_to_none=True)
         model_device = _get_model_device(self.model)
 
-        total_loss = torch.tensor(0.0, device=model_device)
+        groups: list[_GSPOGroup] = []
         total_clipped = 0
         total_samples = 0
         all_rewards = []
         all_importance_ratios = []
         all_generation_gaps: list[float] = []
         processed_groups = 0
-        nonzero_advantages = 0
-        advantage_count = 0
-        zero_advantage_groups = 0
 
         for raw_query in queries[:num_groups]:
             processed_groups += 1
@@ -213,18 +219,10 @@ class GSPOTokenTrainer(GSPOTrainer):
                 )
                 rewards.append(reward_info.total_reward)
 
-            rewards_tensor = torch.tensor(
-                rewards, dtype=torch.float32, device=model_device
-            )
+            rewards_tensor = reward_tensor(rewards, model_device)
             all_rewards.extend(rewards)
 
-            # Compute group advantages (same as standard GSPO for this demo)
-            # In practice, you could assign different advantages to different tokens
-            advantages, reward_stats = self.compute_group_advantages(rewards_tensor)
-            active = int(torch.count_nonzero(advantages).item())
-            nonzero_advantages += active
-            advantage_count += advantages.numel()
-            zero_advantage_groups += int(active == 0)
+            _require_finite_vector(rewards_tensor.float(), "GSPO rewards")
 
             # Compute current log probs for each response and get token-level details
             # (with gradients — only the sequence-level importance ratio used
@@ -274,7 +272,7 @@ class GSPOTokenTrainer(GSPOTrainer):
                 token_log_probs_list.append(masked_token_log_probs)
 
                 response_start = max(prompt_length - 1, 0)
-                response_len = max(masked_token_log_probs.shape[-1] - response_start, 1)
+                response_len = max(masked_token_log_probs.shape[-1] - response_start, 0)
                 sequence_lengths_list.append(float(response_len))
 
             # Keep tensors (not .item()) so gradients survive into the loss.
@@ -296,23 +294,18 @@ class GSPOTokenTrainer(GSPOTrainer):
             ).detach()
             all_importance_ratios.extend(importance_ratios.tolist())
 
-            # Apply clipping to sequence-level importance ratios
-            clipped_ratios = torch.clamp(
-                importance_ratios,
-                1 - self.config.clip_range_left,
-                1 + self.config.clip_range_right,
+            total_clipped += int(
+                objectives.clipped_positions(self._objective, importance_ratios)
+                .sum()
+                .item()
             )
-
-            # Count clipped sequences
-            num_clipped = (importance_ratios != clipped_ratios).sum().item()
-            total_clipped += num_clipped
             total_samples += len(responses)
 
             # Compute policy loss using GSPO-token objective
             # For each response, we compute token-level weighted loss
 
             ref_log_probs = None
-            if self.config.beta > 0 and self.ref_model is not None:
+            if self._objective.kl_coef > 0 and self.ref_model is not None:
                 ref_log_prob_values: list[float] = []
                 for response in responses:
                     ref_log_prob_values.append(
@@ -321,20 +314,19 @@ class GSPOTokenTrainer(GSPOTrainer):
                 ref_log_probs = torch.tensor(
                     ref_log_prob_values, dtype=torch.float32, device=model_device
                 )
-            loss = self.compute_gspo_token_loss(
-                token_log_probs_list,
-                sequence_lengths,
-                importance_ratios,
-                advantages,
-                current_log_probs,
-                ref_log_probs,
+            groups.append(
+                _GSPOGroup(
+                    importance_ratios,
+                    rewards_tensor,
+                    current_log_probs,
+                    sequence_lengths,
+                    old_log_probs,
+                    ref_log_probs,
+                    token_log_probs_list,
+                )
             )
 
-            total_loss += loss
-
-        # Match GSPO: each processed prompt group has equal objective weight.
-        # Normalize the full loss, including KL, before backward and clipping.
-        total_loss = normalize_total_loss(total_loss, processed_groups)
+        total_loss, nonzero_advantages, zero_advantage_groups = self._batch_loss(groups)
         self._apply_optimizer_step(total_loss)
 
         # Compute metrics
@@ -349,7 +341,7 @@ class GSPOTokenTrainer(GSPOTrainer):
             "clipping_fraction": clipping_fraction,
             "average_reward": avg_reward,
             "reward_std": float(np.std(all_rewards)) if all_rewards else 0.0,
-            "nonzero_advantage_fraction": nonzero_advantages / max(advantage_count, 1),
+            "nonzero_advantage_fraction": nonzero_advantages / max(total_samples, 1),
             "zero_advantage_group_fraction": zero_advantage_groups
             / max(processed_groups, 1),
             "advantage_group_count": float(processed_groups),

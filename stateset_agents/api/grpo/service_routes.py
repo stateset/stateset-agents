@@ -16,6 +16,8 @@ from fastapi import (
     WebSocketDisconnect,
 )
 
+from stateset_agents.core.conversation import ConversationResetError
+from stateset_agents.core.multiturn_context import ConversationConflict
 from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
 from stateset_agents.utils.credentials import credential_fingerprint
 
@@ -41,7 +43,7 @@ from .models import (
     GRPOTrainingResponse,
 )
 from .rate_limiter import get_rate_limiter
-from .state import get_state_manager
+from .state import TERMINAL_JOB_STATUSES, get_state_manager
 
 logger = get_logger(__name__)
 
@@ -156,6 +158,10 @@ def register_routes(
     ):
         """Start GRPO training."""
         training_handler = get_training_handler()
+        if training_handler.is_closing:
+            raise HTTPException(
+                status_code=503, detail="Training service is shutting down"
+            )
         response = await training_handler.start_training(
             request,
             ctx.user_id,
@@ -206,7 +212,7 @@ def register_routes(
         job_id: str,
         ctx=Depends(verify_request),
     ):
-        """Cancel a training job."""
+        """Stop further iterations; an in-flight iteration may still finish."""
         if not get_training_handler().cancel_job(
             job_id,
             ctx.user_id,
@@ -236,6 +242,8 @@ def register_routes(
             )
         except PermissionError as e:
             raise HTTPException(status_code=403, detail=str(e)) from e
+        except (ConversationConflict, ConversationResetError) as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
         except ValueError as e:
             if "not found" in str(e).lower():
                 raise HTTPException(status_code=404, detail=str(e)) from e
@@ -311,6 +319,10 @@ def register_routes(
     ):
         """Submit multiple training jobs in batch."""
         training_handler = get_training_handler()
+        if training_handler.is_closing:
+            raise HTTPException(
+                status_code=503, detail="Training service is shutting down"
+            )
         batch_id = f"batch_{uuid.uuid4().hex[:12]}"
         results: list[BatchItemResult] = []
         accepted = 0
@@ -418,23 +430,22 @@ def register_routes(
         already_completed: list[str] = []
 
         for job_id in request.job_ids:
-            response = training_handler.get_job_status(
+            if training_handler.cancel_job(
                 job_id,
                 ctx.user_id,
                 ctx.roles,
-            )
-
-            if not response:
-                not_found.append(job_id)
-            elif response.status in ("completed", "failed", "cancelled"):
-                already_completed.append(job_id)
+            ):
+                cancelled.append(job_id)
             else:
-                training_handler.cancel_job(
+                response = training_handler.get_job_status(
                     job_id,
                     ctx.user_id,
                     ctx.roles,
                 )
-                cancelled.append(job_id)
+                if response and response.status in TERMINAL_JOB_STATUSES:
+                    already_completed.append(job_id)
+                else:
+                    not_found.append(job_id)
 
         return BatchCancelResponse(
             cancelled=cancelled,

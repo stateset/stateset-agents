@@ -109,6 +109,12 @@ stateset\_agents.core.conversation\_environment module
    :undoc-members:
    :show-inheritance:
 
+Conversation operation ownership
+-------------------------------
+
+.. automodule:: stateset_agents.core.conversation
+   :members: ConversationResetError, conversation_call, conversation_stream
+
 stateset\_agents.core.curriculum\_learning module
 -------------------------------------------------
 
@@ -300,6 +306,18 @@ stateset\_agents.core.multiturn\_agent module
    :members:
    :undoc-members:
    :show-inheritance:
+
+The named-conversation ``MultiTurnAgent`` supports explicit
+``save_conversation``, ``restore_conversation``, and
+``inspect_conversation_snapshot`` operations. ``get_conversation_status(id)``
+reports turn ownership; ``get_conversation_snapshot_status()`` reports file
+publication and durability separately. Restores retain the destination backend
+and never replay failed or cancelled turns. These methods do not restore the
+gateway's separate access-control registry or an enhanced agent's memory/reasoning
+session. Version 2 includes built-in planning state; restore retains the
+destination manager's callbacks and configuration. Custom manager/plan classes
+require a separate representation. See ``examples/durable_conversation.py`` and
+``examples/durable_planning.py``.
 
 stateset\_agents.core.multiturn\_analysis module
 ------------------------------------------------

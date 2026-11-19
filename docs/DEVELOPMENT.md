@@ -2,9 +2,17 @@
 
 This guide covers setting up a development environment for StateSet Agents.
 
+For lifecycle changes, consult the [state machine inventory](STATE_MACHINES.md)
+for canonical owners, transition boundaries, recovery rules, and known gaps.
+
+For related persistence writes, use `UnitOfWork.transaction()` explicitly.
+The [transaction example](../examples/transactional_persistence.py) demonstrates
+commit, rollback, and reopening SQLite; ordinary repository calls remain
+individually committed outside a transaction.
+
 ## Prerequisites
 
-- Python 3.8+ (3.10+ recommended)
+- Python 3.10+
 - Git
 - pip or uv (recommended)
 - Optional: CUDA toolkit for GPU support
@@ -58,39 +66,35 @@ pre-commit install
 
 ```
 stateset-agents/
-├── core/                   # Core RL abstractions
-│   ├── agent.py           # Agent base classes
-│   ├── environment.py     # Environment interface
-│   ├── reward.py          # Reward functions (facade)
-│   ├── reward_base.py     # Base reward classes
-│   ├── basic_rewards.py   # Standard reward implementations
-│   ├── domain_rewards.py  # Domain-specific rewards
-│   ├── reward_factories.py # Reward creation utilities
-│   └── trajectory.py      # Trajectory management
-├── training/              # Training infrastructure
-│   ├── trainer.py         # Trainer exports (facade)
-│   ├── trainer_utils.py   # Utility functions
-│   ├── single_turn_trainer.py
-│   ├── multi_turn_trainer.py
-│   ├── loss_computation.py
-│   └── config.py          # Training configuration
-├── stateset_agents/       # Public package namespace
-├── api/                   # REST API services
-├── utils/                 # Utilities (W&B, monitoring)
+├── stateset_agents/       # Canonical source packaged for PyPI
+│   ├── core/              # Agents, environments, rewards, trajectories
+│   ├── training/          # Trainers, configurations, and training loops
+│   ├── rewards/           # Specialized reward functions
+│   ├── utils/             # Logging, monitoring, and shared utilities
+│   └── api/               # FastAPI gateway and service infrastructure
 ├── tests/                 # Test suite
 ├── examples/              # Usage examples
+├── scripts/               # Development and release utilities
 ├── docs/                  # Documentation
 └── deployment/            # Deployment configurations
 ```
+
+The top-level `api/`, `core/`, `training/`, `rewards/`, and `environments/`
+directories are deprecated compatibility shims for in-repository callers.
+Implement changes in `stateset_agents/` and prefer `stateset_agents.*` imports.
 
 ---
 
 ## Running Tests
 
-### Full Test Suite
+### Default Test Suite
 ```bash
 pytest
 ```
+
+The default selection excludes tests marked `performance`, `slow`, or `gpu`.
+Use `-m` to select those categories explicitly when their dependencies and
+hardware are available.
 
 ### With Coverage
 ```bash
@@ -115,7 +119,7 @@ pytest -m gpu
 
 ### Running a Single Test
 ```bash
-pytest tests/unit/test_reward.py::TestHelpfulnessReward -v
+pytest tests/unit/test_error_codes.py::test_grpo_exception_sets_default_error_code -v -n 0
 ```
 
 ---

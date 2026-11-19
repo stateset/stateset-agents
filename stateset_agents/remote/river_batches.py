@@ -24,10 +24,14 @@ from __future__ import annotations
 
 import logging
 import math
+import statistics
 from collections.abc import Sequence
 from typing import Any
 
-from stateset_agents.core.chat_masking import assistant_token_mask
+from stateset_agents.core.chat_masking import (
+    assistant_token_mask,
+    truncates_weighted_target,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +168,7 @@ def _encode(tokenizer: Any, text: str) -> list[int]:
     return [int(i) for i in ids]
 
 
-_TOOL_FIELDS = ("tool_calls", "tool_call_id", "name")
+_MESSAGE_FIELDS = ("tool_calls", "tool_call_id", "name", "weight")
 
 
 def _valid_messages(row: Any) -> list[dict[str, Any]] | None:
@@ -189,7 +193,7 @@ def _valid_messages(row: Any) -> list[dict[str, Any]] | None:
             {
                 "role": role,
                 "content": content,
-                **{key: message[key] for key in _TOOL_FIELDS if key in message},
+                **{key: message[key] for key in _MESSAGE_FIELDS if key in message},
             }
         )
     if not any(
@@ -217,13 +221,12 @@ def build_sft_batch(
 
     Prompt tokens (system/user/tool, plus the generation prefix that precedes
     each assistant reply) get weight ``0.0``; assistant tokens get ``1.0``.
-    Loss is therefore computed only on what the model should say — the whole
-    point of masking. Multi-turn conversations get *every* assistant turn
-    weighted, not just the last.
+    An assistant message with explicit ``weight=0`` provides context. Other
+    assistant messages contribute to training loss.
 
-    Truncation keeps the first ``max_length`` tokens; a row left with no
-    weighted token after truncation is dropped, since it would contribute
-    nothing but compute.
+    Truncation keeps the first ``max_length`` tokens. Rows with explicit
+    assistant weights must retain every supervised token. Rows with no
+    trainable tokens are skipped.
 
     ``shift_targets`` is the flip for the UNVERIFIED assumption documented at
     the top of this module. ``True`` (default): the caller performs the causal
@@ -237,6 +240,7 @@ def build_sft_batch(
         raise ValueError(f"max_length must be > 1, got {max_length}")
 
     batch: list[dict[str, Any]] = []
+    skipped_targets = 0
     for index, row in enumerate(rows):
         messages = _valid_messages(row)
         if messages is None:
@@ -255,6 +259,14 @@ def build_sft_batch(
             continue
         if datum is not None:
             batch.append(datum)
+        else:
+            skipped_targets += 1
+    if skipped_targets:
+        logger.warning(
+            "Skipped %d SFT rows at max_length=%d with empty or incomplete targets",
+            skipped_targets,
+            max_length,
+        )
     return batch
 
 
@@ -284,12 +296,13 @@ def _build_sft_datum(
             "chat template rewrites earlier turns; cannot locate assistant tokens"
         )
     ids, assistant = masked
-    weights = [_COMPLETION_WEIGHT if a else _PROMPT_WEIGHT for a in assistant]
-    if not ids:
+    if truncates_weighted_target(messages, assistant, max_length):
         return None
 
     ids = ids[:max_length]
-    weights = weights[:max_length]
+    weights = [
+        _COMPLETION_WEIGHT if a else _PROMPT_WEIGHT for a in assistant[:max_length]
+    ]
 
     if not shift_targets:
         # River shifts server-side: send the sequence unshifted, labels
@@ -312,6 +325,38 @@ def _build_sft_datum(
 # --------------------------------------------------------------------------
 # RL batches
 # --------------------------------------------------------------------------
+
+
+def _rl_datum(
+    prompt_ids: list[int],
+    completion_ids: list[int],
+    old_logprobs: list[float],
+    advantages: list[float],
+    max_length: int | None = None,
+) -> dict[str, Any]:
+    """Align each outcome with the preceding input that predicts it."""
+    if not prompt_ids:
+        raise ValueError("RL prompt must be non-empty")
+    if max_length is not None and max_length < 1:
+        raise ValueError("RL max_length must be positive")
+    if len(completion_ids) != len(old_logprobs) or len(completion_ids) != len(
+        advantages
+    ):
+        raise ValueError("RL completion tokens, old_logprobs and advantages must align")
+    if any(not math.isfinite(p) or p > 1e-6 for p in old_logprobs):
+        raise ValueError("RL logprobs must be finite and nonpositive")
+    if not all(math.isfinite(a) for a in advantages):
+        raise ValueError("RL advantages must be finite")
+    ids = (prompt_ids + completion_ids)[:max_length]
+    prefix = min(len(prompt_ids), len(ids))
+    count = len(ids) - prefix
+    pad = [0.0] * (prefix - 1)
+    return {
+        "input_ids": ids,
+        "old_logprobs": pad + old_logprobs[:count] + [0.0],
+        "advantages": pad + advantages[:count] + [0.0],
+        "attention_mask": [1] * len(ids),
+    }
 
 
 def build_rl_batch(
@@ -393,22 +438,9 @@ def build_rl_batch(
                     f"advantages for {len(completion_ids)} completion tokens"
                 )
 
-        if not prompt_ids:
-            raise ValueError(f"trajectory {index}: prompt must be non-empty")
-        ids = (prompt_ids + completion_ids)[:max_length]
-        # Same pre-shifted layout as build_group_rl_datums (the live path):
-        # position t carries the values for the token predicted at t + 1, so
-        # completion entries start at prompt_len - 1 and end with a 0.0.
-        pad = [0.0] * (len(prompt_ids) - 1)
-        per_token_lp = pad + logprobs + [0.0]
-        per_token_adv = pad + completion_advantages + [0.0]
-
-        datum: dict[str, Any] = {
-            "input_ids": ids,
-            "old_logprobs": per_token_lp[: len(ids)],
-            "advantages": per_token_adv[: len(ids)],
-            "attention_mask": [1] * len(ids),
-        }
+        datum = _rl_datum(
+            prompt_ids, completion_ids, logprobs, completion_advantages, max_length
+        )
         if not any(a != 0.0 for a in datum["advantages"]):
             logger.warning(
                 "river: trajectory %d has zero advantage everywhere (likely "
@@ -451,7 +483,7 @@ def build_group_rl_datums(
             raise ValueError("sample tokens and logprobs must align")
         if any(not math.isfinite(p) or p > 1e-6 for p in sample["logprobs"]):
             raise ValueError("RL logprobs must be finite and nonpositive")
-    mean_reward = sum(rewards) / len(rewards)
+    mean_reward = statistics.mean(rewards)
     if all(r == rewards[0] for r in rewards):
         return []
 
@@ -469,14 +501,7 @@ def build_group_rl_datums(
         if not tokens:
             continue
         advantage = reward - mean_reward
-        input_ids = list(prompt_token_ids) + tokens
-        pad = [0.0] * (prompt_len - 1)
         datums.append(
-            {
-                "input_ids": input_ids,
-                "old_logprobs": pad + logprobs + [0.0],
-                "advantages": pad + [advantage] * len(tokens) + [0.0],
-                "attention_mask": [1] * len(input_ids),
-            }
+            _rl_datum(prompt_token_ids, tokens, logprobs, [advantage] * len(tokens))
         )
     return datums

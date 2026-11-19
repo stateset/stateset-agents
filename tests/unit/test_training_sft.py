@@ -82,7 +82,19 @@ class TestRunSftJob:
         outcome = sft.run_sft_job(payload(dataset))
 
         assert outcome["returncode"] == 0
+        assert outcome["trained"] is False
         assert any("Qwen/Qwen3.5-0.8B" in line for line in outcome["logs"])
+
+    def test_cpu_fallback_is_a_preview_even_with_an_existing_adapter(
+        self, dataset, tmp_path, monkeypatch
+    ):
+        out = tmp_path / "old-adapter"
+        out.mkdir()
+        (out / "adapter_config.json").write_text("{}")
+        monkeypatch.setattr(sft, "gpu_available", lambda: False)
+        outcome = sft.run_sft_job(payload(dataset, output_dir=str(out), dry_run=False))
+        assert outcome["returncode"] == 0
+        assert outcome["trained"] is False
 
     def test_empty_dataset_fails(self, dataset, tmp_path):
         empty = tmp_path / "empty.jsonl"

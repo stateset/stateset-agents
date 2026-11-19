@@ -9,6 +9,7 @@ and RunPod may retry an interrupted pod within the caller's budget.
 from __future__ import annotations
 
 import abc
+import math
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -71,6 +72,10 @@ class RemoteExecutor(abc.ABC):
     verification_status: str = "unit-tested"
     #: Opt in only when explicit SFT seeds reach initialization and training.
     supports_sft_seed: bool = False
+    #: Opt in only when every supported job mode honors a worker-level preview.
+    supports_dry_run: bool = False
+    #: Whether the executor checks projected charges before admitting each attempt.
+    supports_cost_ceiling: bool = False
     #: Set when SFT invokes StateSet's packaged Transformers worker. Managed
     #: provider runtimes keep their own exact-model capability checks.
     uses_packaged_training: bool = False
@@ -122,12 +127,52 @@ class RemoteExecutor(abc.ABC):
             "compute_model": self.compute_model,
             "verification_status": self.verification_status,
             "sft_seed": self.supports_sft_seed,
+            "dry_run": self.supports_dry_run,
+            "cost_ceiling": self.supports_cost_ceiling,
             "uses_packaged_training": self.uses_packaged_training,
             "durable_submission_receipts": self.durable_submission_receipts,
         }
 
     def validate_spec(self, spec: RemoteJobSpec) -> None:
         """Check job mode and native loader readiness before allocating compute."""
+        self.validate_job_config(spec)
+        # A local training source must be checked before any SDK setup, upload,
+        # or paid resource allocation. Recheck staged bytes in packaged workers.
+        # Missing files retain each provider's existing path diagnostics.
+        if spec.job_kind == "sft" and Path(spec.dataset).is_file():
+            from stateset_agents.data.finetuning import validate_finetuning_source_split
+
+            try:
+                validate_finetuning_source_split(spec.dataset)
+            except (ValueError, OSError) as exc:
+                raise RemoteExecutionError(
+                    f"Invalid SFT training source: {exc}",
+                    code=ErrorCode.CFG_INVALID,
+                    provider=self.name,
+                ) from exc
+
+    def validate_cost_ceiling(self, max_cost_usd: float | None) -> None:
+        """Check that a requested budget can be applied by this executor."""
+        if max_cost_usd is None:
+            return
+        if (
+            type(max_cost_usd) not in (int, float)
+            or not math.isfinite(max_cost_usd)
+            or max_cost_usd <= 0
+        ):
+            raise RemoteExecutionError(
+                "max_cost_usd must be finite and positive", code=ErrorCode.CFG_INVALID
+            )
+        if not self.supports_cost_ceiling:
+            raise RemoteExecutionError(
+                f"A dollar ceiling (--max-cost) cannot be enforced by {self.name!r}",
+                code=ErrorCode.CFG_INVALID,
+                provider=self.name,
+            )
+
+    def validate_job_config(self, spec: RemoteJobSpec) -> None:
+        """Check provider capabilities for a plan whose input may not exist yet."""
+        self.validate_cost_ceiling(spec.max_cost_usd)
         # Specs are mutable. Dispatch uses canonical job kinds, so accepting a
         # normalized variant here could send a harvest request into SFT.
         if (
@@ -159,20 +204,13 @@ class RemoteExecutor(abc.ABC):
                 job_kind=spec.job_kind,
             )
 
-        # A local training source must be checked before any SDK setup, upload,
-        # or paid resource allocation. Recheck staged bytes in packaged workers.
-        # Missing files retain each provider's existing path diagnostics.
-        if spec.job_kind == "sft" and Path(spec.dataset).is_file():
-            from stateset_agents.data.finetuning import validate_finetuning_source_split
-
-            try:
-                validate_finetuning_source_split(spec.dataset)
-            except (ValueError, OSError) as exc:
-                raise RemoteExecutionError(
-                    f"Invalid SFT training source: {exc}",
-                    code=ErrorCode.CFG_INVALID,
-                    provider=self.name,
-                ) from exc
+        if spec.dry_run and not self.supports_dry_run:
+            raise RemoteExecutionError(
+                f"Provider {self.name!r} does not support --dry-run. "
+                "Use --plan-only to inspect the resource plan.",
+                code=ErrorCode.CFG_INVALID,
+                provider=self.name,
+            )
 
         if self.uses_packaged_training and spec.job_kind == "sft":
             from stateset_agents.core.frontier_models import (
@@ -209,12 +247,16 @@ class RemoteExecutor(abc.ABC):
         """Yield the job's output lines captured so far."""
 
     @abc.abstractmethod
-    def fetch(self, handle: JobHandle, dest: Path | None = None) -> Path:
-        """Retrieve the trained adapter directory. Errors if not finished."""
+    def fetch(self, handle: JobHandle, dest: Path | None = None) -> Path | None:
+        """Retrieve job artifacts, returning None for a preview without files."""
 
     @abc.abstractmethod
     def cancel(self, handle: JobHandle) -> None:
         """Stop the job if it is still running."""
+
+    def _is_preview(self, handle: JobHandle) -> bool:
+        """Whether this successful job completed a preview."""
+        return False
 
     def wait(self, handle: JobHandle, poll_interval_s: float = 1.0) -> RemoteJobResult:
         """Poll until the job reaches a terminal state, then collect it.
@@ -247,6 +289,7 @@ class RemoteExecutor(abc.ABC):
             status=status,
             output_dir=output_dir,
             logs=logs,
+            is_preview=status is JobStatus.SUCCEEDED and self._is_preview(handle),
             duration_s=duration_s,
             cost_usd=cost_usd,
         )

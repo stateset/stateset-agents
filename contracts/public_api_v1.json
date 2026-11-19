@@ -1203,6 +1203,17 @@
       "OpenAIChatCompletionRequest": {
         "additionalProperties": true,
         "properties": {
+          "max_completion_tokens": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "max_tokens": {
             "anyOf": [
               {
@@ -1222,6 +1233,17 @@
           },
           "model": {
             "type": "string"
+          },
+          "response_format": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "stop": {
             "anyOf": [
@@ -1851,6 +1873,11 @@
               "default": 60.0,
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "cleanup_interval"
+            },
+            {
+              "default": 30.0,
+              "kind": "KEYWORD_ONLY",
+              "name": "shutdown_timeout"
             }
           ]
         }
@@ -4630,6 +4657,11 @@
               "default": null,
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "training_queue_path"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "v1_conversation_db_path"
             }
           ]
         }

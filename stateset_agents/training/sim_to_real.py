@@ -232,6 +232,36 @@ class UserBehaviorModel(nn.Module):
             return float(likelihood.item())
 
 
+class _ReverseDomainGradient(torch.autograd.Function):
+    """Pass features through unchanged and reverse their incoming domain gradient."""
+
+    generate_vmap_rule = True
+
+    @staticmethod
+    def forward(features: torch.Tensor, strength: float) -> torch.Tensor:
+        return features.view_as(features)
+
+    @staticmethod
+    def setup_context(ctx: Any, inputs: tuple[Any, ...], output: Any) -> None:
+        ctx.strength = inputs[1]
+
+    @staticmethod
+    def backward(ctx: Any, gradient: torch.Tensor) -> tuple[torch.Tensor, None]:
+        if ctx.strength == 0:
+            return torch.zeros_like(gradient), None
+        return gradient * -ctx.strength, None
+
+
+def _mean_domain_log_probability(margins: torch.Tensor) -> torch.Tensor:
+    """Average log probabilities without overflowing the sum of finite losses."""
+    terms = F.logsigmoid(margins)
+    if terms.numel() == 1:
+        return terms.mean()
+    scale = (-terms.detach().amin()).clamp_min(1)
+    scale = torch.where(scale.isfinite(), scale, 1.0)
+    return (terms / scale).mean() * scale
+
+
 class DomainAdaptationModule(nn.Module):
     """
     Domain adaptation for bridging sim-to-real gap.
@@ -271,21 +301,33 @@ class DomainAdaptationModule(nn.Module):
         The gradient reversal layer encourages features that
         confuse the domain discriminator.
         """
-        lambda_ = lambda_ or self.config.gradient_reversal_lambda
+        strength = self.config.gradient_reversal_lambda if lambda_ is None else lambda_
+        if not math.isfinite(strength) or strength < 0:
+            raise ValueError(
+                "gradient reversal strength must be finite and nonnegative"
+            )
+        for features in (sim_features, real_features):
+            if (
+                features.ndim != 2
+                or not features.shape[0]
+                or features.shape[1] != self.config.state_dim
+            ):
+                raise ValueError(
+                    "DANN needs a nonempty [samples, state_dim] batch for each domain"
+                )
 
-        # Domain labels: 0 for sim, 1 for real
-        sim_labels = torch.zeros(sim_features.shape[0], 1, device=sim_features.device)
-        real_labels = torch.ones(real_features.shape[0], 1, device=real_features.device)
-
-        # Discriminator predictions
-        sim_preds = torch.sigmoid(self.domain_critic(sim_features))
-        real_preds = torch.sigmoid(self.domain_critic(real_features))
-
-        # Binary cross entropy loss
-        sim_loss = F.binary_cross_entropy(sim_preds, sim_labels)
-        real_loss = F.binary_cross_entropy(real_preds, real_labels)
-
-        return lambda_ * (sim_loss + real_loss)
+        sim_logits = self.domain_critic(
+            _ReverseDomainGradient.apply(sim_features, strength)
+        )
+        real_logits = self.domain_critic(
+            _ReverseDomainGradient.apply(real_features, strength)
+        )
+        if sim_logits.dtype in (torch.float16, torch.bfloat16):
+            sim_logits, real_logits = sim_logits.float(), real_logits.float()
+        # Each domain has unit weight, including when the minibatch sizes differ.
+        return -_mean_domain_log_probability(
+            -sim_logits
+        ) - _mean_domain_log_probability(real_logits)
 
     def compute_mmd(
         self,
@@ -293,54 +335,62 @@ class DomainAdaptationModule(nn.Module):
         real_dist: torch.Tensor,
         sigma: float = 1.0,
     ) -> torch.Tensor:
-        """Compute Maximum Mean Discrepancy"""
+        """Biased empirical Gaussian MMD squared on two nonempty sample sets."""
+        from .offline_rl_bear import MMDKernel
 
-        def rbf_kernel(x, y, sigma):
-            xx = torch.sum(x**2, dim=-1, keepdim=True)
-            yy = torch.sum(y**2, dim=-1, keepdim=True)
-            xy = torch.mm(x, y.t())
-            distances = xx - 2 * xy + yy.t()
-            return torch.exp(-distances / (2 * sigma**2))
-
-        k_ss = rbf_kernel(sim_dist, sim_dist, sigma)
-        k_rr = rbf_kernel(real_dist, real_dist, sigma)
-        k_sr = rbf_kernel(sim_dist, real_dist, sigma)
-
-        n_s = sim_dist.shape[0]
-        n_r = real_dist.shape[0]
-
-        mmd = (
-            k_ss.sum() / (n_s * n_s)
-            + k_rr.sum() / (n_r * n_r)
-            - 2 * k_sr.sum() / (n_s * n_r)
+        if (
+            sim_dist.ndim != 2
+            or real_dist.ndim != 2
+            or sim_dist.shape[1] != real_dist.shape[1]
+            or not sim_dist.shape[1]
+        ):
+            raise ValueError(
+                "MMD features must be two matrices with the same positive width"
+            )
+        return (
+            MMDKernel("gaussian", sigma)
+            .compute_mmd(sim_dist.unsqueeze(0), real_dist.unsqueeze(0))
+            .squeeze(0)
         )
-
-        return mmd
 
     def compute_coral_loss(
         self,
         sim_features: torch.Tensor,
         real_features: torch.Tensor,
     ) -> torch.Tensor:
-        """Compute CORAL (Correlation Alignment) loss"""
-        # Compute covariance matrices
+        """Squared Frobenius distance of the sample covariances, divided by 4d²."""
+        if (
+            sim_features.ndim != 2
+            or real_features.ndim != 2
+            or sim_features.shape[1] != real_features.shape[1]
+            or not sim_features.shape[1]
+        ):
+            raise ValueError(
+                "CORAL features must be two matrices with the same positive width"
+            )
+        if min(sim_features.shape[0], real_features.shape[0]) < 2:
+            raise ValueError("sample covariance needs at least two examples per domain")
+
+        device = "cpu" if sim_features.device.type == "mps" else sim_features.device
+
+        def covariance(features: torch.Tensor) -> torch.Tensor:
+            wide = features.to(device=device, dtype=torch.float64)
+            # Remove a common offset before computing the sample mean.
+            shifted = wide - wide[:1]
+            centered = shifted - shifted.mean(dim=0)
+            return (centered.T @ centered) / (len(features) - 1)
+
         d = sim_features.shape[1]
-
-        sim_mean = sim_features.mean(dim=0, keepdim=True)
-        real_mean = real_features.mean(dim=0, keepdim=True)
-
-        sim_centered = sim_features - sim_mean
-        real_centered = real_features - real_mean
-
-        sim_cov = torch.mm(sim_centered.t(), sim_centered) / (sim_features.shape[0] - 1)
-        real_cov = torch.mm(real_centered.t(), real_centered) / (
-            real_features.shape[0] - 1
+        difference = covariance(sim_features) - covariance(real_features)
+        dtype = torch.promote_types(
+            torch.promote_types(sim_features.dtype, real_features.dtype), torch.float32
         )
-
-        # Frobenius norm of covariance difference
-        coral_loss = torch.norm(sim_cov - real_cov, p="fro") ** 2 / (4 * d * d)
-
-        return coral_loss
+        return (
+            (difference / (2 * d))
+            .square()
+            .sum()
+            .to(device=sim_features.device, dtype=dtype)
+        )
 
     def compute_adaptation_loss(
         self,

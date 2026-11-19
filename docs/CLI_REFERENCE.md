@@ -4,6 +4,52 @@ Use `stateset-agents --help` to see the current runtime command list.
 
 ## Commands
 
+### `stateset-agents swarm`
+
+Use `swarm list` to see experiment recipes and task IDs. `swarm plan RECIPE`
+prints JSON for the StateSet Sandbox coordinator. `swarm script TASK_ID` prints
+the Bash workload for a local replay. `swarm report RECIPE --results DIR`
+summarizes the returned files. [Getting started and recipe library](../examples/swarm/README.md)
+
+### `stateset-agents workflow`
+
+Run the private improvement workflow. Customer inputs, reviews, datasets, experiment
+artifacts and deployment journals must remain **outside Git checkouts**, including
+ignored directories. See the [private workflow guide](private-improvement-workflow.md)
+for the complete schema, SDK, synthetic tutorial and recovery procedures.
+
+```bash
+stateset-agents workflow --help
+stateset-agents workflow synthetic-fixture /tmp/stateset-workflow-example
+stateset-agents workflow evidence
+stateset-agents workflow evidence --repository /path/to/checkout
+stateset-agents workflow plan /private/experiment /private/dataset /private/config.json
+stateset-agents workflow status /private/experiment
+stateset-agents workflow compare /private/experiment --split validation
+```
+
+`dataset` accepts a JSONL source and destination, `--validation-after`,
+`--test-after`, and a private `--review` attestation. `--synthetic` requires
+explicitly synthetic records. `plan` freezes the protocol without provider calls.
+`train` and `evaluate --split validation|test` require both
+`--acknowledge-river-billing` and `--allow-provider-upload`. The built-in evaluator
+replays a fictional refund policy; it does not certify merchant-specific quality.
+Validation must pass before test sampling, and the dataset's test-use ledger blocks
+reuse by a different experiment. `approve --reviewer NAME` approves staging only.
+
+`prepare-deployment WORKSPACE EXPERIMENT --previous-deployment-id ID` prepares one
+River staging replica. `deployment ACTION WORKSPACE` supports `deploy`,
+`reconcile`, `activate`, `monitor`, `rollback`, and `stop`. Creation/reconciliation
+require `--acknowledge-river-billing`. `monitor --rollback-on-failure` can switch
+this SDK's local endpoint journal to a healthy previous deployment and request
+candidate shutdown; it does not change an external load balancer. Monitor again
+for confirmed scale-to-zero. River costs are unknown and no dollar cap is enforced.
+
+CLI summaries omit conversation text, paths, case identifiers and reviewers.
+Detailed records remain private. Public `evidence` entries distinguish audit
+success from experiment acceptance, retain negative replications, and leave
+unknown billed costs null.
+
 ### `stateset-agents tui`
 
 Open the fine-tuning terminal studio in Herdr or another POSIX terminal.
@@ -320,13 +366,25 @@ exercised only against fakes. See `docs/FIREWORKS_PROVIDER.md`.
     `train-remote` reports the job as failed, so CI can gate on content.
     (JSON lines that aren't objects, e.g. a bare array, are treated as
     plain prompt text.)
-- `--max-cost FLOAT`: Refuse to run if the pod could cost more than this
-  many dollars (its full `--timeout` at the provider's quoted hourly rate).
-  Checked before any work starts; an unpriceable pod is refused rather than
-  rented.
+- `--max-cost FLOAT` sets the RunPod training budget in USD. Before each
+  allocation, the executor prices the requested GPU count and cloud tier for
+  the full `--timeout` using RunPod's public catalog. An unavailable or
+  over-budget quote stops the submission before a pod is created. After
+  creation it checks the returned whole-pod rate before uploading data.
+  Retries deduct the observed cost of earlier attempts and require confirmed
+  cleanup. Other training providers reject dollar budgets.
+
+  The catalog price can change between those checks. RunPod can bill for a
+  briefly allocated pod, storage, or time spent waiting for termination.
+  The budget check estimates GPU compute charges. RunPod's invoice determines
+  the actual charge.
 - `--parent-adapter TEXT`: Adapter this run descends from, recorded in the
   trained adapter's manifest so improvement-loop generations stay linked.
-- `--dry-run`: Print the training plan without training.
+- `--dry-run`: Run a worker preview. Local, River, RunPod, Modal, Hugging Face
+  Jobs, CoreWeave, and Nebius support this option. Fireworks, Prime, Tinker, and
+  Together reject it before submission. Use `--plan-only` for a resource plan
+  on any provider without provisioning compute. Local and River harvest
+  previews write `harvest_preview.json` in the output directory.
 
 #### Providers
 
@@ -343,6 +401,11 @@ constructs the provider executor. For RunPod, known models receive catalog
 GPU/count/disk defaults; estimated frontier or unknown-model plans require an
 explicit `--max-cost` before execution. `--dry-run` is a worker-level training
 dry run and can still provision remote hardware.
+
+In Python, `executor.wait(handle)` returns a `RemoteJobResult` with
+`is_preview=True` for a successful preview, including a local CPU fallback.
+`output_dir` is `None` when the preview produced no files. A harvest or RL
+preview that writes a report can return its report directory.
 
 Modal requires SDK 1.1.2 or newer. Every executor-created `stateset-sft-*`
 Volume is deleted after artifact retrieval, dry-run completion, or failure;
@@ -365,7 +428,7 @@ locally built wheel instead of PyPI (the pinned version cannot resolve before
 it is published):
 
 ```python
-RunPodExecutor(wheel=Path("dist/stateset_agents-0.67.0-py3-none-any.whl"))
+RunPodExecutor(wheel=Path("dist/stateset_agents-0.74.0-py3-none-any.whl"))
 ```
 
 ### `stateset-agents undeploy`
@@ -990,20 +1053,19 @@ Disable with `--no-save`, or pick the destination with `--save-transcript`.
 Serve a model as a **persistent** OpenAI-compatible endpoint on a rented
 RunPod GPU. Rents a pod, installs vLLM, loads the base model (plus your
 local LoRA adapter, served under the model name `adapter`), and prints the
-endpoint URL and a generated Bearer token. Unlike `chat-remote`, the pod
-**keeps running after the command exits** — that is the point — so cost is
-controlled three ways:
+endpoint URL and a generated Bearer token. The pod **keeps running after the
+command exits**. An on-pod watchdog requests deletion at `--max-hours`.
+SSH-managed pods arm the watchdog once SSH is reachable, using a root-only
+copy of `RUNPOD_API_KEY`. Prebuilt vLLM images start it with the container
+using RunPod's pod-scoped key. Once armed, it works even if the CLI exits.
 
-1. **On-pod self-destruct** (`--max-hours`, default `1.0`): a `nohup`-ed
-   script on the pod sleeps for that long and then calls the RunPod DELETE
-   endpoint on its own pod id. It fires even if your laptop is gone.
-   **Tradeoff:** to make that possible, your `RUNPOD_API_KEY` is copied to
-   the pod (`chmod 600`, root-only). Use a dedicated, revocable key if that
-   matters to you.
-2. `--stop <name-or-id>`: terminate a serve pod immediately.
-3. `--list`: show running serve pods with status, age, and $/hr.
+On startup failure the CLI requests termination of the allocated pod. If
+RunPod fails to acknowledge deletion, the CLI prints the pod ID and stops
+retrying. Use `--list` to inspect serving pods and `--stop <name-or-id>` to
+request deletion.
 
-On any *startup* failure the pod is terminated before the error is shown.
+If the CLI exits during startup, run `stateset-agents runpod-orphans --serving`
+on the machine that started it. This also covers the serving phase of `deploy`.
 
 ```bash
 export RUNPOD_API_KEY=...
@@ -1046,8 +1108,13 @@ pick a bigger `--gpu` (e.g. `"NVIDIA H100 80GB HBM3"`) and raise
 - `--gpu TEXT`: RunPod GPU type. Default `NVIDIA RTX A4000` (16 GB).
 - `--container-disk-gb INTEGER`: Container disk in GB — must fit the vLLM
   install (~10 GB) plus ~2.5x the model checkpoint. Default `60`.
-- `--max-hours FLOAT`: On-pod self-destruct deadline in hours. Default
-  `1.0`; must be positive.
+- `--max-hours FLOAT` sets the on-pod shutdown timer. The default is one hour.
+  With a cost ceiling the timer starts at the allocation request and includes startup.
+- `--max-cost FLOAT` sets a compute budget in USD across serving attempts.
+  Before each rental the CLI checks the catalog price for the requested GPU
+  count and lifetime. It checks the allocated pod's total hourly price again
+  before starting the endpoint. Storage charges and provider cleanup delays
+  can increase the final bill.
 - `--merge`: Fold the (single) adapter into full base weights on the pod
   and serve the merged checkpoint. REQUIRED for hybrid models
   (Qwen3.5/3.8 families) — vLLM loads their LoRA adapters without error
@@ -1084,7 +1151,9 @@ stateset-agents deploy --dataset improved/curated.jsonl \
   (default `NVIDIA H100 80GB HBM3`).
 - `--container-disk-gb INTEGER`: ~2.5x the checkpoint size.
 - `--num-epochs INTEGER`: Training epochs (default 3).
-- `--max-cost FLOAT`: Ceiling for the TRAINING job.
+- `--max-cost FLOAT` sets a separate compute ceiling for each phase. For
+  example, `--max-cost 5` allows up to $5 of estimated training compute
+  and another $5 of estimated serving compute.
 - `--max-hours FLOAT`: Endpoint self-destruct, armed on the serving pod
   (default 1.0).
 
@@ -1144,16 +1213,39 @@ or hosted chat modes. See [River provider](RIVER_PROVIDER.md).
 
 ### `stateset-agents runpod-orphans`
 
-Inspect locally recorded cleanup leases for RunPod training pods whose
-submitting process exited before cleanup. The default is read-only.
+Inspect locally recorded rentals from the same machine and RunPod account.
+The default reads local training records. Use `--chat` for interactive
+sessions or `--serving` for interrupted endpoint launches. Inspection leaves
+pods running.
 
 ```bash
 stateset-agents runpod-orphans
 stateset-agents runpod-orphans --terminate
+stateset-agents runpod-orphans --chat
+stateset-agents runpod-orphans --chat --terminate
+stateset-agents runpod-orphans --serving
+stateset-agents runpod-orphans --serving --terminate
 ```
 
-- `--terminate`: Terminate every leased pod and remove a lease only after the
-  provider confirms deletion. Review the read-only output first.
+- `--serving --terminate` requests deletion of each uniquely matched interrupted
+  rental. An active starter holds a process lock and appears as `busy`. A
+  successful startup retires its record so the endpoint can continue serving.
+- Training and chat hold their lock through the job or interactive session.
+  After a crash, `--terminate` resolves the saved attempt name and checks the
+  ID if RunPod returned one. An active owner appears as `busy`. Training
+  retries have distinct names. Training records live in the `attempts/`
+  subdirectory of the existing RunPod lease directory. Older top-level files
+  appear as `legacy` because they cannot prove whether their owner exited.
+  Verify those jobs in RunPod before manually stopping them. Bulk cleanup
+  leaves legacy rentals alone and returns exit code 1 when they need review.
+- Chat records live under `$XDG_STATE_HOME/stateset-agents/runpod-chat/`,
+  with `~/.local/state` as the default state root.
+- Serving records contain the generated pod name and, once known, its ID.
+  They live under `$XDG_STATE_HOME/stateset-agents/runpod-serving/`, which
+  defaults to `~/.local/state/stateset-agents/runpod-serving/`. Recovery checks
+  the exact name and any recorded ID before deletion. An absent or ambiguous
+  match or a failed deletion leaves the record for another inspection and
+  returns exit code 1. Use the same local state directory and RunPod account.
 
 ### `stateset-agents model-support`
 
@@ -1200,7 +1292,10 @@ stateset-agents flywheel --base-model meta-models/Muse-Glimmer-30B \
 - `--generations INTEGER`: Maximum NEW generations to train (default 3).
 - `--best-of INTEGER`: Samples per harvest prompt (default 8).
 - `--temperature FLOAT`: Harvest sampling temperature (default 0.9).
-- `--max-cost FLOAT`: Hard dollar ceiling for the WHOLE run.
+- `--max-cost FLOAT` sets one RunPod compute budget for all temperature probes,
+  harvest and training jobs, retries, and repeats. A depleted budget or an
+  unknown charge stops further submissions. The report records the known spend
+  and the number of jobs with unknown cost.
 - `--provider TEXT`: Executor to run on (default `runpod`).
 - `--gpu TEXT`: GPU type, in the provider's own vocabulary.
 - `--container-disk-gb INTEGER`: Container disk per pod.
@@ -1208,7 +1303,11 @@ stateset-agents flywheel --base-model meta-models/Muse-Glimmer-30B \
 - `--repeats INTEGER`: Run the whole loop N times and report the score
   distribution (min/mean/max); the budget is shared across repeats
   (default 1).
-- `--dry-run`: Print each job's plan without renting anything.
+- `--dry-run`: For SFT, print a local JSON plan with the first generation's
+  jobs, configured repeats, and maximum job count. The same plan is returned
+  by the Python flywheel functions. Planning leaves the output directory
+  untouched. For River RL, each worker preview writes `rl_preview.json` and
+  repeated previews use `rl_repeats_preview.json`.
 
 ### `stateset-agents fine-tune`
 
@@ -1242,6 +1341,7 @@ stateset-agents improve ACTION
 - `--output, -o TEXT`: Output directory for curated data + reports.
 - `--threshold FLOAT`: Minimum score for curation (default: 0.7).
 - `--format, -f TEXT`: Input format: 'transcripts' (already chat-history JSONL), 'openai', or 'langchain' (ingested first via stateset_agents.data.trajectory_ingest).
+- `--context-file PATH` supplies one grading reference per assistant turn. For batches, use a directory with a matching filename for each transcript. [Math and tool-call examples](IMPROVEMENT_PIPELINE.md#grade-an-assistant-action-in-context)
 
 ### `stateset-agents ingest`
 

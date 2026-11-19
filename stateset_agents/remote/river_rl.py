@@ -282,6 +282,10 @@ def normalize_datums(
     Sequence mode assigns equal weight to each retained assistant span (each
     turn in an episode). Zero-advantage spans are excluded in all modes.
     """
+    if mode not in {"token", "sequence", "sum"}:
+        raise ValueError("RL normalization must be token, sequence, or sum")
+    if any(not math.isfinite(a) for d in data for a in d["advantages"]):
+        raise ValueError("RL advantages must be finite")
     counts = [sum(a != 0 for a in d["advantages"]) for d in data]
     total = sum(counts)
     retained = sum(n > 0 for n in counts)

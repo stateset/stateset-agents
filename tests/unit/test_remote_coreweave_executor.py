@@ -76,7 +76,11 @@ def spec(tmp_path):
     )
 
 
-def test_cks_submit_status_logs_fetch_and_manifest(spec, tmp_path) -> None:
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_cks_submit_status_logs_fetch_and_manifest(spec, tmp_path, dry_run) -> None:
+    from stateset_agents.remote.worker import decode_spec
+
+    spec.dry_run = dry_run
     kube = FakeKube()
     artifacts = FakeArtifacts()
     executor = CoreWeaveExecutor(
@@ -98,7 +102,20 @@ def test_cks_submit_status_logs_fetch_and_manifest(spec, tmp_path) -> None:
     assert not any("SECRET" in item.get("value", "") for item in container["env"])
     assert executor.status(handle) is JobStatus.SUCCEEDED
     assert "training complete" in list(executor.logs(handle))
-    assert (executor.fetch(handle) / "adapter_model.safetensors").exists()
+    encoded = next(
+        item["value"]
+        for item in container["env"]
+        if item["name"] == "STATESET_SPEC_B64"
+    )
+    assert decode_spec(encoded)["dry_run"] is dry_run
+    result = executor.wait(handle)
+    assert result.is_preview is dry_run
+    if dry_run:
+        assert result.output_dir is None
+        assert not spec.output_dir.exists()
+    else:
+        assert (result.output_dir / "adapter_model.safetensors").exists()
+    assert artifacts.deleted
 
 
 def test_cks_scratch_disk_sets_worker_tempdir(spec, tmp_path) -> None:

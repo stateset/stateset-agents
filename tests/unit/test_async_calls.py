@@ -2,13 +2,68 @@
 
 import asyncio
 import contextvars
+import inspect
 import subprocess
 import sys
 import threading
 
 import pytest
 
-from stateset_agents.utils.async_calls import closing_async_generator, run_sync_owned
+from stateset_agents.utils.async_calls import (
+    closing_async_generator,
+    drain_owned_operation,
+    run_sync_owned,
+)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error_type", [ValueError, asyncio.CancelledError, GeneratorExit]
+)
+async def test_owned_generator_can_forward_consumer_error_in_its_original_context(
+    error_type,
+):
+    marker = contextvars.ContextVar("forwarded-error", default="consumer")
+    observed = []
+    failure = error_type("original")
+
+    async def source():
+        token = marker.set("producer")
+        try:
+            try:
+                yield "item"
+            except BaseException as error:
+                observed.append((error, marker.get()))
+                raise
+        finally:
+            marker.reset(token)
+            observed.append("closed")
+
+    with pytest.raises(error_type) as caught:
+        async with closing_async_generator(source(), forward_errors=True) as stream:
+            assert await anext(stream) == "item"
+            assert marker.get() == "consumer"
+            raise failure
+    assert caught.value is failure
+    assert observed == [(failure, "producer"), "closed"]
+
+
+@pytest.mark.asyncio
+async def test_task_creation_failure_closes_unstarted_owned_operation(monkeypatch):
+    async def operation():
+        pytest.fail("Rejected operation must not run")
+
+    failure = RuntimeError("task factory failed")
+
+    def fail(coroutine):
+        raise failure
+
+    coroutine = operation()
+    monkeypatch.setattr(asyncio, "create_task", fail)
+    with pytest.raises(RuntimeError) as caught:
+        await drain_owned_operation(coroutine)
+    assert caught.value is failure
+    assert inspect.getcoroutinestate(coroutine) == inspect.CORO_CLOSED
 
 
 @pytest.mark.asyncio
@@ -145,6 +200,68 @@ async def test_owned_generator_drains_through_repeated_cancellation(cancel_durin
     assert closed.is_set()
     assert generated == [1]
     assert consumed == ([] if cancel_during == "next" else [1])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure_type", [ValueError, asyncio.CancelledError, GeneratorExit]
+)
+async def test_owned_generator_cleanup_failure_does_not_mask_initiating_error(
+    failure_type,
+):
+    initiating = failure_type("consumer stopped")
+    closed = []
+
+    async def source():
+        try:
+            yield "partial"
+        finally:
+            closed.append(True)
+            raise RuntimeError("cleanup failed")
+
+    with pytest.raises(failure_type) as caught:
+        async with closing_async_generator(source()) as values:
+            async for _ in values:
+                raise initiating
+    assert caught.value is initiating
+    assert closed == [True]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fail_cleanup", [False, True])
+async def test_cancellation_during_cleanup_takes_precedence_over_consumer_error(
+    fail_cleanup,
+):
+    entered, release = asyncio.Event(), asyncio.Event()
+    closed = []
+
+    async def source():
+        try:
+            yield "partial"
+        finally:
+            entered.set()
+            await release.wait()
+            closed.append(True)
+            if fail_cleanup:
+                raise RuntimeError("cleanup failed")
+
+    async def consume():
+        async with closing_async_generator(source()) as values:
+            async for _ in values:
+                raise ValueError("consumer failed")
+
+    pending = asyncio.create_task(consume())
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        for _ in range(3):
+            pending.cancel()
+            await asyncio.sleep(0)
+            assert not pending.done()
+    finally:
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(pending, 2)
+    assert closed == [True]
 
 
 @pytest.mark.asyncio

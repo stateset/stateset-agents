@@ -31,6 +31,25 @@ stateset\_agents.core.enhanced.enhanced\_agent module
 Module contents
 ---------------
 
+Memory snapshots and recovery
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. automodule:: stateset_agents.core.enhanced.vector_memory
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: stateset_agents.core.enhanced.memory_snapshot.MemorySnapshotConflict
+   :show-inheritance:
+
+Reasoning preparation and assessment
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. automodule:: stateset_agents.core.enhanced.reasoning
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 .. automodule:: stateset_agents.core.enhanced
    :members:
    :undoc-members:

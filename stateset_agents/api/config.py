@@ -340,6 +340,7 @@ class APIConfig:
     enable_training_lab: bool = False
     training_max_concurrent_jobs: int = 1
     training_queue_path: str | None = None
+    v1_conversation_db_path: str | None = None
 
     @classmethod
     def from_env(cls) -> "APIConfig":
@@ -364,6 +365,7 @@ class APIConfig:
             security=SecurityConfig.from_env(),
             validation=ValidationConfig.from_env(),
             observability=ObservabilityConfig.from_env(),
+            v1_conversation_db_path=os.getenv("API_V1_CONVERSATION_DB") or None,
             enable_training_lab=_get_bool(
                 "API_ENABLE_TRAINING_LAB", environment == Environment.DEVELOPMENT
             ),

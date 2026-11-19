@@ -1,6 +1,7 @@
 """Invalid data or backward results must not advance a native GSPO update."""
 
 import copy
+import math
 from types import SimpleNamespace
 
 import pytest
@@ -16,6 +17,10 @@ from tests._tiny_tokenizer import tiny_tokenizer  # noqa: E402
 
 @pytest.fixture(params=[GSPOTrainer, GSPOTokenTrainer], ids=["gspo", "gspo_token"])
 def trainer(request, monkeypatch):
+    return build_trainer(request.param, monkeypatch)
+
+
+def build_trainer(trainer_type, monkeypatch, *, dtype=torch.float32, **options):
     torch.manual_seed(0)
     model = transformers.GPT2LMHeadModel(
         transformers.GPT2Config(
@@ -37,7 +42,7 @@ def trainer(request, monkeypatch):
         async def compute_reward(self, turns, context):
             return await self.compute_turn_reward(turns[0], context)
 
-    result = request.param(
+    result = trainer_type(
         config=GSPOConfig(
             model_name="gpt2",
             num_generations=2,
@@ -45,8 +50,9 @@ def trainer(request, monkeypatch):
             warmup_ratio=0.0,
             max_prompt_length=16,
             max_completion_length=16,
+            **options,
         ),
-        model=model,
+        model=model.to(dtype),
         tokenizer=tiny_tokenizer(),
         agent=None,
         environment=None,
@@ -98,7 +104,6 @@ def _assert_same(actual, expected):
         "loss_inf",
         "gradient_nan",
         "gradient_inf",
-        "gradient_norm_overflow",
         "backward_exception",
         "max_norm_nan",
         "max_norm_inf",
@@ -165,7 +170,6 @@ async def test_failed_update_preserves_committed_state_and_can_recover(
                 value = {
                     "gradient_nan": float("nan"),
                     "gradient_inf": float("inf"),
-                    "gradient_norm_overflow": 1e30,
                 }[failure]
                 return torch.full_like(gradient, value)
 
@@ -191,6 +195,34 @@ async def test_failed_update_preserves_committed_state_and_can_recover(
     assert len(trainer.training_metrics["policy_loss"]) == 2
 
 
+@pytest.mark.asyncio
+async def test_large_finite_gradient_commits_expected_adam_moments(trainer):
+    await _train(trainer, ["good"])
+    p = next(trainer.model.parameters())
+    before = copy.deepcopy(trainer.optimizer.state[p])
+    epoch = trainer.scheduler.last_epoch
+    handle = p.register_hook(lambda grad: torch.full_like(grad, 1e30))
+    try:
+        await _train(trainer, ["good", "bad"])
+    finally:
+        handle.remove()
+
+    # All other gradients are negligible compared with this whole embedding.
+    # Each coordinate takes an equal share of its group's L2 norm.
+    g = torch.full_like(p, trainer.config.max_grad_norm / math.sqrt(p.numel()))
+    beta1, beta2 = trainer.optimizer.param_groups[0]["betas"]
+    after = trainer.optimizer.state[p]
+    torch.testing.assert_close(
+        after["exp_avg"], beta1 * before["exp_avg"] + (1 - beta1) * g
+    )
+    torch.testing.assert_close(
+        after["exp_avg_sq"], beta2 * before["exp_avg_sq"] + (1 - beta2) * g.square()
+    )
+    assert after["step"].item() == before["step"].item() + 1
+    assert trainer.scheduler.last_epoch == epoch + 1
+    assert len(trainer.training_metrics["policy_loss"]) == 2
+
+
 @pytest.mark.parametrize(
     "rewards",
     [
@@ -201,7 +233,6 @@ async def test_failed_update_preserves_committed_state_and_can_recover(
         [float("inf")],
         [float("-inf"), 0.0],
         [0.0, 1e100],
-        [3e38, 3e38],
     ],
 )
 def test_group_advantages_reject_invalid_rewards_instead_of_hiding_them(rewards):
@@ -226,3 +257,91 @@ def test_large_finite_rewards_with_representable_statistics_remain_supported():
     assert torch.allclose(advantages, torch.tensor([-1.0, 1.0]))
     assert stats["mean_reward"] == 0.0
     assert stats["std_reward"] == pytest.approx(3e38)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["token_mean", "seq_sum_const"])
+async def test_population_override_matches_one_flat_batch(trainer, monkeypatch, mode):
+    """Compare public updates against independent policy and row-KL sums."""
+    groups = {"one": ["ok", ""], "two": ["ok", "bad", "longer"]}
+    trainer.config.max_grad_norm = 1e6
+    trainer.ref_model = copy.deepcopy(trainer.model).eval()
+    with torch.no_grad():
+        trainer.ref_model.transformer.wte.weight[
+            trainer.tokenizer.convert_tokens_to_ids("o")
+        ].add_(0.4)
+    trainer._objective = trainer._objective.with_(
+        aggregate=mode, advantage="batch_norm", kl_coef=0.7
+    )
+
+    async def generate(prompt, count):
+        return [(answer, 0.0) for answer in groups[prompt]]
+
+    monkeypatch.setattr(trainer.generator, "generate_group_responses", generate)
+    reward = torch.tensor([1.0, 0.0, 1.0, 0.0, 0.0])
+    advantage = (reward - torch.tensor([0.5, 0.5, 1 / 3, 1 / 3, 1 / 3])) / reward.std(
+        correction=0
+    )
+
+    def scores(model, ids, start):
+        # The character tokenizer places the first response action at start.
+        logits = model(ids).logits[0, start - 1 : -1]
+        return logits.log_softmax(-1).gather(-1, ids[0, start:, None]).flatten()
+
+    current, reference = [], []
+    for prompt, responses in groups.items():
+        for response in responses:
+            ids = trainer.tokenizer(
+                prompt + response, return_tensors="pt", add_special_tokens=False
+            )["input_ids"]
+
+            current.append(scores(trainer.model, ids, len(prompt)))
+            with torch.no_grad():
+                reference.append(scores(trainer.ref_model, ids, len(prompt)))
+    lengths = [row.numel() for row in current]
+    denom = (
+        sum(lengths)
+        if mode == "token_mean"
+        else len(lengths) * trainer.config.max_completion_length
+    )
+    policy = (
+        sum(
+            -a * (row - row.detach()).exp().sum()
+            for a, row in zip(advantage, current, strict=True)
+        )
+        / denom
+    )
+    gaps = torch.stack(
+        [
+            (ref.sum() - row.sum()) / max(row.numel(), 1)
+            for row, ref in zip(current, reference, strict=True)
+        ]
+    )
+    expected = policy + 0.7 * (gaps.exp() - gaps - 1).mean()
+    params = tuple(trainer.model.parameters())
+    grads = torch.autograd.grad(expected, params)
+    metrics = await _train(trainer, list(groups))
+    assert metrics["policy_loss"] == pytest.approx(expected.item(), abs=3e-6)
+    for param, grad in zip(params, grads, strict=True):
+        torch.testing.assert_close(param.grad, grad, atol=3e-6, rtol=1e-4)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "clip,expected_fraction", [("none", 0), ("clipped", 0), ("cispo", 1)]
+)
+async def test_diagnostics_follow_the_resolved_ratio_and_clip(
+    trainer, monkeypatch, clip, expected_fraction
+):
+    trainer.config.rescore_old_log_probs = False
+    trainer._objective = trainer._objective.with_(
+        ratio_clamp=0.1, clip=clip, clip_low=0.2, clip_high=0.2, is_cap=1.05
+    )
+
+    async def generate(prompt, count):
+        return [("ok", -1000.0), ("nope", -1000.0)]
+
+    monkeypatch.setattr(trainer.generator, "generate_group_responses", generate)
+    metrics = await _train(trainer, ["hello"])
+    assert metrics["sequence_importance_ratio"] == pytest.approx(math.exp(0.1))
+    assert metrics["clipping_fraction"] == expected_fraction

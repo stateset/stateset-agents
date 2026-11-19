@@ -3,7 +3,7 @@ RLAIF (Reinforcement Learning from AI Feedback) Trainer
 
 This module provides a complete RLAIF training pipeline that combines:
 - LLM-as-Judge for reward generation
-- PPO/GRPO for policy optimization
+- Reward-weighted response log likelihood for policy optimization
 - Constitutional AI principles
 - Self-improvement loops
 
@@ -22,14 +22,19 @@ Reference: https://arxiv.org/abs/2309.00267 (RLAIF)
 """
 
 import logging
+import math
 import os
+import statistics
 from dataclasses import dataclass, field
 from datetime import datetime
+from fractions import Fraction
 from typing import Any
 
 import torch
 
+from . import rl_losses
 from .config import TrainingConfig
+from .trainer_utils import _clip_gradient_norm, encode_prompt_completions
 
 logger = logging.getLogger(__name__)
 
@@ -114,8 +119,9 @@ class RLAIFConfig(TrainingConfig):
         ]
     )
 
-    # Training algorithm
-    rl_algorithm: str = "grpo"  # "ppo", "grpo", "gspo"
+    # Compatibility label. The standalone trainer uses the reward-weighted
+    # likelihood update documented on train_step for every value of this field.
+    rl_algorithm: str = "grpo"
 
     # RL parameters
     beta: float = 0.1  # KL penalty
@@ -309,13 +315,33 @@ Revised response:"""
         return current_response, history
 
 
+def _token_reward_weights(rewards: list[float], counts: list[int]) -> list[float]:
+    """Standardize completion rewards over scored tokens using the sample SD."""
+    total = sum(counts)
+    if total == 1:
+        return rewards
+    # Center once per completion. Exact dyadic inputs preserve differences
+    # smaller than one float32 spacing and keep the mean of a constant exact.
+    values = [Fraction.from_float(r) for r in rewards]
+    mean = sum((v * c for v, c in zip(values, counts, strict=True)), Fraction()) / total
+    centered = [v - mean for v in values]
+    epsilon = Fraction.from_float(1e-8)
+    scale = max(epsilon, max(map(abs, centered)))
+    residuals = [float(d / scale) for d in centered]
+    variance = math.fsum(c * d * d for c, d in zip(counts, residuals, strict=True)) / (
+        total - 1
+    )
+    denominator = math.sqrt(variance) + float(epsilon / scale)
+    return [d / denominator for d in residuals]
+
+
 class RLAIFTrainer:
     """
     Reinforcement Learning from AI Feedback (RLAIF) Trainer.
 
     This trainer combines:
     - LLM-as-Judge for reward generation
-    - Policy optimization (PPO/GRPO)
+    - SGD on reward-weighted response log likelihood
     - Optional Constitutional AI refinement
 
     Example:
@@ -516,7 +542,11 @@ class RLAIFTrainer:
         trajectories: list[dict[str, Any]],
     ) -> dict[str, float]:
         """
-        Execute one training step.
+        Optimize the reward-weighted log likelihood of scored response tokens.
+
+        The standalone update repeats each candidate's reward over its scored
+        tokens and standardizes those weights across the batch when it contains
+        multiple tokens. Constitutional rewrites are scored as supplied text.
 
         Args:
             trajectories: Collected trajectories with rewards
@@ -527,70 +557,60 @@ class RLAIFTrainer:
         # Extract data
         prompts = [t["prompt"] for t in trajectories]
         completions = [t["completion"] for t in trajectories]
-        rewards = [t["reward"] for t in trajectories]
+        rewards = [float(t["reward"]) for t in trajectories]
 
-        # Tokenize
-        full_texts = [p + c for p, c in zip(prompts, completions, strict=False)]
-        encodings = self.tokenizer(
-            full_texts,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=self.config.max_prompt_length
-            + self.config.max_completion_length,
+        if not trajectories:
+            raise ValueError("RLAIF requires a nonempty batch of scored completions")
+        input_ids, attention_mask, prompt_lengths = encode_prompt_completions(
+            self.tokenizer,
+            prompts,
+            completions,
+            max_prompt_length=self.config.max_prompt_length,
+            max_completion_length=self.config.max_completion_length,
+            device=self.device,
         )
-
-        input_ids = encodings["input_ids"].to(self.device)
-        attention_mask = encodings["attention_mask"].to(self.device)
-
-        # Compute log probs
+        response_mask = attention_mask.bool() & (
+            attention_mask.cumsum(-1) > prompt_lengths[:, None]
+        )
+        counts = response_mask[:, 1:].sum(dim=1).tolist()
+        if not all(counts):
+            raise ValueError("RLAIF requires a scored completion token in every row")
+        if not all(math.isfinite(r) for r in rewards):
+            raise ValueError("RLAIF rewards must be finite")
+        weights = _token_reward_weights(rewards, counts)
+        cap = float(self.config.max_grad_norm)
+        if not math.isfinite(cap) or cap < 0:
+            raise ValueError("max_grad_norm must be finite and nonnegative")
         self.model.train()
         outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
-        logits = outputs.logits[:, :-1, :]
-
-        # Shift labels
-        labels = input_ids[:, 1:]
-
-        # Log probs for chosen tokens
-        log_probs = torch.log_softmax(logits, dim=-1)
-        token_log_probs = log_probs.gather(dim=-1, index=labels.unsqueeze(-1)).squeeze(
-            -1
+        log_probs, _ = rl_losses.gather_token_logprobs(
+            outputs.logits,
+            input_ids,
+            response_mask,
+            dtype=(
+                torch.float64
+                if outputs.logits.dtype == torch.float64
+                else torch.float32
+            ),
         )
-
-        # Create completion mask
-        prompt_encodings = self.tokenizer(prompts, padding=True, return_tensors="pt")
-        prompt_lengths = prompt_encodings["attention_mask"].sum(dim=1)
-
-        completion_mask = torch.zeros_like(labels, dtype=torch.float)
-        for i, prompt_len in enumerate(prompt_lengths):
-            completion_mask[i, prompt_len:] = 1.0
-
-        completion_mask = completion_mask.to(self.device)
-
-        # Compute advantages (simplified - reward broadcast to tokens)
-        rewards_tensor = torch.tensor(rewards, device=self.device).unsqueeze(1)
-        advantages = completion_mask * rewards_tensor
-
-        # Normalize advantages
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-
-        # Policy gradient loss
-        policy_loss = (
-            -(token_log_probs * advantages * completion_mask).sum()
-            / completion_mask.sum()
+        reduction_dtype = (
+            torch.float32 if log_probs.device.type == "mps" else torch.float64
         )
+        # The gather already masks prompt and padding positions. Divide by the
+        # scored token count across all rows, including unequal completions.
+        row_scores = log_probs.sum(dim=1, dtype=reduction_dtype) / sum(counts)
+        policy_loss = -(row_scores * row_scores.new_tensor(weights)).sum()
+        if not torch.isfinite(policy_loss):
+            raise FloatingPointError("RLAIF policy loss must be finite")
 
         # Backward pass
         self.model.zero_grad()
         policy_loss.backward()
 
-        # Gradient clipping
-        torch.nn.utils.clip_grad_norm_(
-            self.model.parameters(), self.config.max_grad_norm
-        )
-
-        # Optimizer step (simple SGD for now)
         with torch.no_grad():
+            gradients = [p.grad for p in self.model.parameters() if p.grad is not None]
+            if gradients:
+                _clip_gradient_norm(gradients, cap, torch)
             for param in self.model.parameters():
                 if param.grad is not None:
                     param.add_(param.grad, alpha=-self.config.learning_rate)
@@ -599,7 +619,7 @@ class RLAIFTrainer:
 
         metrics = {
             "policy_loss": policy_loss.item(),
-            "average_reward": sum(rewards) / len(rewards),
+            "average_reward": statistics.mean(rewards),
             "max_reward": max(rewards),
             "min_reward": min(rewards),
         }

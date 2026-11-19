@@ -209,6 +209,10 @@ class ExplorationController:
         min_epsilon: float = 0.05,
         decay_rate: float = 0.995,
     ):
+        if not 0 <= min_epsilon <= initial_epsilon <= 1 or not 0 <= decay_rate <= 1:
+            raise ValueError(
+                "Expected 0 <= min_epsilon <= initial_epsilon <= 1 and 0 <= decay_rate <= 1"
+            )
         self.strategy = strategy
         self.epsilon = initial_epsilon
         self.min_epsilon = min_epsilon
@@ -217,9 +221,12 @@ class ExplorationController:
         self.action_counts: dict[str, int] = defaultdict(int)
         self.action_rewards: dict[str, list[float]] = defaultdict(list)
         self.curiosity_scores: dict[str, float] = defaultdict(float)
+        self.state_visits: dict[str, int] = defaultdict(int)
 
     async def should_explore(self, state: Any, available_actions: list[str]) -> bool:
         """Determine whether to explore or exploit"""
+        if len(set(available_actions)) < 2:
+            return False
         if self.strategy == ExplorationStrategy.EPSILON_GREEDY:
             return random.random() < self.epsilon
 
@@ -237,6 +244,8 @@ class ExplorationController:
 
     async def select_exploration_action(self, available_actions: list[str]) -> str:
         """Select action for exploration"""
+        if not available_actions:
+            raise ValueError("Exploration requires an available action")
         if self.strategy == ExplorationStrategy.UCB:
             return await self._ucb_action_selection(available_actions)
         elif self.strategy == ExplorationStrategy.CURIOSITY_DRIVEN:
@@ -246,11 +255,14 @@ class ExplorationController:
 
     async def update_exploration_state(self, action: str, reward: float, state: Any):
         """Update exploration-related state"""
+        if not math.isfinite(reward):
+            raise ValueError("Exploration requires a finite reward")
         self.action_counts[action] += 1
         self.action_rewards[action].append(reward)
 
         # Update curiosity scores based on prediction error
         if self.strategy == ExplorationStrategy.CURIOSITY_DRIVEN:
+            self.state_visits[str(state)] += 1
             await self._update_curiosity_scores(action, reward, state)
 
         # Decay epsilon
@@ -284,8 +296,7 @@ class ExplorationController:
     ) -> bool:
         """Curiosity-driven exploration decision"""
         # Calculate state novelty (simplified)
-        state_hash = hash(str(state))
-        novelty_score = 1.0 / (1.0 + self.curiosity_scores.get(str(state_hash), 0))
+        novelty_score = 1.0 / (1.0 + self.state_visits.get(str(state), 0))
 
         # Explore more in novel states
         exploration_probability = min(0.9, novelty_score * 0.5 + 0.1)
@@ -297,19 +308,22 @@ class ExplorationController:
         """Information gain-based exploration decision"""
         # Simplified information gain calculation
         # In practice, this would use model uncertainty or ensemble disagreement
-        total_actions = sum(self.action_counts.values())
+        counts = [
+            self.action_counts[action] for action in dict.fromkeys(available_actions)
+        ]
+        if len(counts) < 2:
+            return False
+        total_actions = sum(counts)
         if total_actions == 0:
             return True
 
         # Calculate action entropy
-        action_probs = [
-            self.action_counts[action] / total_actions for action in available_actions
-        ]
-        entropy = -sum(p * math.log(p + 1e-8) for p in action_probs if p > 0)
+        action_probs = (count / total_actions for count in counts if count)
+        entropy = -math.fsum(p * math.log(p) for p in action_probs)
 
         # Explore more when entropy is high (uniform distribution)
-        max_entropy = math.log(len(available_actions))
-        exploration_probability = entropy / max_entropy
+        max_entropy = math.log(len(counts))
+        exploration_probability = min(1.0, max(0.0, entropy / max_entropy))
         return random.random() < exploration_probability
 
     async def _ucb_action_selection(self, available_actions: list[str]) -> str:

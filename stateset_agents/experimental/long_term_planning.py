@@ -7,12 +7,34 @@ multi-step plans, then inject them into the prompt as system context.
 
 from __future__ import annotations
 
+import asyncio
+import copy
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, contextmanager, nullcontext
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from threading import RLock
 from typing import Any
+from uuid import uuid4
+
+from stateset_agents.core.multiturn_context import ConversationConflict
+
+_PLANNING_GUARD: ContextVar[Callable[[], AbstractContextManager[Any]] | None] = (
+    ContextVar("planning_commit_guard", default=None)
+)
+
+
+@contextmanager
+def _planning_scope(guard: Callable[[], AbstractContextManager[Any]]) -> Iterator[None]:
+    """Bind host-operation guards without serializing callbacks or changing APIs."""
+    token = _PLANNING_GUARD.set(guard)
+    try:
+        yield
+    finally:
+        _PLANNING_GUARD.reset(token)
 
 
 class PlanStatus(str, Enum):
@@ -196,122 +218,223 @@ class PlanningManager:
         self._plans: dict[str, Plan] = {}
         self._turn_counters: dict[str, int] = {}
         self._last_updates: dict[str, int] = {}
+        self._lock = RLock()
+        self._revisions: dict[str, int] = {}
+        self._operations: dict[str, dict[str, Any]] = {}
+        self._last_operations: dict[str, dict[str, Any]] = {}
+
+    def __getstate__(self) -> dict[str, Any]:
+        with self._lock:
+            if self._operations:
+                raise RuntimeError("Cannot copy a planning manager during an operation")
+            return {key: value for key, value in vars(self).items() if key != "_lock"}
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self.__dict__.update(state)
+        self._lock = RLock()
+        for name in ("_revisions", "_operations", "_last_operations"):
+            self.__dict__.setdefault(name, {})
 
     def get_plan(self, conversation_id: str) -> Plan | None:
-        return self._plans.get(conversation_id)
+        """Return the current plan; concurrent direct mutations are unsupported."""
+        with self._lock:
+            return self._plans.get(conversation_id)
+
+    def get_status(self, conversation_id: str) -> dict[str, Any]:
+        """Inspect planning progress without executing a planner or consuming intent."""
+        with self._lock:
+            return copy.deepcopy(
+                {
+                    "revision": self._revisions.get(conversation_id, 0),
+                    "has_plan": conversation_id in self._plans,
+                    "turn_count": self._turn_counters.get(conversation_id, 0),
+                    "last_update": self._last_updates.get(conversation_id, 0),
+                    "active": self._operations.get(conversation_id),
+                    "last_finished": self._last_operations.get(conversation_id),
+                }
+            )
 
     def clear_conversation(self, conversation_id: str) -> None:
         """Remove planning state for a conversation."""
-        self._plans.pop(conversation_id, None)
-        self._turn_counters.pop(conversation_id, None)
-        self._last_updates.pop(conversation_id, None)
+        with self._lock:
+            self._plans.pop(conversation_id, None)
+            self._turn_counters.pop(conversation_id, None)
+            self._last_updates.pop(conversation_id, None)
+            self._last_operations.pop(conversation_id, None)
+            if conversation_id in self._operations:
+                self._revisions[conversation_id] = (
+                    self._revisions.get(conversation_id, 0) + 1
+                )
+            else:
+                self._revisions.pop(conversation_id, None)
 
     def build_plan_message(
         self,
         messages: list[dict[str, str]],
         context: dict[str, Any] | None = None,
     ) -> dict[str, str] | None:
+        """Prepare a plan off-lock and commit only to the revision that admitted it."""
         if not self.config.enabled or not self.config.include_plan_in_context:
             return None
 
-        context = context or {}
+        context = copy.deepcopy(context or {})
+        messages = copy.deepcopy(messages)
         conversation_id = str(context.get("conversation_id") or "default")
-        turn_count = self._turn_counters.get(conversation_id, 0) + 1
-        self._turn_counters[conversation_id] = turn_count
+        guard = _PLANNING_GUARD.get() or nullcontext
+        with guard(), self._lock:
+            if conversation_id in self._operations:
+                raise ConversationConflict(
+                    "Another planning operation owns this conversation"
+                )
+            original = self._plans.get(conversation_id)
+            baseline = copy.deepcopy(original)
+            candidate = copy.deepcopy(original)
+            config = copy.deepcopy(self.config)
+            planner, extractor = self.planner, self.goal_extractor
+            revision = self._revisions.get(conversation_id, 0)
+            turn_count = self._turn_counters.get(conversation_id, 0) + 1
+            last_update = self._last_updates.get(conversation_id, 0)
+            receipt = {
+                "id": uuid4().hex,
+                "state": "running",
+                "phase": "preparing",
+                "callback_status": "not_started",
+                "error_type": None,
+            }
+            self._operations[conversation_id] = receipt
+        try:
+            explicit_goal = _extract_explicit_goal(context)
+            update_needed = (
+                candidate is None
+                or turn_count - last_update >= config.update_interval
+                or isinstance(context.get("plan_update"), dict)
+                or bool(explicit_goal)
+            )
+            if update_needed:
+                update = context.get("plan_update")
+                if candidate is not None and isinstance(update, dict):
+                    _apply_plan_update(candidate, update)
+                goal = explicit_goal
+                if goal is None and candidate is None:
+                    with guard(), self._lock:
+                        self._check_revision(conversation_id, revision, receipt)
+                        receipt.update(phase="planning", callback_status="unconfirmed")
+                    goal = extractor(messages, context)
+                    with self._lock:
+                        receipt["callback_status"] = "returned"
+                if goal and len(goal) >= config.goal_min_chars:
+                    if candidate is None or (
+                        config.allow_goal_update and explicit_goal
+                    ):
+                        with guard(), self._lock:
+                            self._check_revision(conversation_id, revision, receipt)
+                            receipt.update(
+                                phase="planning", callback_status="unconfirmed"
+                            )
+                        candidate = (
+                            planner.create_plan(goal, config)
+                            if candidate is None
+                            else planner.revise_plan(candidate, goal, config)
+                        )
+                        with self._lock:
+                            receipt["callback_status"] = "returned"
+                last_update = turn_count
+            if candidate is not None and not isinstance(candidate, Plan):
+                raise TypeError("Planner must return a Plan")
+            prepared = copy.deepcopy(candidate)
+            with guard(), self._lock:
+                self._check_revision(conversation_id, revision, receipt)
+            summary = (
+                prepared.summarize(
+                    max_steps=config.max_steps, keep_completed=config.keep_completed
+                )
+                if prepared is not None
+                else ""
+            )
+            with guard(), self._lock:
+                receipt["phase"] = "committing"
+                self._check_revision(conversation_id, revision, receipt)
+                if (
+                    self._plans.get(conversation_id) is not original
+                    or original != baseline
+                ):
+                    raise ConversationConflict("Plan changed during preparation")
+                if prepared is not None:
+                    self._plans[conversation_id] = prepared
+                self._turn_counters[conversation_id] = turn_count
+                self._last_updates[conversation_id] = last_update
+                self._revisions[conversation_id] = revision + 1
+                receipt.update(state="completed", phase="finished")
+            return (
+                {"role": "system", "content": f"{config.plan_prefix}:\n{summary}"}
+                if summary
+                else None
+            )
+        except BaseException as error:
+            with self._lock:
+                receipt.update(
+                    state=(
+                        "cancelled"
+                        if isinstance(error, asyncio.CancelledError)
+                        else "failed"
+                    ),
+                    error_type=type(error).__name__,
+                )
+            raise
+        finally:
+            with self._lock:
+                self._operations.pop(conversation_id)
+                self._last_operations[conversation_id] = copy.deepcopy(receipt)
 
-        plan = self._plans.get(conversation_id)
-        has_plan_update = isinstance(context.get("plan_update"), dict)
-        goal_override = context.get("plan_goal")
-        has_goal_override = isinstance(goal_override, str) and goal_override.strip()
-        update_needed = (
-            plan is None
-            or turn_count - self._last_updates.get(conversation_id, 0)
-            >= self.config.update_interval
-            or has_plan_update
-            or has_goal_override
-        )
-
-        if update_needed:
-            plan = self._ensure_plan(conversation_id, messages, context, plan)
-            self._last_updates[conversation_id] = turn_count
-
-        if plan is None:
-            return None
-
-        summary = plan.summarize(
-            max_steps=self.config.max_steps,
-            keep_completed=self.config.keep_completed,
-        )
-        if not summary:
-            return None
-
-        content = f"{self.config.plan_prefix}:\n{summary}"
-        return {"role": "system", "content": content}
+    def _check_revision(
+        self, conversation_id: str, revision: int, receipt: dict[str, Any]
+    ) -> None:
+        if (
+            self._revisions.get(conversation_id, 0) != revision
+            or self._operations.get(conversation_id) is not receipt
+        ):
+            raise ConversationConflict("Planning state changed during preparation")
 
     def apply_update(
         self,
         conversation_id: str,
         update: dict[str, Any],
     ) -> None:
-        plan = self._plans.get(conversation_id)
-        if plan is None:
-            return
+        """Apply a detached update atomically and invalidate stale preparations."""
+        with self._lock:
+            plan = self._plans.get(conversation_id)
+            if plan is None:
+                return
+            candidate = copy.deepcopy(plan)
+            _apply_plan_update(candidate, copy.deepcopy(update))
+            self._plans[conversation_id] = candidate
+            self._revisions[conversation_id] = (
+                self._revisions.get(conversation_id, 0) + 1
+            )
 
-        action = str(update.get("action") or "").lower()
-        if action == "advance":
-            plan.advance()
-            return
 
-        status = update.get("status")
-        if isinstance(status, str):
-            try:
-                status_value = PlanStatus(status)
-            except ValueError:
-                status_value = None
-        else:
-            status_value = status
-
-        step_index = update.get("step_index")
-        if isinstance(step_index, int) and step_index > 0:
-            step_index = step_index - 1
-
-        plan.update_step(
-            step_id=update.get("step_id"),
-            step_index=step_index,
-            status=status_value if isinstance(status_value, PlanStatus) else None,
-            notes=update.get("notes"),
-        )
-
-    def _ensure_plan(
-        self,
-        conversation_id: str,
-        messages: list[dict[str, str]],
-        context: dict[str, Any],
-        current_plan: Plan | None,
-    ) -> Plan | None:
-        update = context.get("plan_update")
-        if isinstance(update, dict):
-            self.apply_update(conversation_id, update)
-
-        goal: str | None
-        explicit_goal = _extract_explicit_goal(context)
-        if explicit_goal:
-            goal = explicit_goal
-        elif current_plan is None:
-            goal = self.goal_extractor(messages, context)
-        else:
-            goal = None
-
-        if not goal or len(goal) < self.config.goal_min_chars:
-            return current_plan
-
-        if current_plan is None:
-            current_plan = self.planner.create_plan(goal, self.config)
-        elif self.config.allow_goal_update and explicit_goal:
-            current_plan = self.planner.revise_plan(current_plan, goal, self.config)
-
-        self._plans[conversation_id] = current_plan
-        return current_plan
+def _apply_plan_update(plan: Plan, update: dict[str, Any]) -> None:
+    action = str(update.get("action") or "").lower()
+    if action == "advance":
+        plan.advance()
+        return
+    status = update.get("status")
+    if isinstance(status, str):
+        try:
+            status_value = PlanStatus(status)
+        except ValueError:
+            status_value = None
+    else:
+        status_value = status
+    step_index = update.get("step_index")
+    if isinstance(step_index, int) and step_index > 0:
+        step_index -= 1
+    plan.update_step(
+        step_id=update.get("step_id"),
+        step_index=step_index,
+        status=status_value if isinstance(status_value, PlanStatus) else None,
+        notes=update.get("notes"),
+    )
 
 
 def _default_goal_extractor(

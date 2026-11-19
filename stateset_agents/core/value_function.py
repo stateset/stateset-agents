@@ -270,49 +270,27 @@ class ValueFunction:
         """
         _require_torch()
 
-        if dones is None:
-            dones = [False] * (len(rewards) - 1) + [True]
+        from ..training.advantage_estimation import gae_targets, normalize_advantages
 
-        rewards_tensor = torch.tensor(
-            rewards, dtype=torch.float32, device=values.device
+        reward_row = torch.tensor(
+            rewards,
+            dtype=torch.promote_types(torch.float32, values.dtype),
+            device=values.device,
+        ).unsqueeze(0)
+        terminal_row = (
+            None
+            if dones is None
+            else torch.tensor(dones, dtype=torch.bool, device=values.device).unsqueeze(
+                0
+            )
         )
-        dones_tensor = torch.tensor(dones, dtype=torch.float32, device=values.device)
-
-        # Compute advantages using GAE
-        advantages = torch.zeros_like(rewards_tensor)
-        last_advantage = 0
-
-        for t in reversed(range(len(rewards))):
-            if t == len(rewards) - 1:
-                next_value = 0.0
-            else:
-                next_value = values[t + 1]
-
-            # TD error: δ_t = r_t + γ * V(s_{t+1}) - V(s_t)
-            delta = (
-                rewards_tensor[t]
-                + self.gamma * next_value * (1 - dones_tensor[t])
-                - values[t]
-            )
-
-            # GAE: A_t = δ_t + γλ * A_{t+1}
-            advantages[t] = (
-                delta
-                + self.gamma * self.gae_lambda * (1 - dones_tensor[t]) * last_advantage
-            )
-            last_advantage = advantages[t]
-
-        # Store unnormalized advantages for returns calculation
-        unnormalized_advantages = advantages.clone()
-
-        # Normalize advantages if requested
-        if self.normalize_advantages and len(advantages) > 1:
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-
-        # Compute returns using unnormalized advantages: R_t = A_t + V(s_t)
-        returns = unnormalized_advantages + values
-
-        return advantages, returns
+        advantages, returns = gae_targets(
+            reward_row, values.unsqueeze(0), self.gamma, self.gae_lambda, terminal_row
+        )
+        raw = advantages.squeeze(0)
+        return (
+            normalize_advantages(raw) if self.normalize_advantages else raw
+        ), returns.squeeze(0)
 
     def compute_grpo_advantages(
         self,
@@ -374,6 +352,8 @@ class ValueFunction:
         Returns:
             Average value loss
         """
+        from ..training.trainer_utils import clip_parameter_gradients
+
         _require_torch()
 
         total_loss = 0.0
@@ -415,7 +395,7 @@ class ValueFunction:
             # Backward pass
             self.optimizer.zero_grad()
             value_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.value_head.parameters(), 1.0)
+            clip_parameter_gradients(self.value_head.parameters(), 1.0)
             self.optimizer.step()
 
             total_loss += value_loss.item()

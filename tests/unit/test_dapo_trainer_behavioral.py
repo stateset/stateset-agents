@@ -325,7 +325,9 @@ async def test_one_optimizer_step_per_inner_update_over_the_whole_batch(
     """DAPO's token-level loss averages over *all* tokens in the batch: the
     groups' gradients accumulate into one optimizer step per inner update
     (previously every prompt group took its own step)."""
-    trainer = dapo_trainer_factory(tiny_model(), num_gradient_updates=2)
+    trainer = dapo_trainer_factory(
+        tiny_model(), num_gradient_updates=2, max_grad_norm=1e6
+    )
     ids, am, rm = make_batch()
     rm_short = rm.clone()
     rm_short[:, 8:] = 0.0  # second group has fewer response tokens
@@ -372,7 +374,6 @@ async def test_one_optimizer_step_per_inner_update_over_the_whole_batch(
             grads.extend(p.grad.clone() for p in trainer.model.parameters())
 
     monkeypatch.setattr(trainer.optimizer, "step", record_step)
-    monkeypatch.setattr(torch.nn.utils, "clip_grad_norm_", lambda *a, **k: None)
 
     async def fake_collect(prompts, n):
         return samples, 0.0

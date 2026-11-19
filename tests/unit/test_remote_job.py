@@ -7,6 +7,7 @@ These tests pin that correspondence so the two cannot silently drift.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -175,6 +176,40 @@ class TestRemoteJobSpecValidation:
 
 class TestProviderJobKindCapabilities:
     @pytest.mark.parametrize(
+        "provider,kind,first_effect",
+        [
+            ("fireworks", "sft", "_get_client"),
+            ("together", "sft", "_client"),
+            ("tinker", "sft", "_sdk"),
+            ("tinker", "rl", "_sdk"),
+            ("prime", "rl", None),
+        ],
+    )
+    def test_unsupported_preview_fails_before_submission(
+        self, dataset, tmp_path, monkeypatch, provider, kind, first_effect
+    ):
+        from stateset_agents.remote.registry import get_executor
+
+        executor = get_executor(provider)
+        spec = RemoteJobSpec(
+            dataset=dataset,
+            base_model="test/model",
+            job_kind=kind,
+            dry_run=True,
+            output_dir=tmp_path / "out",
+        )
+        if first_effect:
+            monkeypatch.setattr(
+                executor, first_effect, lambda: pytest.fail("provider contacted")
+            )
+        else:
+            monkeypatch.setattr(
+                Path, "mkdir", lambda *a, **k: pytest.fail("Prime job staged")
+            )
+        with pytest.raises(RemoteExecutionError, match="--dry-run.*--plan-only"):
+            executor.submit(spec)
+
+    @pytest.mark.parametrize(
         "executor_cls",
         [LocalExecutor, RunPodExecutor],
     )
@@ -218,9 +253,42 @@ class TestProviderJobKindCapabilities:
             "compute_model": "managed-finetuning-and-serving",
             "verification_status": "code-complete-live-lifecycle-pending",
             "sft_seed": False,
+            "dry_run": False,
+            "cost_ceiling": False,
             "uses_packaged_training": False,
             "durable_submission_receipts": False,
         }
+
+    @pytest.mark.parametrize(
+        "provider",
+        [
+            "fireworks",
+            "huggingface",
+            "local",
+            "modal",
+            "prime",
+            "river",
+            "tinker",
+            "together",
+        ],
+    )
+    def test_provider_cannot_silently_accept_an_unsupported_dollar_budget(
+        self, dataset, provider
+    ):
+        from stateset_agents.remote.registry import get_executor
+
+        spec = RemoteJobSpec(dataset=dataset, base_model="test/model", max_cost_usd=1)
+        with pytest.raises(RemoteExecutionError, match="--max-cost"):
+            get_executor(provider).submit(spec)
+
+    @pytest.mark.parametrize("amount", [False, float("inf"), float("nan"), -0.01])
+    def test_budget_must_be_finite_at_construction_and_dispatch(self, dataset, amount):
+        with pytest.raises(ValueError, match="max_cost_usd"):
+            RemoteJobSpec(dataset=dataset, base_model="test/model", max_cost_usd=amount)
+        spec = RemoteJobSpec(dataset=dataset, base_model="test/model")
+        spec.max_cost_usd = amount
+        with pytest.raises(RemoteExecutionError, match="max_cost_usd"):
+            RunPodExecutor().submit(spec)
 
 
 class TestResumeAndCloudTypeCliArgs:

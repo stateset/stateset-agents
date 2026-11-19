@@ -10,6 +10,7 @@ via Sequence Modeling" (NeurIPS 2021)
 
 import logging
 import math
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any
 
@@ -42,6 +43,34 @@ except ImportError:
     SentenceTransformer = None
 
 logger = logging.getLogger(__name__)
+_STATE_LOSS_WEIGHT = 0.1
+
+
+def _conversation_contexts(turns: Iterable[tuple[str, str]]) -> tuple[list[str], str]:
+    """Render the state before each assistant action and the final observed state."""
+    history: list[str] = []
+    before = []
+    for role, content in turns:
+        if role == "assistant":
+            before.append("".join(history))
+        history.append(f"{role}: {content}\n")
+    return before, "".join(history)
+
+
+def _squared_error_sum(residual: torch.Tensor, steps: int) -> torch.Tensor:
+    """Sum coordinate errors using the number of observed vector targets."""
+    return ((residual / max(steps, 1)) * residual).sum()
+
+
+def _mean_step_error(
+    prediction: torch.Tensor, target: torch.Tensor, valid: torch.Tensor
+) -> torch.Tensor:
+    """Average squared vector distance over observed steps, including an empty successor set."""
+    device = "cpu" if prediction.device.type == "mps" else prediction.device
+    residual = prediction[valid].to(device, torch.float64) - target[valid].to(
+        device, torch.float64
+    )
+    return _squared_error_sum(residual, len(residual))
 
 
 def _require_torch():
@@ -209,7 +238,9 @@ class CausalSelfAttention(nn.Module):
             ),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, attention_mask: torch.Tensor | None = None
+    ) -> torch.Tensor:
         """
         Forward pass with causal attention.
 
@@ -232,8 +263,13 @@ class CausalSelfAttention(nn.Module):
 
         # Attention
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(self.head_dim))
-        att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float("-inf"))
-        att = F.softmax(att, dim=-1)
+        allowed = self.bias[:, :, :T, :T].bool()
+        if attention_mask is not None:
+            allowed = allowed & attention_mask[:, None, None, :].bool()
+        # Empty prefixes have no keys. Define their attention contribution as zero.
+        att = att.masked_fill(~allowed, -math.inf)
+        att = att.masked_fill(~allowed.any(dim=-1, keepdim=True), 0.0)
+        att = F.softmax(att, dim=-1).masked_fill(~allowed, 0.0)
         att = self.attn_dropout(att)
 
         # Combine heads
@@ -267,8 +303,10 @@ class TransformerBlock(nn.Module):
             nn.Dropout(dropout),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x + self.attn(self.ln_1(x))
+    def forward(
+        self, x: torch.Tensor, attention_mask: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        x = x + self.attn(self.ln_1(x), attention_mask)
         x = x + self.mlp(self.ln_2(x))
         return x
 
@@ -294,6 +332,10 @@ class DecisionTransformer(nn.Module):
     def __init__(self, config: DecisionTransformerConfig):
         super().__init__()
         _require_torch()
+        if min(config.max_context_length, config.max_episode_length) < 1:
+            raise ValueError(
+                "Decision Transformer context and episode lengths must be positive"
+            )
 
         self.config = config
         self.n_embd = config.n_embd
@@ -374,6 +416,13 @@ class DecisionTransformer(nn.Module):
         """
         batch_size, seq_len = states.shape[0], states.shape[1]
 
+        if attention_mask is not None:
+            inactive = ~attention_mask.bool()
+            states = states.masked_fill(inactive.unsqueeze(-1), 0)
+            actions = actions.masked_fill(inactive.unsqueeze(-1), 0)
+            returns_to_go = returns_to_go.masked_fill(inactive.unsqueeze(-1), 0)
+            timesteps = timesteps.masked_fill(inactive, 0)
+
         # Embed each modality
         state_embeddings = self.embed_state(states)
         action_embeddings = self.embed_action(actions)
@@ -405,7 +454,7 @@ class DecisionTransformer(nn.Module):
         # Transformer blocks
         hidden = stacked
         for block in self.blocks:
-            hidden = block(hidden)
+            hidden = block(hidden, attention_mask)
 
         hidden = self.ln_f(hidden)
 
@@ -444,7 +493,18 @@ class DecisionTransformer(nn.Module):
         Returns:
             action: [batch, action_dim] - action for last timestep
         """
-        action_preds, _, _ = self.forward(states, actions, returns_to_go, timesteps)
+        if not states.shape[1] or any(
+            x.shape[:2] != states.shape[:2] for x in (actions, returns_to_go, timesteps)
+        ):
+            raise ValueError(
+                "Decision Transformer action context must be nonempty and aligned"
+            )
+        action_preds, _, _ = self.forward(
+            states[:, -self.max_length :],
+            actions[:, -self.max_length :],
+            returns_to_go[:, -self.max_length :],
+            timesteps[:, -self.max_length :],
+        )
         return action_preds[:, -1]
 
 
@@ -522,33 +582,58 @@ class DecisionTransformerTrainer:
         max_len = self.config.max_context_length
 
         # Initialize tensors
-        states = torch.zeros(
-            batch_size, max_len, self.config.state_dim, device=self.device
+        parameter = next(self.model.parameters())
+        states = parameter.new_zeros(
+            (batch_size, max_len, self.config.state_dim), device=self.device
         )
-        actions = torch.zeros(
-            batch_size, max_len, self.config.action_dim, device=self.device
+        actions = parameter.new_zeros(
+            (batch_size, max_len, self.config.action_dim), device=self.device
         )
-        returns_to_go = torch.zeros(batch_size, max_len, 1, device=self.device)
+        returns_to_go = parameter.new_zeros(
+            (batch_size, max_len, 1), device=self.device
+        )
         timesteps = torch.zeros(
             batch_size, max_len, dtype=torch.long, device=self.device
         )
         mask = torch.zeros(batch_size, max_len, device=self.device)
 
         for i, traj in enumerate(trajectories):
-            traj_len = min(len(traj["states"]), max_len)
-
-            states[i, :traj_len] = torch.tensor(
-                traj["states"][:traj_len], device=self.device
-            )
-            actions[i, :traj_len] = torch.tensor(
-                traj["actions"][:traj_len], device=self.device
-            )
-            returns_to_go[i, :traj_len, 0] = torch.tensor(
-                traj["returns_to_go"][:traj_len], device=self.device
-            )
-            timesteps[i, :traj_len] = torch.tensor(
-                traj["timesteps"][:traj_len], device=self.device
-            )
+            length = len(traj["states"])
+            if not length or any(
+                len(traj[key]) != length
+                for key in ("actions", "returns_to_go", "timesteps")
+            ):
+                raise ValueError(
+                    "Every Decision Transformer step requires aligned states, actions, returns and timesteps"
+                )
+            traj_len = min(length, max_len)
+            for key, dest in (
+                ("states", states),
+                ("actions", actions),
+                ("returns_to_go", returns_to_go[:, :, 0]),
+            ):
+                value = torch.as_tensor(
+                    traj[key][:traj_len], dtype=dest.dtype, device=dest.device
+                ).detach()
+                if (
+                    value.shape != dest[i, :traj_len].shape
+                    or not value.isfinite().all()
+                ):
+                    raise ValueError(
+                        f"Invalid Decision Transformer {key} shape or nonfinite value"
+                    )
+                dest[i, :traj_len] = value
+            steps = torch.as_tensor(traj["timesteps"][:traj_len], device=self.device)
+            if (
+                steps.shape != (traj_len,)
+                or steps.dtype
+                not in (torch.int8, torch.uint8, torch.int16, torch.int32, torch.int64)
+                or not ((0 <= steps) & (steps < self.config.max_episode_length)).all()
+            ):
+                raise ValueError(
+                    "Timesteps must be integer indices within the configured episode length"
+                )
+            timesteps[i, :traj_len] = steps
             mask[i, :traj_len] = 1.0
 
         return states, actions, returns_to_go, timesteps, mask
@@ -566,6 +651,10 @@ class DecisionTransformerTrainer:
         Returns:
             Training metrics
         """
+        if not trajectories or any(len(traj["states"]) == 0 for traj in trajectories):
+            raise ValueError(
+                "Decision Transformer training requires nonempty trajectories"
+            )
         self.model.train()
 
         # Prepare batch
@@ -574,32 +663,33 @@ class DecisionTransformerTrainer:
         )
 
         # Forward pass
-        action_preds, state_preds, return_preds = self.model(
-            states, actions, returns_to_go, timesteps
+        action_preds, state_preds, _ = self.model(
+            states, actions, returns_to_go, timesteps, attention_mask=mask
         )
 
         # Action prediction loss (main objective)
-        action_loss = F.mse_loss(action_preds, actions, reduction="none")
-        action_loss = (action_loss * mask.unsqueeze(-1)).sum() / mask.sum()
+        active = mask.bool()
+        action_loss = _mean_step_error(action_preds, actions, active)
 
         # Optional auxiliary losses
-        state_loss = F.mse_loss(state_preds[:, :-1], states[:, 1:], reduction="none")
-        state_mask = mask[:, 1:].unsqueeze(-1)
-        state_loss = (
-            (state_loss * state_mask).sum() / state_mask.sum()
-            if state_mask.sum() > 0
-            else torch.tensor(0.0)
+        state_loss = _mean_step_error(
+            state_preds[:, :-1], states[:, 1:], active[:, :-1] & active[:, 1:]
         )
 
         # Total loss
-        loss = action_loss + 0.1 * state_loss
+        loss = action_loss + _STATE_LOSS_WEIGHT * state_loss
+        if not torch.isfinite(loss):
+            raise ValueError(
+                "Decision Transformer loss exceeds the finite scoring range"
+            )
 
         # Backward pass
         self.optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(
-            self.model.parameters(), self.config.max_grad_norm
-        )
+        from .trainer_utils import _clip_gradient_norm
+
+        gradients = [p.grad for p in self.model.parameters() if p.grad is not None]
+        _clip_gradient_norm(gradients, self.config.max_grad_norm, torch)
         self.optimizer.step()
         self.scheduler.step()
 
@@ -634,7 +724,12 @@ class DecisionTransformerTrainer:
         Returns:
             Training results
         """
-        num_epochs = num_epochs or self.config.num_epochs
+        num_epochs = self.config.num_epochs if num_epochs is None else num_epochs
+        batch_size = self.config.batch_size
+        if min(num_epochs, batch_size, self.config.max_context_length) < 1:
+            raise ValueError(
+                "Decision Transformer requires positive epoch, batch and context sizes"
+            )
 
         logger.info(
             f"Training Decision Transformer for {num_epochs} epochs "
@@ -643,31 +738,48 @@ class DecisionTransformerTrainer:
 
         # Convert dataset to training format
         training_data = self._prepare_dataset(dataset)
+        if not training_data:
+            raise ValueError(
+                "Decision Transformer requires at least one trainable trajectory"
+            )
+        lengths = [
+            min(len(row["states"]), self.config.max_context_length)
+            for row in training_data
+        ]
+        total_actions = sum(lengths)
+        total_successors = total_actions - len(lengths)
 
         for epoch in range(num_epochs):
             epoch_metrics = []
-
-            # Shuffle data
+            action_mean = state_mean = 0.0
             indices = np.random.permutation(len(training_data))
-            num_batches = len(training_data) // self.config.batch_size
-
-            for batch_idx in range(num_batches):
-                batch_indices = indices[
-                    batch_idx
-                    * self.config.batch_size : (batch_idx + 1)
-                    * self.config.batch_size
-                ]
+            for start in range(0, len(indices), batch_size):
+                batch_indices = indices[start : start + batch_size]
                 batch = [training_data[i] for i in batch_indices]
-
                 metrics = self.train_step(batch)
                 epoch_metrics.append(metrics)
+                actions = sum(lengths[i] for i in batch_indices)
+                successors = actions - len(batch)
+                action_mean += metrics["action_loss"] * (actions / total_actions)
+                state_mean += metrics["state_loss"] * (
+                    successors / max(total_successors, 1)
+                )
 
-            # Average epoch metrics
+            # Preserve extra diagnostics from custom train_step implementations.
             avg_metrics: dict[str, float] = {
                 key: float(np.mean([m[key] for m in epoch_metrics]))
                 for key in epoch_metrics[0].keys()
+                if key
+                not in {"loss", "action_loss", "state_loss", "training_step", "lr"}
             }
-            avg_metrics["epoch"] = float(epoch)
+            avg_metrics.update(
+                loss=action_mean + _STATE_LOSS_WEIGHT * state_mean,
+                action_loss=action_mean,
+                state_loss=state_mean,
+                training_step=epoch_metrics[-1]["training_step"],
+                lr=epoch_metrics[-1]["lr"],
+                epoch=float(epoch),
+            )
             self.training_metrics.append(avg_metrics)
 
             if epoch % 10 == 0:
@@ -695,55 +807,72 @@ class DecisionTransformerTrainer:
             # assistant turn: the state is the whole conversation before it
             # (earlier replies included) and its return-to-go is read at that
             # turn's index.
-            action_turns: list[int] | None = None
+            action_turns = [
+                i for i, turn in enumerate(traj.turns) if turn.role == "assistant"
+            ]
             if self.embedder is not None:
                 states = []
                 actions = []
-                action_turns = []
-
-                state_history = ""
-                for i, turn in enumerate(traj.turns):
-                    if turn.role == "assistant":
-                        with torch.no_grad():
-                            state_emb = self.embedder.forward([state_history])
-                            action_emb = self.embedder.forward([turn.content])
-                        states.append(state_emb.squeeze(0).cpu().numpy())
-                        actions.append(action_emb.squeeze(0).cpu().numpy())
-                        action_turns.append(i)
-                    state_history += f"{turn.role}: {turn.content}\n"
+                prefixes, _ = _conversation_contexts(
+                    (turn.role, turn.content) for turn in traj.turns
+                )
+                for i, history in zip(action_turns, prefixes, strict=True):
+                    with torch.no_grad():
+                        state_emb = self.embedder.forward([history])
+                        action_emb = self.embedder.forward([traj.turns[i].content])
+                    states.append(state_emb.squeeze(0).cpu().numpy())
+                    actions.append(action_emb.squeeze(0).cpu().numpy())
             else:
                 # Assume pre-embedded
                 states = traj.metadata.get("state_embeddings", [])
                 actions = traj.metadata.get("action_embeddings", [])
 
-            if len(states) == 0 or len(actions) == 0:
+            if len(states) != len(actions):
+                raise ValueError(
+                    "Decision Transformer state and action embeddings must align"
+                )
+            if self.embedder is None and traj.turns and len(states):
+                if len(states) == len(traj.turns):
+                    states = [states[i] for i in action_turns]
+                    actions = [actions[i] for i in action_turns]
+                elif len(states) != len(action_turns):
+                    raise ValueError(
+                        "Embeddings must align with the conversation turns or assistant actions"
+                    )
+            if len(states) == 0:
                 continue
 
-            # Ensure same length
-            min_len = min(len(states), len(actions))
-            states = states[:min_len]
-            actions = actions[:min_len]
-
             # Compute returns-to-go if not present
-            if traj.returns_to_go:
+            if traj.returns_to_go is not None and len(traj.returns_to_go):
                 returns = list(traj.returns_to_go)
             elif hasattr(traj, "compute_returns_to_go"):
-                returns = list(traj.compute_returns_to_go())
+                discount = getattr(
+                    getattr(dataset, "config", None),
+                    "discount_factor",
+                    DEFAULT_DISCOUNT,
+                )
+                returns = list(
+                    traj.compute_returns_to_go()
+                    if discount == DEFAULT_DISCOUNT
+                    else traj.compute_returns_to_go(discount)
+                )
             else:
                 returns = []
-            if action_turns is not None and len(returns) == len(traj.turns):
-                rtg = [returns[i] for i in action_turns[:min_len]]
-            elif returns:
-                rtg = returns[:min_len]
+            if traj.turns and len(returns) == len(traj.turns):
+                rtg = [returns[i] for i in action_turns]
+            elif len(returns) == len(states):
+                rtg = returns
             else:
-                rtg = [0.0] * min_len
+                raise ValueError(
+                    "Decision Transformer returns must align with turns or assistant actions"
+                )
 
             training_data.append(
                 {
                     "states": np.array(states),
                     "actions": np.array(actions),
                     "returns_to_go": np.array(rtg),
-                    "timesteps": np.arange(min_len),
+                    "timesteps": np.arange(len(states)),
                 }
             )
 
@@ -763,7 +892,7 @@ class DecisionTransformerTrainer:
             history: Conversation history [{"role": ..., "content": ...}, ...]
             target_return: Desired return (e.g., 0.9 for high quality)
             past_actions: Previous action embeddings
-            past_returns: Previous returns
+            past_returns: Conditioning returns for the supplied actions. Omission uses zero.
 
         Returns:
             action_embedding: [action_dim] - embedding for response
@@ -771,43 +900,47 @@ class DecisionTransformerTrainer:
         self.model.eval()
 
         with torch.no_grad():
-            # Embed current state
-            if self.embedder is not None:
-                state_text = "\n".join(
-                    [f"{t['role']}: {t['content']}" for t in history]
-                )
-                state = self.embedder.forward([state_text]).unsqueeze(0)
-            else:
+            if self.embedder is None:
                 raise ValueError("Embedder required for response generation")
-
-            # Build context
-            context_len = len(past_actions) + 1 if past_actions else 1
-
-            states = torch.zeros(
-                1, context_len, self.config.state_dim, device=self.device
+            prefixes, current = _conversation_contexts(
+                (turn["role"], turn["content"]) for turn in history
             )
-            actions = torch.zeros(
-                1, context_len, self.config.action_dim, device=self.device
+            previous = [] if past_actions is None else past_actions
+            if len(previous) > len(prefixes):
+                raise ValueError(
+                    "Past actions require their preceding conversation histories"
+                )
+            if past_returns is not None and len(past_returns) != len(previous):
+                raise ValueError("Past returns must align with past actions")
+            if len(prefixes) >= self.config.max_episode_length:
+                raise ValueError(
+                    "Current timestep exceeds the configured episode length"
+                )
+            keep = min(len(previous), self.config.max_context_length - 1)
+            start = len(prefixes) - keep
+            contexts = [*prefixes[start:], current]
+            states = (
+                self.embedder.forward(contexts)
+                .to(next(self.model.parameters()))
+                .unsqueeze(0)
             )
-            returns_to_go = torch.zeros(1, context_len, 1, device=self.device)
-            timesteps = torch.arange(context_len, device=self.device).unsqueeze(0)
-
-            # Fill in past context
-            if past_actions:
-                for i, (act, ret) in enumerate(
-                    zip(past_actions, past_returns or [], strict=False)
-                ):
-                    actions[0, i] = act
-                    if past_returns:
-                        returns_to_go[0, i, 0] = ret
-
-            # Current state and target return
-            states[0, -1] = state.squeeze(0)
+            actions = states.new_zeros((1, keep + 1, self.config.action_dim))
+            returns_to_go = states.new_zeros((1, keep + 1, 1))
+            if keep:
+                actions[0, :keep] = torch.stack(previous[-keep:]).reshape(
+                    keep, self.config.action_dim
+                )
+                if past_returns is not None:
+                    returns_to_go[0, :keep, 0] = states.new_tensor(past_returns[-keep:])
             returns_to_go[0, -1, 0] = target_return
-
-            # Get action prediction
+            if not all(x.isfinite().all() for x in (states, actions, returns_to_go)):
+                raise ValueError(
+                    "Decision Transformer generation requires finite conditioning"
+                )
+            timesteps = torch.arange(
+                start, len(prefixes) + 1, device=states.device
+            ).unsqueeze(0)
             action = self.model.get_action(states, actions, returns_to_go, timesteps)
-
             return action.squeeze(0)
 
     def save(self, path: str) -> None:
@@ -815,6 +948,9 @@ class DecisionTransformerTrainer:
         torch.save(
             {
                 "model_state_dict": self.model.state_dict(),
+                "embedder_state_dict": (
+                    self.embedder.state_dict() if self.embedder is not None else None
+                ),
                 "optimizer_state_dict": self.optimizer.state_dict(),
                 "scheduler_state_dict": self.scheduler.state_dict(),
                 # Persist the config as plain data so checkpoints stay
@@ -844,6 +980,11 @@ class DecisionTransformerTrainer:
             path, map_location=self.device, trusted=trusted
         )
 
+        embedder_state = checkpoint.get("embedder_state_dict")
+        if embedder_state is not None:
+            if self.embedder is None:
+                raise ValueError("This checkpoint requires a conversation embedder")
+            self.embedder.load_state_dict(embedder_state)
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])

@@ -37,7 +37,7 @@ from .loss_computation import (
     _compute_group_policy_loss,
     compute_enhanced_grpo_loss,
     compute_grpo_loss,
-    compute_token_old_logprobs,
+    freeze_rollout_logprobs,
 )
 from .metric_reduction import carry_loss_metrics
 from .multi_turn_checkpointing import (
@@ -198,7 +198,7 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
 
     def _setup_optimizer(self):
         """Setup optimizer and learning rate scheduler"""
-        torch = require_torch()
+        from .adamw_weights import grouped_model_adamw
 
         # Get model parameters
         model_params = list(self.agent.model.named_parameters())
@@ -221,7 +221,7 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
         ]
 
         # Initialize optimizer
-        self.optimizer = torch.optim.AdamW(
+        self.optimizer = grouped_model_adamw(
             optimizer_grouped_parameters,
             lr=getattr(self.config, "learning_rate", 5e-6),
             betas=(
@@ -709,7 +709,7 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
 
         inner = max(1, int(getattr(self.config, "num_gradient_updates", 1) or 1))
         if inner > 1:
-            # Same precision as the inner-update losses, so the first ratio is 1.
+            # Use the loss precision when freezing a learner denominator.
             with (
                 amp.autocast(device_type=device_type, enabled=use_amp)
                 if amp is not None
@@ -718,7 +718,7 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
                 old_logprobs = run_token_local(
                     self.agent.model,
                     "old-policy",
-                    lambda: compute_token_old_logprobs(
+                    lambda: freeze_rollout_logprobs(
                         trajectory_groups, self.config, self.agent
                     ),
                 )

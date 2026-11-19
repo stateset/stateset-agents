@@ -26,6 +26,7 @@ import torch.nn.functional as F
 from .config import TrainingConfig
 from .runtime_state import TrainingRuntime
 from .trainer_runtime import SharedModelManager
+from .trainer_utils import clip_parameter_gradients
 
 logger = logging.getLogger(__name__)
 
@@ -611,14 +612,8 @@ class BaseTrainer(TrainingRuntime, ABC, Generic[ConfigT]):
 
     def clip_gradients(self) -> float:
         """Clip gradients and return the norm."""
-        params = list(self.model.parameters())
-        if not params:
-            return 0.0
-        return float(
-            torch.nn.utils.clip_grad_norm_(
-                params,
-                self.config.max_grad_norm,
-            ).item()
+        return clip_parameter_gradients(
+            self.model.parameters(), self.config.max_grad_norm
         )
 
     def get_gradient_stats(self) -> dict[str, float]:
@@ -774,20 +769,16 @@ def compute_group_advantages(
     """
     import numpy as np
 
+    from stateset_agents.core.rust_accelerator import (
+        compute_group_advantages as group_advantages,
+    )
+
     if not rewards:
         return []
-
-    rewards_array = np.array(rewards)
-
-    if baseline_type == "mean":
-        baseline = rewards_array.mean()
-    elif baseline_type == "median":
-        baseline = np.median(rewards_array)
-    else:
+    if baseline_type not in {"mean", "median"}:
         raise ValueError(f"Unknown baseline type: {baseline_type}")
-
-    advantages = rewards_array - baseline
-    return cast(list[float], advantages.tolist())
+    result = group_advantages(np.asarray(rewards), baseline_type, normalize=False)
+    return cast(list[float], result.tolist())
 
 
 def create_response_mask(

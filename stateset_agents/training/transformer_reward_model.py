@@ -19,6 +19,7 @@ from typing import Any, cast
 from stateset_agents.core.reward import RewardFunction, RewardResult
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.training.checkpoint_io import load_checkpoint_file
+from stateset_agents.training.trainer_utils import clip_parameter_gradients
 
 try:
     import torch
@@ -638,6 +639,7 @@ class TransformerRewardTrainer:
         """Train for one epoch"""
         self.model.train()
         total_loss = 0.0
+        examples = 0
         optimizer = self.optimizer
         scheduler = self.scheduler
         if optimizer is None or scheduler is None:
@@ -669,21 +671,21 @@ class TransformerRewardTrainer:
             loss.backward()
 
             # Clip gradients
-            torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(), self.config.max_grad_norm
-            )
+            clip_parameter_gradients(self.model.parameters(), self.config.max_grad_norm)
 
             optimizer.step()
             scheduler.step()
 
-            total_loss += loss.item()
+            total_loss += loss.item() * rewards.numel()
+            examples += rewards.numel()
 
-        return total_loss / len(train_loader)
+        return total_loss / examples
 
     def _validate_epoch(self, val_loader: DataLoader) -> float:
         """Validate for one epoch"""
         self.model.eval()
         total_loss = 0.0
+        examples = 0
 
         with torch.no_grad():
             for batch in val_loader:
@@ -706,9 +708,10 @@ class TransformerRewardTrainer:
 
                 # Compute loss
                 loss = F.mse_loss(predicted_rewards, rewards)
-                total_loss += loss.item()
+                total_loss += loss.item() * rewards.numel()
+                examples += rewards.numel()
 
-        return total_loss / len(val_loader)
+        return total_loss / examples
 
     def predict(self, prompt: str, response: str) -> float:
         """Predict reward for a single prompt-response pair"""

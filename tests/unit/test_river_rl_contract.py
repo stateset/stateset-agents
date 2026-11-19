@@ -390,6 +390,11 @@ def test_completed_resume_is_offline_and_rejects_changed_training_plan(tmp_path)
     executor = _executor(tmp_path, client)
     executor.submit(spec)
     count = len(client.calls)
+    retained = {p: p.read_bytes() for p in spec.output_dir.iterdir() if p.is_file()}
+    preview = executor.wait(executor.submit(replace(spec, resume=True, dry_run=True)))
+    assert preview.is_preview and len(client.calls) == count
+    assert (spec.output_dir / "rl_preview.json").is_file()
+    assert all(path.read_bytes() == data for path, data in retained.items())
     executor.submit(replace(spec, resume=True))
     assert len(client.calls) == count
     with pytest.raises(ValueError, match="differs"):

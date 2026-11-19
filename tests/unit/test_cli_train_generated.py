@@ -96,10 +96,23 @@ def test_every_generated_command_maps_to_one_preset() -> None:
 
 
 @pytest.mark.parametrize("command", sorted(EXPECTED_COMMANDS))
-def test_command_help_mentions_model_id(command: str) -> None:
-    result = CliRunner().invoke(app, [command, "--help"], env={"COLUMNS": "200"})
+@pytest.mark.parametrize("width", [80, 200])
+def test_command_help_mentions_model_id(command: str, width: int, monkeypatch) -> None:
+    # Assert help content at a fixed formatter width, independent of terminal detection.
+    monkeypatch.setattr("typer.rich_utils.MAX_WIDTH", width)
+    result = CliRunner().invoke(
+        app,
+        [command, "--help"],
+        env={
+            "COLUMNS": str(width),
+            "TERM": "dumb",
+            "NO_COLOR": "1",
+            "FORCE_COLOR": "0",
+        },
+    )
     assert result.exit_code == 0, result.output
     text = re.sub(r"\s+", " ", result.output)
+    assert "Default model:" in text
     assert CLI_PRESETS[command].model_id in text
 
 

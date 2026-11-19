@@ -159,6 +159,7 @@ class TrainingConfig:
     # Continual learning (replay + LwF + EWC)
     continual_strategy: str = "none"  # "none", "replay", "lwf", "ewc", combos
     replay_buffer_size: int = 2000
+    # Expected replay groups per new group, capped by eligible stored groups.
     replay_ratio: float = 0.5
     replay_min_size: int = 100
     replay_sampling: str = "uniform"  # "uniform", "recent", "reward", "balanced"
@@ -228,15 +229,12 @@ class TrainingConfig:
     num_gradient_updates: int = 1
     # Push the policy's weights into the agent's attached rollout backend
     # (``MultiTurnAgent.set_rollout_backend``) after every optimizer step so
-    # engine rollouts stay on-policy. Disable for a deliberately asynchronous
-    # engine and pair it with ``old_logprobs_source="sampler"``.
+    # the engine can use the latest weights. An asynchronous engine can
+    # record its own token probabilities for ``old_logprobs_source="sampler"``.
     rollout_sync: bool = True
-    # Old-policy log-probs on the GRPO token path: ``"recompute"`` treats each
-    # rollout batch as exactly on-policy (ratio 1 at the first update);
-    # ``"sampler"`` uses the log-probs recorded at sampling time
-    # (``sampler_log_probs``), so the importance ratio corrects for a stale or
-    # numerically different rollout engine (TRL's vLLM importance-sampling
-    # correction). Falls back to ``"recompute"`` when rollouts carry none.
+    # The learner supplies the default denominator. Sampler mode freezes the
+    # recorded conditional token probabilities across updates. Missing sampler
+    # data requires the explicit fallback below.
     old_logprobs_source: str = "recompute"
     # Compatibility paths change the estimator and must be requested explicitly.
     allow_sequence_fallback: bool = False

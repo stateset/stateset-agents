@@ -392,14 +392,20 @@ def from_langchain_json(
     ]
 
 
-def to_grading_history(trajectory: MultiTurnTrajectory) -> list[dict[str, str]]:
-    """Emit ``{"role", "content"}`` dicts for ``scripts/grade_transcript.py``.
-
-    The result is exactly what ``load_transcript`` in that script expects:
-    one dict per turn with plain string ``role``/``content`` (JSONL-ready —
-    write each dict as its own line with ``json.dumps``).
-    """
-    return [
-        {"role": turn.role or "", "content": turn.content or ""}
-        for turn in trajectory.turns
-    ]
+def to_grading_history(trajectory: MultiTurnTrajectory) -> list[dict[str, Any]]:
+    """Export model-visible messages, including structured calls and result IDs."""
+    history = []
+    for turn in trajectory.turns:
+        message: dict[str, Any] = {
+            "role": turn.role or "",
+            "content": turn.content or "",
+        }
+        if turn.tool_calls:
+            message["tool_calls"] = turn.tool_calls
+        for key in ("name", "tool_call_id"):
+            if key in turn.metadata:
+                message[key] = turn.metadata[key]
+        history.append(message)
+    if history and "tools" in trajectory.metadata:
+        history[0]["tools"] = trajectory.metadata["tools"]
+    return history

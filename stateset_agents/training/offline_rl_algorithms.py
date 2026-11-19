@@ -7,14 +7,24 @@ for learning from fixed datasets without online interaction.
 
 from __future__ import annotations
 
+import decimal
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, fields
 from typing import Any
 
 import numpy as np
 
 from .checkpoint_io import load_checkpoint_file
+from .offline_rl_batches import transition_batch, transition_epochs
+from .offline_rl_targets import (
+    successor_target,
+    update_target_networks,
+    validate_target_parameters,
+)
+from .rl_losses import td_regression
+from .runtime_state import capture_rng, restore_rng
+from .trainer_utils import clip_parameter_gradients
 
 try:
     import torch as _torch
@@ -55,7 +65,7 @@ class CQLConfig:
 
     # CQL-specific parameters
     cql_alpha: float = 1.0  # Weight for CQL regularization term
-    min_q_weight: float = 5.0  # Weight for min Q value
+    min_q_weight: float = 5.0  # Legacy field; cql_alpha sets the fixed penalty weight
     temperature: float = 1.0  # Temperature for CQL penalty
     with_lagrange: bool = False  # Use Lagrangian formulation
     lagrange_threshold: float = 10.0  # Target for Lagrangian
@@ -73,6 +83,17 @@ class CQLConfig:
 
     # Logging
     log_frequency: int = 100
+
+    def __post_init__(self) -> None:
+        """Require a well-defined soft maximum over a nonempty proposal set."""
+        if not math.isfinite(self.temperature) or self.temperature <= 0:
+            raise ValueError("CQL temperature must be finite and positive")
+        validate_target_parameters(
+            self.discount_factor,
+            self.soft_target_tau,
+            self.target_update_frequency,
+            self.num_random_actions,
+        )
 
 
 @dataclass
@@ -102,6 +123,18 @@ class IQLConfig:
 
     # Logging
     log_frequency: int = 100
+
+    def __post_init__(self) -> None:
+        """Require nonnegative expectile weights and a valid extraction temperature."""
+        validate_target_parameters(self.discount_factor, self.soft_target_tau)
+        if not 0 <= self.expectile <= 1:
+            raise ValueError("IQL expectile must be between zero and one")
+        if not math.isfinite(self.temperature) or self.temperature <= 0:
+            raise ValueError("IQL temperature must be finite and positive")
+        if self.clip_score is not None and (
+            not math.isfinite(self.clip_score) or self.clip_score < 0
+        ):
+            raise ValueError("IQL clip_score must be nonnegative and finite")
 
 
 class QNetwork(nn.Module):
@@ -207,6 +240,136 @@ class ValueNetwork(nn.Module):
         return self.network(states)
 
 
+class _LargeTemperaturePartition(torch.autograd.Function):
+    """Resolve a log partition when the temperature approaches the dtype limit."""
+
+    @staticmethod
+    def forward(q, baseline, tau, normalize):
+        # This rare path must preserve both a difference larger than the dtype
+        # maximum and a tiny residual after subtracting log N or the baseline.
+        # In this regime every finite exponent q/tau has magnitude below 1024.
+        shape = q.select(1, 0).shape
+        rows = q.movedim(1, -1).reshape(-1, q.shape[1]).tolist()
+        offsets = (
+            [0.0] * len(rows)
+            if baseline is None
+            else baseline.expand(shape).reshape(-1).tolist()
+        )
+        info = torch.finfo(q.dtype)
+        # Resolve one output subnormal after scaling the logarithm by tau,
+        # independently of the calling application's decimal context.
+        precision = (
+            math.ceil(math.log10(tau) - math.log10(info.tiny) - math.log10(info.eps))
+            + 24
+        )
+        with decimal.localcontext(decimal.Context(prec=precision)) as ctx:
+            ctx.traps[decimal.InvalidOperation] = False
+            temperature = decimal.Decimal.from_float(float(tau))
+            values = []
+            for row, offset in zip(rows, offsets, strict=True):
+                total = sum(
+                    (decimal.Decimal.from_float(x) / temperature).exp() for x in row
+                )
+                if normalize:
+                    total /= len(row)
+                value = temperature * total.ln() - decimal.Decimal.from_float(offset)
+                values.append(float(value))
+        return q.new_tensor(values).reshape(shape)
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        q, baseline, ctx.tau, _ = inputs
+        ctx.has_baseline = baseline is not None
+        ctx.save_for_backward(q)
+        ctx.save_for_forward(q)
+
+    @staticmethod
+    def _probabilities(q, tau):
+        # The two factors fit the device dtype even when tau does not.
+        scale = torch.finfo(q.dtype).max
+        return ((q / scale) * (scale / tau)).softmax(dim=1)
+
+    @staticmethod
+    def backward(ctx, gradient):
+        (q,) = ctx.saved_tensors
+        probabilities = _LargeTemperaturePartition._probabilities(q, ctx.tau)
+        return (
+            gradient.unsqueeze(1) * probabilities,
+            -gradient if ctx.has_baseline else None,
+            None,
+            None,
+        )
+
+    @staticmethod
+    def jvp(ctx, tangent, baseline_tangent, _tau, _normalize):
+        (q,) = ctx.saved_tensors
+        result = (_LargeTemperaturePartition._probabilities(q, ctx.tau) * tangent).sum(
+            dim=1
+        )
+        return result if baseline_tangent is None else result - baseline_tangent
+
+
+def _small_signed_log_mean(q: Any, tau: float, backup: Any) -> Any:
+    """Retain the even term when small, opposite logits cancel in the mean."""
+    # The ordinary graph already has the softmax derivative. Correct its
+    # forward value only where adding the maximum canceled most of the result.
+    values = q.detach()
+    magnitude = values.abs().amax(dim=1)
+    use = (
+        (magnitude > 0)
+        & (magnitude <= tau / 2)
+        & (backup.detach().abs() <= magnitude * math.sqrt(torch.finfo(q.dtype).eps))
+    )
+    values = torch.where(use.unsqueeze(1), values, 0.0)
+    z = values / tau
+    half = z / 2
+    cutoff = torch.finfo(q.dtype).eps / 2
+    sinh_half = torch.where(half.abs() < cutoff, half, half.sinh())
+
+    def ratio_at_zero(numerator, denominator):
+        # Both analytic ratios round to one here, even for subnormal inputs.
+        return torch.where(denominator.abs() < cutoff, 1.0, numerator / denominator)
+
+    # exp(z)-1 = sinh(z) + 2*sinh(z/2)^2. Keep the two means
+    # separate and put the factor tau into each term before the reduction.
+    odd = values * ratio_at_zero(z.sinh(), z)
+    even = values * ratio_at_zero(sinh_half, half) * sinh_half
+    u = odd.mean(dim=1) + even.mean(dim=1)
+    z_mean = u / tau
+    stable = u * ratio_at_zero(z_mean.log1p(), z_mean)
+    return torch.where(use, (backup - backup.detach()) + stable, backup)
+
+
+class _SubnormalPartition(torch.autograd.Function):
+    """Scaled log partition for temperatures below the normal float64 range."""
+
+    @staticmethod
+    def forward(centered, tau, normalize):
+        partition = torch.logsumexp(centered / tau, dim=1)
+        if normalize:
+            partition = partition - math.log(centered.shape[1])
+        return partition * tau
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        centered, ctx.tau, _ = inputs
+        ctx.save_for_backward(centered)
+        ctx.save_for_forward(centered)
+
+    @staticmethod
+    def backward(ctx, gradient):
+        # Analytically cancel the temperature before rounding. An intermediate
+        # tau * probability can underflow even for a pair of tied maxima.
+        (centered,) = ctx.saved_tensors
+        probabilities = (centered / ctx.tau).softmax(dim=1)
+        return gradient.unsqueeze(1) * probabilities, None, None
+
+    @staticmethod
+    def jvp(ctx, tangent, _tau, _normalize):
+        (centered,) = ctx.saved_tensors
+        return ((centered / ctx.tau).softmax(dim=1) * tangent).sum(dim=1)
+
+
 class ConservativeQLearning:
     """
     Conservative Q-Learning (CQL) for offline RL.
@@ -295,26 +458,73 @@ class ConservativeQLearning:
         penalty uses, ``tau * (logsumexp(Q(s', a_j) / tau) - log N)``. The
         current action is never reused: ``Q(s', a_t)`` values repeating a_t.
         """
-        with torch.no_grad():
-            if next_actions is not None:
-                next_q = torch.min(
-                    self.q1_target(next_states, next_actions),
-                    self.q2_target(next_states, next_actions),
+
+        def evaluate(
+            states: torch.Tensor, actions: torch.Tensor | None = None
+        ) -> torch.Tensor:
+            if actions is not None:
+                return torch.minimum(
+                    self.q1_target(states, actions), self.q2_target(states, actions)
                 )
-            else:
-                batch_size = next_states.shape[0]
-                n = int(self.config.num_random_actions)
-                proposals = torch.empty(
-                    batch_size * n, self.action_dim, device=next_states.device
-                ).uniform_(-1, 1)
-                repeated = next_states.repeat_interleave(n, dim=0)
-                q = torch.min(
-                    self.q1_target(repeated, proposals),
-                    self.q2_target(repeated, proposals),
-                ).view(batch_size, n, 1)
-                tau = self.config.temperature
-                next_q = tau * (torch.logsumexp(q / tau, dim=1) - math.log(n))
-            return rewards + (1 - dones) * self.config.discount_factor * next_q
+            n = int(self.config.num_random_actions)
+            proposals = states.new_empty(states.shape[0] * n, self.action_dim).uniform_(
+                -1, 1
+            )
+            repeated = states.repeat_interleave(n, dim=0)
+            q = torch.minimum(
+                self.q1_target(repeated, proposals), self.q2_target(repeated, proposals)
+            )
+            return self._soft_max(q.reshape(states.shape[0], n, 1), normalize=True)
+
+        features = () if next_actions is None else (next_actions,)
+        return successor_target(
+            rewards,
+            dones,
+            next_states,
+            self.config.discount_factor,
+            evaluate,
+            *features,
+        )
+
+    def _soft_max(
+        self, q: torch.Tensor, *, normalize: bool, baseline: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        """Compute the soft maximum relative to a per-state baseline, if given."""
+        tau = self.config.temperature
+        result_dtype = torch.promote_types(q.dtype, torch.float32)
+        limits = torch.finfo(result_dtype)
+        if tau > limits.max / 1024:
+            return _LargeTemperaturePartition.apply(
+                q.to(result_dtype), baseline, tau, normalize
+            )
+        dtype = torch.float64 if tau < limits.tiny else result_dtype
+        q = q.to(dtype)
+        maximum = q.amax(dim=1, keepdim=True).detach()
+        centered = q - maximum
+        if tau < torch.finfo(torch.float64).tiny:
+            correction = _SubnormalPartition.apply(centered, tau, normalize)
+        else:
+            scaled = centered / tau
+            partition = torch.logsumexp(scaled, dim=1)
+            if normalize:
+                # At high temperature logsumexp rounds to log N before their
+                # difference is taken. log1p(mean(expm1)) retains that difference.
+                delta = scaled.expm1().mean(dim=1)
+                partition = torch.where(
+                    delta >= -0.5,
+                    delta.clamp_min(-0.5).log1p(),
+                    partition - math.log(q.shape[1]),
+                )
+            correction = tau * partition
+        offset = maximum.squeeze(1)
+        if baseline is not None:
+            # Subtract before adding the partition so a large common Q offset
+            # cannot round away the entire conservative penalty.
+            offset = offset - baseline
+        result = offset + correction
+        if normalize and baseline is None:
+            result = _small_signed_log_mean(q, tau, result)
+        return result.to(result_dtype)
 
     def _compute_cql_loss(
         self,
@@ -357,18 +567,10 @@ class ConservativeQLearning:
         q1_random = q1_random.view(batch_size, self.config.num_random_actions, 1)
         q2_random = q2_random.view(batch_size, self.config.num_random_actions, 1)
 
-        # Logsumexp for soft maximum
-        # CQL(H) soft maximum: tau * logsumexp(Q / tau).
-        tau = self.config.temperature
-        q1_logsumexp = tau * torch.logsumexp(q1_random / tau, dim=1)
-        q2_logsumexp = tau * torch.logsumexp(q2_random / tau, dim=1)
-
-        # CQL loss: penalize high Q-values for random actions
-        # and encourage correct Q-values for dataset actions
-        cql_loss_1 = (q1_logsumexp - q1_values).mean()
-        cql_loss_2 = (q2_logsumexp - q2_values).mean()
-
-        return cql_loss_1, cql_loss_2
+        return (
+            self._soft_max(q1_random, normalize=False, baseline=q1_values).mean(),
+            self._soft_max(q2_random, normalize=False, baseline=q2_values).mean(),
+        )
 
     def train_step(
         self,
@@ -393,6 +595,17 @@ class ConservativeQLearning:
         Returns:
             Dictionary of training metrics
         """
+        rewards, dones = transition_batch(
+            states,
+            actions,
+            rewards,
+            next_states,
+            dones,
+            state_dim=self.state_dim,
+            action_dim=self.action_dim,
+            discount=self.config.discount_factor,
+            next_actions=next_actions,
+        )
         target_q = self._bellman_target(rewards, next_states, dones, next_actions)
 
         # Current Q-values
@@ -400,8 +613,8 @@ class ConservativeQLearning:
         current_q2 = self.q2(states, actions)
 
         # Bellman loss
-        bellman_loss_1 = F.mse_loss(current_q1, target_q)
-        bellman_loss_2 = F.mse_loss(current_q2, target_q)
+        bellman_loss_1 = td_regression(current_q1, target_q)
+        bellman_loss_2 = td_regression(current_q2, target_q)
 
         # CQL regularization
         cql_loss_1, cql_loss_2 = self._compute_cql_loss(
@@ -431,8 +644,8 @@ class ConservativeQLearning:
         self.q1_optimizer.zero_grad()
         self.q2_optimizer.zero_grad()
         total_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.q2.parameters(), self.config.max_grad_norm)
-        torch.nn.utils.clip_grad_norm_(self.q1.parameters(), self.config.max_grad_norm)
+        clip_parameter_gradients(self.q2.parameters(), self.config.max_grad_norm)
+        clip_parameter_gradients(self.q1.parameters(), self.config.max_grad_norm)
         self.q1_optimizer.step()
         self.q2_optimizer.step()
 
@@ -450,19 +663,12 @@ class ConservativeQLearning:
             "q2_mean": current_q2.mean().item(),
         }
 
-    def _soft_update_target_networks(self):
-        """Soft update of target networks"""
-        tau = self.config.soft_target_tau
-
-        for target_param, param in zip(
-            self.q1_target.parameters(), self.q1.parameters(), strict=False
-        ):
-            target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
-
-        for target_param, param in zip(
-            self.q2_target.parameters(), self.q2.parameters(), strict=False
-        ):
-            target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
+    def _soft_update_target_networks(self) -> None:
+        """Interpolate target parameters after the learner update."""
+        update_target_networks(
+            ((self.q1_target, self.q1), (self.q2_target, self.q2)),
+            self.config.soft_target_tau,
+        )
 
     def get_q_value(self, state: torch.Tensor, action: torch.Tensor) -> float:
         """Get Q-value for state-action pair"""
@@ -552,12 +758,19 @@ class ImplicitQLearning:
         """
         Expectile regression loss.
 
-        When expectile = 0.5, this is MSE loss.
+        At expectile 0.5 the loss equals half the MSE.
         When expectile > 0.5, focuses on upper tail of distribution.
         """
-        diff = target - predicted
-        weight = torch.where(diff > 0, expectile, 1 - expectile)
-        return (weight * (diff**2)).mean()
+        dtype = torch.promote_types(torch.float32, torch.result_type(predicted, target))
+        diff = target.to(dtype) - predicted.to(dtype)
+        if diff.numel() == 0:
+            raise ValueError("IQL expectile loss requires a nonempty batch")
+        upper = torch.scalar_tensor(expectile, dtype=dtype, device=diff.device)
+        lower = torch.scalar_tensor(1 - expectile, dtype=dtype, device=diff.device)
+        weight = torch.where(diff > 0, upper, lower)
+        # Apply both scales before the final product. Squaring a residual or
+        # summing unscaled squares can overflow despite a representable mean.
+        return ((weight * diff) * (diff / diff.numel())).sum()
 
     def train_step(
         self,
@@ -575,6 +788,20 @@ class ImplicitQLearning:
         2. Update Q-functions with Bellman backup using value targets
         3. Policy extraction is implicit through advantage weighting
         """
+        rewards, dones = transition_batch(
+            states,
+            actions,
+            rewards,
+            next_states,
+            dones,
+            state_dim=self.state_dim,
+            action_dim=self.action_dim,
+            discount=self.config.discount_factor,
+        )
+        # Build the detached backup and validate row alignment before either optimizer moves.
+        critic_target = successor_target(
+            rewards, dones, next_states, self.config.discount_factor, self.value_target
+        )
         # Step 1: Update value function
         with torch.no_grad():
             # Target Q-values for value learning
@@ -587,24 +814,21 @@ class ImplicitQLearning:
 
         self.value_optimizer.zero_grad()
         value_loss.backward()
-        torch.nn.utils.clip_grad_norm_(
-            self.value_net.parameters(), self.config.max_grad_norm
-        )
+        clip_parameter_gradients(self.value_net.parameters(), self.config.max_grad_norm)
         self.value_optimizer.step()
 
         # Step 2: Update Q-functions
-        with torch.no_grad():
-            next_v = self.value_target(next_states)
-            target_q = rewards + (1 - dones) * self.config.discount_factor * next_v
 
         current_q1 = self.q1(states, actions)
         current_q2 = self.q2(states, actions)
 
-        q_loss = F.mse_loss(current_q1, target_q) + F.mse_loss(current_q2, target_q)
+        q_loss = td_regression(current_q1, critic_target) + td_regression(
+            current_q2, critic_target
+        )
 
         self.q_optimizer.zero_grad()
         q_loss.backward()
-        torch.nn.utils.clip_grad_norm_(
+        clip_parameter_gradients(
             list(self.q1.parameters()) + list(self.q2.parameters()),
             self.config.max_grad_norm,
         )
@@ -622,14 +846,11 @@ class ImplicitQLearning:
             "q_mean": current_q1.mean().item(),
         }
 
-    def _soft_update_target_network(self):
-        """Soft update of target value network"""
-        tau = self.config.soft_target_tau
-
-        for target_param, param in zip(
-            self.value_target.parameters(), self.value_net.parameters(), strict=False
-        ):
-            target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
+    def _soft_update_target_network(self) -> None:
+        """Interpolate target parameters after the learner update."""
+        update_target_networks(
+            ((self.value_target, self.value_net),), self.config.soft_target_tau
+        )
 
     def get_advantage(self, state: torch.Tensor, action: torch.Tensor) -> float:
         """
@@ -643,8 +864,9 @@ class ImplicitQLearning:
                 self.q2(state.unsqueeze(0), action.unsqueeze(0)),
             )
             v = self.value_net(state.unsqueeze(0))
-            advantage = q - v
-            return float(advantage.item())
+            # Subtract the two represented critic values at binary64 precision.
+            # Opposite finite float32 values can have a difference beyond float32.
+            return float(q.item()) - float(v.item())
 
     def get_policy_weight(self, state: torch.Tensor, action: torch.Tensor) -> float:
         """
@@ -655,12 +877,125 @@ class ImplicitQLearning:
         advantage = self.get_advantage(state, action)
 
         # Advantage-weighted probability
-        weight = math.exp(advantage / self.config.temperature)
+        if not (math.isfinite(self.config.temperature) and self.config.temperature > 0):
+            raise ValueError("IQL temperature must be positive and finite")
+        log_weight = advantage / self.config.temperature
+        cap = self.config.clip_score
+        if cap is not None:
+            if not math.isfinite(cap) or cap < 0:
+                raise ValueError("IQL clip_score must be nonnegative and finite")
+            if cap == 0 or log_weight >= math.log(cap):
+                return float(cap)
+        return math.exp(log_weight)
 
-        if self.config.clip_score is not None:
-            weight = min(weight, self.config.clip_score)
 
-        return float(weight)
+def learner_checkpoint(
+    learner: ConservativeQLearning | ImplicitQLearning,
+) -> dict[str, Any]:
+    """Capture the trainable and frozen networks, optimizers and target cadence."""
+    return {
+        "version": 1,
+        "algorithm": "cql" if isinstance(learner, ConservativeQLearning) else "iql",
+        "state_dim": learner.state_dim,
+        "action_dim": learner.action_dim,
+        "config": asdict(learner.config),
+        "learner_state": {
+            k: v.state_dict()
+            for k, v in vars(learner).items()
+            if isinstance(v, nn.Module)
+        },
+        "optimizers": {
+            k: v.state_dict()
+            for k, v in vars(learner).items()
+            if isinstance(v, torch.optim.Optimizer)
+        },
+        "log_alpha": (
+            learner.log_alpha.detach().clone()
+            if isinstance(learner, ConservativeQLearning)
+            and learner.config.with_lagrange
+            else None
+        ),
+        "training_step": learner.training_step,
+        # The current-state bank is sampled on CPU. Successor proposals
+        # are sampled on the target's device, including the Metal backend.
+        "mps_proposal_rng": (
+            torch.mps.get_rng_state()
+            if isinstance(learner, ConservativeQLearning)
+            and torch.device(learner.device).type == "mps"
+            else None
+        ),
+    }
+
+
+def restore_learner_checkpoint(
+    saved: dict[str, Any],
+    algorithm: str,
+    state_dim: int,
+    action_dim: int,
+    device: str,
+) -> ConservativeQLearning | ImplicitQLearning:
+    """Build and validate a replacement learner before publishing its state."""
+    if (
+        type(saved.get("version")) is not int
+        or saved["version"] != 1
+        or saved.get("algorithm") != algorithm
+        or (saved.get("state_dim"), saved.get("action_dim")) != (state_dim, action_dim)
+    ):
+        raise ValueError(
+            "Offline learner checkpoint version, algorithm or dimensions differ"
+        )
+    step = saved.get("training_step")
+    if type(step) is not int or step < 0:
+        raise ValueError("Invalid offline learner checkpoint step")
+    config = saved.get("config")
+    kind = CQLConfig if algorithm == "cql" else IQLConfig
+    if not isinstance(config, dict) or set(config) != {
+        field.name for field in fields(kind)
+    }:
+        raise ValueError("Incomplete offline learner checkpoint configuration")
+    # Linear layers initialize on CPU. Loading a snapshot must not itself draw
+    # from the training stream, including when validation rejects a checkpoint.
+    with torch.random.fork_rng(devices=[]):
+        learner: ConservativeQLearning | ImplicitQLearning
+        if algorithm == "cql":
+            learner = ConservativeQLearning(
+                state_dim, action_dim, CQLConfig(**config), device
+            )
+        elif algorithm == "iql":
+            learner = ImplicitQLearning(
+                state_dim, action_dim, IQLConfig(**config), device
+            )
+        else:
+            raise ValueError("Unknown offline learner checkpoint algorithm")
+    for key, component_type in (
+        ("learner_state", nn.Module),
+        ("optimizers", torch.optim.Optimizer),
+    ):
+        components = {
+            k: v for k, v in vars(learner).items() if isinstance(v, component_type)
+        }
+        values = saved.get(key)
+        if not isinstance(values, dict) or values.keys() != components.keys():
+            raise ValueError(f"Incomplete offline learner checkpoint {key}")
+        for name, component in components.items():
+            component.load_state_dict(values[name])
+    alpha = saved.get("log_alpha")
+    if isinstance(learner, ConservativeQLearning) and learner.config.with_lagrange:
+        if (
+            alpha is None
+            or not torch.is_tensor(alpha)
+            or alpha.shape != learner.log_alpha.shape
+        ):
+            raise ValueError("Invalid CQL checkpoint multiplier")
+        with torch.no_grad():
+            learner.log_alpha.copy_(alpha)
+    elif alpha is not None:
+        raise ValueError("Unexpected CQL checkpoint multiplier")
+    learner.training_step = step
+    mps_rng = saved.get("mps_proposal_rng")
+    if mps_rng is not None and torch.device(device).type == "mps":
+        torch.mps.set_rng_state(mps_rng.cpu())
+    return learner
 
 
 class OfflineRLTrainer:
@@ -706,82 +1041,36 @@ class OfflineRLTrainer:
         Train on offline dataset.
 
         Args:
-            dataset: Dictionary with keys 'states', 'actions', 'rewards',
-                    'next_states', 'dones'
+            dataset: Aligned states, actions, rewards, next_states, and dones.
+                CQL also accepts logged next_actions for its Bellman target.
+                Rewards and terminal flags may be vectors or single columns.
             num_epochs: Number of training epochs
             batch_size: Batch size for training
 
         Returns:
             List of training metrics per epoch
         """
-        states = torch.FloatTensor(dataset["states"]).to(self.device)
-        actions = torch.FloatTensor(dataset["actions"]).to(self.device)
-        rewards = torch.FloatTensor(dataset["rewards"]).unsqueeze(-1).to(self.device)
-        next_states = torch.FloatTensor(dataset["next_states"]).to(self.device)
-        dones = torch.FloatTensor(dataset["dones"]).unsqueeze(-1).to(self.device)
-
-        dataset_size = states.shape[0]
-        num_batches = dataset_size // batch_size
-
-        logger.info(
-            f"Training {self.algorithm.upper()} on {dataset_size} samples for {num_epochs} epochs"
+        self.training_metrics.extend(
+            transition_epochs(
+                dataset,
+                self.learner.train_step,
+                discount=self.learner.config.discount_factor,
+                algorithm=self.algorithm,
+                state_dim=self.learner.state_dim,
+                action_dim=self.learner.action_dim,
+                device=self.device,
+                num_epochs=num_epochs,
+                batch_size=batch_size,
+            )
         )
-
-        for epoch in range(num_epochs):
-            # Shuffle data
-            indices = torch.randperm(dataset_size)
-            epoch_metrics = []
-
-            for batch_idx in range(num_batches):
-                batch_indices = indices[
-                    batch_idx * batch_size : (batch_idx + 1) * batch_size
-                ]
-
-                batch_states = states[batch_indices]
-                batch_actions = actions[batch_indices]
-                batch_rewards = rewards[batch_indices]
-                batch_next_states = next_states[batch_indices]
-                batch_dones = dones[batch_indices]
-
-                metrics = self.learner.train_step(
-                    batch_states,
-                    batch_actions,
-                    batch_rewards,
-                    batch_next_states,
-                    batch_dones,
-                )
-
-                epoch_metrics.append(metrics)
-
-            # Average metrics for epoch
-            avg_metrics: dict[str, float] = {
-                key: float(np.mean([m[key] for m in epoch_metrics]))
-                for key in epoch_metrics[0].keys()
-            }
-            avg_metrics["epoch"] = float(epoch)
-
-            self.training_metrics.append(avg_metrics)
-
-            if epoch % 10 == 0:
-                logger.info(
-                    f"Epoch {epoch}/{num_epochs}: "
-                    + ", ".join(
-                        [f"{k}={v:.4f}" for k, v in avg_metrics.items() if k != "epoch"]
-                    )
-                )
-
         return self.training_metrics
 
     def save(self, path: str) -> None:
-        """Save trained model"""
+        """Save a completed learner step, optimizer history and sampling streams."""
         torch.save(
             {
-                "algorithm": self.algorithm,
-                "learner_state": {
-                    k: v.state_dict() if hasattr(v, "state_dict") else v
-                    for k, v in self.learner.__dict__.items()
-                    if isinstance(v, nn.Module)
-                },
+                **learner_checkpoint(self.learner),
+                "rng": capture_rng(torch),
                 "training_metrics": self.training_metrics,
             },
             path,
@@ -801,8 +1090,37 @@ class OfflineRLTrainer:
             path, map_location=self.device, trusted=trusted
         )
 
-        for name, module in self.learner.__dict__.items():
-            if isinstance(module, nn.Module) and name in checkpoint["learner_state"]:
-                module.load_state_dict(checkpoint["learner_state"][name])
+        if checkpoint.get("algorithm") != self.algorithm:
+            raise ValueError("Offline checkpoint algorithm differs")
+        if "version" in checkpoint:
+            from .ddp_checkpoint_state import _validate_rng
+
+            if "rng" not in checkpoint:
+                raise ValueError("Offline checkpoint is missing the proposal RNG state")
+            _validate_rng(checkpoint["rng"], torch)
+            restored = restore_learner_checkpoint(
+                checkpoint,
+                self.algorithm,
+                self.learner.state_dim,
+                self.learner.action_dim,
+                self.device,
+            )
+            restore_rng(checkpoint["rng"], torch)
+        else:
+            # A weights-only checkpoint has no optimizer history, clock or RNG.
+            # Use fresh optimizer state even when loading on a previously used trainer.
+            with torch.random.fork_rng(devices=[]):
+                restored = OfflineRLTrainer(
+                    self.algorithm,
+                    self.learner.state_dim,
+                    self.learner.action_dim,
+                    self.learner.config,
+                    self.device,
+                ).learner
+            for name, module in vars(restored).items():
+                if isinstance(module, nn.Module):
+                    module.load_state_dict(checkpoint["learner_state"][name])
+        self.learner = restored
+        self.training_metrics = checkpoint.get("training_metrics", [])
 
         logger.info(f"Loaded {self.algorithm.upper()} model from {path}")

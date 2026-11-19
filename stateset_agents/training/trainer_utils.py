@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -85,6 +87,110 @@ def require_torch() -> Any:
         F = _F
         amp = _amp
     return torch
+
+
+def _clamped_cosine_lr(step: int, *, warmup_steps: int, total_steps: int) -> float:
+    """Linear warmup then half-cosine decay to 0, held at 0 past ``total_steps``."""
+    if step >= total_steps:
+        return 0.0
+    if step < warmup_steps:
+        return float(step) / float(max(1, warmup_steps))
+    progress = (step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+    return 0.5 * (1.0 + math.cos(math.pi * min(1.0, progress)))
+
+
+def inner_update_scheduler(optimizer: Any, config: Any, *, cosine: bool) -> Any:
+    """Schedule one learning-rate tick per committed inner rollout update."""
+    from functools import partial
+
+    from torch.optim.lr_scheduler import ConstantLR, LambdaLR
+
+    total = config.num_episodes * config.num_gradient_updates
+    if not cosine:
+        return ConstantLR(optimizer, factor=1.0, total_iters=total)
+    schedule = partial(
+        _clamped_cosine_lr,
+        total_steps=total,
+        warmup_steps=int(config.warmup_ratio * total),
+    )
+    return LambdaLR(optimizer, schedule)
+
+
+@contextmanager
+def deterministic_scoring(*models: Any) -> Iterator[None]:
+    """Disable stochastic layers without disabling gradients; restore all modes."""
+    modes = {
+        module: module.training
+        for model in models
+        if model is not None
+        for module in model.modules()
+    }
+    try:
+        for model in models:
+            if model is not None:
+                model.eval()
+        yield
+    finally:
+        # Restore mixed submodule modes as well as the root's flag.
+        for module, training in modes.items():
+            module.training = training
+
+
+def encode_prompt_completions(
+    tokenizer: Any,
+    prompts: list[str],
+    completions: list[str],
+    *,
+    max_prompt_length: int,
+    max_completion_length: int,
+    device: Any,
+) -> tuple[Any, Any, Any]:
+    """Tokenize text actions and verify their prompt prefixes and scoring budgets."""
+    torch = require_torch()
+    # One extra token detects an overlong prompt without allocating an
+    # unbounded prompt batch. Never label a truncated prompt's tail as a
+    # response merely because the full text has a larger token budget.
+    prompt_encodings = tokenizer(
+        prompts,
+        return_tensors="pt",
+        padding=True,
+        truncation=True,
+        max_length=max_prompt_length + 1,
+    )
+    prompt_lengths = prompt_encodings["attention_mask"].sum(dim=1)
+    if (prompt_lengths > max_prompt_length).any():
+        raise ValueError("prompts exceed max_prompt_length; truncate them explicitly")
+
+    # Tokenize inputs
+    full_texts = [p + c for p, c in zip(prompts, completions, strict=True)]
+    encodings = tokenizer(
+        full_texts,
+        return_tensors="pt",
+        padding=True,
+        truncation=True,
+        max_length=max_prompt_length + max_completion_length + 1,
+    )
+
+    # A BPE merge or an injected special token can change the separately
+    # tokenized prompt. Length alone cannot locate the completion boundary.
+    for row in range(len(prompts)):
+        prompt_ids = prompt_encodings["input_ids"][row][
+            prompt_encodings["attention_mask"][row].bool()
+        ]
+        full_ids = encodings["input_ids"][row][encodings["attention_mask"][row].bool()]
+        if prompt_ids.numel() == 0 or not torch.equal(
+            prompt_ids, full_ids[: prompt_ids.numel()]
+        ):
+            raise ValueError("prompt token boundary is ambiguous in combined text")
+        if full_ids.numel() - prompt_ids.numel() > max_completion_length:
+            raise ValueError(
+                "completions exceed max_completion_length; truncated rewards are invalid"
+            )
+
+    input_ids = encodings["input_ids"].to(device)
+    attention_mask = encodings["attention_mask"].to(device)
+
+    return input_ids, attention_mask, prompt_lengths.to(device)
 
 
 def require_transformers() -> None:
@@ -174,6 +280,98 @@ def _discard_gradients(trainer: Any) -> None:
             logger.warning("Could not discard failed gradients: %s", error)
 
 
+def _clip_gradient_norm(gradients: list[Any], cap: float, torch_module: Any) -> float:
+    """Clip the joint L2 norm and return the pre-clip norm in binary64."""
+    from .grpo_accumulation import _gradient_chunks
+
+    if math.isnan(cap) or cap < 0:
+        raise ValueError("max_grad_norm must be nonnegative")
+    if not gradients:
+        return 0.0
+    pieces: list[Any] = []
+    for gradient in gradients:
+        components = (
+            (gradient.real, gradient.imag) if gradient.is_complex() else (gradient,)
+        )
+        for component in components:
+            if component.numel():
+                pieces.extend(_gradient_chunks(component, 1024**2))
+
+    def wide(piece: Any) -> Any:
+        device = "cpu" if piece.device.type == "mps" else piece.device
+        return piece.to(device=device, dtype=torch_module.float64)
+
+    # Every binary16/bfloat16/binary32 coordinate squares exactly in binary64.
+    # Even 2^63 such squares fit. Binary64 inputs need power-of-two scaling.
+    unit_exp = 0
+    if any(piece.dtype == torch_module.float64 for piece in pieces):
+        peaks = [float(p.abs().amax()) for p in pieces]
+        if not all(math.isfinite(p) for p in peaks):
+            raise RuntimeError("The total gradient norm is non-finite")
+        peak = max(peaks, default=0.0)
+        if peak == 0:
+            return 0.0
+        unit_exp = math.frexp(peak)[1] - 1
+    unit = math.ldexp(1.0, unit_exp)
+
+    # Batch scalar transfers by device. Keep the binary64 work buffers bounded
+    # even when a parameter is large or its gradient is noncontiguous.
+    by_device: dict[Any, list[Any]] = {}
+    for piece in pieces:
+        value = wide(piece)
+        if unit_exp:
+            value = value / unit
+        by_device.setdefault(value.device, []).append(value.square().sum())
+    scaled_norm = math.sqrt(
+        math.fsum(
+            subtotal
+            for group in by_device.values()
+            for subtotal in torch_module.stack(group).tolist()
+        )
+    )
+    if not math.isfinite(scaled_norm):
+        raise RuntimeError("The total gradient norm is non-finite")
+    norm = scaled_norm * unit
+    if norm == 0:
+        return 0.0
+    if cap == math.inf:
+        return norm
+    if cap == 0:
+        for piece in pieces:
+            piece.zero_()
+        return norm
+    cap_mantissa, cap_exp = math.frexp(cap)
+    if math.isfinite(norm):
+        divisor, divisor_exp = math.frexp(norm + 1e-6)
+    else:
+        divisor, divisor_exp = scaled_norm, unit_exp
+    mantissa, adjustment = math.frexp(cap_mantissa / divisor)
+    exponent = cap_exp - divisor_exp + adjustment
+    if exponent > 0:  # min(1, cap / (norm + epsilon)) is one.
+        return norm
+    # A coefficient can itself be below the binary64 subnormal range.
+    # Apply it in normal factors, with just one conversion to the leaf dtype.
+    factors = []
+    while exponent < -1021:
+        factors.append(2.0**-512)
+        exponent += 512
+    factors.append(math.ldexp(mantissa, exponent))
+    for piece in pieces:
+        result = wide(piece) * factors[0]
+        for factor in factors[1:]:
+            result.mul_(factor)
+        piece.copy_(result)
+    return norm
+
+
+def clip_parameter_gradients(parameters: Iterable[Any], cap: float) -> float:
+    """Clip the populated gradients of one parameter group and return its L2 norm."""
+    backend = require_torch()
+    with backend.no_grad():
+        gradients = [p.grad for p in dict.fromkeys(parameters) if p.grad is not None]
+        return _clip_gradient_norm(gradients, cap, backend)
+
+
 def safe_optimizer_step(
     trainer: Any,
     torch_module: Any,
@@ -204,10 +402,15 @@ def safe_optimizer_step(
         max_norm = float(max_grad_norm)
         if not math.isfinite(max_norm) or max_norm < 0:
             raise ValueError("max_grad_norm must be finite and nonnegative")
+        from .adamw_weights import ModelAdamW
         from .grpo_accumulation import finalize_accumulated_gradients
 
         if finalize_accumulated_gradients(trainer, torch_module):
             correction = 1.0
+        step_options = {}
+        if isinstance(optimizer, ModelAdamW):
+            optimizer.prepare_model_gradients()
+            step_options["accumulated"] = True
         parameters = list(
             {
                 id(parameter): parameter
@@ -247,7 +450,7 @@ def safe_optimizer_step(
                 raise ValueError("GRPO gradients must be finite")
             # unscale_ recorded these non-finite gradients; GradScaler skips the
             # optimizer and updates its overflow scale using those observations.
-            active_scaler.step(optimizer)
+            active_scaler.step(optimizer, **step_options)
             active_scaler.update()
             scaler_updated = True
             _discard_gradients(trainer)
@@ -259,18 +462,17 @@ def safe_optimizer_step(
             with torch_module.no_grad():
                 for gradient in gradients:
                     gradient.mul_(correction)
-        torch_module.nn.utils.clip_grad_norm_(
-            parameters, max_norm, error_if_nonfinite=True
-        )
+        with torch_module.no_grad():
+            _clip_gradient_norm(gradients, max_norm, torch_module)
         if active_scaler is not None:
-            active_scaler.step(optimizer)
+            active_scaler.step(optimizer, **step_options)
             active_scaler.update()
             scaler_updated = True
             if float(active_scaler.get_scale()) < previous_scale:
                 _discard_gradients(trainer)
                 return False
         else:
-            optimizer.step()
+            optimizer.step(**step_options)
         # The model/optimizer commit occurred even if later scheduling fails.
         trainer.global_step += 1
         optimizer.zero_grad(set_to_none=True)

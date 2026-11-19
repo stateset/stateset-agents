@@ -34,6 +34,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal, Union, cast, get_args, get_origin, get_type_hints
 
+from ..utils.async_calls import run_async_owned
+from .conversation import conversation_call
+
 logger = logging.getLogger(__name__)
 
 FUNCTION_CALL_EXCEPTIONS = (
@@ -469,40 +472,54 @@ If you don't need to use any tools, respond normally without the tool_calls wrap
 """
 
     def _parse_tool_calls(self, response: str) -> list[ToolCall]:
-        """Extract tool calls from model response."""
-        tool_calls = []
+        """Decode complete JSON objects without truncating nested/escaped arguments.
 
-        # Try to find tool_calls JSON
-        try:
-            # Look for JSON with tool_calls
-            json_match = re.search(r"\{[\s\S]*?\"tool_calls\"[\s\S]*?\}", response)
-            if json_match:
-                data = json.loads(json_match.group())
-                if "tool_calls" in data:
-                    for tc in data["tool_calls"]:
-                        tool_calls.append(
-                            ToolCall(
-                                id=tc.get("id", f"call_{uuid.uuid4().hex[:8]}"),
-                                type=tc.get("type", "function"),
-                                function=tc.get("function", {}),
-                            )
-                        )
-        except json.JSONDecodeError:
-            pass
-
-        # Fallback: look for individual function calls
-        if not tool_calls:
-            func_pattern = r'\{\s*"name"\s*:\s*"([^"]+)".*?"arguments"\s*:\s*"([^"]*)"'
-            for match in re.finditer(func_pattern, response, re.DOTALL):
-                tool_calls.append(
-                    ToolCall(
-                        id=f"call_{uuid.uuid4().hex[:8]}",
-                        function={"name": match.group(1), "arguments": match.group(2)},
+        A malformed enclosing object never authorizes a nested function fragment.
+        Fenced JSON, prose prefixes, and standalone function objects are accepted.
+        """
+        decoder = json.JSONDecoder(object_pairs_hook=_unique_arguments)
+        tool_calls: list[ToolCall] = []
+        offset = 0
+        while (start := response.find("{", offset)) >= 0:
+            try:
+                data, offset = decoder.raw_decode(response, start)
+            except json.JSONDecodeError:
+                return []  # Reject the whole response rather than execute a fragment.
+            if "tool_calls" in data:
+                calls = data["tool_calls"]
+                if not isinstance(calls, list):
+                    raise ValueError("tool_calls must be a list")
+            elif "name" in data and "arguments" in data:
+                calls = [{"function": data}]
+            elif "function" in data:
+                calls = [data]
+            else:
+                continue
+            for call in calls:
+                if (
+                    not isinstance(call, dict)
+                    or call.get("type", "function") != "function"
+                ):
+                    raise ValueError("Tool call must be a function object")
+                function = call.get("function")
+                if (
+                    not isinstance(function, dict)
+                    or not isinstance(function.get("name"), str)
+                    or not function["name"].strip()
+                    or not isinstance(function.get("arguments", "{}"), str)
+                ):
+                    raise ValueError(
+                        "Tool call requires a name and JSON argument string"
                     )
-                )
-
+                call_id = call.get("id", f"call_{uuid.uuid4().hex[:8]}")
+                if not isinstance(call_id, str) or not call_id.strip():
+                    raise ValueError("Tool call ID must be nonempty text")
+                if any(previous.id == call_id for previous in tool_calls):
+                    raise ValueError("Duplicate tool call ID")
+                tool_calls.append(ToolCall(id=call_id, function=dict(function)))
         return tool_calls
 
+    @conversation_call
     async def execute_tool_call(self, tool_call: ToolCall) -> ToolResult:
         """Execute a single tool call.
 
@@ -555,6 +572,7 @@ If you don't need to use any tools, respond normally without the tool_calls wrap
                 is_error=True,
             )
 
+    @conversation_call
     async def execute_tool_calls(self, tool_calls: list[ToolCall]) -> list[ToolResult]:
         """Execute multiple tool calls in parallel.
 
@@ -564,8 +582,18 @@ If you don't need to use any tools, respond normally without the tool_calls wrap
         Returns:
             List of results in same order as input
         """
-        tasks = [self.execute_tool_call(tc) for tc in tool_calls]
-        return await asyncio.gather(*tasks)
+
+        async def collect() -> list[ToolResult]:
+            results = await asyncio.gather(
+                *(self.execute_tool_call(tc) for tc in tool_calls),
+                return_exceptions=True,
+            )
+            for result in results:
+                if isinstance(result, BaseException):
+                    raise result
+            return [cast(ToolResult, result) for result in results]
+
+        return await run_async_owned(collect())
 
 
 # Convenience function to create agent class
@@ -606,6 +634,7 @@ def create_function_calling_agent_class():
             super().__init__(config, **kwargs)
             self.__init_tools__(tools, tool_choice)
 
+        @conversation_call
         async def chat_with_tools(
             self,
             messages: str | list[dict[str, str]],

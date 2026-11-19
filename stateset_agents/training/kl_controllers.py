@@ -22,6 +22,16 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 
+def _schedule_steps(total_steps: int) -> int:
+    if total_steps <= 0:
+        raise ValueError("KL schedule requires positive total_steps")
+    return total_steps
+
+
+def _progress(step: int, total_steps: int) -> float:
+    return max(0, min(step, total_steps)) / total_steps
+
+
 @dataclass
 class KLStats:
     """Statistics for KL divergence tracking."""
@@ -34,8 +44,10 @@ class KLStats:
 
     def update(self, kl: float) -> None:
         """Update statistics with new KL measurement."""
+        if not math.isfinite(kl):
+            raise ValueError("KL measurement must be finite")
         self.current_kl = kl
-        self.max_kl = max(self.max_kl, kl)
+        self.max_kl = max(self.max_kl, kl) if self.num_updates else kl
         self.min_kl = min(self.min_kl, kl)
 
         # Running mean
@@ -114,7 +126,9 @@ class AdaptiveKLController(KLController):
     ):
         super().__init__(init_kl_coef)
         self.target_kl = target_kl
-        self.horizon = horizon
+        self.horizon = _schedule_steps(horizon)
+        if not math.isfinite(target_kl) or target_kl <= 0:
+            raise ValueError("Adaptive KL target must be finite and positive")
         self.min_kl_coef = min_kl_coef
         self.max_kl_coef = max_kl_coef
 
@@ -129,8 +143,7 @@ class AdaptiveKLController(KLController):
 
         # Adjust coefficient
         # Using a multiplicative update scaled by progress through horizon
-        n_steps = min(step, self.horizon)
-        mult = 1.0 + proportional_error * n_steps / self.horizon
+        mult = 1.0 + proportional_error * _progress(step, self.horizon)
 
         self.kl_coef = self.kl_coef * mult
 
@@ -162,13 +175,13 @@ class LinearKLScheduler(KLController):
         super().__init__(init_kl_coef)
         self.init_kl_coef = init_kl_coef
         self.final_kl_coef = final_kl_coef
-        self.total_steps = total_steps
+        self.total_steps = _schedule_steps(total_steps)
 
     def update(self, current_kl: float, step: int) -> float:
         """Linearly interpolate KL coefficient."""
         self.stats.update(current_kl)
 
-        progress = min(step / self.total_steps, 1.0)
+        progress = _progress(step, self.total_steps)
         self.kl_coef = (
             self.init_kl_coef + (self.final_kl_coef - self.init_kl_coef) * progress
         )
@@ -194,15 +207,15 @@ class CosineKLScheduler(KLController):
         super().__init__(init_kl_coef)
         self.init_kl_coef = init_kl_coef
         self.min_kl_coef = min_kl_coef
-        self.total_steps = total_steps
+        self.total_steps = _schedule_steps(total_steps)
         self.num_cycles = num_cycles
 
     def update(self, current_kl: float, step: int) -> float:
         """Apply cosine annealing to KL coefficient."""
         self.stats.update(current_kl)
 
-        progress = step / self.total_steps
-        cosine_value = math.cos(math.pi * self.num_cycles * progress)
+        progress = _progress(step, self.total_steps)
+        cosine_value = math.cos(math.tau * self.num_cycles * progress)
 
         # Map cosine from [-1, 1] to [min_kl_coef, init_kl_coef]
         self.kl_coef = self.min_kl_coef + 0.5 * (
@@ -232,25 +245,30 @@ class WarmupKLScheduler(KLController):
         total_steps: int = 10000,
     ):
         super().__init__(init_kl_coef)
+        self.init_kl_coef = init_kl_coef
         self.peak_kl_coef = peak_kl_coef
         self.final_kl_coef = final_kl_coef
         self.warmup_steps = warmup_steps
-        self.total_steps = total_steps
+        self.total_steps = _schedule_steps(total_steps)
+        if not 0 <= warmup_steps <= total_steps:
+            raise ValueError("KL warmup_steps must be between zero and total_steps")
 
     def update(self, current_kl: float, step: int) -> float:
         """Apply warmup + decay schedule to KL coefficient."""
         self.stats.update(current_kl)
 
-        if step < self.warmup_steps:
-            # Linear warmup
-            progress = step / self.warmup_steps
-            self.kl_coef = progress * self.peak_kl_coef
+        if self.warmup_steps and (
+            step <= self.warmup_steps or self.warmup_steps == self.total_steps
+        ):
+            progress = _progress(step, self.warmup_steps)
+            self.kl_coef = (
+                self.init_kl_coef + (self.peak_kl_coef - self.init_kl_coef) * progress
+            )
         else:
             # Linear decay from peak to final
-            decay_progress = (step - self.warmup_steps) / (
-                self.total_steps - self.warmup_steps
+            decay_progress = _progress(
+                step - self.warmup_steps, self.total_steps - self.warmup_steps
             )
-            decay_progress = min(decay_progress, 1.0)
             self.kl_coef = (
                 self.peak_kl_coef
                 + (self.final_kl_coef - self.peak_kl_coef) * decay_progress
@@ -280,7 +298,8 @@ class HybridKLController(KLController):
         self.target_kl = target_kl
         self.min_kl_coef = min_kl_coef
         self.max_kl_coef = max_kl_coef
-        self.total_steps = total_steps
+        self.init_kl_coef = init_kl_coef
+        self.total_steps = _schedule_steps(total_steps)
         self.adaptation_strength = adaptation_strength
 
         # Scheduled component (cosine decay)
@@ -288,12 +307,14 @@ class HybridKLController(KLController):
 
     def update(self, current_kl: float, step: int) -> float:
         """Apply hybrid schedule with adaptive adjustment."""
+        if current_kl < 0:
+            raise ValueError("Hybrid KL ratio requires a nonnegative measurement")
         self.stats.update(current_kl)
 
         # Scheduled component: cosine decay
-        progress = step / self.total_steps
+        progress = _progress(step, self.total_steps)
         self.scheduled_coef = self.min_kl_coef + 0.5 * (
-            self.kl_coef - self.min_kl_coef
+            self.init_kl_coef - self.min_kl_coef
         ) * (1 + math.cos(math.pi * progress))
 
         # Adaptive component
@@ -357,7 +378,7 @@ def create_kl_controller(
     elif controller_type == "adaptive":
         return AdaptiveKLController(
             init_kl_coef=init_kl_coef,
-            target_kl=target_kl or 0.01,
+            target_kl=0.01 if target_kl is None else target_kl,
             horizon=total_steps,
             **kwargs,
         )
@@ -372,7 +393,7 @@ def create_kl_controller(
     elif controller_type == "cosine":
         return CosineKLScheduler(
             init_kl_coef=init_kl_coef,
-            min_kl_coef=kwargs.get("min_kl_coef", init_kl_coef * 0.1),
+            min_kl_coef=kwargs.pop("min_kl_coef", init_kl_coef * 0.1),
             total_steps=total_steps,
             **kwargs,
         )
@@ -389,7 +410,7 @@ def create_kl_controller(
     elif controller_type == "hybrid":
         return HybridKLController(
             init_kl_coef=init_kl_coef,
-            target_kl=target_kl or 0.01,
+            target_kl=0.01 if target_kl is None else target_kl,
             total_steps=total_steps,
             **kwargs,
         )

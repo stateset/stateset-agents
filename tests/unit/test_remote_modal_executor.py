@@ -434,6 +434,8 @@ class TestDryRun:
 
         assert result.status is JobStatus.SUCCEEDED
         assert any("SFT Training Plan" in line for line in result.logs)
+        assert result.is_preview
+        assert result.output_dir is None
         assert not fake_modal.FakeVolume._instances
 
 

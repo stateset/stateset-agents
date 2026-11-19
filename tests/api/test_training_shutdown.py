@@ -32,8 +32,11 @@ async def test_lifespan_drains_training_before_closing_dependencies(monkeypatch,
     monkeypatch.setenv("STATESET_AGENTS_STRICT_STARTUP", "false")
     monkeypatch.delenv("STATESET_DEFAULT_CHECKPOINT", raising=False)
 
-    async def initialize(config):
-        pass
+    async def acquire_cache(config):
+        return SimpleNamespace(aclose=close_cache)
+
+    async def acquire_database(config):
+        return SimpleNamespace(aclose=close_database)
 
     async def close_cache():
         events.append("cache")
@@ -44,10 +47,8 @@ async def test_lifespan_drains_training_before_closing_dependencies(monkeypatch,
     async def close_inference():
         events.append("inference")
 
-    monkeypatch.setattr(distributed_cache, "init_cache", initialize)
-    monkeypatch.setattr(distributed_cache, "close_cache", close_cache)
-    monkeypatch.setattr(persistence, "init_database", initialize)
-    monkeypatch.setattr(persistence, "close_database", close_database)
+    monkeypatch.setattr(distributed_cache, "acquire_cache", acquire_cache)
+    monkeypatch.setattr(persistence, "acquire_database", acquire_database)
     original_close = service.aclose
 
     async def close_training():

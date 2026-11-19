@@ -9,9 +9,15 @@ Bearer token, startup failures terminate the pod, and success does NOT.
 
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
 from stateset_agents.remote.executor import RemoteExecutionError
+from stateset_agents.remote.serve_recovery import recover_serving, serving_lease_dir
 from stateset_agents.remote.serve_session import (
     RemoteServeSession,
     find_serve_pod,
@@ -20,12 +26,19 @@ from stateset_agents.remote.serve_session import (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolate_serving_state(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
+
 class FakeApi:
     def __init__(self, pods=None):
         self.api_key = "rp-test-key"
         self.root = "https://rest.runpod.io/v1"
         self.created: list[dict] = []
         self.terminated: list[str] = []
+        self.quotes: list[tuple[str, str]] = []
+        self.rate = 1.0
         self._pods = pods or []
         self.volumes = {"vol-1": {"id": "vol-1", "dataCenterId": "EUR-IS-1"}}
         self.pod_state = {
@@ -39,7 +52,11 @@ class FakeApi:
         self.created.append(kwargs)
         return {"id": "pod-1"}
 
-    def get_pod(self, pod_id):
+    def get_gpu_rate(self, gpu_type_id, cloud_type):
+        self.quotes.append((gpu_type_id, cloud_type))
+        return self.rate
+
+    def get_pod(self, pod_id, *, deadline=None):
         return dict(self.pod_state)
 
     def terminate_pod(self, pod_id):
@@ -171,6 +188,7 @@ class TestStartHappyPath:
 
         assert api.terminated == []
         assert session.pod_id == "pod-1"
+        assert api.quotes == []
 
     def test_vllm_is_installed_and_launched_with_the_token(self):
         ssh = FakeSsh()
@@ -207,6 +225,320 @@ class TestStartHappyPath:
             session.start("model", max_hours=0.5, max_cost_usd=5.0)
 
         assert api.terminated == ["pod-1"]
+
+
+class TestServeRecovery:
+    @pytest.mark.parametrize("crash_after_id", [False, True])
+    def test_process_exit_releases_ownership_and_preserves_rental(
+        self, tmp_path, crash_after_id
+    ):
+        provider_path = tmp_path / "provider.json"
+        # Exit inside the real start() path without executing Python finally blocks.
+        worker = """
+import json, os, sys
+from pathlib import Path
+from stateset_agents.remote.serve_session import RemoteServeSession
+class Api:
+    def create_pod(self, **kwargs):
+        Path(sys.argv[1]).write_text(json.dumps({"name": kwargs["name"], "id": "rented-1"}))
+        if sys.argv[2] == "False":
+            os._exit(23)
+        return {"id": "rented-1", "costPerHr": 1}
+    def get_pod(self, pod_id):
+        os._exit(23)
+RemoteServeSession(Api(), public_key="test", ssh=object()).start("model")
+"""
+        proc = subprocess.run(
+            [sys.executable, "-c", worker, str(provider_path), str(crash_after_id)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert proc.returncode == 23, proc.stderr
+        pod = json.loads(provider_path.read_text())
+        root = serving_lease_dir()
+        record = root / f"{pod['name']}.json"
+        assert json.loads(record.read_text()) == {
+            "name": pod["name"],
+            "pod_id": "rented-1" if crash_after_id else None,
+        }
+        api = FakeApi(pods=[{"name": "stateset-serve-unrelated", "id": "other"}, pod])
+        assert recover_serving(root, lambda: api)[0].status == "recoverable"
+        assert api.terminated == []
+        assert (
+            recover_serving(root, lambda: api, terminate=True)[0].status
+            == "termination accepted"
+        )
+        assert api.terminated == ["rented-1"]
+        assert recover_serving(root, lambda: api, terminate=True) == []
+        assert list(root.iterdir()) == []
+
+    @pytest.mark.parametrize("direct", [False, True])
+    def test_live_start_is_excluded_and_ready_endpoint_is_retired(self, direct):
+        root = serving_lease_dir()
+
+        class ActiveApi(FakeApi):
+            def create_pod(self, **kwargs):
+                assert (
+                    json.loads((root / f"{kwargs['name']}.json").read_text())["pod_id"]
+                    is None
+                )
+                assert (
+                    recover_serving(root, lambda: self, terminate=True)[0].status
+                    == "busy"
+                )
+                return super().create_pod(**kwargs)
+
+            def get_pod(self, pod_id, **kwargs):
+                assert (
+                    json.loads(next(root.glob("*.json")).read_text())["pod_id"]
+                    == pod_id
+                )
+                assert (
+                    recover_serving(root, lambda: self, terminate=True)[0].status
+                    == "busy"
+                )
+                return super().get_pod(pod_id, **kwargs)
+
+        api = ActiveApi()
+        make_session(api, direct_vllm_image=direct).start("m")
+        assert list(root.iterdir()) == []
+        assert recover_serving(root, lambda: api, terminate=True) == []
+        assert api.terminated == []
+
+    def test_unwritable_record_prevents_allocation(self, tmp_path):
+        root = tmp_path / "not-a-directory"
+        root.touch()
+        api = FakeApi()
+        with pytest.raises(
+            RemoteExecutionError, match="Cannot lock RunPod allocation record"
+        ):
+            make_session(api, lease_dir=root).start("m")
+        assert api.created == []
+
+    def test_lost_allocation_reply_keeps_name_and_does_not_retry(self):
+        class LostReply(FakeApi):
+            def create_pod(self, **kwargs):
+                super().create_pod(**kwargs)
+                self._pods.append({"name": kwargs["name"], "id": "rented-1"})
+                raise RemoteExecutionError("response lost")
+
+        api = LostReply()
+        with pytest.raises(RemoteExecutionError, match="response lost"):
+            make_session(api).start("m")
+        assert len(api.created) == 1
+        assert (
+            recover_serving(serving_lease_dir(), lambda: api, terminate=True)[0].detail
+            == "rented-1"
+        )
+        assert api.terminated == ["rented-1"]
+
+    def test_failure_to_record_returned_id_requests_cleanup(self, monkeypatch):
+        from stateset_agents.remote import runpod_recovery
+
+        write = runpod_recovery.write_json
+
+        def fail_id_update(path, row):
+            if row["pod_id"] is not None:
+                raise OSError("disk full")
+            write(path, row)
+
+        monkeypatch.setattr(runpod_recovery, "write_json", fail_id_update)
+        api = FakeApi()
+        with pytest.raises(
+            RemoteExecutionError, match="Cannot record RunPod allocation"
+        ):
+            make_session(api).start("m")
+        assert api.terminated == ["pod-1"]
+        assert list(serving_lease_dir().iterdir()) == []
+
+
+class TestServeBudget:
+    @pytest.mark.parametrize("direct", [False, True])
+    def test_missing_catalog_quote_refuses_rental(self, direct, monkeypatch):
+        api = FakeApi()
+
+        def missing_price(gpu, cloud):
+            raise RemoteExecutionError("No usable RunPod catalog price")
+
+        monkeypatch.setattr(api, "get_gpu_rate", missing_price)
+        session = make_session(api, direct_vllm_image=direct)
+        with pytest.raises(RemoteExecutionError, match="catalog price"):
+            session.start("m", max_cost_usd=3)
+        assert api.created == []
+
+    @pytest.mark.parametrize(
+        "pod", [{}, None, {"id": None}, {"id": ""}, {"id": "bad/id"}]
+    )
+    def test_ambiguous_allocation_reports_searchable_name_without_retry(self, pod):
+        class MissingId(FakeApi):
+            def create_pod(self, **kwargs):
+                super().create_pod(**kwargs)
+                return pod
+
+        api = MissingId()
+        session = make_session(api)
+        with pytest.raises(RemoteExecutionError, match="no pod ID") as error:
+            session.start("m", max_cost_usd=2)
+        assert api.created[0]["name"] in str(error.value)
+        assert len(api.created) == 1
+        assert api.terminated == []
+
+    @pytest.mark.parametrize("direct", [False, True])
+    def test_catalog_prices_each_requested_gpu_before_renting(self, direct):
+        api = FakeApi()
+        api.rate = 3.0
+        session = make_session(api, direct_vllm_image=direct)
+
+        with pytest.raises(RemoteExecutionError, match="catalog.*above.*max-cost"):
+            session.start(
+                "m", gpu="chosen", gpu_count=2, max_hours=0.5, max_cost_usd=2.99
+            )
+
+        assert api.quotes == [("chosen", "SECURE")]
+        assert api.created == []
+
+    @pytest.mark.parametrize("direct", [False, True])
+    def test_rechecks_whole_pod_quote_and_uses_allocation_deadline(
+        self, direct, monkeypatch
+    ):
+        from stateset_agents.remote import serve_session
+
+        class CaptureSsh(FakeSsh):
+            def upload(self, local, remote):
+                if remote.endswith("self_destruct.sh"):
+                    self.watchdog = Path(local).read_text()
+                super().upload(local, remote)
+
+        clock = [1000]
+        monkeypatch.setattr(serve_session.time, "time", lambda: clock[0])
+
+        class SlowApi(FakeApi):
+            def create_pod(self, **kwargs):
+                clock[0] += 120
+                return super().create_pod(**kwargs)
+
+        api, ssh = SlowApi(), CaptureSsh()
+        api.rate = 3.0
+        api.pod_state["costPerHr"] = "6.00"
+        session = make_session(api, ssh, direct_vllm_image=direct)
+        session.start("m", gpu="chosen", gpu_count=2, max_hours=0.5, max_cost_usd=3)
+
+        assert api.quotes == [("chosen", api.created[0]["cloud_type"])]
+        assert session.pod_id == "pod-1"
+        if direct:
+            assert "2800-time.time()" in api.created[0]["docker_start_cmd"][0]
+        else:
+            assert "2800 - $(date +%s)" in ssh.watchdog
+
+    @pytest.mark.parametrize("direct", [False, True])
+    @pytest.mark.parametrize(
+        "rate", [None, False, True, "NaN", float("inf"), -1, 0, "bad"]
+    )
+    def test_unpriceable_allocated_pod_is_terminated(self, direct, rate):
+        api = FakeApi()
+        api.pod_state["costPerHr"] = rate
+        session = make_session(api, direct_vllm_image=direct)
+        with pytest.raises(RemoteExecutionError, match="price for this pod"):
+            session.start("m", max_cost_usd=5)
+
+        assert api.terminated == ["pod-1"]
+        assert session._http_calls == []
+
+    @pytest.mark.parametrize("direct", [False, True])
+    @pytest.mark.parametrize("capped", [False, True])
+    def test_status_read_failure_always_cleans_up(self, direct, capped):
+        class BrokenApi(FakeApi):
+            def get_pod(self, pod_id, *, deadline=None):
+                raise RuntimeError("provider unavailable")
+
+        api = BrokenApi()
+        session = make_session(api, direct_vllm_image=direct)
+        with pytest.raises(RuntimeError, match="provider unavailable"):
+            session.start("m", max_cost_usd=5 if capped else None)
+
+        assert api.terminated == ["pod-1"]
+        assert len(api.created) == 1
+
+    def test_network_retry_deducts_elapsed_cost_through_termination(self, monkeypatch):
+        from stateset_agents.remote import serve_session
+
+        clock = [10.0]
+        monkeypatch.setattr(serve_session.time, "monotonic", lambda: clock[0])
+
+        class SlowDelete(FakeApi):
+            def terminate_pod(self, pod_id):
+                clock[0] += 0.01
+                super().terminate_pod(pod_id)
+
+        api = SlowDelete()
+        api.pod_state.update(publicIp="", costPerHr=1)
+        session = make_session(api, network_timeout_s=0)
+        # Even a charge too small to display in the ledger consumes budget.
+        with pytest.raises(RemoteExecutionError, match="catalog.*max-cost"):
+            session.start("m", max_cost_usd=1)
+        assert len(api.quotes) == 2
+        assert len(api.created) == 1
+        assert api.terminated == ["pod-1"]
+
+    def test_affordable_replacement_pod_is_allowed(self):
+        class NetworkOnRetry(FakeApi):
+            def get_pod(self, pod_id, *, deadline=None):
+                return {
+                    **super().get_pod(pod_id, deadline=deadline),
+                    "publicIp": "1.2.3.4" if len(self.created) == 2 else "",
+                    "costPerHr": 1,
+                }
+
+        api = NetworkOnRetry()
+        session = make_session(api, network_timeout_s=0)
+        session.start("m", max_cost_usd=2)
+        assert len(api.quotes) == len(api.created) == 2
+        assert len(api.terminated) == 1
+        assert session.endpoint_url
+
+    def test_unconfirmed_termination_retains_id_and_prevents_new_rental(
+        self, monkeypatch
+    ):
+        api = FakeApi()
+        api.pod_state.update(publicIp="", costPerHr=1)
+        session = make_session(api, network_timeout_s=0)
+        with monkeypatch.context() as patch:
+
+            def failed_delete(pod_id):
+                raise OSError("provider unavailable")
+
+            patch.setattr(api, "terminate_pod", failed_delete)
+            with pytest.raises(RemoteExecutionError, match="--stop pod-1"):
+                session.start("m", max_cost_usd=2)
+            assert session.pod_id == "pod-1"
+            with pytest.raises(RemoteExecutionError, match="still owns pod pod-1"):
+                session.start("m", max_cost_usd=2)
+
+        session.terminate()
+        assert session.pod_id is None
+        assert len(api.created) == 1
+        assert api.terminated == ["pod-1"]
+
+    @pytest.mark.parametrize("direct", [False, True])
+    def test_allocation_exhausting_lifetime_is_cleaned_up(self, direct, monkeypatch):
+        from stateset_agents.remote import serve_session
+
+        clock = [0.0]
+        monkeypatch.setattr(serve_session.time, "monotonic", lambda: clock[0])
+
+        class SlowCreate(FakeApi):
+            def create_pod(self, **kwargs):
+                clock[0] += 3
+                return {**super().create_pod(**kwargs), "costPerHr": 1}
+
+        api = SlowCreate()
+        session = make_session(api, direct_vllm_image=direct)
+        with pytest.raises(RemoteExecutionError, match="budgeted timeout"):
+            session.start("m", max_hours=2 / 3600, max_cost_usd=1)
+
+        assert api.terminated == ["pod-1"]
+        assert session._http_calls == []
 
 
 class TestDirectVllmImage:

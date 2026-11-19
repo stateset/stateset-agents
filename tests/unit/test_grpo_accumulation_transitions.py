@@ -138,7 +138,7 @@ async def test_sequence_token_sequence_matches_separate_reference_updates(
             token_forwards.append(model.weight.detach().clone())
         return {"total_loss": objective(model, group.target, False), "path": group.path}
 
-    monkeypatch.setattr(module, "compute_token_old_logprobs", old_policy)
+    monkeypatch.setattr(module, "freeze_rollout_logprobs", old_policy)
     if kind == "single":
         monkeypatch.setattr(module, "compute_grpo_loss", loss)
         trainer._generate_trajectory_group = AsyncMock(
@@ -210,7 +210,7 @@ async def test_invalid_pending_window_cannot_contaminate_inner_updates(
     model.weight.grad.fill_(float("inf"))
     trainer._grad_accum_step = 1
     old = [model.weight.detach().clone()]
-    monkeypatch.setattr(multi, "compute_token_old_logprobs", lambda *args: old)
+    monkeypatch.setattr(multi, "freeze_rollout_logprobs", lambda *args: old)
 
     def loss(*args, **kwargs):
         assert kwargs["old_logprobs"] is old
@@ -288,7 +288,7 @@ async def test_old_policy_snapshot_uses_the_loss_precision(monkeypatch, tmp_path
         seen["loss"].append(torch.is_autocast_enabled("cpu"))
         return {"total_loss": objective(model, 0.5, False), "path": "token"}
 
-    monkeypatch.setattr(module, "compute_token_old_logprobs", old_policy)
+    monkeypatch.setattr(module, "freeze_rollout_logprobs", old_policy)
     if kind == "single":
         monkeypatch.setattr(module, "compute_grpo_loss", loss)
         trainer._generate_trajectory_group = AsyncMock(return_value=(group, "a"))
