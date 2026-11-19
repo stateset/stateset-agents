@@ -124,7 +124,7 @@ This gives you TRL's mature transformer training utilities with StateSet's agent
 
 Start with two saved replies to the same support prompt. This example uses the
 core StateSet package and runs on CPU with no model download. In your TRL
-environment, install StateSet from the [v0.74.0 tag](../README.md#installation).
+environment, install `stateset-agents==0.74.0` from PyPI. [Installation](../README.md#installation)
 
 ```python
 import asyncio

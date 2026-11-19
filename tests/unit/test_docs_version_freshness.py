@@ -84,12 +84,13 @@ def test_readme_candidate_and_published_install_surfaces_are_separate() -> None:
     text = (ROOT / "README.md").read_text(encoding="utf-8")
     current = stateset_agents.__version__
 
-    assert f"**Current Python candidate:** `stateset-agents=={current}`" in text
     published = re.search(
         r"\*\*Latest verified PyPI release:\*\* `stateset-agents==(\d+\.\d+\.\d+)`",
         text,
     )
     assert published is not None
+    status = "release" if published.group(1) == current else "candidate"
+    assert f"**Current Python {status}:** `stateset-agents=={current}`" in text
     assert (
         f'pip install "stateset-agents=={published.group(1)}" # latest verified PyPI release'
         in text
@@ -99,7 +100,7 @@ def test_readme_candidate_and_published_install_surfaces_are_separate() -> None:
 
 def test_roadmap_package_version_matches_current_release() -> None:
     text = (ROOT / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
-    assert f"Current tagged version: **v{stateset_agents.__version__} " in text
+    assert f"Current tagged version: **v{stateset_agents.__version__}**" in text
 
 
 def test_marker_exempts_the_next_line():

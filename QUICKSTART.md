@@ -10,12 +10,12 @@ and `stateset_agents`. See the [rename guide](docs/RENAME_TRACEFORGE.md).
 
 ## 1. Install
 
-In Bash, use Python 3.10 or later to install the tagged v0.74.0 source.
+In Bash, use Python 3.10 or later to install v0.74.0 from PyPI.
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install 'stateset-agents @ https://github.com/stateset/stateset-agents/archive/refs/tags/v0.74.0.zip'
+python -m pip install 'stateset-agents==0.74.0'
 ```
 
 ## 2. Grade and curate sample conversations
@@ -127,7 +127,7 @@ From an activated Python 3.12 environment, install the training dependencies
 and run one seed.
 
 ```bash
-python -m pip install 'stateset-agents[training] @ https://github.com/stateset/stateset-agents/archive/refs/tags/v0.74.0.zip'
+python -m pip install 'stateset-agents[training]==0.74.0'
 python - <<'GRPO'
 import asyncio
 from pathlib import Path

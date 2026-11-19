@@ -20,9 +20,8 @@
 
 </div>
 
-**v0.74.0 is tagged.** It adds finite-sample bounds for CQL proposal sampling
-and fixes how PPO and GRPO use recorded sampling probabilities. The Python
-package can be installed from the tag while registry publication is pending.
+**v0.74.0 is on PyPI.** It adds finite-sample bounds for CQL proposal sampling
+and fixes how PPO and GRPO use recorded sampling probabilities.
 [Release highlights](#whats-new) · [Installation](#installation)
 
 - **If you run a support agent**, grade sample conversations locally and inspect
@@ -145,8 +144,8 @@ The isolated `v0.58.0` release tree completed its local Linux Python 3.12 suite 
 checks passed lint, typing, API compatibility, governance, security scanning,
 distribution metadata, and isolated wheel installation. The
 [tag publication workflow](https://github.com/stateset/stateset-agents/actions/runs/37660763697)
-published Python distributions, documentation, and the GitHub release; npm's
-initial publication remains blocked. The broader Linux Python 3.10–3.13 and
+published Python distributions, documentation, and the GitHub release. The npm
+client was unpublished at the time. The broader Linux Python 3.10–3.13 and
 Windows Python 3.10/3.13 matrix evidence remains historical (`v0.54.0`), and
 should not be read as certification of every newer checkpoint or platform.
 See the retained
@@ -196,14 +195,12 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python candidate:** `stateset-agents==0.74.0`, publication pending.
-  On November 19, 2026, the tagged workflow stopped before the PyPI and npm
-  upload jobs started. [Publish run](https://github.com/stateset/stateset-agents/actions/runs/44608239323)
-- **Latest verified PyPI release:** `stateset-agents==0.70.0`, checked November 19,
-  2026. [Published artifacts](https://pypi.org/project/stateset-agents/0.70.0/#files)
-- **Node client.** The tagged source includes version 0.74.0 of the typed
-  `@stateset/agents` client. Its first public npm release is pending.
-  [Use the client from the checkout](#nodejs-api-client)
+- **Current Python release:** `stateset-agents==0.74.0`, built from the v0.74.0 tag.
+- **Latest verified PyPI release:** `stateset-agents==0.74.0`. The wheel and source
+  distribution on PyPI match the SHA-256 digests of the locally verified builds.
+  [Published artifacts](https://pypi.org/project/stateset-agents/0.74.0/#files)
+- **Node client.** npm lists `0.74.0` as the `latest` version of
+  `@stateset/agents`. [npm package](https://www.npmjs.com/package/@stateset/agents/v/0.74.0) · [Installation](#nodejs-api-client)
 - **Live providers:** RunPod and River passed the `v0.54.0` tag canaries and
   have retained end-to-end evidence. Fireworks failed closed without
   `FIREWORKS_API_KEY` and `FIREWORKS_ACCOUNT_ID`, creating no billable
@@ -453,7 +450,7 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**v0.74.0 (latest candidate; publication pending):**
+**v0.74.0 (latest release on PyPI):**
 
 - **Offline RL.** For a fixed critic, the Lean proofs bound how the number
   of sampled action proposals affects CQL's estimated soft value and penalty
@@ -1416,23 +1413,22 @@ asyncio.run(main())
 
 ### Core (lightweight, stub‑ready)
 
-To install v0.74.0 from its Git tag, run
+To install the Python package from PyPI, run
+
+```bash
+pip install "stateset-agents==0.74.0" # latest verified PyPI release
+```
+
+To install from the corresponding Git tag, run
 
 ```bash
 pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.74.0"
 ```
 
-To install the latest version verified on PyPI, run
-
-```bash
-pip install "stateset-agents==0.70.0" # latest verified PyPI release
-```
-
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
 backend, and the CLI. Training real models needs `[training]` below.
 
-> PyPI publication requires a successful release workflow; a tag alone does not
-> publish a version. For unreleased work on master:
+> To install the development version on `master`, run
 >
 > ```bash
 > pip install "git+https://github.com/stateset/stateset-agents@master"
@@ -1476,13 +1472,10 @@ pip install "stateset-agents[full]"          # Most extras in one go
 
 The typed Node.js client requires Node 18+ and has no runtime dependencies.
 It supports Messages and OpenAI-compatible calls, including SSE streaming.
-Until the first npm publication, install the client from the tagged source.
-From your Node application's directory, point npm at the `npm/` folder of
-a local v0.74.0 checkout and run
+From your Node application's directory, install the client and check the import.
 
 ```bash
-npm pack /path/to/stateset-agents/npm
-npm install ./stateset-agents-0.74.0.tgz
+npm install @stateset/agents@0.74.0
 node --input-type=module -e "import { StateSet } from '@stateset/agents'; console.log(new StateSet().constructor.name)"
 ```
 
@@ -2295,7 +2288,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest candidate `v0.74.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.74.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — retained test,
   provider, GPU, and publication records for earlier releases.
 
