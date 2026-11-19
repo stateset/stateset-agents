@@ -10,7 +10,7 @@ Includes state-of-the-art RL algorithms:
 
 PPO, RLAIF, offline RL (CQL/IQL, BCQ, BEAR, Decision Transformer, offline
 GRPO) and sim-to-real transfer live in :mod:`stateset_agents.experimental`
-(moved in v0.64.0; the re-exports from this package were removed in v0.65.0).
+with compatibility imports for callers of the published v0.74.0 package.
 
 Generation backends:
 - vLLM: 5-20x faster generation with automatic log probability extraction

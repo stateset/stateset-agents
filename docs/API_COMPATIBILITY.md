@@ -24,6 +24,21 @@ documentation can improve without creating false compatibility failures.
 `stateset_agents.experimental`, deprecated shim packages, and the opt-in
 `/api/lab/*` training-lab router are not stable surfaces.
 
+## Imports shared with v0.74.0
+
+Use `stateset_agents.experimental` for PPO, RLAIF, offline RL, sim-to-real
+and the Bayesian reward model. Code written for the separately published
+v0.74.0 package can also use its original module paths and package exports.
+Both spellings resolve to the same module and classes, including during
+checkpoint unpickling. For example:
+
+```python
+from stateset_agents.experimental.offline_rl.algorithms import IQLConfig
+from stateset_agents.training.offline_rl_algorithms import IQLConfig as PublishedIQLConfig
+
+assert IQLConfig is PublishedIQLConfig
+```
+
 ## Guarantee
 
 Existing stable imports and HTTP wire contracts remain compatible within the
