@@ -14,7 +14,21 @@
 
 </div>
 
-👉 Start here: the one‑page, boring path is in [QUICKSTART.md](QUICKSTART.md). It covers:
+**Try v0.74.0.** The tagged release adds finite-sample bounds for CQL proposal
+sampling and fixes how PPO and GRPO use recorded sampling probabilities.
+Install the Python package with `pip install stateset-agents==0.74.0`.
+[Release notes](https://github.com/stateset/stateset-agents/releases/tag/v0.74.0) · [How to evaluate StateSet](#how-to-evaluate-stateset)
+
+- Grade three support conversations locally and inspect the two replies selected
+  for training, or run a small GRPO policy on CPU and replay its checkpoint.
+  [Python quickstart](https://github.com/stateset/stateset-agents/blob/34e84594e36241d57c648d023d53f404b7989d07/QUICKSTART.md)
+- Score two refund replies on CPU, then plug the same reward into an existing
+  Hugging Face GRPO trainer. [TRL trial](https://github.com/stateset/stateset-agents/blob/34e84594e36241d57c648d023d53f404b7989d07/docs/COMPARISONS.md#try-a-stateset-reward-in-an-existing-trl-run)
+
+If your team runs a support agent, try the quickstart on a redacted conversation
+and share where it helped or got stuck. [Join the 30-day pilot](https://github.com/stateset/stateset-agents/issues/136)
+
+For the source line on `master`, see [QUICKSTART.md](QUICKSTART.md). It covers:
 
 - pip install → ingest sample logs → improve (grade/curate) → one GRPO dry‑run (stub/HF) → serve
 - remote training defaults to Modal (unverified; fail‑closed), with other providers still available
@@ -80,8 +94,8 @@ The isolated `v0.58.0` release tree completed its local Linux Python 3.12 suite 
 checks passed lint, typing, API compatibility, governance, security scanning,
 distribution metadata, and isolated wheel installation. The
 [tag publication workflow](https://github.com/stateset/stateset-agents/actions/runs/37660763697)
-published Python distributions, documentation, and the GitHub release; npm's
-initial publication remains blocked. The broader Linux Python 3.10–3.13 and
+published Python distributions, documentation, and the GitHub release. The npm
+client was unpublished at the time. The broader Linux Python 3.10–3.13 and
 Windows Python 3.10/3.13 matrix evidence remains historical (`v0.54.0`), and
 should not be read as certification of every newer checkpoint or platform.
 See the retained
@@ -128,13 +142,11 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python release:** `stateset-agents==0.65.0`, published from the
-  annotated release tag with build attestation and an isolated wheel smoke test.
-- **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
-  package is tested and release-wired in [`npm/`](npm/). Its first registry
-  publication remains pending because npm trusted publishing cannot create a
-  new package; an `@stateset`-scoped automation token must bootstrap version
-  one before subsequent releases can use OIDC.
+- **Current Python release:** `stateset-agents==0.65.0` on this source line.
+  Across release lines, PyPI listed 0.74.0 as its latest version on November 19,
+  2026. [Published artifacts](https://pypi.org/project/stateset-agents/0.74.0/#files)
+- **Node client.** npm lists `0.74.0` as the `latest` version of the typed,
+  zero-runtime-dependency `@stateset/agents` client. [Node.js installation](#nodejs-api-client)
 - **Live providers:** RunPod and River passed the `v0.54.0` tag canaries and
   have retained end-to-end evidence. Fireworks failed closed without
   `FIREWORKS_API_KEY` and `FIREWORKS_ACCOUNT_ID`, creating no billable
@@ -173,14 +185,45 @@ serving, and provider claims.
   accounts for failures, and invokes the strict publication gate. Live
   execution and the 12-hour soak remain pending.
 
-### What makes this an A+ framework
+### How to evaluate StateSet
 
-StateSet is currently a strong beta with an A−-level engineering foundation;
-an A+ claim requires measured outcomes, not more algorithm names. The shortest
-credible path is:
+For a team running a support agent, the practical question is how many more
+cases it can resolve correctly at the same total cost. In the retained
+48-step comparison, StateSet's TRL-backed trainer was about 7% slower than
+direct TRL. Neither showed a measurable learning-quality gain at that scale.
+[Comparison results and limitations](docs/BENCHMARKS.md#48-step-three-framework-comparison-v2-protocol)
 
-1. Finish the corrected, equal-compute 1.5B native-GSPO versus direct-TRL
-   v4 matrix (its checked-in six-pair dry run passes), then run the immutable
+A separate matched 200-step GSM8K trial on Qwen2.5-1.5B scored **31.4%** for
+StateSet native GSPO and **31.1%** for direct TRL. The paired 95% interval
+for the difference spans −7.5 to +8.0 percentage points across three seeds.
+[Matched framework results](benchmark_results/framework_comparison_v5_1/README.md)
+
+In a post-v0.74.0 CPU experiment, balancing refund eligibility within each
+training batch raised final success from **561/1,024 (54.8%)** to **836/1,024
+(81.6%)** across eight held-out training seeds. Each policy faced the same two
+synthetic refund states. This compares two StateSet training recipes.
+[Preregistered protocol, paired uncertainty and raw runs](benchmark_results/training_contracts/20261119/sampled-workflow-batching/)
+
+A support team can test whether those gains transfer to its own workflow.
+
+1. **Agree on a win before training.** Have an independent support team hold
+   back fresh cases and define a meaningful improvement, a total cost ceiling,
+   and a maximum rate of policy violations. Count a refund as resolved only
+   when the correct ledger action occurs.
+2. **Compare credible alternatives.** Include the team's current system, a
+   supervised fine-tune, and a tuned RL baseline such as direct TRL or verl.
+   Match starting weights, training data, tool access, hardware and tuning
+   budget across training frameworks. Include failed runs, retries and serving
+   costs at the same declared traffic volume.
+3. **Publish enough to challenge the result.** Freeze configurations before
+   opening the holdout. Score the same cases blind, report paired uncertainty
+   across cases and training seeds, and show the result for each team and each
+   comparator. Ask a second team to repeat the winning workflow on fresh data.
+   [Public pilot](https://github.com/stateset/stateset-agents/issues/136)
+
+The remaining engineering and benchmark work includes the following.
+
+1. Repeat the matched 1.5B comparison on the frozen release, then run the
    7–9B three-seed flagship and require a
    positive paired 95% confidence bound on held-out quality.
 2. Run the same experiment contract through verl, NeMo RL, and OpenRLHF and
@@ -190,7 +233,7 @@ credible path is:
 4. Execute the official τ³-bench and BFCL V4 pipelines (plus optional SWE-bench
    Verified) on base and trained policies rather than treating implemented
    adapters as benchmark results.
-5. Close npm, container, Fireworks, Modal, CoreWeave, and Nebius live evidence,
+5. Close container, Fireworks, Modal, CoreWeave, and Nebius live evidence,
    then obtain an independent reproduction and security review.
 
 The multi-node scaling path is now executable rather than aspirational:
@@ -1413,6 +1456,9 @@ asyncio.run(main())
 
 ### Core (lightweight, stub‑ready)
 
+These commands install the version used by the examples on `master`.
+For v0.74.0, follow the [release quickstart](https://github.com/stateset/stateset-agents/blob/34e84594e36241d57c648d023d53f404b7989d07/QUICKSTART.md).
+
 ```bash
 pip install "stateset-agents==0.65.0" # current stable release
 pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.65.0"
@@ -1453,17 +1499,14 @@ pip install "stateset-agents[full]"          # Most extras in one go
 The dependency-free, typed Node.js client lives in [`npm/`](npm/) and targets
 the stable Messages and OpenAI-compatible API surfaces. It supports JSON and
 SSE streaming, bearer authentication, timeouts, structured errors, and custom
-`fetch` implementations. Until its first registry publication, validate or use
-the workspace package directly:
+`fetch` implementations. To install the v0.74.0 client, run
 
 ```bash
-npm --prefix npm ci
-npm --prefix npm test
+npm install @stateset/agents@0.74.0
 ```
 
-The tagged release workflow publishes it as `@stateset/agents` only when its
-version exactly matches the Git tag. See [`npm/README.md`](npm/README.md) for
-the client API.
+See the [client API examples](https://github.com/stateset/stateset-agents/blob/v0.74.0/npm/README.md)
+for Messages and streaming calls.
 
 > This repository also contains an internal, unpublished Rust crate at the repo root (a StateSet
 > commerce daemon) that is unrelated to the `stateset-rl-core` accelerator behind `[rust]` above.

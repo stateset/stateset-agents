@@ -1,15 +1,9 @@
-"""Tests for ``RiverExecutor`` — entirely against fakes.
-
-River could not be live-verified (no API key, ``river-client`` unavailable),
-so the fakes here record the exact call sequence we believe River's docs
-describe. If the real service disagrees, these tests are what will need
-changing — which is the point of writing them as a recording rather than as
-assertions about internals.
-"""
+"""Exercise the River executor with recording clients that accept raw prompts."""
 
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -25,6 +19,12 @@ from stateset_agents.remote.river import (
 )
 from stateset_agents.training.lineage import MANIFEST_NAME
 from tests.unit.test_river_batches import FakeTokenizer
+
+
+@pytest.fixture(autouse=True)
+def raw_prompt_sampling(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Use the executor's raw-text fallback for the fake clients' canned replies."""
+    monkeypatch.setitem(sys.modules, "river_client.renderers", None)
 
 
 @dataclass

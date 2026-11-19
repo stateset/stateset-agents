@@ -1,21 +1,15 @@
-"""The v0.64.0 experimental-move shims are gone in v0.65.0.
-
-v0.64.0 moved PPO, RLAIF, offline RL, Decision Transformer, sim-to-real and the
-Bayesian reward model into :mod:`stateset_agents.experimental` and left
-deprecation shims at the old locations. v0.65.0 deleted them. These tests keep
-the old paths from silently coming back (a stray module file, a lazy-registry
-entry, or a package ``__getattr__`` fallback) and pin the experimental paths as
-the only home.
-"""
+"""Published v0.74.0 imports and experimental imports share their implementation."""
 
 from __future__ import annotations
 
 import importlib
+import pickle
+from types import ModuleType
 
 import pytest
 
-#: removed module path -> experimental replacement
-REMOVED_MODULES = {
+#: Published module name -> canonical experimental module.
+COMPAT_MODULES = {
     "stateset_agents.training.ppo_trainer": "stateset_agents.experimental.ppo",
     "stateset_agents.training.rlaif_trainer": "stateset_agents.experimental.rlaif",
     "stateset_agents.training.offline_rl_algorithms": (
@@ -114,11 +108,7 @@ _TRAINING_NAMES = {
     ),
 }
 
-#: (package, removed name, experimental module that now provides it).
-#: The four root ``stateset_agents`` sim-to-real exports are deliberately absent:
-#: they are stable v1-contract names, so docs/API_COMPATIBILITY.md keeps them
-#: (deprecated) through v0.65.x; test_public_api_contracts.py covers them.
-REMOVED_PACKAGE_EXPORTS = [
+COMPAT_PACKAGE_EXPORTS = [
     *(
         ("stateset_agents.evaluation", name, _METRICS)
         for name in (
@@ -144,7 +134,7 @@ REMOVED_PACKAGE_EXPORTS = [
 ]
 
 
-def _import_experimental(module_name: str) -> object:
+def _import_experimental(module_name: str) -> ModuleType:
     try:
         return importlib.import_module(module_name)
     except ImportError as exc:  # pragma: no cover - depends on installed extras
@@ -153,38 +143,22 @@ def _import_experimental(module_name: str) -> object:
         raise
 
 
-@pytest.mark.parametrize("old_path", sorted(REMOVED_MODULES))
-def test_removed_module_paths_do_not_import(old_path: str) -> None:
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module(old_path)
+@pytest.mark.parametrize(("published", "canonical"), COMPAT_MODULES.items())
+def test_module_alias_identity(published: str, canonical: str) -> None:
+    assert _import_experimental(published) is _import_experimental(canonical)
 
 
-@pytest.mark.parametrize(
-    ("package", "name", "_new_module"),
-    REMOVED_PACKAGE_EXPORTS,
-    ids=[f"{pkg}.{name}" for pkg, name, _ in REMOVED_PACKAGE_EXPORTS],
-)
-def test_removed_package_exports_are_gone(
-    package: str, name: str, _new_module: str
-) -> None:
-    module = importlib.import_module(package)
-    assert name not in getattr(module, "__all__", ())
-    with pytest.raises(AttributeError):
-        getattr(module, name)
+@pytest.mark.parametrize(("pkg", "name", "canonical"), COMPAT_PACKAGE_EXPORTS)
+def test_published_package_exports(pkg: str, name: str, canonical: str) -> None:
+    package = importlib.import_module(pkg)
+    assert name in package.__all__
+    assert getattr(package, name) is getattr(_import_experimental(canonical), name)
 
 
-@pytest.mark.parametrize("new_path", sorted(set(REMOVED_MODULES.values())))
-def test_experimental_module_paths_import(new_path: str) -> None:
-    _import_experimental(new_path)
-
-
-@pytest.mark.parametrize(
-    ("_package", "name", "new_module"),
-    REMOVED_PACKAGE_EXPORTS,
-    ids=[f"{new}.{name}" for _, name, new in REMOVED_PACKAGE_EXPORTS],
-)
-def test_removed_names_resolve_from_experimental(
-    _package: str, name: str, new_module: str
-) -> None:
-    module = _import_experimental(new_module)
-    assert hasattr(module, name), f"{new_module} no longer provides {name}"
+def test_checkpoint_global_from_published_module() -> None:
+    canonical = _import_experimental(
+        "stateset_agents.experimental.offline_rl.algorithms"
+    )
+    # Protocol 0 GLOBAL records the module and symbol names used by an old writer.
+    record = b"cstateset_agents.training.offline_rl_algorithms\nIQLConfig\n."
+    assert pickle.loads(record) is canonical.IQLConfig  # nosec B301

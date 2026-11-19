@@ -63,7 +63,7 @@ def test_lazy_export_entry_resolves(name: str) -> None:
     """Every ``_OPTIONAL_EXPORTS`` entry must point at a real module attribute."""
     module_name, attr_name = training_pkg._OPTIONAL_EXPORTS[name]
 
-    # Experimental modules are never re-exported from this package.
+    # Registry targets live in the training namespace, including published aliases.
     assert module_name.startswith("stateset_agents.training"), (
         f"_OPTIONAL_EXPORTS[{name!r}] points outside stateset_agents.training: "
         f"{module_name!r}"

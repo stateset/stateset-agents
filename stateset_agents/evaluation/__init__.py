@@ -1,11 +1,22 @@
-"""
-Evaluation utilities for stateset-agents.
+"""StateSet evaluation with lazy v0.74.0 compatibility exports."""
 
-The sim-to-real metrics that used to be re-exported here live in
-``stateset_agents.experimental.sim_to_real.metrics`` (moved in v0.64.0; the
-re-exports were removed in v0.65.0).
-"""
+from importlib import import_module
+from typing import Any
 
-from __future__ import annotations
+__all__ = [
+    "SimToRealMetrics",
+    "SimToRealEvaluator",
+    "compute_distribution_divergence",
+    "compute_response_statistics",
+]
 
-__all__: list[str] = []
+
+def __getattr__(name: str) -> Any:
+    """Load experimental exports when a caller requests them."""
+    if name not in __all__:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(
+        import_module("stateset_agents.experimental.sim_to_real.metrics"), name
+    )
+    globals()[name] = value
+    return value

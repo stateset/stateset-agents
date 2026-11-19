@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Restore the v0.74.0 import paths for PPO, RLAIF, offline RL, sim-to-real
+  and the Bayesian reward model as aliases of their experimental modules.
+
 ### Added
 
 - **`SupportConversationReward` (support reward v2).** A conversation-level,
