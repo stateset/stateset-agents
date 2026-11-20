@@ -362,6 +362,98 @@ def _forward_token_rows(
     return torch.cat(lp_chunks), torch.cat(mask_chunks), entropy
 
 
+REPLAY_TOLERANCE = 1e-3
+
+
+def _replayed_token_rows(
+    model: Any,
+    rows: list[tuple[list[int], list[int], int]],
+    device: Any,
+    chunk_size: int,
+    *,
+    want_entropy: bool = False,
+) -> tuple[Any, Any, Any | None]:
+    """Match ``_forward_token_rows(grad=True)`` with one chunk's graph alive.
+
+    Values come from a no-grad pass. When ``backward()`` reaches them, each
+    chunk of ``chunk_size`` rows is forwarded again with gradients and
+    backpropagated immediately, so peak memory is one chunk rather than every
+    row. The second pass must reproduce the first: dropout or a changed
+    train/eval mode raises instead of producing a silently wrong gradient.
+    """
+    torch = require_torch()
+    if getattr(model, "_stateset_token_forward", False) is True:
+        raise ValueError(
+            "bounded_token_backward is not supported with distributed token banks"
+        )
+    size = max(int(chunk_size), 1)
+    device_type = torch.device(device).type
+    autocast = torch.is_autocast_enabled(device_type)
+    autocast_dtype = torch.get_autocast_dtype(device_type)
+    training = bool(getattr(model, "training", False))
+    width = max(len(p) + len(r) for p, r, _ in rows)
+    parts = [rows[start : start + size] for start in range(0, len(rows), size)]
+
+    def full_width(values: Any) -> Any:
+        padded = values.new_zeros(values.shape[0], width - 1)
+        padded[:, : values.shape[1]] = values
+        return padded
+
+    first = [
+        _forward_token_rows(
+            model, part, device, size, grad=False, want_entropy=want_entropy
+        )
+        for part in parts
+    ]
+
+    def replay(index: int) -> Any:
+        def hook(gradient: Any) -> None:
+            if bool(getattr(model, "training", False)) != training:
+                raise RuntimeError("Model mode changed before the replayed backward")
+            for number, part in enumerate(parts):
+                reference: Any = first[number][index]
+                weights = gradient[number * size : number * size + len(part)]
+                weights = weights[:, : reference.shape[1]]
+                if not bool(weights.count_nonzero()):
+                    continue
+                with (
+                    torch.enable_grad(),
+                    torch.autocast(device_type, dtype=autocast_dtype, enabled=autocast),
+                ):
+                    again = _forward_token_rows(
+                        model,
+                        part,
+                        device,
+                        size,
+                        grad=True,
+                        want_entropy=index == 2,
+                    )
+                    current: Any = again[index]
+                    mask: Any = again[1]
+                    if not torch.allclose(
+                        current.detach() * mask,
+                        reference * mask,
+                        rtol=REPLAY_TOLERANCE,
+                        atol=REPLAY_TOLERANCE,
+                    ):
+                        raise RuntimeError(
+                            "Replayed forward differs from the scored forward; "
+                            "disable dropout to use bounded_token_backward"
+                        )
+                    surrogate = (weights.to(current.dtype) * current * mask).sum()
+                surrogate.backward()
+
+        return hook
+
+    logprobs = torch.cat([full_width(f[0]) for f in first]).requires_grad_(True)
+    logprobs.register_hook(replay(0))
+    entropy = None
+    if want_entropy:
+        entropy = torch.cat([full_width(f[2]) for f in first]).requires_grad_(True)
+        entropy.register_hook(replay(2))
+    return logprobs, torch.cat([full_width(f[1]) for f in first]), entropy
+
+
 def compute_token_old_logprobs(
     trajectory_groups: list[Any], config: Any, agent: Any
 ) -> list[Any] | None:
@@ -529,6 +621,8 @@ def _compute_token_path_loss(
         max(rows_per_group, key=len, default=[])
     )
 
+    bounded = bool(getattr(config, "bounded_token_backward", False))
+
     def local_old_source() -> str:
         nonlocal old_logprobs
         if old_logprobs is not None and len(old_logprobs) != len(rows_per_group):
@@ -574,14 +668,19 @@ def _compute_token_path_loss(
             adv_log.extend(advantages.detach().cpu().tolist())
             row_adv = advantages[torch.tensor([ti for _, _, ti in rows], device=device)]
 
-            logp_cur, mask, entropy = _forward_token_rows(
-                agent.model,
-                rows,
-                device,
-                chunk,
-                grad=True,
-                want_entropy=entropy_coef > 0,
-            )
+            if bounded:
+                logp_cur, mask, entropy = _replayed_token_rows(
+                    agent.model, rows, device, chunk, want_entropy=entropy_coef > 0
+                )
+            else:
+                logp_cur, mask, entropy = _forward_token_rows(
+                    agent.model,
+                    rows,
+                    device,
+                    chunk,
+                    grad=True,
+                    want_entropy=entropy_coef > 0,
+                )
             logp_ref = None
             if use_kl:
                 logp_ref, _, _ = _forward_token_rows(

@@ -109,6 +109,9 @@ class TrainingConfig:
     dataloader_num_workers: int = 0
     dataloader_pin_memory: bool = True
     gradient_checkpointing: bool = False
+    # Backpropagate generation_batch_size rows at a time instead of holding
+    # every row's graph; needs a deterministic forward (no dropout).
+    bounded_token_backward: bool = False
 
     # Evaluation and checkpointing
     eval_steps: int = 50

@@ -377,3 +377,50 @@ def test_explicit_inner_update_snapshot_wins_over_sampler_source():
     )
     assert out["old_logprobs_source"] == "snapshot"
     assert out["ratio_mean"] == pytest.approx(1.0, abs=1e-4)
+
+
+def _gradients(config, model):
+    model.zero_grad(set_to_none=True)
+    groups = [_group(n_assistant=3), _group(rewards=(0.0, 1.0), n_assistant=2)]
+    result = _run(groups, config, _agent(model))
+    result["total_loss"].backward()
+    grads = {
+        n: p.grad.clone() for n, p in model.named_parameters() if p.grad is not None
+    }
+    return float(result["total_loss"].detach()), grads
+
+
+@pytest.mark.parametrize("entropy_coef", [0.0, 0.05])
+@pytest.mark.parametrize("chunk", [1, 2, 4])
+def test_bounded_backward_matches_retained_graph(entropy_coef, chunk):
+    model = _tiny_model()
+    base = {"entropy_coef": entropy_coef, "generation_batch_size": chunk}
+    loss, expected = _gradients(_config(**base), model)
+    bounded_loss, actual = _gradients(
+        _config(**base, bounded_token_backward=True), model
+    )
+    assert bounded_loss == pytest.approx(loss, rel=1e-5, abs=1e-6)
+    assert actual.keys() == expected.keys() and expected
+    for name, gradient in expected.items():
+        assert torch.allclose(actual[name], gradient, rtol=1e-4, atol=1e-6), name
+    assert any(bool(g.count_nonzero()) for g in expected.values())
+
+
+def test_bounded_backward_rejects_a_nondeterministic_forward():
+    model = _tiny_model()
+    for module in model.modules():
+        if isinstance(module, torch.nn.Dropout):
+            module.p = 0.5
+    model.train()
+    result = _run(
+        [_group(n_assistant=2)], _config(bounded_token_backward=True), _agent(model)
+    )
+    with pytest.raises(RuntimeError, match="Replayed forward differs"):
+        result["total_loss"].backward()
+
+
+def test_bounded_backward_refuses_distributed_token_banks():
+    model = _tiny_model()
+    model._stateset_token_forward = True
+    with pytest.raises(ValueError, match="distributed token banks"):
+        lc._replayed_token_rows(model, [([1, 2], [3], 0)], "cpu", 1)
