@@ -7,7 +7,6 @@
   - `stateset_agents/rewards/`: Advanced/domain reward functions.
   - `stateset_agents/utils/`: Logging, monitoring, observability, W&B integration.
   - `stateset_agents/api/`: FastAPI gateway (includes `/v1/messages` and OpenAI-compat endpoints).
-- `api/`, `core/`, `training/`, `rewards/`, `environments/`: Deprecated shim modules used in-repo only for backwards compatibility/tests. Prefer `stateset_agents.*`.
 - `examples/`: Runnable demos and quick starts.
 - `tests/` + `test_integration.py`: Unit and integration tests.
 - `scripts/`, `deployment/`, `benchmarks/`: Utilities for training, deployment, and performance.
@@ -20,6 +19,7 @@
 - Format & lint: `ruff check . && black . && isort .`
 - Type check: `python scripts/check_types.py --all`
 - Repo hygiene: `python scripts/check_repo_hygiene.py`
+- Stable API contract: `make api-compatibility` (new parameters on public classes go last and keyword-only; see `docs/API_COMPATIBILITY.md`).
 - Run an example: `python examples/quick_start.py`
 - API (optional deps): `python -m stateset_agents.api.main` (requires `fastapi` and `uvicorn`).
 

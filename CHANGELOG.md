@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- τ-bench retail as a training and evaluation environment, and a three-arm
+  study runner (prompted, fine-tuning on the model's own successful rollouts,
+  RL) with matched budgets, GPU cost and throughput accounting, a pinned data
+  digest and a preflight that estimates the full run. No result is published
+  yet; see `benchmarks/TAU_RETAIL.md`.
+- `TrainingConfig.bounded_token_backward` (keyword-only, default off):
+  backpropagate `generation_batch_size` turns at a time so long agent prompts
+  fit in memory. Gradients match the existing path in unit tests; validated on
+  CPU only, and not supported with distributed token banks.
+- `TrainingConfig.strict_rewards` (keyword-only, default off) and
+  `Environment(strict_rewards=...)`: abort when a rollout or its reward fails
+  instead of dropping the rollout or substituting a fallback reward.
+- `stateset_agents.core.environment_registry`: build environments by name and
+  discover ones published by other packages through the
+  `stateset_agents.environments` entry-point group.
+
+### Changed
+
+- When a reward cannot be computed and strict handling is off, the
+  environment now counts it in `reward_failures`, logs a warning, and marks
+  the trajectory with `metadata["reward_error"]`. The fallback values are
+  unchanged.
+- The stable v1 contract gains three additive parameters: `strict_rewards` on
+  `Environment`, and `bounded_token_backward` and `strict_rewards` on
+  `TrainingConfig`.
+
 ## [0.74.0] - 2026-11-19 — RL verification and trainer reliability
 
 This release was prepared from the full `feat/a-plus-verification` branch snapshot, which descends from the 0.67.0 source line.
