@@ -1,0 +1,54 @@
+{
+  "status": "DRAFT. Not a preregistration until every REPLACE value is fixed and this file is committed before the first confirmation run.",
+  "task": "tau2 retail, official train (74 tasks) and test (40 tasks) splits",
+  "tau2_revision": "c06b07dd7c4d4ec61ba6ff9bcdf0b15dd7ef36d4",
+  "hypothesis": "From the same base model and the same rollout, token and optimizer-update budget, reinforcement learning on official train-task rewards resolves more held-out test tasks than fine-tuning on the base model's own successful train rollouts.",
+  "arms": {
+    "prompted": "Base model with the untrained adapter",
+    "sft": "Same rollout schedule sampled from the base model; imitate assistant turns of rollouts the official checker scored 1.0",
+    "rl": "Same rollout schedule; policy-gradient updates on the official checker's reward"
+  },
+  "runner": "python -m stateset_agents.training.tau_retail_study",
+  "measured": true,
+  "model": "REPLACE_WITH_IMMUTABLE_7_TO_9B_INSTRUCT_MODEL",
+  "model_revision": "REPLACE_WITH_40_CHARACTER_REVISION",
+  "development_seeds": "REPLACE: seeds used for the preflight and tuning; excluded from confirmation",
+  "seeds": "REPLACE: at least 5 confirmation seeds, disjoint from development seeds",
+  "updates": "REPLACE_AFTER_PREFLIGHT",
+  "tasks_per_update": "REPLACE_AFTER_PREFLIGHT",
+  "generations": "REPLACE_AFTER_PREFLIGHT",
+  "learning_rate": "REPLACE_AFTER_PREFLIGHT",
+  "lora_r": 16,
+  "max_prompt_tokens": 16384,
+  "max_new_tokens": 256,
+  "gradient_checkpointing": true,
+  "bounded_token_backward": true,
+  "generation_batch_size": 1,
+  "sft_turns_per_update": "REPLACE_AFTER_PREFLIGHT",
+  "evaluation_trials": 4,
+  "evaluation_temperature": 0.0,
+  "analysis_seed": 20261120,
+  "bootstrap_replicates": 10000,
+  "environment": {
+    "user_llm": "REPLACE_WITH_PINNED_CUSTOMER_SIMULATOR",
+    "user_llm_args": {"temperature": 0.0},
+    "judge_llm": null,
+    "max_turns": 30
+  },
+  "primary": "Paired difference in test-task success rate, rl minus sft, over every confirmation seed and all 40 test tasks, 4 trials per task aggregated within task.",
+  "analysis": {
+    "function": "stateset_agents.evaluation.replication.paired_seed_case_summary",
+    "success_rule": "Positive mean difference, positive lower 95% bootstrap endpoint and two-sided seed sign-flip p <= 0.05. Both trained arms must complete the planned rollout and optimizer budgets. Any rollout the official checker fails to score aborts the seed; it is rerun with the original configuration, never counted as a failed task."
+  },
+  "secondary": [
+    "rl minus prompted and sft minus prompted, same analysis",
+    "Success on the test tasks an idle agent already passes, reported separately",
+    "Training rollouts, sampled action tokens, successful training rollouts and wall time per arm",
+    "Provider-metered cost per arm"
+  ],
+  "deviations_from_official_tau2_scoring": [
+    "The agent loop is this repository's text-action loop over tau2's gym interface, not `tau2 run` with native tool calling. The customer simulator, database, tools, policy and checker are tau2's.",
+    "judge_llm null keeps tau2's pinned judge. Any other value is a scoring deviation and must be reported as one."
+  ],
+  "scope": "One domain, one base model. Fine-tuning here uses no human or reference demonstrations; a demonstration-trained baseline is a separate comparison. Not production or independent merchant evidence."
+}
