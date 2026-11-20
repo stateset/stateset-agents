@@ -27,6 +27,7 @@ EnvironmentFactory = Callable[..., Environment]
 
 # Built-ins are named by import path so listing them imports nothing heavy.
 _BUILTIN: dict[str, str] = {
+    "bfcl": "stateset_agents.training.bfcl:make_environment",
     "refund-policy": (
         "stateset_agents.core.environments.refund_policy_environment:"
         "RefundPolicyEnvironment"

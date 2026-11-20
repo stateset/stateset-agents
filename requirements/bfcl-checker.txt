@@ -1,0 +1,12 @@
+# Isolated interpreter for the official BFCL checker
+# (stateset_agents.training.bfcl). Install into its own virtual environment:
+#   python -m venv .bfcl-venv
+#   .bfcl-venv/bin/pip install --no-deps bfcl-eval==2026.3.23
+#   .bfcl-venv/bin/pip install -r requirements/bfcl-checker.txt
+# bfcl-eval is installed with --no-deps because its full dependency set is
+# several gigabytes of model-provider SDKs the checker never calls.
+tree-sitter==0.21.3
+tree-sitter-java==0.21.0
+tree-sitter-javascript==0.21.4
+tenacity
+overrides

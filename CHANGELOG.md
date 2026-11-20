@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TrainingConfig.strict_rewards` (keyword-only, default off) and
   `Environment(strict_rewards=...)`: abort when a rollout or its reward fails
   instead of dropping the rollout or substituting a fallback reward.
+- BFCL V4 function calling as an environment (`stateset_agents.training.bfcl`),
+  scored by the official AST checker running in an isolated interpreter. It
+  covers four single-turn categories and uses a seeded train/test split, so
+  scores are not comparable with leaderboard numbers; see `benchmarks/BFCL.md`.
 - `stateset_agents.core.environment_registry`: build environments by name and
   discover ones published by other packages through the
   `stateset_agents.environments` entry-point group.
