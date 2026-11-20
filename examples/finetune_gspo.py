@@ -78,6 +78,7 @@ STARTER_FN_SUFFIX: dict[str, str] = {
     "qwen3_coder_starter": "qwen3_coder",
     "gpt_oss_starter": "gpt_oss",
     "deepseek_v4_starter": "deepseek_v4",
+    "inkling2_mini_starter": "inkling2_mini",
     "kimi_k3_starter": "kimi_k3",
     "kimi_k2_6_starter": "kimi_k2_6",
     "glm5_1_starter": "glm5_1",

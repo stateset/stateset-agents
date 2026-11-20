@@ -73,6 +73,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
             "technical_support",
             "memory",
         ),
+        (
+            "inkling-2-mini",
+            "inkling-2-mini",
+            "thinkingmachines/Inkling-2-Mini",
+            "technical_support",
+            "memory",
+        ),
     ],
 )
 def test_model_specific_starter_configs_round_trip_via_cli(

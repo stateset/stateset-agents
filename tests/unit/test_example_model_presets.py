@@ -64,6 +64,7 @@ def test_presets_registry_has_expected_models():
         "qwen3-coder",
         "gpt-oss",
         "deepseek-v4",
+        "inkling-2-mini",
         "kimi-k3",
         "kimi-k2.5",
         "kimi-k2.6",
@@ -204,6 +205,7 @@ def test_starter_module_field_set_for_packaged_starters():
         "qwen3-coder": "qwen3_coder_starter",
         "gpt-oss": "gpt_oss_starter",
         "deepseek-v4": "deepseek_v4_starter",
+        "inkling-2-mini": "inkling2_mini_starter",
     }
     for name, module in expected.items():
         assert get_preset(name).starter_module == module

@@ -110,6 +110,13 @@ STARTER_PRESETS: dict[str, StarterPreset] = {
         profile_choices="DEEPSEEK_V4_STARTER_PROFILE_CHOICES",
         label="deepseek-v4",
     ),
+    "inkling-2-mini": StarterPreset(
+        module="stateset_agents.training.inkling2_mini_starter",
+        factory="get_inkling2_mini_config",
+        task_choices="INKLING2_MINI_TASK_CHOICES",
+        profile_choices="INKLING2_MINI_STARTER_PROFILE_CHOICES",
+        label="inkling-2-mini",
+    ),
     "gemma-4-31b": StarterPreset(
         module="stateset_agents.training.gemma4_starter",
         factory="get_gemma4_31b_config",
@@ -132,6 +139,7 @@ PRESET_CHOICES = (
     "qwen3-coder",
     "gpt-oss",
     "deepseek-v4",
+    "inkling-2-mini",
 )
 
 _PRESET_LIST = ", ".join(PRESET_CHOICES)
@@ -285,7 +293,7 @@ def init(
     preset: str = typer.Option(
         "default",
         "--preset",
-        help="Starter preset: default, qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, muse-glimmer, nemotron-3-5, qwen3.8-27b, qwen3-coder, gpt-oss, or deepseek-v4",
+        help="Starter preset: default, qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, muse-glimmer, nemotron-3-5, qwen3.8-27b, qwen3-coder, gpt-oss, deepseek-v4, or inkling-2-mini",
     ),
     task: str = typer.Option(
         "customer_service",

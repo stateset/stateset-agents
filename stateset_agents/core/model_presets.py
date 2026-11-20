@@ -836,6 +836,42 @@ PRESETS: dict[str, ModelPreset] = {
         cli_symbol_prefix="DEEPSEEK_V4",
         cli_symbol_infix="deepseek_v4",
     ),
+    "inkling-2-mini": ModelPreset(
+        model_id="thinkingmachines/Inkling-2-Mini",
+        tokenizer_id="thinkingmachines/Inkling-2-Mini",
+        lora_target_modules=(
+            "wq_du",
+            "wk_dv",
+            "wv_dv",
+            "wo_ud",
+        ),
+        max_prompt_length=4096,
+        max_completion_length=1024,
+        learning_rate=3e-6,
+        num_generations=4,
+        bf16=True,
+        trust_remote_code=False,
+        use_4bit=False,
+        use_8bit=False,
+        notes=(
+            "Values copied from stateset_agents.training.inkling2_mini_starter "
+            "(INKLING2_MINI_*). examples/finetune_inkling2_mini_gspo.py delegates "
+            "to the packaged starter rather than duplicating hyperparameters. "
+            "Looped MoE (inkling2_loop); the only released checkpoint stores "
+            "expert weights in NVFP4, so LoRA targets are the attention "
+            "projection names from the safetensors weight map and bitsandbytes "
+            "quantization stays off. Needs a Transformers runtime with "
+            "Inkling2LoopForConditionalGeneration; no training run verified."
+        ),
+        starter_module="inkling2_mini_starter",
+        cli_command="inkling-2-mini",
+        cli_display_name="thinkingmachines/Inkling-2-Mini",
+        cli_echo_label="inkling-2-mini",
+        cli_write_label="inkling-2-mini",
+        cli_config_stem="inkling2_mini",
+        cli_symbol_prefix="INKLING2_MINI",
+        cli_symbol_infix="inkling2_mini",
+    ),
     "kimi-k3": ModelPreset(
         model_id="moonshotai/Kimi-K3",
         tokenizer_id="moonshotai/Kimi-K3",

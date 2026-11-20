@@ -16,4 +16,5 @@ Common starting points:
 - :doc:`qwen3_coder_starter`: built-docs quick start for post-training ``Qwen/Qwen3-Coder-30B-A3B-Instruct``.
 - :doc:`gpt_oss_starter`: built-docs quick start for post-training ``openai/gpt-oss-20b``.
 - :doc:`deepseek_v4_starter`: built-docs quick start for post-training ``deepseek-ai/DeepSeek-V4-Flash``.
+- :doc:`inkling2_mini_starter`: built-docs quick start for post-training ``thinkingmachines/Inkling-2-Mini``.
 - ``docs/QWEN3_FINETUNING_GUIDE.md``: repository walkthrough for the same starter path.
