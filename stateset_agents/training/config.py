@@ -254,6 +254,11 @@ class TrainingConfig:
     # the rollout or substituting a fallback reward.
     strict_rewards: bool = field(default=False, kw_only=True)
 
+    # Encode a prefix that the rows of a loss chunk share (for example the
+    # system prompt) once and reuse it, when it is at least this many tokens.
+    # 0 disables it. Ignored when the model returns no reusable cache.
+    shared_prefix_min_tokens: int = field(default=0, kw_only=True)
+
     def __post_init__(self):
         # Map compatibility aliases
         if self.batch_size is not None and self.batch_size > 0:

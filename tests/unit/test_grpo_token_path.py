@@ -419,13 +419,6 @@ def test_bounded_backward_rejects_a_nondeterministic_forward():
         result["total_loss"].backward()
 
 
-def test_bounded_backward_refuses_distributed_token_banks():
-    model = _tiny_model()
-    model._stateset_token_forward = True
-    with pytest.raises(ValueError, match="distributed token banks"):
-        lc._replayed_token_rows(model, [([1, 2], [3], 0)], "cpu", 1)
-
-
 def test_bounded_backward_matches_under_mixed_precision():
     """The replay must re-enter the autocast mode the scoring pass ran in."""
     model = _tiny_model()
@@ -452,3 +445,68 @@ def test_bounded_backward_matches_under_mixed_precision():
     assert any(bool(g.count_nonzero()) for g in expected.values())
     for name, gradient in expected.items():
         assert torch.allclose(actual[name], gradient, rtol=5e-2, atol=5e-3), name
+
+
+def _shared_prefix_group(rewards=(1.0, 0.0, 0.5), prefix_len=12):
+    """Trajectories whose every prompt starts with the same ``prefix_len`` tokens."""
+    g = torch.Generator().manual_seed(7)
+    prefix = torch.randint(0, VOCAB, (prefix_len,), generator=g).tolist()
+    trajectories = []
+    for i, reward in enumerate(rewards):
+        turns = []
+        for k in range(2):
+            tail = torch.randint(0, VOCAB, (3 + i + k,), generator=g).tolist()
+            response = torch.randint(0, VOCAB, (4 + k,), generator=g).tolist()
+            turns.append(ConversationTurn(role="user", content=f"q{k}"))
+            turns.append(_turn(prefix + tail, response))
+        trajectories.append(MultiTurnTrajectory(turns=turns, total_reward=reward))
+    return TrajectoryGroup(scenario_id="s", trajectories=trajectories)
+
+
+def _prefix_run(model, **config):
+    """Return (loss, gradients, number of cached-prefix forwards)."""
+    cached = []
+    handle = model.register_forward_pre_hook(
+        lambda module, args, kwargs: cached.append(bool(kwargs.get("use_cache"))),
+        with_kwargs=True,
+    )
+    model.zero_grad(set_to_none=True)
+    result = _run([_shared_prefix_group()], _config(**config), _agent(model))
+    result["total_loss"].backward()
+    handle.remove()
+    gradients = {n: p.grad.clone() for n, p in model.named_parameters()}
+    return float(result["total_loss"].detach()), gradients, sum(cached)
+
+
+@pytest.mark.parametrize("bounded", [False, True])
+@pytest.mark.parametrize("entropy_coef", [0.0, 0.05])
+def test_shared_prefix_reuse_matches_full_forward(bounded, entropy_coef):
+    model = _tiny_model()
+    base = {
+        "generation_batch_size": 3,
+        "entropy_coef": entropy_coef,
+        "bounded_token_backward": bounded,
+    }
+    loss, expected, cached = _prefix_run(model, **base)
+    assert cached == 0
+    reused_loss, actual, cached = _prefix_run(model, **base, shared_prefix_min_tokens=8)
+    # Six rows in chunks of three: two prefix encodings per pass over the rows.
+    assert cached >= 2
+    assert reused_loss == pytest.approx(loss, rel=1e-5, abs=1e-6)
+    assert any(bool(g.count_nonzero()) for g in expected.values())
+    for name, gradient in expected.items():
+        assert torch.allclose(actual[name], gradient, rtol=1e-4, atol=1e-5), name
+
+
+def test_shared_prefix_reuse_is_skipped_when_it_cannot_apply():
+    model = _tiny_model()
+    # The shared prefix (12 tokens) is shorter than the threshold.
+    assert _prefix_run(model, shared_prefix_min_tokens=13)[2] == 0
+    # A chunk of one row has nothing to share with.
+    assert (
+        _prefix_run(model, shared_prefix_min_tokens=8, generation_batch_size=1)[2] == 0
+    )
+    assert lc._shared_prefix_length([([1, 2, 3], [9], 0), ([1, 2, 4], [9], 1)]) == 2
+    # Never consume a row's last prompt token, even when all tokens match.
+    assert lc._shared_prefix_length([([1, 2, 3], [9], 0), ([1, 2, 3], [8], 1)]) == 2
+    assert lc._shared_prefix_length([([1], [9], 0), ([1, 2], [9], 1)]) == 0

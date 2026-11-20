@@ -4065,6 +4065,11 @@
               "default": false,
               "kind": "KEYWORD_ONLY",
               "name": "strict_rewards"
+            },
+            {
+              "default": 0,
+              "kind": "KEYWORD_ONLY",
+              "name": "shared_prefix_min_tokens"
             }
           ]
         }

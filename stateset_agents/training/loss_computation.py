@@ -318,6 +318,22 @@ def _token_batch_advantages(
     return result
 
 
+def _shared_prefix_length(chunk: list[tuple[list[int], list[int], int]]) -> int:
+    """Tokens every row starts with, stopping before any row's last prompt token.
+
+    The last prompt token's logits predict the first response token, so it
+    must be forwarded with gradients for each row.
+    """
+    first = chunk[0][0]
+    limit = min(len(prompt) for prompt, _, _ in chunk) - 1
+    shared = 0
+    while shared < limit and all(
+        prompt[shared] == first[shared] for prompt, _, _ in chunk
+    ):
+        shared += 1
+    return shared
+
+
 def _forward_token_rows(
     model: Any,
     rows: list[tuple[list[int], list[int], int]],
@@ -327,8 +343,13 @@ def _forward_token_rows(
     grad: bool,
     want_entropy: bool = False,
     logprob_dtype: Any = None,
+    shared_prefix_min: int = 0,
 ) -> tuple[Any, Any, Any | None]:
     """Pad ``rows`` and run ``model`` in chunks of ``chunk_size`` rows.
+
+    When ``shared_prefix_min`` is positive and a chunk's rows start with at
+    least that many identical tokens, the shared prefix is encoded once and
+    reused through the model's key-value cache.
 
     Returns ``(token_logprobs [R, W-1], response_mask [R, W-1], entropy)``
     where ``entropy`` is the differentiable per-token entropy (or ``None``).
@@ -348,14 +369,42 @@ def _forward_token_rows(
             attn[i, : seq.numel()] = 1
             resp[i, len(p) : seq.numel()] = 1.0
         with torch.set_grad_enabled(grad):
-            logits = token_policy(model)(input_ids=ids, attention_mask=attn).logits
+            policy = token_policy(model)
+            logits, offset = None, 0
+            shared = _shared_prefix_length(chunk) if shared_prefix_min > 0 else 0
+            if 0 < shared_prefix_min <= shared and len(chunk) > 1:
+                cache = policy(input_ids=ids[:1, :shared], use_cache=True)
+                cache = getattr(cache, "past_key_values", None)
+                # Gradient checkpointing and some architectures return no
+                # reusable cache; those fall back to the full forward.
+                repeat = getattr(cache, "batch_repeat_interleave", None)
+                if repeat is not None:
+                    repeat(len(chunk))
+                    logits = policy(
+                        input_ids=ids[:, shared:],
+                        attention_mask=attn,
+                        past_key_values=cache,
+                    ).logits
+                    offset = shared
+            if logits is None:
+                logits = policy(input_ids=ids, attention_mask=attn).logits
             lp, m = rl_losses.gather_token_logprobs(
-                logits, ids, resp, dtype=logprob_dtype
+                logits, ids[:, offset:], resp[:, offset:], dtype=logprob_dtype
             )
+            entropy_chunk = None
             if want_entropy:
                 shifted = logits[:, :-1, :].float()
                 lsm = torch.log_softmax(shifted, dim=-1)
-                ent_chunks.append(-(lsm.exp() * lsm).sum(-1))
+                entropy_chunk = -(lsm.exp() * lsm).sum(-1)
+            if offset:
+                # No response token lies inside the shared prefix, so its
+                # columns carry zero log-probability, mask and entropy.
+                lp = torch.nn.functional.pad(lp, (offset, 0))
+                m = torch.nn.functional.pad(m, (offset, 0))
+                if entropy_chunk is not None:
+                    entropy_chunk = torch.nn.functional.pad(entropy_chunk, (offset, 0))
+            if entropy_chunk is not None:
+                ent_chunks.append(entropy_chunk)
         lp_chunks.append(lp)
         mask_chunks.append(m)
     entropy = torch.cat(ent_chunks) if want_entropy else None
@@ -372,6 +421,7 @@ def _replayed_token_rows(
     chunk_size: int,
     *,
     want_entropy: bool = False,
+    shared_prefix_min: int = 0,
 ) -> tuple[Any, Any, Any | None]:
     """Match ``_forward_token_rows(grad=True)`` with one chunk's graph alive.
 
@@ -382,10 +432,6 @@ def _replayed_token_rows(
     train/eval mode raises instead of producing a silently wrong gradient.
     """
     torch = require_torch()
-    if getattr(model, "_stateset_token_forward", False) is True:
-        raise ValueError(
-            "bounded_token_backward is not supported with distributed token banks"
-        )
     size = max(int(chunk_size), 1)
     device_type = torch.device(device).type
     autocast = torch.is_autocast_enabled(device_type)
@@ -401,7 +447,13 @@ def _replayed_token_rows(
 
     first = [
         _forward_token_rows(
-            model, part, device, size, grad=False, want_entropy=want_entropy
+            model,
+            part,
+            device,
+            size,
+            grad=False,
+            want_entropy=want_entropy,
+            shared_prefix_min=shared_prefix_min,
         )
         for part in parts
     ]
@@ -427,6 +479,7 @@ def _replayed_token_rows(
                         size,
                         grad=True,
                         want_entropy=index == 2,
+                        shared_prefix_min=shared_prefix_min,
                     )
                     current: Any = again[index]
                     mask: Any = again[1]
@@ -622,6 +675,7 @@ def _compute_token_path_loss(
     )
 
     bounded = bool(getattr(config, "bounded_token_backward", False))
+    prefix_min = int(getattr(config, "shared_prefix_min_tokens", 0) or 0)
 
     def local_old_source() -> str:
         nonlocal old_logprobs
@@ -670,7 +724,12 @@ def _compute_token_path_loss(
 
             if bounded:
                 logp_cur, mask, entropy = _replayed_token_rows(
-                    agent.model, rows, device, chunk, want_entropy=entropy_coef > 0
+                    agent.model,
+                    rows,
+                    device,
+                    chunk,
+                    want_entropy=entropy_coef > 0,
+                    shared_prefix_min=prefix_min,
                 )
             else:
                 logp_cur, mask, entropy = _forward_token_rows(
@@ -680,6 +739,7 @@ def _compute_token_path_loss(
                     chunk,
                     grad=True,
                     want_entropy=entropy_coef > 0,
+                    shared_prefix_min=prefix_min,
                 )
             logp_ref = None
             if use_kl:

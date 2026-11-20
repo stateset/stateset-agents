@@ -24,8 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   yet; see `benchmarks/TAU_RETAIL.md`.
 - `TrainingConfig.bounded_token_backward` (keyword-only, default off):
   backpropagate `generation_batch_size` turns at a time so long agent prompts
-  fit in memory. Gradients match the existing path in unit tests; validated on
-  CPU only, and not supported with distributed token banks.
+  fit in memory. Gradients match the existing path in unit tests and on two
+  Gloo ranks through the distributed token path; validated on CPU only.
+- `TrainingConfig.shared_prefix_min_tokens` (keyword-only, default 0, off):
+  encode a prefix shared by the rows of a token-loss chunk, such as the system
+  prompt, once and reuse it through the model's key-value cache when it is at
+  least this many tokens. Loss and gradients match the full forward in unit
+  tests on CPU; it is skipped when the model returns no reusable cache.
 - `TrainingConfig.strict_rewards` (keyword-only, default off) and
   `Environment(strict_rewards=...)`: abort when a rollout or its reward fails
   instead of dropping the rollout or substituting a fallback reward.
