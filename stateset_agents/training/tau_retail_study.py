@@ -26,11 +26,13 @@ from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.evaluation.replication import paired_seed_case_summary
 
 from .tau_retail import (
+    EvaluationUnavailable,
     TauRetailEnvironment,
     TauRetailSettings,
     evaluate_policy,
     retail_task_ids,
     success_counts,
+    tau2_provenance,
 )
 
 ARMS = ("prompted", "sft", "rl")
@@ -66,7 +68,83 @@ def load_protocol(path: Path) -> dict[str, Any]:
     seeds = protocol["seeds"]
     if len(set(seeds)) != len(seeds) or any(type(s) is not int for s in seeds):
         raise ValueError("protocol.seeds must be unique integers")
+    if protocol.get("measured"):
+        validate_measured(protocol)
     return protocol
+
+
+def validate_measured(protocol: Mapping[str, Any]) -> None:
+    """A measured protocol pins the benchmark data and prices GPU time."""
+    digest = protocol.get("tau2_retail_sha256")
+    if not isinstance(digest, str) or len(digest) != 64:
+        raise ValueError("A measured protocol needs tau2_retail_sha256")
+    rate = protocol.get("gpu_hourly_usd")
+    if isinstance(rate, bool) or not isinstance(rate, (int, float)) or rate <= 0:
+        raise ValueError("A measured protocol needs a positive gpu_hourly_usd")
+    if not isinstance(protocol.get("cost_source"), str):
+        raise ValueError("A measured protocol needs a cost_source")
+    environment = protocol["environment"]
+    for key in ("user_llm_args", "judge_llm_args"):
+        if "mock_response" in (environment.get(key) or {}):
+            raise ValueError("A measured protocol cannot mock the customer or judge")
+
+
+def gpu_cost(protocol: Mapping[str, Any], seconds: float) -> float | None:
+    """Price wall time at the protocol's GPU rate; ``None`` when unpriced."""
+    rate = protocol.get("gpu_hourly_usd")
+    return None if rate is None else seconds / 3600 * float(rate)
+
+
+def peak_memory_gb() -> dict[str, Any]:
+    """Peak accelerator memory when CUDA is present, else peak process memory."""
+    import resource
+
+    import torch
+
+    if torch.cuda.is_available():
+        return {
+            "source": "cuda",
+            "gb": max(
+                torch.cuda.max_memory_allocated(i)
+                for i in range(torch.cuda.device_count())
+            )
+            / 1e9,
+        }
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return {"source": "process", "gb": peak / 1e6}
+
+
+def estimate_full_run(
+    protocol: Mapping[str, Any], report: Mapping[str, Any], *, test_tasks: int
+) -> dict[str, Any]:
+    """Extrapolate a preflight seed to the whole protocol.
+
+    Scales measured seconds per training rollout and per scored conversation
+    to the planned counts. Conversation length varies by task, so treat the
+    result as an order-of-magnitude estimate.
+    """
+    arms = report["arms"]
+    planned = (
+        protocol["updates"] * protocol["tasks_per_update"] * protocol["generations"]
+    )
+    episodes = test_tasks * protocol["evaluation_trials"]
+    training = sum(
+        arms[arm]["training_seconds"] / arms[arm]["training_rollouts"] * planned
+        for arm in ("rl", "sft")
+    )
+    scoring = sum(
+        arms[arm]["evaluation_seconds"] / arms[arm]["evaluation_episodes"] * episodes
+        for arm in ARMS
+    )
+    seconds = (training + scoring) * len(protocol["seeds"])
+    return {
+        "planned_training_rollouts_per_arm_per_seed": planned,
+        "planned_scored_conversations_per_arm_per_seed": episodes,
+        "seeds": len(protocol["seeds"]),
+        "estimated_gpu_hours": seconds / 3600,
+        "estimated_gpu_cost_usd": gpu_cost(protocol, seconds),
+        "excludes": "customer-simulator and judge API usage, provisioning time",
+    }
 
 
 def training_schedule(
@@ -158,6 +236,13 @@ async def run_seed(
     root = output / f"seed-{seed}"
     root.mkdir(parents=True)
     env_settings = TauRetailSettings(**protocol["environment"])
+    provenance = tau2_provenance()
+    if protocol.get("measured") and (
+        provenance["retail_sha256"] != protocol["tau2_retail_sha256"]
+    ):
+        raise EvaluationUnavailable(
+            "Installed tau2 retail data differs from the protocol's pinned digest"
+        )
     environment = environment or TauRetailEnvironment(env_settings)
     train_ids = list(train_ids or retail_task_ids("train"))
     test_ids = list(test_ids or retail_task_ids("test"))
@@ -182,6 +267,8 @@ async def run_seed(
         bf16=bool(protocol.get("bf16", True)),
         gradient_checkpointing=bool(protocol.get("gradient_checkpointing", False)),
         bounded_token_backward=bool(protocol.get("bounded_token_backward", False)),
+        rollout_concurrency=protocol.get("rollout_concurrency", 1),
+        strict_rewards=True,
     )
     agent = MultiTurnAgent(
         AgentConfig(
@@ -242,7 +329,31 @@ async def run_seed(
         )
         return len(trajectories), tokens, wins
 
-    arms: dict[str, dict[str, Any]] = {"prompted": {"rows": await score("prompted")}}
+    async def timed_score(arm: str) -> dict[str, Any]:
+        started = time.monotonic()
+        rows = await score(arm)
+        seconds = time.monotonic() - started
+        return {
+            "rows": rows,
+            "evaluation_seconds": seconds,
+            "evaluation_episodes": len(rows),
+            "evaluation_gpu_cost_usd": gpu_cost(protocol, seconds),
+        }
+
+    def trained(
+        rollouts: int, tokens: int, wins: int, seconds: float
+    ) -> dict[str, Any]:
+        return {
+            "training_rollouts": rollouts,
+            "training_action_tokens": tokens,
+            "training_successes": wins,
+            "training_seconds": seconds,
+            "training_rollouts_per_second": rollouts / seconds,
+            "training_action_tokens_per_second": tokens / seconds,
+            "training_gpu_cost_usd": gpu_cost(protocol, seconds),
+        }
+
+    arms: dict[str, dict[str, Any]] = {"prompted": await timed_score("prompted")}
 
     # RL arm.
     started = time.monotonic()
@@ -253,14 +364,11 @@ async def run_seed(
         n, t, w = budget(groups)
         rollouts, tokens, wins = rollouts + n, tokens + t, wins + w
         await trainer.training_step(groups)
-    arms["rl"] = {
-        "training_rollouts": rollouts,
-        "training_action_tokens": tokens,
-        "training_successes": wins,
-        "optimizer_updates": len(schedule),
-        "training_seconds": time.monotonic() - started,
-        "rows": await score("rl"),
-    }
+    arms["rl"] = (
+        trained(rollouts, tokens, wins, time.monotonic() - started)
+        | {"optimizer_updates": len(schedule)}
+        | await timed_score("rl")
+    )
 
     # SFT arm: back to the untrained adapter, same rollout schedule, imitate wins.
     with torch.no_grad():
@@ -292,19 +400,22 @@ async def run_seed(
                 sft_update(model, optimizer, picked, protocol["max_prompt_tokens"])
             )
     arms["sft"] = {
-        "training_rollouts": rollouts,
-        "training_action_tokens": tokens,
-        "training_successes": wins,
         "imitated_turns_available": len(winning_turns),
         "optimizer_updates": len(losses),
         "first_loss": losses[0] if losses else None,
         "last_loss": losses[-1] if losses else None,
-        "training_seconds": time.monotonic() - started,
-        "rows": await score("sft"),
     }
+    arms["sft"] = (
+        trained(rollouts, tokens, wins, time.monotonic() - started)
+        | arms["sft"]
+        | await timed_score("sft")
+    )
     report = {
         "seed": seed,
         "measured": bool(protocol.get("measured", False)),
+        "tau2": provenance,
+        "cost_source": protocol.get("cost_source", "unmeasured"),
+        "peak_memory": peak_memory_gb(),
         "environment": env_settings.as_dict(),
         "train_tasks": len(train_ids),
         "test_tasks": test_ids,
@@ -350,6 +461,27 @@ def compare(protocol: Mapping[str, Any], reports: Sequence[Mapping[str, Any]]) -
     return result
 
 
+def preflight(protocol: Mapping[str, Any], output: Path) -> int:
+    """Measure throughput and memory on a small slice and estimate the full run.
+
+    Uses the protocol's model, prompt length and environment with one update
+    and two test tasks. The result is never a measured benchmark result.
+    """
+    trial = dict(protocol) | {"measured": False, "updates": 1}
+    test = retail_task_ids("test")
+    report = asyncio.run(
+        run_seed(trial, protocol["seeds"][0], output, test_ids=test[:2])
+    )
+    estimate = {
+        "preflight": True,
+        "peak_memory": report["peak_memory"],
+        "arms": report["arms"],
+        "full_run": estimate_full_run(protocol, report, test_tasks=len(test)),
+    }
+    (output / "preflight.json").write_text(json.dumps(estimate, indent=2) + "\n")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run every protocol seed and write the paired comparison."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
@@ -357,8 +489,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--limit-train", type=int, help="Plumbing runs only")
     parser.add_argument("--limit-test", type=int, help="Plumbing runs only")
+    parser.add_argument(
+        "--preflight",
+        action="store_true",
+        help="One seed, one update, two test tasks; writes a cost estimate",
+    )
     args = parser.parse_args(argv)
     protocol = load_protocol(args.protocol)
+    if args.preflight:
+        return preflight(protocol, args.output)
     limited = args.limit_train is not None or args.limit_test is not None
     if limited and protocol.get("measured"):
         raise SystemExit("A measured protocol cannot run on a task subset")

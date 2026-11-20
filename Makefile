@@ -362,6 +362,22 @@ benchmark-agent-quality-gate: ## Validate Tau3/BFCL V4/SWE evidence (INPUTS requ
 	@echo "Whitepaper-ready artifacts in benchmark_results/whitepaper_v1/"
 	@ls benchmark_results/whitepaper_v1/ 2>/dev/null || true
 
+.PHONY: benchmark-tau-retail-setup benchmark-tau-retail-preflight benchmark-tau-retail-run
+benchmark-tau-retail-setup: ## Install the pinned tau2 package for the tau-bench retail study (Python 3.12+)
+	$(PYTHON_BIN) -m pip install -r requirements/tau-retail.txt
+
+benchmark-tau-retail-preflight: ## One-update tau-bench retail slice with a full-run cost estimate (PROTOCOL and OUTPUT_DIR required)
+	@test -n "$(PROTOCOL)" || { echo "Usage: make $@ PROTOCOL=path OUTPUT_DIR=path" >&2; exit 2; }
+	@test -n "$(OUTPUT_DIR)" || { echo "Usage: make $@ PROTOCOL=path OUTPUT_DIR=path" >&2; exit 2; }
+	$(PYTHON_BIN) -m stateset_agents.training.tau_retail_study \
+		--protocol $(PROTOCOL) --output $(OUTPUT_DIR) --preflight
+
+benchmark-tau-retail-run: ## Execute the three-arm tau-bench retail study (PROTOCOL and OUTPUT_DIR required)
+	@test -n "$(PROTOCOL)" || { echo "Usage: make $@ PROTOCOL=path OUTPUT_DIR=path" >&2; exit 2; }
+	@test -n "$(OUTPUT_DIR)" || { echo "Usage: make $@ PROTOCOL=path OUTPUT_DIR=path" >&2; exit 2; }
+	$(PYTHON_BIN) -m stateset_agents.training.tau_retail_study \
+		--protocol $(PROTOCOL) --output $(OUTPUT_DIR)
+
 benchmark-scaling-image-plan: ## Validate and print an immutable scaling-image plan
 	@test -n "$(BASE_IMAGE)" || { echo "BASE_IMAGE=digest-pinned-image is required" >&2; exit 2; }
 	@test -n "$(IMAGE)" || { echo "IMAGE=registry/name:tag is required" >&2; exit 2; }

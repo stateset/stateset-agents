@@ -92,6 +92,30 @@ def retail_task_ids(split: str) -> list[str]:
     return train if split == "train" else test
 
 
+def tau2_provenance() -> dict[str, Any]:
+    """Identify the installed ``tau2``: version, source commit and task data.
+
+    ``retail_sha256`` covers the retail tasks, split, policy and database, so
+    two installs with the same digest score the same benchmark.
+    """
+    import hashlib
+    from importlib import metadata
+
+    from tau2.utils.utils import DATA_DIR
+
+    distribution = metadata.distribution("tau2")
+    direct = json.loads(distribution.read_text("direct_url.json") or "{}")
+    digest = hashlib.sha256()
+    root = DATA_DIR / "tau2" / "domains" / DOMAIN
+    for name in ("tasks.json", "split_tasks.json", "policy.md", "db.json"):
+        digest.update(name.encode() + b"\0" + (root / name).read_bytes())
+    return {
+        "version": distribution.version,
+        "commit": direct.get("vcs_info", {}).get("commit_id"),
+        "retail_sha256": digest.hexdigest(),
+    }
+
+
 def configure_judge(settings: TauRetailSettings) -> None:
     """Point the natural-language-assertion judge at ``settings.judge_llm``."""
     if settings.judge_llm is None:
@@ -240,6 +264,11 @@ class TauRetailEnvironment(Environment):
         state.context["task_success"] = success
         state.context["reward_detail"] = detail
         return state, float(reward), True, {}
+
+
+def make_environment(**settings: Any) -> TauRetailEnvironment:
+    """Build the environment from :class:`TauRetailSettings` fields."""
+    return TauRetailEnvironment(TauRetailSettings(**settings))
 
 
 AgentFn = Callable[[Any, dict[str, Any]], Awaitable[Any]]

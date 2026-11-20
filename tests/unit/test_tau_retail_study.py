@@ -13,7 +13,9 @@ from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.training.tau_retail_study import (
     assistant_turns,
     compare,
+    estimate_full_run,
     evaluation_sampling,
+    gpu_cost,
     load_protocol,
     main,
     sft_update,
@@ -38,6 +40,14 @@ PROTOCOL: dict[str, Any] = {
     "analysis_seed": 5,
     "bootstrap_replicates": 200,
     "environment": {"user_llm": "fake"},
+}
+
+
+MEASURED: dict[str, Any] = {
+    "measured": True,
+    "tau2_retail_sha256": "a" * 64,
+    "gpu_hourly_usd": 3.0,
+    "cost_source": "provider-rate",
 }
 
 
@@ -70,7 +80,7 @@ def test_measured_protocol_refuses_task_subsets(tmp_path: Path) -> None:
         main(
             [
                 "--protocol",
-                str(write(tmp_path, measured=True)),
+                str(write(tmp_path, **MEASURED)),
                 "--output",
                 str(tmp_path / "out"),
                 "--limit-test",
@@ -133,3 +143,41 @@ def test_compare_reports_rl_minus_sft_as_primary() -> None:
     reports = [report(1, 1, 2, 4), report(2, 1, 2, 4) | {"test_tasks": ["a"]}]
     with pytest.raises(ValueError):
         compare(PROTOCOL, reports)
+
+
+def test_measured_protocol_needs_pins_prices_and_real_models(tmp_path: Path) -> None:
+    assert load_protocol(write(tmp_path, **MEASURED))["measured"] is True
+    mocked = {"user_llm": "x", "user_llm_args": {"mock_response": "hi"}}
+    for changes in (
+        {"tau2_retail_sha256": "short"},
+        {"gpu_hourly_usd": 0},
+        {"cost_source": None},
+        {"environment": mocked},
+    ):
+        with pytest.raises(ValueError):
+            load_protocol(write(tmp_path, **(MEASURED | changes)))
+
+
+def test_cost_and_full_run_estimate_scale_from_the_preflight() -> None:
+    assert gpu_cost({}, 3600) is None
+    assert gpu_cost({"gpu_hourly_usd": 2.0}, 1800) == pytest.approx(1.0)
+    trained = {"training_seconds": 40.0, "training_rollouts": 4}
+    scored = {"evaluation_seconds": 20.0, "evaluation_episodes": 2}
+    report = {
+        "arms": {"prompted": scored, "sft": trained | scored, "rl": trained | scored}
+    }
+    protocol = PROTOCOL | {"gpu_hourly_usd": 3.6}
+    estimate = estimate_full_run(protocol, report, test_tasks=40)
+    # Per seed: 2 arms x 16 rollouts x 10 s, plus 3 arms x 160 conversations x 10 s.
+    assert estimate["planned_training_rollouts_per_arm_per_seed"] == 16
+    assert estimate["estimated_gpu_hours"] == pytest.approx(3 * 5120 / 3600)
+    assert estimate["estimated_gpu_cost_usd"] == pytest.approx(3 * 5120 / 1000)
+
+
+def test_tau2_provenance_identifies_the_retail_data() -> None:
+    pytest.importorskip("tau2")
+    from stateset_agents.training.tau_retail import tau2_provenance
+
+    first, second = tau2_provenance(), tau2_provenance()
+    assert first == second and len(first["retail_sha256"]) == 64
+    assert first["version"]

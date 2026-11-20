@@ -1,0 +1,4 @@
+# τ-bench retail study (python -m stateset_agents.training.tau_retail_study).
+# Needs Python 3.12+. Kept out of pyproject extras because PyPI rejects
+# packages whose metadata carries direct URL dependencies.
+tau2 @ git+https://github.com/sierra-research/tau2-bench.git@c06b07dd7c4d4ec61ba6ff9bcdf0b15dd7ef36d4

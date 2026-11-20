@@ -2,6 +2,10 @@
   "status": "DRAFT. Not a preregistration until every REPLACE value is fixed and this file is committed before the first confirmation run.",
   "task": "tau2 retail, official train (74 tasks) and test (40 tasks) splits",
   "tau2_revision": "c06b07dd7c4d4ec61ba6ff9bcdf0b15dd7ef36d4",
+  "tau2_retail_sha256": "72e46c270a411adc89d3524acaf8786898b1c4bf880cca31a01ccdd876927d7d",
+  "gpu_hourly_usd": "REPLACE_WITH_PROVIDER_RATE",
+  "cost_source": "REPLACE: provider-rate or provider-invoice",
+  "rollout_concurrency": "REPLACE_AFTER_PREFLIGHT",
   "hypothesis": "From the same base model and the same rollout, token and optimizer-update budget, reinforcement learning on official train-task rewards resolves more held-out test tasks than fine-tuning on the base model's own successful train rollouts.",
   "arms": {
     "prompted": "Base model with the untrained adapter",
