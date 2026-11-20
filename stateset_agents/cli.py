@@ -539,7 +539,7 @@ def init_config(
     preset: str = typer.Option(
         "default",
         "--preset",
-        help="Starter preset: default, qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, muse-glimmer, nemotron-3-5, qwen3.8-27b, qwen3-coder, gpt-oss, or deepseek-v4",
+        help="Starter preset: default, qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, muse-glimmer, nemotron-3-5, qwen3.8-27b, qwen3-coder, gpt-oss, deepseek-v4, or inkling-2-mini",
     ),
     task: str = typer.Option(
         "customer_service",

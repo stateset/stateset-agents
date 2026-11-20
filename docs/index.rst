@@ -76,6 +76,7 @@ Run the maintained smoke-tested example with ``python examples/quick_start.py``.
    qwen3_coder_starter
    gpt_oss_starter
    deepseek_v4_starter
+   inkling2_mini_starter
    glm5_1_starter
    glm5_2_starter
    examples

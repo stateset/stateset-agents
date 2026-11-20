@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Inkling 2 Mini starter (`stateset-agents inkling-2-mini`,
+  `stateset_agents/training/inkling2_mini_starter.py`, `init --preset
+  inkling-2-mini`) for `thinkingmachines/Inkling-2-Mini`. The released
+  checkpoint stores expert weights in NVFP4, so the starter uses attention-only
+  LoRA on the checkpoint's projection names and leaves bitsandbytes
+  quantization off. This is a configuration integration: it needs a
+  Transformers runtime with `Inkling2LoopForConditionalGeneration`, and no
+  training run has been verified.
 - **`SupportConversationReward` (support reward v2).** A conversation-level,
   hack-resistant customer-support reward in
   `stateset_agents.rewards.support_conversation_reward`: each assistant turn's
