@@ -2738,6 +2738,11 @@
               "default": null,
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "timeout_seconds"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "strict_rewards"
             }
           ]
         }
@@ -4050,6 +4055,16 @@
               "default": 5,
               "kind": "KEYWORD_ONLY",
               "name": "zero_signal_patience"
+            },
+            {
+              "default": false,
+              "kind": "KEYWORD_ONLY",
+              "name": "bounded_token_backward"
+            },
+            {
+              "default": false,
+              "kind": "KEYWORD_ONLY",
+              "name": "strict_rewards"
             }
           ]
         }

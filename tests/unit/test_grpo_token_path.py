@@ -424,3 +424,31 @@ def test_bounded_backward_refuses_distributed_token_banks():
     model._stateset_token_forward = True
     with pytest.raises(ValueError, match="distributed token banks"):
         lc._replayed_token_rows(model, [([1, 2], [3], 0)], "cpu", 1)
+
+
+def test_bounded_backward_matches_under_mixed_precision():
+    """The replay must re-enter the autocast mode the scoring pass ran in."""
+    model = _tiny_model()
+
+    def gradients(bounded):
+        model.zero_grad(set_to_none=True)
+        config = _config(generation_batch_size=2, bounded_token_backward=bounded)
+        with torch.autocast("cpu", dtype=torch.bfloat16):
+            result = _run([_group(n_assistant=3)], config, _agent(model))
+        # Backward runs outside the autocast block, as it does in the trainer.
+        result["total_loss"].backward()
+        return {n: p.grad.clone() for n, p in model.named_parameters()}
+
+    expected = gradients(False)
+    modes = []
+    handle = model.register_forward_pre_hook(
+        lambda *_: modes.append(torch.is_autocast_enabled("cpu"))
+    )
+    actual = gradients(True)
+    handle.remove()
+    # Three turns per trajectory, three trajectories, chunks of two rows:
+    # five scoring forwards, then at least one replayed forward, all in autocast.
+    assert len(modes) > 5 and all(modes)
+    assert any(bool(g.count_nonzero()) for g in expected.values())
+    for name, gradient in expected.items():
+        assert torch.allclose(actual[name], gradient, rtol=5e-2, atol=5e-3), name

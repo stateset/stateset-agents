@@ -95,10 +95,15 @@ class Environment(ABC):
         reward_fn: RewardFunction | None = None,
         reward_function: RewardFunction | None = None,
         timeout_seconds: float | None = None,
+        strict_rewards: bool = False,
     ):
         self.max_turns = max_turns
         self.reward_fn = reward_fn if reward_fn is not None else reward_function
         self.timeout_seconds = timeout_seconds
+        # When True a reward that cannot be computed raises. When False the
+        # fallback value is used and ``reward_failures`` counts each use.
+        self.strict_rewards = strict_rewards
+        self.reward_failures = 0
         self.active_episodes: dict[str, EnvironmentState] = {}
 
     @property
@@ -108,6 +113,17 @@ class Environment(ABC):
     @reward_function.setter
     def reward_function(self, value: RewardFunction | None) -> None:
         self.reward_fn = value
+
+    def _reward_errors_are_fatal(self) -> bool:
+        """True when a failed reward must raise instead of using a fallback."""
+        return bool(
+            getattr(self, "strict_rewards", False)
+            or getattr(self.reward_fn, "fail_on_error", False)
+        )
+
+    def _record_reward_failure(self, reason: object) -> None:
+        self.reward_failures = getattr(self, "reward_failures", 0) + 1
+        logger.warning("Reward unavailable, using fallback value: %s", reason)
 
     def _get_reward_type(self) -> RewardType | None:
         """Return configured reward type when available."""
@@ -175,12 +191,16 @@ class Environment(ABC):
                     return float(result["score"])
                 if isinstance(result, (int, float)):
                     return float(result)
-                logger.warning("Unexpected reward result type: %s", type(result))
+                if self._reward_errors_are_fatal():
+                    raise ValueError(
+                        f"Unexpected reward result type: {type(result).__name__}"
+                    )
+                self._record_reward_failure(f"result type {type(result).__name__}")
                 return 0.5
             except ENVIRONMENT_EXCEPTIONS as e:
-                if getattr(self.reward_fn, "fail_on_error", False):
+                if self._reward_errors_are_fatal():
                     raise
-                logger.warning("Failed to compute reward from reward_fn: %s", e)
+                self._record_reward_failure(e)
                 return 0.5
 
         return 0.5
@@ -211,6 +231,7 @@ class Environment(ABC):
         turns: list[ConversationTurn] = []
         turn_rewards: list[float] = []
         total_reward = 0.0
+        reward_error = False
 
         def _is_reward(value: Any) -> bool:
             return isinstance(value, (int, float)) and not isinstance(value, bool)
@@ -222,7 +243,7 @@ class Environment(ABC):
         try:
             initial_prompt = await self.get_initial_prompt(scenario)
         except ENVIRONMENT_EXCEPTIONS:
-            if getattr(self.reward_fn, "fail_on_error", False):
+            if self._reward_errors_are_fatal():
                 raise
             pass
         if initial_prompt:
@@ -341,10 +362,11 @@ class Environment(ABC):
                         turn_rewards[-1] += final_value
                     else:
                         turn_rewards.append(final_value)
-            except ENVIRONMENT_EXCEPTIONS:
-                if getattr(self.reward_fn, "fail_on_error", False):
+            except ENVIRONMENT_EXCEPTIONS as error:
+                if self._reward_errors_are_fatal():
                     raise
-                pass
+                self._record_reward_failure(error)
+                reward_error = True
 
         return MultiTurnTrajectory(
             turns=turns,
@@ -356,5 +378,6 @@ class Environment(ABC):
                 "episode_id": state.episode_id,
                 "status": state.status.value,
                 "scenario": scenario,
+                "reward_error": reward_error,
             },
         )

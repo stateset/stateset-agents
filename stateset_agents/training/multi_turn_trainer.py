@@ -426,6 +426,14 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
                         trajectory.total_reward = score
                         trajectory.metadata["reward_breakdown"] = breakdown
 
+                    if getattr(self.config, "strict_rewards", False) and (
+                        trajectory.metadata.get("reward_error")
+                    ):
+                        raise RuntimeError(
+                            "A rollout's reward could not be computed "
+                            "(strict_rewards is set)"
+                        )
+
                     evidence = (trajectory.final_state or {}).get("task_success")
                     if type(evidence) is not bool:
                         evidence = None
@@ -442,8 +450,10 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
 
                 except MULTI_TRAINER_EXCEPTIONS as e:
                     self.profiler.record_rollout(accepted=False, success=None)
-                    if getattr(self.reward_fn, "fail_on_error", False) or getattr(
-                        self, "_stateset_native_rollout", False
+                    if (
+                        getattr(self.reward_fn, "fail_on_error", False)
+                        or getattr(self, "_stateset_native_rollout", False)
+                        or getattr(self.config, "strict_rewards", False)
                     ):
                         raise
                     logger.warning(f"Failed to generate trajectory: {e}")

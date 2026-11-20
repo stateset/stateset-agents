@@ -162,9 +162,9 @@ class ConversationEnvironment(Environment):
                 elif isinstance(reward_result, (int, float)):
                     step_reward = float(reward_result)
             except ENVIRONMENT_EXCEPTIONS as reward_err:
-                if getattr(self.reward_fn, "fail_on_error", False):
+                if self._reward_errors_are_fatal():
                     raise
-                logger.debug("Reward computation failed: %s", reward_err)
+                self._record_reward_failure(reward_err)
                 step_reward = 0.0
         elif self.reward_fn is None:
             step_reward = float(await self._calculate_step_reward(agent_turn, state))

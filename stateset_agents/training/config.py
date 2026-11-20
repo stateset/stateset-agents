@@ -109,9 +109,6 @@ class TrainingConfig:
     dataloader_num_workers: int = 0
     dataloader_pin_memory: bool = True
     gradient_checkpointing: bool = False
-    # Backpropagate generation_batch_size rows at a time instead of holding
-    # every row's graph; needs a deterministic forward (no dropout).
-    bounded_token_backward: bool = False
 
     # Evaluation and checkpointing
     eval_steps: int = 50
@@ -248,6 +245,14 @@ class TrainingConfig:
     # Keyword-only so existing positional calls to derived configs also retain
     # their field order. Zero disables the consecutive-zero-advantage guard.
     zero_signal_patience: int = field(default=5, kw_only=True)
+
+    # Backpropagate generation_batch_size rows at a time instead of holding
+    # every row's graph; needs a deterministic forward (no dropout).
+    bounded_token_backward: bool = field(default=False, kw_only=True)
+
+    # Abort training when a rollout or its reward fails, instead of dropping
+    # the rollout or substituting a fallback reward.
+    strict_rewards: bool = field(default=False, kw_only=True)
 
     def __post_init__(self):
         # Map compatibility aliases
