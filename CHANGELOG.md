@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.75.0] - 2026-11-20 — Inkling 2 Mini starter, tau-bench retail and BFCL environments, shared-prefix token loss
+
 ### Added
 
 - Inkling 2 Mini starter (`stateset-agents inkling-2-mini`,

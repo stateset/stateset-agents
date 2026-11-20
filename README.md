@@ -195,7 +195,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python release:** `stateset-agents==0.74.0`, built from the v0.74.0 tag.
+- **Current Python candidate:** `stateset-agents==0.75.0`, publication pending.
 - **Latest verified PyPI release:** `stateset-agents==0.74.0`. The wheel and source
   distribution on PyPI match the SHA-256 digests of the locally verified builds.
   [Published artifacts](https://pypi.org/project/stateset-agents/0.74.0/#files)
@@ -481,7 +481,26 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**v0.74.0 (latest release on PyPI):**
+**v0.75.0 (latest candidate; publication pending):**
+
+- **Benchmarks as environments.** τ-bench retail and BFCL V4 function calling
+  can be used for training and evaluation. The three-arm τ-bench retail study
+  runner has no published result yet, and BFCL scores use a seeded split that
+  is not comparable with leaderboard numbers.
+  [τ-bench retail](benchmarks/TAU_RETAIL.md) · [BFCL](benchmarks/BFCL.md)
+- **Token loss.** `bounded_token_backward` backpropagates a few turns at a
+  time and now works on the distributed token path, and
+  `shared_prefix_min_tokens` encodes a shared prompt prefix once. Both are
+  off by default and validated on CPU only. `strict_rewards` aborts on a
+  failed rollout or reward. [Changelog](CHANGELOG.md)
+- **Environment registry.** Build environments by name and discover ones
+  published by other packages through an entry-point group.
+- **Inkling 2 Mini starter.** `stateset-agents inkling-2-mini` configures
+  attention-only LoRA for `thinkingmachines/Inkling-2-Mini`. It is a
+  configuration integration; no training run has been verified.
+  [Starter guide](docs/inkling2_mini_starter.rst)
+
+**v0.74.0:**
 
 - **Offline RL.** For a fixed critic, the Lean proofs bound how the number
   of sampled action proposals affects CQL's estimated soft value and penalty
@@ -635,7 +654,7 @@ pip install "stateset-agents==0.74.0" # latest verified PyPI release
 To install from the corresponding Git tag, run
 
 ```bash
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.74.0"
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.75.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1502,7 +1521,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.74.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest candidate `v0.75.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — retained test,
   provider, GPU, and publication records for earlier releases.
 
