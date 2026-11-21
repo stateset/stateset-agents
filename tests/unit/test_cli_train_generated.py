@@ -54,6 +54,7 @@ EXPECTED_COMMANDS = {
     "qwen3-coder",
     "gpt-oss",
     "deepseek-v4",
+    "inkling-2-mini",
 }
 
 

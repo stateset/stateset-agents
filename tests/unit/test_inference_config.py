@@ -62,6 +62,20 @@ def test_inference_config_unknown_backend_falls_back_safely(monkeypatch):
     assert config.backend == "stub"
 
 
+def test_inference_config_accepts_llamacpp_backend(monkeypatch):
+    monkeypatch.setenv("API_ENVIRONMENT", "production")
+    monkeypatch.setenv("INFERENCE_BACKEND", "llama.cpp")
+    monkeypatch.setenv("INFERENCE_BACKEND_URL", "http://127.0.0.1:18099")
+    monkeypatch.setenv("INFERENCE_DEFAULT_MODEL", "inkling-2-mini")
+
+    config = InferenceConfig.from_env()
+
+    assert config.backend == "llamacpp"
+    assert config.base_url == "http://127.0.0.1:18099"
+    assert config.default_model == "inkling-2-mini"
+    assert config.health_path == "/health"
+
+
 def test_inference_config_empty_default_model_is_none(monkeypatch):
     monkeypatch.setenv("API_ENVIRONMENT", "development")
     monkeypatch.setenv("INFERENCE_DEFAULT_MODEL", "   ")

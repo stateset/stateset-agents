@@ -73,6 +73,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
             "technical_support",
             "memory",
         ),
+        (
+            "inkling-2-mini",
+            "inkling-2-mini",
+            "thinkingmachines/Inkling-2-Mini",
+            "technical_support",
+            "memory",
+        ),
     ],
 )
 def test_model_specific_starter_configs_round_trip_via_cli(
@@ -142,6 +149,11 @@ def test_model_specific_starter_configs_round_trip_via_cli(
     assert preview["config"]["task"] == task
     assert preview["config"]["starter_profile"] == starter_profile
     assert preview["summary"]["starter_profile"] == starter_profile
-    assert preview["summary"]["quantization_mode"] == "4bit"
+    # Inkling 2 Mini's checkpoint is already NVFP4-quantized, so its starter
+    # leaves bitsandbytes quantization off in every profile; the other
+    # starters' memory profiles enable 4-bit loading.
+    expected_quantization = "none" if preset == "inkling-2-mini" else "4bit"
+    expected_use_4bit = preset != "inkling-2-mini"
+    assert preview["summary"]["quantization_mode"] == expected_quantization
     assert preview["gspo_overrides"]["model_name"] == model_name
-    assert preview["gspo_overrides"]["use_4bit"] is True
+    assert preview["gspo_overrides"]["use_4bit"] is expected_use_4bit

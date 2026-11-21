@@ -1013,6 +1013,104 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
         f"{_PKG}.deepseek_v4_starter",
         "write_deepseek_v4_config_file",
     ),
+    # Inkling 2 Mini starter path
+    "INKLING2_MINI_EXPERT_MODULES": (
+        f"{_PKG}.inkling2_mini_starter",
+        "INKLING2_MINI_EXPERT_MODULES",
+    ),
+    "INKLING2_MINI_BASE_MODEL": (
+        f"{_PKG}.inkling2_mini_starter",
+        "INKLING2_MINI_BASE_MODEL",
+    ),
+    "INKLING2_MINI_CONFIG_SUFFIXES": (
+        f"{_PKG}.inkling2_mini_starter",
+        "INKLING2_MINI_CONFIG_SUFFIXES",
+    ),
+    "INKLING2_MINI_DEFAULT_OUTPUT_DIR": (
+        f"{_PKG}.inkling2_mini_starter",
+        "INKLING2_MINI_DEFAULT_OUTPUT_DIR",
+    ),
+    "INKLING2_MINI_LORA_TARGET_MODULES": (
+        f"{_PKG}.inkling2_mini_starter",
+        "INKLING2_MINI_LORA_TARGET_MODULES",
+    ),
+    "INKLING2_MINI_STARTER_PROFILE_CHOICES": (
+        f"{_PKG}.inkling2_mini_starter",
+        "INKLING2_MINI_STARTER_PROFILE_CHOICES",
+    ),
+    "INKLING2_MINI_STARTER_PROFILE_DESCRIPTIONS": (
+        f"{_PKG}.inkling2_mini_starter",
+        "INKLING2_MINI_STARTER_PROFILE_DESCRIPTIONS",
+    ),
+    "INKLING2_MINI_SUPPORTED_VARIANTS": (
+        f"{_PKG}.inkling2_mini_starter",
+        "INKLING2_MINI_SUPPORTED_VARIANTS",
+    ),
+    "INKLING2_MINI_TASK_CHOICES": (
+        f"{_PKG}.inkling2_mini_starter",
+        "INKLING2_MINI_TASK_CHOICES",
+    ),
+    "Inkling2MiniConfig": (f"{_PKG}.inkling2_mini_starter", "Inkling2MiniConfig"),
+    "create_inkling2_mini_agent_config": (
+        f"{_PKG}.inkling2_mini_starter",
+        "create_inkling2_mini_agent_config",
+    ),
+    "create_inkling2_mini_preview": (
+        f"{_PKG}.inkling2_mini_starter",
+        "create_inkling2_mini_preview",
+    ),
+    "describe_inkling2_mini_starter_profiles": (
+        f"{_PKG}.inkling2_mini_starter",
+        "describe_inkling2_mini_starter_profiles",
+    ),
+    "finetune_inkling2_mini": (
+        f"{_PKG}.inkling2_mini_starter",
+        "finetune_inkling2_mini",
+    ),
+    "get_inkling2_mini_config": (
+        f"{_PKG}.inkling2_mini_starter",
+        "get_inkling2_mini_config",
+    ),
+    "get_inkling2_mini_gspo_config": (
+        f"{_PKG}.inkling2_mini_starter",
+        "get_inkling2_mini_gspo_config",
+    ),
+    "get_inkling2_mini_gspo_overrides": (
+        f"{_PKG}.inkling2_mini_starter",
+        "get_inkling2_mini_gspo_overrides",
+    ),
+    "get_inkling2_mini_profile_description": (
+        f"{_PKG}.inkling2_mini_starter",
+        "get_inkling2_mini_profile_description",
+    ),
+    "get_inkling2_mini_profile_overrides": (
+        f"{_PKG}.inkling2_mini_starter",
+        "get_inkling2_mini_profile_overrides",
+    ),
+    "get_inkling2_mini_system_prompt": (
+        f"{_PKG}.inkling2_mini_starter",
+        "get_inkling2_mini_system_prompt",
+    ),
+    "load_inkling2_mini_config_file": (
+        f"{_PKG}.inkling2_mini_starter",
+        "load_inkling2_mini_config_file",
+    ),
+    "run_inkling2_mini_config": (
+        f"{_PKG}.inkling2_mini_starter",
+        "run_inkling2_mini_config",
+    ),
+    "summarize_inkling2_mini_config": (
+        f"{_PKG}.inkling2_mini_starter",
+        "summarize_inkling2_mini_config",
+    ),
+    "validate_inkling2_mini_config": (
+        f"{_PKG}.inkling2_mini_starter",
+        "validate_inkling2_mini_config",
+    ),
+    "write_inkling2_mini_config_file": (
+        f"{_PKG}.inkling2_mini_starter",
+        "write_inkling2_mini_config_file",
+    ),
     # Serving artifacts
     "build_serving_manifest": (
         f"{_PKG}.serving_artifacts",
@@ -1026,6 +1124,26 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
         f"{_PKG}.serving_artifacts",
         "write_serving_manifest",
     ),
+    # Local GGUF engine, checkpoint weight edits, and GGUF export
+    "LlamaCppClient": (f"{_PKG}.llama_cpp_backend", "LlamaCppClient"),
+    "LlamaCppCompletion": (f"{_PKG}.llama_cpp_backend", "LlamaCppCompletion"),
+    "LlamaCppRolloutBackend": (
+        f"{_PKG}.llama_cpp_backend",
+        "LlamaCppRolloutBackend",
+    ),
+    "LlamaCppServer": (f"{_PKG}.llama_cpp_backend", "LlamaCppServer"),
+    "TensorInfo": (f"{_PKG}.weight_edit", "TensorInfo"),
+    "apply_safetensors_delta": (
+        f"{_PKG}.weight_edit",
+        "apply_safetensors_delta",
+    ),
+    "inspect_checkpoint": (f"{_PKG}.weight_edit", "inspect_checkpoint"),
+    "merge_lora_adapter": (f"{_PKG}.weight_edit", "merge_lora_adapter"),
+    "build_convert_command": (f"{_PKG}.gguf_export", "build_convert_command"),
+    "build_quantize_command": (f"{_PKG}.gguf_export", "build_quantize_command"),
+    "convert_to_gguf": (f"{_PKG}.gguf_export", "convert_to_gguf"),
+    "quantize_gguf": (f"{_PKG}.gguf_export", "quantize_gguf"),
+    "resolve_llama_cpp_dir": (f"{_PKG}.gguf_export", "resolve_llama_cpp_dir"),
     # Gemma 4 31B starter path
     "GEMMA4_31B_BASE_MODEL": (f"{_PKG}.gemma4_starter", "GEMMA4_31B_BASE_MODEL"),
     "GEMMA4_31B_CONFIG_SUFFIXES": (
@@ -1581,6 +1699,19 @@ PUBLIC_NAMES: tuple[str, ...] = (
     "build_serving_manifest",
     "export_merged_model_for_serving",
     "write_serving_manifest",
+    "LlamaCppClient",
+    "LlamaCppCompletion",
+    "LlamaCppRolloutBackend",
+    "LlamaCppServer",
+    "TensorInfo",
+    "apply_safetensors_delta",
+    "inspect_checkpoint",
+    "merge_lora_adapter",
+    "build_convert_command",
+    "build_quantize_command",
+    "convert_to_gguf",
+    "quantize_gguf",
+    "resolve_llama_cpp_dir",
     "GEMMA4_31B_BASE_MODEL",
     "GEMMA4_31B_CONFIG_SUFFIXES",
     "GEMMA4_31B_DEFAULT_OUTPUT_DIR",
