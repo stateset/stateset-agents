@@ -106,8 +106,22 @@ Starter defaults
 - sampling at temperature 1.0 and top-p 1.0, matching the published generation settings
 - task presets: ``customer_service``, ``technical_support``, ``sales``, ``conversational``
 
+Local inference
+---------------
+
+This starter configures training and does not load the checkpoint. To run
+the model locally (including on machines whose Transformers build has no
+``inkling2_loop``), export or download a mainline GGUF and serve it through
+the llama.cpp backend described in ``docs/NATIVE_LOCAL_ENGINE.md``:
+``LlamaCppServer`` / ``LlamaCppRolloutBackend`` for library use, or the API
+gateway with ``INFERENCE_BACKEND=llamacpp``.
+
 Related repo files
 ------------------
 
 - ``stateset_agents/training/inkling2_mini_starter.py``
 - ``examples/finetune_inkling2_mini_gspo.py``
+- ``stateset_agents/training/llama_cpp_backend.py``
+- ``stateset_agents/training/weight_edit.py``
+- ``stateset_agents/training/gguf_export.py``
+- ``docs/NATIVE_LOCAL_ENGINE.md``

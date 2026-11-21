@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   quantization off. This is a configuration integration: it needs a
   Transformers runtime with `Inkling2LoopForConditionalGeneration`, and no
   training run has been verified.
+- Native local GGUF engine (`stateset_agents/training/llama_cpp_backend.py`,
+  `INFERENCE_BACKEND=llamacpp`, `docs/NATIVE_LOCAL_ENGINE.md`): run GGUF
+  models on CPU through a managed `llama-server`, including an exact
+  token-id/log-prob rollout backend for agents and trainers. Companion
+  checkpoint tools fold LoRA adapters and apply safetensors deltas without
+  loading a model class (`weight_edit.py`), and export edited or
+  finetuned checkpoints back to GGUF (`gguf_export.py`). Verified live
+  with an 11 GiB Inkling 2 Mini IQ3 quant on a 32 GiB no-CUDA laptop;
+  finetuning remains GPU/hosted work.
 - **`SupportConversationReward` (support reward v2).** A conversation-level,
   hack-resistant customer-support reward in
   `stateset_agents.rewards.support_conversation_reward`: each assistant turn's

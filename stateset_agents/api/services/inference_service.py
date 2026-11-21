@@ -1,5 +1,6 @@
 """
-Inference service that proxies /v1/messages to a vLLM OpenAI-compatible backend.
+Inference service that proxies /v1/messages to an OpenAI-compatible backend
+(vLLM, or a local llama.cpp ``llama-server`` for GGUF models).
 """
 
 from __future__ import annotations
@@ -167,7 +168,7 @@ def _normalize_path(value: str | None, *, default: str) -> str:
 class InferenceConfig:
     """Configuration for inference backend."""
 
-    backend: str = "vllm"  # "vllm" | "stub"
+    backend: str = "vllm"  # "vllm" | "llamacpp" | "stub"
     base_url: str = "http://localhost:8000"
     timeout_seconds: float = 120.0
     max_retries: int = 2
@@ -182,7 +183,9 @@ class InferenceConfig:
         environment = os.getenv("API_ENVIRONMENT", "production").lower()
         default_backend = "stub" if environment != "production" else "vllm"
         backend = os.getenv("INFERENCE_BACKEND", default_backend).strip().lower()
-        if backend not in ("stub", "vllm"):
+        if backend in ("llama.cpp", "llama_cpp"):
+            backend = "llamacpp"
+        if backend not in ("stub", "vllm", "llamacpp"):
             logger.warning(
                 "Unknown INFERENCE_BACKEND=%s; using %s",
                 backend,
@@ -233,7 +236,7 @@ class InferenceConfig:
 
 
 class InferenceService:
-    """Inference service routing requests to vLLM or stub backends."""
+    """Inference service routing to vLLM, llama.cpp, or stub backends."""
 
     def __init__(self, config: InferenceConfig | None = None) -> None:
         self.config = config or InferenceConfig.from_env()

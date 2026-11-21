@@ -1537,7 +1537,7 @@ import get_glm5_2_config, run_glm5_2_config`), as are the others.
 
 First-class starters ship for **Qwen 3.5 0.8B**, **Muse Glimmer 30B**, **Nemotron 3.5 Lightning**, **Qwen3.8 27B**, **Qwen3-Coder 30B**, **gpt-oss 20B**, **DeepSeek V4 Flash**, **Inkling 2 Mini** *(config integration; training unverified)*, **Gemma 4 31B IT**, **Kimi-K2.6**, **Kimi-K3** *(provisional)*, **GLM 5.1**, and **GLM 5.2**. Architecture-aware unified presets additionally cover **GLM-5.3-Flash** and **Qwen3.8-Flash-Next**. Reference examples and hosting plans cover Qwen 3.5 27B, Qwen 3, Qwen 2.5, Kimi-K2.5, Gemma 3 / Gemma 2 27B IT, Llama 3, Llama 2 7B, and Mistral 7B. Compatible Hugging Face causal LMs work through the generic flow; native multimodal conditional-generation repositories use StateSet's composite-loader fallback for text-only RL.
 
-See [`docs/SUPPORTED_MODELS.md`](docs/SUPPORTED_MODELS.md) for the full matrix, algorithm compatibility, and instructions for adding a new starter.
+See [`docs/SUPPORTED_MODELS.md`](docs/SUPPORTED_MODELS.md) for the full matrix, algorithm compatibility, and instructions for adding a new starter. For running GGUF models such as Inkling 2 Mini locally, editing safetensors checkpoints, and exporting finetuned weights back to GGUF, see the dual-engine design in [`docs/NATIVE_LOCAL_ENGINE.md`](docs/NATIVE_LOCAL_ENGINE.md).
 
 ### Experimental namespace
 
