@@ -492,3 +492,34 @@ def test_studio_v3_circuit_steering_eval_gate_and_recipes(tmp_path: Path) -> Non
     assert ev["verdict"] in {"GO", "WARN", "BLOCK"}
     assert ev["case_count"] == 6
     assert len(ev["cases"]) == 6
+
+
+def test_weight_studio_quickstart_example_and_cli_help(tmp_path: Path) -> None:
+    import importlib.util
+
+    from typer.testing import CliRunner
+
+    from stateset_agents.cli import app as cli_app
+
+    ws = _make_sample_workspace(tmp_path)
+    recipe_file = tmp_path / "quickstart.studio-recipe.json"
+
+    example_path = (
+        Path(__file__).resolve().parents[2] / "examples" / "weight_studio_quickstart.py"
+    )
+    spec = importlib.util.spec_from_file_location("ws_quickstart", example_path)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    summary = mod.run_quickstart(ws, export_name="qs-verified", recipe_out=recipe_file)
+    assert summary["eval_verdict"] in {"GO", "WARN", "BLOCK"}
+    assert summary["recipe_ops"] == 2
+    assert summary["circuit_nodes"] == 8
+    assert summary["manifest"]["reload_verified"] is True
+    assert recipe_file.is_file()
+
+    cli_result = CliRunner().invoke(cli_app, ["studio", "--help"])
+    assert cli_result.exit_code == 0
+    assert "--workspace" in cli_result.output
+    assert "--port" in cli_result.output

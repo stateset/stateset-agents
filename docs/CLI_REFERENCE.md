@@ -76,6 +76,31 @@ reviewed launch. RunPod enforces a pod ceiling; Modal/River require explicit
 provider-billed policy without an enforced dollar cap. Quitting preserves jobs. See
 [Fine-tuning in Herdr](FINETUNING_TUI.md) for controls and data formats.
 
+### `stateset-agents studio`
+
+Launch the interactive browser-based **3D Weight Studio** for WebGL2 weight
+exploration, non-destructive surgical weight editing, Contrastive Activation
+Steering (CAA/RepE), causal circuit discovery (`Circuit 3D`), live PyTorch
+micro-finetuning, and eval-gated `.safetensors` export.
+
+```bash
+stateset-agents studio --port 8765 --open
+stateset-agents studio --host 127.0.0.1 --port 8765 --workspace ./outputs
+python -m stateset_agents.weight_studio --host 127.0.0.1 --port 8765 --workspace .
+```
+
+Options:
+
+- `--host` (default `127.0.0.1`): Host interface to bind the local server.
+- `--port` (default `8765`, range `1–65535`): HTTP port serving `/studio` and `/api/weight-studio/*`.
+- `--workspace`, `-w` (default `.`): Workspace root scanned for `.safetensors` checkpoints, sharded models, and `.jsonl` datasets.
+- `--open`: Automatically open `http://<host>:<port>/studio` in the default browser.
+
+Original checkpoint files are never modified; verified exports write to
+`outputs/weight_studio_exports/<name>/` with SHA-256 reload verification. See
+[Getting Started with 3D Weight Studio](GETTING_STARTED_STUDIO.md) and
+[Weight Studio Reference Manual](WEIGHT_STUDIO.md).
+
 ### `stateset-agents finetune`
 
 Use the same studio workspace from AI agents through a versioned JSON CLI.

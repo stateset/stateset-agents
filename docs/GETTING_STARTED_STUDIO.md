@@ -54,6 +54,16 @@ When running the standard API server (`python -m stateset_agents.api.main`), the
 - **Browser UI:** `http://127.0.0.1:8000/studio`
 - **Studio API:** `http://127.0.0.1:8000/api/weight-studio/*`
 
+### 4. Runnable Python Quick Start (Headless or Browser)
+
+Try the end-to-end programmatic workflow (inspection → CAA steering → Wanda pruning + weight bake → causal circuit discovery → 6-case eval gate → recipe export) in 2 seconds with zero GPU required:
+
+```bash
+python examples/weight_studio_quickstart.py
+# Or run the workflow and immediately open the interactive 3D browser UI:
+python examples/weight_studio_quickstart.py --serve --port 8765 --open
+```
+
 > **Running on a remote GPU box?** Keep `--host 127.0.0.1` on the server and forward the port over SSH:
 > ```bash
 > ssh -L 8765:127.0.0.1:8765 user@your-gpu-host
