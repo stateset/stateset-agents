@@ -44,6 +44,12 @@ const state = {
   ftPollTimer: null,
   ftHistory: [],
   causalPatches: [], // [{ layer, action }]
+  circuitData: null,
+  steeringPresets: [],
+  activeSteeringVector: null, // { vector_id, name, recommended_layer, ... }
+  steeringAlpha: 0.0,
+  splitCompare: false,
+  splitRatio: 0.5,
   trajPlayTimer: null,
   lastInferResult: null,
 };
@@ -128,11 +134,14 @@ async function init() {
   bindFinetuneControls();
   bindInferenceControls();
   bindExportModal();
+  bindSplitCurtain();
+  bindKeyboardShortcuts();
 
   await Promise.all([
     loadFinetuneCatalog(),
     loadDatasets(),
     loadInferenceScenarios(),
+    loadSteeringPresets(),
     loadModels(false),
   ]);
 }
@@ -239,14 +248,21 @@ async function loadModelStructure(modelId, checkpointId = null) {
     2
   );
 
-  // Populate Causal Patching layer dropdown
+  // Populate Causal Patching & Steering layer dropdowns
   const patchSel = $('patch-layer-select');
+  const steerLayerSel = $('steer-layer-select');
   patchSel.innerHTML = '';
+  steerLayerSel.innerHTML = '';
   for (const l of struct.layers || []) {
     const opt = document.createElement('option');
     opt.value = String(l.index);
     opt.textContent = l.name;
     patchSel.appendChild(opt);
+    steerLayerSel.appendChild(opt.cloneNode(true));
+  }
+  if (struct.layers?.length) {
+    const midIdx = Math.floor(struct.layers.length * 0.6);
+    steerLayerSel.value = String(struct.layers[midIdx]?.index ?? 0);
   }
 
   initLoraTargetChipsForModel(struct);
@@ -530,9 +546,20 @@ function setViewMode(mode) {
   });
   $('microscope-hud').classList.toggle('hidden', mode !== 'microscope');
   $('spectral-hud').classList.toggle('hidden', mode !== 'spectral');
+  $('circuit-hud').classList.toggle('hidden', mode !== 'circuit');
+
+  if (mode !== 'microscope' && state.splitCompare) {
+    setSplitCompare(false);
+  }
 
   if (mode === 'trajectory' && !state.trajectory) {
     loadTrajectory().then(() => renderer.setViewMode('trajectory'));
+  } else if (mode === 'circuit') {
+    if (!state.circuitData) {
+      discoverCircuit({ switchMode: true });
+    } else {
+      renderer.setViewMode('circuit');
+    }
   } else {
     renderer.setViewMode(mode);
   }
@@ -718,6 +745,75 @@ function bindTopbarControls() {
     a.download = `stateset-weight-studio-${renderer.viewMode}-${Date.now()}.png`;
     a.click();
     showToast('Captured 3D Viewport PNG');
+  });
+
+  $('btn-record-360').addEventListener('click', async () => {
+    const btn = $('btn-record-360');
+    if (btn.classList.contains('recording')) return;
+    btn.classList.add('recording');
+    showToast('Recording 60 FPS 360° Turntable WebM (5.5s)…', 5600);
+    try {
+      const blob = await renderer.recordTurntableWebM(5500);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `stateset-weight-studio-${renderer.viewMode}-360-${Date.now()}.webm`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      showToast('Saved 360° Turntable WebM video!');
+    } catch (err) {
+      showToast(`Video record unavailable: ${err.message}`, 3200);
+    } finally {
+      btn.classList.remove('recording');
+    }
+  });
+
+  $('btn-zen-mode').addEventListener('click', toggleZenMode);
+  $('btn-toggle-split').addEventListener('click', () => setSplitCompare(!state.splitCompare));
+  $('btn-rediscover-circuit').addEventListener('click', () => discoverCircuit({ switchMode: true }));
+  $('circuit-topk-slider').addEventListener('input', (e) => {
+    $('circuit-summary-val').textContent = `Top-${e.target.value} Nodes`;
+  });
+  $('circuit-topk-slider').addEventListener('change', () => discoverCircuit({ switchMode: true }));
+
+  $('btn-export-recipe').addEventListener('click', async () => {
+    if (!state.modelId) return;
+    try {
+      const qs = new URLSearchParams({ model_id: state.modelId });
+      if (state.checkpointId) qs.set('checkpoint_id', state.checkpointId);
+      const recipe = await apiGet(`/edits/recipe?${qs.toString()}`);
+      const blob = new Blob([JSON.stringify(recipe, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${state.modelId.replace(/[^a-z0-9_-]/gi, '_')}.studio-recipe.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      showToast(`Exported edit recipe (${recipe.operations.length} ops)`);
+    } catch (err) {
+      showToast(`Recipe export failed: ${err.message}`, 3000);
+    }
+  });
+
+  $('btn-import-recipe').addEventListener('click', () => $('recipe-file-input').click());
+  $('recipe-file-input').addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !state.modelId) return;
+    try {
+      const text = await file.text();
+      const recipe = JSON.parse(text);
+      const res = await apiPost('/edits/recipe/apply', {
+        model_id: state.modelId,
+        checkpoint_id: state.checkpointId,
+        recipe,
+        reset_first: true,
+      });
+      await reloadAfterEdit(`Replayed recipe: ${res.applied_count} applied, ${res.skipped_count} skipped`);
+    } catch (err) {
+      showToast(`Recipe replay failed: ${err.message}`, 3400);
+    } finally {
+      e.target.value = '';
+    }
   });
 
   $('chart-layers').addEventListener('click', (e) => {
@@ -1469,6 +1565,7 @@ function bindInferenceControls() {
   $('inf-temp').addEventListener('input', (e) => { $('inf-temp-val').textContent = Number(e.target.value).toFixed(2); });
   $('inf-topp').addEventListener('input', (e) => { $('inf-topp-val').textContent = Number(e.target.value).toFixed(2); });
   $('btn-run-infer').addEventListener('click', runModelInference);
+  $('btn-run-circuit').addEventListener('click', () => discoverCircuit({ switchMode: true }));
 
   $('btn-add-patch').addEventListener('click', () => {
     const layer = Number($('patch-layer-select').value || 0);
@@ -1482,7 +1579,173 @@ function bindInferenceControls() {
     state.causalPatches = [];
     renderActivePatches();
   });
+
+  // Contrastive Activation Steering (CAA / RepE) controls
+  $('steer-preset-select').addEventListener('change', (e) => {
+    const p = state.steeringPresets.find((item) => item.id === e.target.value);
+    if (p) {
+      $('steer-pos-prompt').value = p.positive;
+      $('steer-neg-prompt').value = p.negative;
+    }
+  });
+  $('btn-extract-steer').addEventListener('click', extractSteeringVector);
+  $('steer-alpha').addEventListener('input', (e) => {
+    state.steeringAlpha = Number(e.target.value);
+    $('steer-alpha-val').textContent = `${state.steeringAlpha >= 0 ? '+' : ''}${state.steeringAlpha.toFixed(2)}`;
+    if (state.activeSteeringVector) {
+      $('steer-status-pill').textContent = `α=${state.steeringAlpha >= 0 ? '+' : ''}${state.steeringAlpha.toFixed(2)}`;
+    }
+  });
+  $('steer-alpha').addEventListener('change', () => {
+    if (state.activeSteeringVector) runModelInference();
+  });
+  $('btn-bake-steer').addEventListener('click', bakeSteeringVector);
+
   renderActivePatches();
+}
+
+async function loadSteeringPresets() {
+  try {
+    const data = await apiGet('/steering/presets');
+    state.steeringPresets = data.presets || [];
+    const sel = $('steer-preset-select');
+    sel.innerHTML = '';
+    for (const p of state.steeringPresets) {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name;
+      sel.appendChild(opt);
+    }
+    if (state.steeringPresets.length) {
+      $('steer-pos-prompt').value = state.steeringPresets[0].positive;
+      $('steer-neg-prompt').value = state.steeringPresets[0].negative;
+    }
+  } catch {
+    // Optional
+  }
+}
+
+async function extractSteeringVector() {
+  if (!state.modelId) return;
+  const preset = state.steeringPresets.find((p) => p.id === $('steer-preset-select').value);
+  const pos = ($('steer-pos-prompt').value || '').trim();
+  const neg = ($('steer-neg-prompt').value || '').trim();
+  if (!pos || !neg) {
+    showToast('Positive and negative contrast prompts are required');
+    return;
+  }
+  const layerVal = $('steer-layer-select').value;
+  try {
+    const vec = await apiPost('/steering/extract', {
+      model_id: state.modelId,
+      checkpoint_id: state.checkpointId,
+      name: preset?.name || 'Custom Steering',
+      positive_prompt: pos,
+      negative_prompt: neg,
+      layer_index: layerVal !== '' ? Number(layerVal) : null,
+    });
+    state.activeSteeringVector = vec;
+    $('steer-layer-select').value = String(vec.recommended_layer);
+    if (Math.abs(state.steeringAlpha) < 0.05) {
+      state.steeringAlpha = 0.8;
+      $('steer-alpha').value = '0.8';
+      $('steer-alpha-val').textContent = '+0.80';
+    }
+    $('steer-status-pill').textContent = `L${String(vec.recommended_layer).padStart(2, '0')} · sep=${vec.peak_separation}`;
+    $('btn-bake-steer').disabled = false;
+    showToast(`Extracted CAA steering vector at Layer ${vec.recommended_layer} (sep=${vec.peak_separation})`);
+    await runModelInference();
+  } catch (err) {
+    showToast(`Steering extraction failed: ${err.message}`, 3200);
+  }
+}
+
+async function bakeSteeringVector() {
+  if (!state.modelId || !state.activeSteeringVector) return;
+  const strength = Math.abs(state.steeringAlpha) > 0.05 ? state.steeringAlpha : 0.75;
+  const targetLayer = Number($('steer-layer-select').value || state.activeSteeringVector.recommended_layer);
+  try {
+    const res = await apiPost('/steering/bake', {
+      model_id: state.modelId,
+      checkpoint_id: state.checkpointId,
+      vector_id: state.activeSteeringVector.vector_id,
+      strength,
+      target_layer: targetLayer,
+    });
+    renderer.triggerPulse('backprop');
+    await reloadAfterEdit(`Baked CAA vector into Layer ${targetLayer} (${res.edit.changed_weights.toLocaleString()} w)`);
+  } catch (err) {
+    showToast(`Bake failed: ${err.message}`, 3200);
+  }
+}
+
+async function discoverCircuit({ switchMode = true } = {}) {
+  if (!state.modelId) return;
+  const prompt = ($('inf-prompt').value || '').trim() || 'Customer says: My order #77701 arrived damaged. Can you refund me?';
+  const topK = Number($('circuit-topk-slider')?.value || 10);
+  try {
+    const data = await apiPost('/inference/circuit', {
+      model_id: state.modelId,
+      checkpoint_id: state.checkpointId,
+      prompt,
+      system_prompt: $('inf-system')?.value || '',
+      top_k: topK,
+    });
+    state.circuitData = data;
+    $('circuit-summary-val').textContent = `Top-${data.summary.circuit_nodes} · ${data.summary.arc_count} Arcs`;
+    $('circuit-sparsity-pill').textContent = `${(data.summary.circuit_sparsity * 100).toFixed(0)}% sparse`;
+
+    const list = $('circuit-node-list');
+    list.innerHTML = '';
+    for (const nd of data.top_nodes || []) {
+      const row = document.createElement('div');
+      row.className = 'circuit-node-row';
+      row.innerHTML = `
+        <span style="color:${nd.kind === 'mlp' ? '#34d399' : '#fda4af'};font-weight:700">${nd.id}</span>
+        <span style="color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${nd.role_tag}</span>
+        <span style="color:#fbbf24;text-align:right">${(nd.importance * 100).toFixed(0)}%</span>
+        <button class="mini-btn" title="Ablate Layer ${nd.layer} in Causal Patching">Ablate</button>
+      `;
+      row.querySelector('button').addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        state.causalPatches = state.causalPatches.filter((p) => p.layer !== nd.layer);
+        state.causalPatches.push({ layer: nd.layer, action: 'ablate' });
+        renderActivePatches();
+        runModelInference();
+        showToast(`Ablated causal circuit node ${nd.id} (Layer ${nd.layer})`);
+      });
+      row.addEventListener('click', () => {
+        if (nd.tensor_name) selectTensor(nd.tensor_name, { focusCamera: false });
+      });
+      list.appendChild(row);
+    }
+
+    renderer.setData({ circuitData: data });
+    if (switchMode) {
+      document.querySelectorAll('.mode-pill').forEach((btn) => {
+        const active = btn.dataset.mode === 'circuit';
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-selected', String(active));
+      });
+      $('microscope-hud').classList.add('hidden');
+      $('spectral-hud').classList.add('hidden');
+      $('circuit-hud').classList.remove('hidden');
+      renderer.setViewMode('circuit');
+    }
+    renderer.triggerPulse('forward');
+    showToast(`Discovered ${data.summary.circuit_nodes}-node causal circuit (${data.summary.arc_count} 3D flow arcs)`);
+  } catch (err) {
+    showToast(`Circuit discovery failed: ${err.message}`, 3200);
+  }
+}
+
+function getActiveSteeringPayload() {
+  if (!state.activeSteeringVector || Math.abs(state.steeringAlpha) < 0.05) return null;
+  return {
+    vector_id: state.activeSteeringVector.vector_id,
+    strength: state.steeringAlpha,
+    layer: Number($('steer-layer-select').value || state.activeSteeringVector.recommended_layer),
+  };
 }
 
 async function runModelInference() {
@@ -1490,6 +1753,7 @@ async function runModelInference() {
   const prompt = ($('inf-prompt').value || '').trim();
   if (!prompt) return;
 
+  const steeringPayload = getActiveSteeringPayload();
   const res = await apiPost('/inference/run', {
     model_id: state.modelId,
     checkpoint_id: state.checkpointId,
@@ -1500,6 +1764,7 @@ async function runModelInference() {
     max_tokens: Number($('inf-maxtok').value || 48),
     compare_base: $('inf-compare-base').checked,
     causal_patches: state.causalPatches,
+    steering: steeringPayload,
     endpoint_url: $('inf-endpoint-url').value || '',
     api_key: $('inf-api-key').value || '',
   });
@@ -1539,7 +1804,8 @@ async function runModelInference() {
   if (res.active.tokens.length) renderTokenLogitLens(res.active.tokens[0]);
 
   const ab = $('inf-ab-compare');
-  if ((res.has_edits || state.causalPatches.length > 0) && $('inf-compare-base').checked) {
+  const hasIntervention = res.has_edits || state.causalPatches.length > 0 || Boolean(steeringPayload);
+  if (hasIntervention && $('inf-compare-base').checked) {
     ab.classList.remove('hidden');
     $('inf-base-text').textContent = res.base.text;
     const rd = res.comparison.reward_delta;
@@ -1609,6 +1875,8 @@ function bindExportModal() {
   $('btn-close-export').addEventListener('click', () => modal.classList.add('hidden'));
   modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
 
+  $('btn-run-eval-gate').addEventListener('click', runExportEvalGate);
+
   $('btn-confirm-export').addEventListener('click', async () => {
     if (!state.modelId) return;
     const name = ($('export-name-input').value || '').trim() || `edited-${Date.now()}`;
@@ -1635,6 +1903,118 @@ function bindExportModal() {
       await loadModels(true);
     } catch (err) {
       showToast(`Export error: ${err.message}`, 3500);
+    }
+  });
+}
+
+async function runExportEvalGate() {
+  if (!state.modelId) return;
+  const btn = $('btn-run-eval-gate');
+  btn.disabled = true;
+  btn.textContent = 'Running 6-case regression suite…';
+  try {
+    const rep = await apiPost('/eval/run', {
+      model_id: state.modelId,
+      checkpoint_id: state.checkpointId,
+      dataset_path: state.ftDatasetPath || null,
+      max_cases: 6,
+      causal_patches: state.causalPatches,
+      steering: getActiveSteeringPayload(),
+    });
+    const pill = $('eval-verdict-pill');
+    pill.textContent = rep.verdict;
+    pill.className = `verdict-pill ${rep.verdict}`;
+    pill.classList.remove('hidden');
+    $('eval-summary-copy').textContent = `${rep.verdict_reason} (Base ${(rep.base_summary.pass_rate * 100).toFixed(0)}% → Edited ${(rep.edited_summary.pass_rate * 100).toFixed(0)}% · ${rep.latency_ms} ms)`;
+
+    const list = $('eval-case-list');
+    list.classList.remove('hidden');
+    list.innerHTML = (rep.cases || [])
+      .map((c) => {
+        const col = c.status === 'PASS' || c.status === 'IMPROVED' ? '#34d399' : c.status === 'REGRESSION' ? '#fb7185' : '#fbbf24';
+        const dStr = `${c.delta >= 0 ? '+' : ''}${c.delta.toFixed(3)}`;
+        return `
+          <div class="eval-case-row">
+            <span style="color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.category}</span>
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.prompt_preview}</span>
+            <span style="text-align:right;color:${c.delta >= 0 ? '#34d399' : '#fb7185'}">${dStr}</span>
+            <span style="text-align:right;font-weight:700;color:${col}">${c.status}</span>
+          </div>
+        `;
+      })
+      .join('');
+    showToast(`Batch Eval Gate: ${rep.verdict} (${rep.case_count} cases in ${rep.latency_ms} ms)`);
+  } catch (err) {
+    showToast(`Eval gate error: ${err.message}`, 3200);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ Re-Run 6-Case Regression Eval Gate';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Split-Screen 3D A/B Wipe Curtain, Cinema Zen Mode & Keyboard Shortcuts
+// ---------------------------------------------------------------------------
+
+function setSplitCompare(enabled) {
+  state.splitCompare = Boolean(enabled);
+  $('btn-toggle-split').classList.toggle('active', state.splitCompare);
+  $('split-curtain').classList.toggle('hidden', !state.splitCompare);
+  renderer.setSplitCompare(state.splitCompare, state.splitRatio);
+  if (state.splitCompare) {
+    showToast('Split A|B 3D Wipe active — drag curtain left/right to compare Base vs Edited');
+  }
+}
+
+function bindSplitCurtain() {
+  const divider = $('split-divider');
+  const stage = document.querySelector('.viewport-stage');
+  if (!divider || !stage) return;
+  let dragging = false;
+
+  divider.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    dragging = true;
+    divider.setPointerCapture(e.pointerId);
+  });
+  divider.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const rect = stage.getBoundingClientRect();
+    const frac = Math.max(0.08, Math.min(0.92, (e.clientX - rect.left) / Math.max(rect.width, 1)));
+    state.splitRatio = frac;
+    divider.style.left = `${(frac * 100).toFixed(2)}%`;
+    renderer.setSplitCompare(true, frac);
+  });
+  divider.addEventListener('pointerup', () => { dragging = false; });
+}
+
+function toggleZenMode() {
+  const shell = $('app');
+  const active = shell.classList.toggle('zen-mode');
+  $('btn-zen-mode').classList.toggle('active', active);
+  setTimeout(() => {
+    renderer.resize();
+    redrawVisibleCharts();
+  }, 40);
+  showToast(active ? 'Cinema Zen Mode ON (press H to exit)' : 'Cinema Zen Mode OFF', 1800);
+}
+
+function bindKeyboardShortcuts() {
+  window.addEventListener('keydown', (e) => {
+    const tag = (e.target?.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    if (e.key === '1') setViewMode('stack');
+    else if (e.key === '2') setViewMode('microscope');
+    else if (e.key === '3') setViewMode('spectral');
+    else if (e.key === '4') setViewMode('trajectory');
+    else if (e.key === '5') setViewMode('circuit');
+    else if (e.key === 'h' || e.key === 'H') toggleZenMode();
+    else if (e.key === 's' || e.key === 'S') {
+      if (renderer.viewMode === 'microscope') setSplitCompare(!state.splitCompare);
+    } else if (e.key === ' ') {
+      e.preventDefault();
+      renderer.autoOrbit = !renderer.autoOrbit;
+      $('btn-orbit-toggle').classList.toggle('active', renderer.autoOrbit);
     }
   });
 }

@@ -434,6 +434,8 @@ export class WeightStudioRenderer {
     this.layerSpread = 1.0;
     this.showConduits = true;
     this.showGhostOverlay = true;
+    this.splitCompare = false;
+    this.splitRatio = 0.5;
     this.autoOrbit = false;
     this.brushMode = false;
     this.loraTargetHighlight = new Set();
@@ -459,6 +461,7 @@ export class WeightStudioRenderer {
     this.tensorDetail = null;
     this.binaryGrid = null; // optional 128x128 Float32Array binary payload
     this.trajectory = null;
+    this.circuitData = null; // 3D Attention-Flow & Causal Circuit graph
     this.selectedTensorName = null;
     this.hoveredHit = null;
     this.svdCutoffRank = 16;
@@ -483,6 +486,7 @@ export class WeightStudioRenderer {
     this._morphDuration = 0.38;
 
     this.opaqueCount = 0;
+    this.baseOpaqueCount = 0;
     this.transCount = 0;
     this.conduitVertexCount = 0;
     this.hitBoxes = [];
@@ -497,6 +501,7 @@ export class WeightStudioRenderer {
     this._fpsTimer = performance.now();
     this._lastTime = performance.now();
     this._elapsed = 0;
+    this._turntableAnim = null;
 
     this._initPrograms();
     this._initGeometry();
@@ -567,6 +572,10 @@ export class WeightStudioRenderer {
     const opq = setupInstancedVao();
     this.opaqueVao = opq.vao;
     this.opaqueInstBuf = opq.instBuf;
+
+    const baseOpq = setupInstancedVao();
+    this.baseOpaqueVao = baseOpq.vao;
+    this.baseOpaqueInstBuf = baseOpq.instBuf;
 
     const trn = setupInstancedVao();
     this.transVao = trn.vao;
@@ -670,6 +679,11 @@ export class WeightStudioRenderer {
       this.cam.goalYaw = 0.74;
       this.cam.goalPitch = 0.48;
       this.cam.goalDistance = 28.0;
+    } else if (this.viewMode === 'circuit') {
+      this.cam.goalTarget = vec3(0, 1.8, 0.4);
+      this.cam.goalYaw = 0.78;
+      this.cam.goalPitch = 0.44;
+      this.cam.goalDistance = 35.5;
     }
   }
 
@@ -714,7 +728,13 @@ export class WeightStudioRenderer {
     this._fitCameraToViewMode();
   }
 
-  setData({ structure, tensorDetail, binaryGrid, trajectory, selectedTensorName }) {
+  setSplitCompare(enabled, ratio = null) {
+    this.splitCompare = Boolean(enabled);
+    if (ratio !== null) this.splitRatio = clamp(ratio, 0.08, 0.92);
+    if (this.viewMode === 'microscope') this.rebuildScene(false);
+  }
+
+  setData({ structure, tensorDetail, binaryGrid, trajectory, circuitData, selectedTensorName }) {
     const animateMorph = (tensorDetail !== undefined || structure !== undefined);
     if (structure !== undefined) this.structure = structure;
     if (tensorDetail !== undefined) {
@@ -725,6 +745,7 @@ export class WeightStudioRenderer {
     }
     if (binaryGrid !== undefined) this.binaryGrid = binaryGrid;
     if (trajectory !== undefined) this.trajectory = trajectory;
+    if (circuitData !== undefined) this.circuitData = circuitData;
     if (selectedTensorName !== undefined) this.selectedTensorName = selectedTensorName;
     this.rebuildScene(animateMorph);
   }
@@ -749,12 +770,49 @@ export class WeightStudioRenderer {
     return this.canvas.toDataURL('image/png');
   }
 
+  recordTurntableWebM(durationMs = 5500) {
+    return new Promise((resolve, reject) => {
+      if (typeof this.canvas.captureStream !== 'function' || typeof MediaRecorder === 'undefined') {
+        reject(new Error('MediaRecorder / canvas.captureStream is not supported in this browser'));
+        return;
+      }
+      const stream = this.canvas.captureStream(60);
+      const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+        ? 'video/webm;codecs=vp9'
+        : 'video/webm';
+      const chunks = [];
+      const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6_500_000 });
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunks.push(e.data);
+      };
+      recorder.onerror = (err) => {
+        this._turntableAnim = null;
+        reject(err);
+      };
+      recorder.onstop = () => {
+        this._turntableAnim = null;
+        resolve(new Blob(chunks, { type: mime }));
+      };
+
+      this._turntableAnim = {
+        startTime: performance.now(),
+        durationMs,
+        startYaw: this.cam.yaw,
+      };
+      recorder.start(100);
+      setTimeout(() => {
+        if (recorder.state !== 'inactive') recorder.stop();
+      }, durationMs + 60);
+    });
+  }
+
   // -------------------------------------------------------------------------
   // Scene Builders
   // -------------------------------------------------------------------------
 
   rebuildScene(animateMorph = true) {
     const opaque = [];
+    const baseOpaque = [];
     const trans = [];
     const curves = [];
     this.hitBoxes = [];
@@ -766,16 +824,18 @@ export class WeightStudioRenderer {
     };
 
     if (this.viewMode === 'microscope' && (this.binaryGrid || this.tensorDetail)) {
-      this._buildMicroscopeScene(opaque, trans, curves, pushInst);
+      this._buildMicroscopeScene(opaque, baseOpaque, trans, curves, pushInst);
     } else if (this.viewMode === 'spectral' && this.tensorDetail?.svd) {
       this._buildSpectralScene(opaque, trans, curves, pushInst);
     } else if (this.viewMode === 'trajectory' && this.trajectory) {
       this._buildTrajectoryScene(opaque, trans, curves, pushInst);
+    } else if (this.viewMode === 'circuit' && this.circuitData) {
+      this._buildCircuitScene(opaque, trans, curves, pushInst);
     } else if (this.structure) {
       this._buildArchitectureScene(opaque, trans, curves, pushInst);
     }
 
-    this._uploadInstances(opaque, trans, curves, animateMorph);
+    this._uploadInstances(opaque, baseOpaque, trans, curves, animateMorph);
   }
 
   _buildArchitectureScene(opaque, trans, curves, pushInst) {
@@ -975,7 +1035,7 @@ export class WeightStudioRenderer {
     });
   }
 
-  _buildMicroscopeScene(opaque, trans, curves, pushInst) {
+  _buildMicroscopeScene(opaque, baseOpaque, trans, curves, pushInst) {
     // Prefer binary Float32Array payload (supports up to 128x128 = 16,384 crystals!)
     const bin = this.binaryGrid;
     const detail = this.tensorDetail;
@@ -997,9 +1057,13 @@ export class WeightStudioRenderer {
     this.glowCenter = [0, 0, 0];
     this.glowColor = detail?.edited ? [0.16, 0.88, 0.62] : [0.30, 0.68, 1.0];
 
-    pushInst(opaque, 0, 0.22, 0, stageW + 1.1, 0.36, stageD + 1.1, 0.26, 0.84, 0.10, 0.13, 0.18, 0.04, 0, 1, 0.5, 0);
-    pushInst(opaque, 0, 0.44, -stageD * 0.5 - 0.35, stageW + 0.6, 0.14, 0.22, 0.20, 0.94, 0.90, 0.68, 0.28, 0.25, 0, 1, 0, 0);
-    pushInst(opaque, -stageW * 0.5 - 0.35, 0.44, 0, 0.22, 0.14, stageD + 0.6, 0.20, 0.94, 0.28, 0.78, 0.96, 0.25, 0, 1, 0, 0);
+    const pushBoth = (...args) => {
+      pushInst(opaque, ...args);
+      if (this.splitCompare) pushInst(baseOpaque, ...args);
+    };
+    pushBoth(0, 0.22, 0, stageW + 1.1, 0.36, stageD + 1.1, 0.26, 0.84, 0.10, 0.13, 0.18, 0.04, 0, 1, 0.5, 0);
+    pushBoth(0, 0.44, -stageD * 0.5 - 0.35, stageW + 0.6, 0.14, 0.22, 0.20, 0.94, 0.90, 0.68, 0.28, 0.25, 0, 1, 0, 0);
+    pushBoth(-stageW * 0.5 - 0.35, 0.44, 0, 0.22, 0.14, stageD + 0.6, 0.20, 0.94, 0.28, 0.78, 0.96, 0.25, 0, 1, 0, 0);
 
     // Spatial Vernier Row/Col ticks along micrometer rails
     const [cr0, cr1, cc0, cc1] = cropBox;
@@ -1121,6 +1185,24 @@ export class WeightStudioRenderer {
           mapped.emit,
           flag, 1.0, phase, 0
         );
+
+        if (this.splitCompare) {
+          const origVal = dValues ? (val - dVal) : val;
+          const origMag = clamp(Math.abs(origVal) / absMax, 0, 1);
+          const origH = 0.07 + Math.pow(origMag, 0.78) * maxHeight;
+          const baseMapped = mapWeightColor(
+            origVal, absMax, this.colorMode === 'delta' ? 'signed' : this.colorMode, 0, stdVal, impVal, 0
+          );
+          pushInst(
+            baseOpaque,
+            cx, baseY + origH * 0.5, cz,
+            cellW * 0.86, origH, cellD * 0.86,
+            0.20, 0.34,
+            baseMapped.rgb[0], baseMapped.rgb[1], baseMapped.rgb[2],
+            baseMapped.emit * 0.92,
+            isHov ? 1 : 0, 1.0, phase, 0
+          );
+        }
 
         if (this.showGhostOverlay && dValues && rows <= 64 && Math.abs(dVal) > absMax * 0.03) {
           const origVal = val - dVal;
@@ -1385,10 +1467,205 @@ export class WeightStudioRenderer {
     }
   }
 
-  _uploadInstances(opaque, trans, curves, animateMorph = true) {
+  _buildCircuitScene(opaque, trans, curves, pushInst) {
+    const cd = this.circuitData;
+    const tokens = cd.tokens || [];
+    const stages = cd.stages || [];
+    const nodes = cd.nodes || [];
+    const arcs = cd.arcs || [];
+    const nTok = Math.max(1, tokens.length);
+    const nStages = Math.max(1, stages.length);
+    const nHeads = Math.max(1, cd.num_heads || 8);
+
+    const stageW = 15.6;
+    const zStep = 1.95 * this.layerSpread;
+    const totalZ = (nStages - 1) * zStep;
+    const zStart = -totalZ * 0.5;
+    const zTokenBus = zStart - 3.6;
+    const zOutputBus = zStart + totalZ + 3.6;
+
+    this.footprintSize = [stageW * 0.58, Math.max(9.0, totalZ * 0.56 + 4.8)];
+    this.glowCenter = [0, 0, 0];
+    this.glowColor = [0.98, 0.42, 0.58];
+
+    // 1. Input Token Monolith Bus
+    pushInst(opaque, 0, 0.22, zTokenBus, stageW + 0.8, 0.30, 1.5, 0.24, 0.84, 0.08, 0.13, 0.21, 0.05, 0, 1, 0, 0);
+    const tokPos = [];
+    const tokStep = (stageW - 1.4) / nTok;
+    for (let ti = 0; ti < nTok; ti++) {
+      const tx = -(stageW - 1.4) * 0.5 + (ti + 0.5) * tokStep;
+      const th = 1.05 + (ti % 3) * 0.18;
+      pushInst(opaque, tx, 0.38 + th * 0.5, zTokenBus, Math.min(1.1, tokStep * 0.68), th, 0.88, 0.16, 0.55, 0.18, 0.78, 0.98, 0.55, 0, 1, 0, 0);
+      tokPos.push([tx, 0.38 + th, zTokenBus]);
+      this.spatialAnchors.push({
+        pos: [tx, 0.48 + th + 0.35, zTokenBus],
+        text: tokens[ti].slice(0, 12),
+        kind: 'cyan',
+      });
+    }
+
+    // 2. Transformer Stages: Attention Head Pillars (H0..H7) + MLP Core Monolith
+    const nodePosMap = new Map();
+    const headZoneW = stageW * 0.72;
+    const headStep = headZoneW / nHeads;
+    const headX0 = -stageW * 0.44;
+    const mlpX = stageW * 0.38;
+
+    const nodesByKey = new Map();
+    for (const n of nodes) {
+      nodesByKey.set(`${n.stage}:${n.head}`, n);
+    }
+
+    for (let si = 0; si < nStages; si++) {
+      const st = stages[si];
+      const z = zStart + si * zStep;
+      const phase = nStages > 1 ? si / (nStages - 1) : 0.5;
+
+      // Stage wafer rail
+      pushInst(opaque, 0, 0.24, z, stageW, 0.20, 1.24, 0.28, 0.82, 0.10, 0.13, 0.19, 0.03, st.has_edits ? 4 : 0, 1, phase, 0);
+      this.spatialAnchors.push({
+        pos: [-stageW * 0.5 - 1.05, 0.55, z],
+        text: `L${String(st.layer).padStart(2, '0')}`,
+        kind: st.has_edits ? 'emerald' : 'amber',
+      });
+
+      for (let hi = 0; hi < nHeads; hi++) {
+        const nd = nodesByKey.get(`${si}:${hi}`);
+        const imp = nd ? nd.importance : 0.2;
+        const inCirc = Boolean(nd && nd.in_circuit);
+        const hx = headX0 + (hi + 0.5) * headStep;
+        const h = inCirc ? (1.1 + imp * 3.1) : (0.26 + imp * 0.95);
+        const col = inCirc
+          ? [lerp(0.84, 0.96, imp), lerp(0.36, 0.14, imp), lerp(0.12, 0.34, imp)]
+          : [0.14, 0.20, 0.30];
+        const emit = inCirc ? (0.20 + imp * 0.44) : (0.03 + imp * 0.09);
+        const list = inCirc ? opaque : trans;
+        pushInst(
+          list,
+          hx, 0.36 + h * 0.5, z,
+          headStep * 0.66, h, 0.72,
+          inCirc ? 0.16 : 0.42, inCirc ? 0.52 : 0.35,
+          col[0], col[1], col[2], emit,
+          nd?.edited ? 4 : 0, inCirc ? 1.0 : 0.42, phase, inCirc ? imp : 0
+        );
+        nodePosMap.set(`${si}:${hi}`, [hx, 0.36 + h, z]);
+
+        if (inCirc && nd) {
+          this.spatialAnchors.push({
+            pos: [hx, 0.45 + h + 0.38, z],
+            text: `${nd.id} · ${nd.role_tag}`,
+            kind: 'rose',
+          });
+          if (nd.tensor_name) {
+            this.hitBoxes.push({
+              min: [hx - headStep * 0.4, 0.3, z - 0.45],
+              max: [hx + headStep * 0.4, 0.45 + h, z + 0.45],
+              tensorName: nd.tensor_name,
+              label: `${nd.id} (${nd.role_tag})`,
+              layer: nd.layer,
+              role: 'self_attn',
+              rms: imp,
+              frob: imp,
+              shape: [nHeads, 1],
+              edited: nd.edited,
+            });
+          }
+        }
+      }
+
+      // MLP Core Block on right lane
+      const mlpNode = nodesByKey.get(`${si}:-1`);
+      const mImp = mlpNode ? mlpNode.importance : 0.25;
+      const mCirc = Boolean(mlpNode && mlpNode.in_circuit);
+      const mh = mCirc ? (1.35 + mImp * 3.0) : (0.35 + mImp * 0.95);
+      const mCol = mCirc ? [0.16, 0.88, 0.64] : [0.14, 0.22, 0.26];
+      pushInst(
+        mCirc ? opaque : trans,
+        mlpX, 0.36 + mh * 0.5, z,
+        2.15, mh, 0.88,
+        mCirc ? 0.18 : 0.42, 0.58,
+        mCol[0], mCol[1], mCol[2],
+        mCirc ? (0.42 + mImp * 0.85) : 0.06,
+        mlpNode?.edited ? 4 : 0, mCirc ? 1.0 : 0.42, phase, mCirc ? mImp : 0
+      );
+      nodePosMap.set(`${si}:-1`, [mlpX, 0.36 + mh, z]);
+      if (mCirc && mlpNode) {
+        this.spatialAnchors.push({
+          pos: [mlpX, 0.45 + mh + 0.38, z],
+          text: `${mlpNode.id} · MLP`,
+          kind: 'emerald',
+        });
+      }
+    }
+
+    // 3. Output Unembedding Logit Crystal Prism
+    pushInst(opaque, 0, 0.22, zOutputBus, 6.2, 0.32, 1.6, 0.20, 0.88, 0.10, 0.18, 0.16, 0.08, 0, 1, 1, 0);
+    pushInst(opaque, 0, 1.55, zOutputBus, 3.8, 2.3, 1.05, 0.14, 0.62, 0.18, 0.94, 0.68, 0.72, 2, 1, 1, 0.8);
+    const outPos = [0, 2.75, zOutputBus];
+    this.spatialAnchors.push({
+      pos: [0, 3.25, zOutputBus],
+      text: 'UNEMBED LOGITS (W_U)',
+      kind: 'emerald',
+    });
+
+    // 4. Glowing 3D Cubic Bezier Attention-Flow Ribbons & Causal Circuit Arcs
+    for (const arc of arcs) {
+      const w = clamp(arc.weight || 0.5, 0.15, 1.0);
+      if (arc.kind === 'token_to_head') {
+        const p0 = tokPos[clamp(arc.src_index, 0, tokPos.length - 1)];
+        const p3 = nodePosMap.get(`${arc.dst_stage}:${arc.dst_head}`);
+        if (!p0 || !p3) continue;
+        const lift = Math.max(p0[1], p3[1]) + 1.45 + w * 1.4;
+        curves.push({
+          p0,
+          p1: [lerp(p0[0], p3[0], 0.3), lift, lerp(p0[2], p3[2], 0.3)],
+          p2: [lerp(p0[0], p3[0], 0.7), lift, lerp(p0[2], p3[2], 0.7)],
+          p3,
+          radius: 0.032 + w * 0.036,
+          lane: 2,
+          intensity: 0.55 + w * 0.95,
+        });
+      } else if (arc.kind === 'circuit_edge') {
+        const p0 = nodePosMap.get(`${arc.src_stage}:${arc.src_head}`);
+        const p3 = nodePosMap.get(`${arc.dst_stage}:${arc.dst_head}`);
+        if (!p0 || !p3) continue;
+        const lift = Math.max(p0[1], p3[1]) + 1.2 + w * 1.75;
+        curves.push({
+          p0,
+          p1: [lerp(p0[0], p3[0], 0.32), lift, lerp(p0[2], p3[2], 0.32)],
+          p2: [lerp(p0[0], p3[0], 0.68), lift, lerp(p0[2], p3[2], 0.68)],
+          p3,
+          radius: 0.036 + w * 0.044,
+          lane: 3,
+          intensity: 0.70 + w * 1.05,
+        });
+      } else if (arc.kind === 'to_output') {
+        const p0 = nodePosMap.get(`${arc.src_stage}:${arc.src_head}`);
+        if (!p0) continue;
+        const lift = Math.max(p0[1], outPos[1]) + 1.25;
+        curves.push({
+          p0,
+          p1: [lerp(p0[0], outPos[0], 0.35), lift, lerp(p0[2], outPos[2], 0.35)],
+          p2: [lerp(p0[0], outPos[0], 0.72), lift, lerp(p0[2], outPos[2], 0.72)],
+          p3: outPos,
+          radius: 0.045 + w * 0.038,
+          lane: 4,
+          intensity: 0.80 + w * 0.95,
+        });
+      }
+    }
+  }
+
+  _uploadInstances(opaque, baseOpaque, trans, curves, animateMorph = true) {
     const gl = this.gl;
     const nextGoal = new Float32Array(opaque);
     this.opaqueCount = nextGoal.length / 16;
+
+    // Upload Base (Unedited) split-screen comparison crystal buffer when Split A|B is active
+    const baseArr = new Float32Array(baseOpaque || []);
+    this.baseOpaqueCount = baseArr.length / 16;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.baseOpaqueInstBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, baseArr, gl.DYNAMIC_DRAW);
 
     // Liquid-crystal GPU morphing when instance count matches previous state!
     if (animateMorph && this._morphGoal && this._morphGoal.length === nextGoal.length && nextGoal.length > 0) {
@@ -1490,7 +1767,13 @@ export class WeightStudioRenderer {
   }
 
   _updateCamera(dt) {
-    if (this.autoOrbit && !this._isDragging) {
+    if (this._turntableAnim) {
+      const t = clamp((performance.now() - this._turntableAnim.startTime) / this._turntableAnim.durationMs, 0, 1);
+      // Smooth sine-eased 360-degree studio turntable sweep
+      const eased = 0.5 - 0.5 * Math.cos(t * Math.PI);
+      this.cam.goalYaw = this._turntableAnim.startYaw + eased * Math.PI * 2.0;
+      this.cam.yaw = this.cam.goalYaw;
+    } else if (this.autoOrbit && !this._isDragging) {
       this.cam.goalYaw += dt * 0.22;
     }
     const smooth = 1.0 - Math.exp(-9.5 * dt);
@@ -1670,12 +1953,24 @@ export class WeightStudioRenderer {
     gl.bindVertexArray(this.floorVao);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-    // 1c. Opaque PBR Instanced Crystals & Wafer Chassis
+    // 1c. Opaque PBR Instanced Crystals & Wafer Chassis (supports real-time Split A|B Scissor Wipe!)
     gl.enable(gl.CULL_FACE);
     gl.cullFace(gl.BACK);
     gl.useProgram(this.progPbr);
     this._setPbrUniforms(this.progPbr, rig, 1.0);
-    if (this.opaqueCount > 0) {
+    if (this.splitCompare && this.viewMode === 'microscope' && this.baseOpaqueCount > 0 && this.opaqueCount > 0) {
+      const splitPx = Math.max(1, Math.min(w - 1, Math.round(w * this.splitRatio)));
+      gl.enable(gl.SCISSOR_TEST);
+      // Left half: Unedited Base Tensor
+      gl.scissor(0, 0, splitPx, h);
+      gl.bindVertexArray(this.baseOpaqueVao);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, this.boxVertexCount, this.baseOpaqueCount);
+      // Right half: Live Surgically Edited Tensor
+      gl.scissor(splitPx, 0, w - splitPx, h);
+      gl.bindVertexArray(this.opaqueVao);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, this.boxVertexCount, this.opaqueCount);
+      gl.disable(gl.SCISSOR_TEST);
+    } else if (this.opaqueCount > 0) {
       gl.bindVertexArray(this.opaqueVao);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, this.boxVertexCount, this.opaqueCount);
     }
@@ -1843,7 +2138,7 @@ export class WeightStudioRenderer {
       return null;
     }
 
-    if (this.viewMode === 'stack') {
+    if (this.viewMode === 'stack' || this.viewMode === 'circuit') {
       let best = null;
       let bestT = Infinity;
       for (const hb of this.hitBoxes) {

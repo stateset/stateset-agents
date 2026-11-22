@@ -308,6 +308,65 @@ def _apply_op_to_array(
         }
         return out, diag
 
+    if op == "steer_bake":
+        # Contrastive Activation Steering (CAA / RepE) weight baking:
+        #   W' = W + strength * scale * (u_steer @ v_proj^T)
+        if out.ndim != 2:
+            return out, {"skipped": "not_2d"}
+        concept = str(params.get("concept", "Steering Vector"))
+        strength = max(-2.5, min(2.5, float(params.get("strength", 0.65))))
+        raw_dir = params.get("direction")
+        rows, cols = out.shape
+
+        if isinstance(raw_dir, list) and len(raw_dir) >= 2:
+            src_v = np.asarray(raw_dir, dtype=np.float32)
+            u_steer = np.interp(
+                np.linspace(0, len(src_v) - 1, rows),
+                np.arange(len(src_v)),
+                src_v,
+            ).astype(np.float32)
+        else:
+            c_seed = int.from_bytes(
+                hashlib.sha256(f"steer:{concept}".encode()).digest()[:4], "little"
+            )
+            u_steer = (
+                np.random.default_rng(c_seed)
+                .normal(0.0, 1.0, size=(rows,))
+                .astype(np.float32)
+            )
+        u_steer /= max(float(np.linalg.norm(u_steer)), 1e-6)
+
+        # Align input projection with dominant column direction for clean rank-1 steering
+        v_proj = np.mean(out, axis=0).astype(np.float32)
+        if float(np.linalg.norm(v_proj)) < 1e-6:
+            v_proj = np.ones((cols,), dtype=np.float32)
+        v_proj /= max(float(np.linalg.norm(v_proj)), 1e-6)
+
+        w_scale = max(float(np.std(out)) * math.sqrt(max(rows, 1)) * 0.45, 1e-3)
+        delta_w = (strength * w_scale) * np.outer(u_steer, v_proj)
+        out = (out + delta_w).astype(np.float32)
+
+        probe_rng = np.random.default_rng(4242)
+        probes = probe_rng.normal(0.0, 1.0, size=(cols, 12)).astype(np.float32)
+        probes /= np.maximum(np.linalg.norm(probes, axis=0, keepdims=True), 1e-6)
+        before_p = arr @ probes
+        after_p = out @ probes
+        cos_sims = [
+            float(np.dot(before_p[:, i], after_p[:, i]))
+            / max(
+                float(np.linalg.norm(before_p[:, i]) * np.linalg.norm(after_p[:, i])),
+                1e-8,
+            )
+            for i in range(12)
+        ]
+        diag = {
+            "concept": concept,
+            "strength": round(_safe_float(strength), 4),
+            "protected_mean_cosine": round(_safe_float(float(np.mean(cos_sims))), 5),
+            "drift_passed": bool(float(np.min(cos_sims)) >= 0.90),
+        }
+        return out, diag
+
     if op == "blend":
         alpha = max(-0.5, min(1.5, float(params.get("alpha", 0.5))))
         method = str(params.get("method", "linear")).lower()
@@ -713,3 +772,75 @@ class WeightEditEngine:
 
         self.inspector.refresh_catalog()
         return manifest
+
+    def export_recipe(
+        self, model_id: str, checkpoint_id: str | None = None
+    ) -> dict[str, Any]:
+        """Serialize the active edit stack into a portable, reproducible .studio-recipe.json."""
+        key = self._session_key(model_id, checkpoint_id)
+        entry = self.inspector.get_entry(model_id)
+        history = self._history.get(key, [])
+        return {
+            "schema_version": 1,
+            "format": "stateset-weight-studio-recipe",
+            "source_model_id": model_id,
+            "source_base_model": entry.base_model,
+            "source_architecture": entry.architecture,
+            "source_checkpoint_id": checkpoint_id or "default",
+            "exported_at": time.time(),
+            "operations": [
+                {
+                    "op": rec.op,
+                    "target": rec.target,
+                    "params": rec.params,
+                    "label": rec.label,
+                }
+                for rec in history
+                if rec.enabled
+            ],
+        }
+
+    def apply_recipe(
+        self,
+        model_id: str,
+        recipe: dict[str, Any],
+        *,
+        checkpoint_id: str | None = None,
+        reset_first: bool = True,
+    ) -> dict[str, Any]:
+        """Deterministically replay a portable edit recipe onto a target model/checkpoint."""
+        ops = recipe.get("operations")
+        if not isinstance(ops, list):
+            raise ValueError("Recipe must contain an 'operations' list")
+        if reset_first:
+            self.reset(model_id, checkpoint_id)
+        applied: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        for idx, step in enumerate(ops):
+            if not isinstance(step, dict):
+                continue
+            op = str(step.get("op", ""))
+            target = str(step.get("target", ""))
+            params = dict(step.get("params") or {})
+            label = str(step.get("label") or f"{op}:{target}")
+            try:
+                res = self.apply_edit(
+                    model_id,
+                    op,
+                    target,
+                    params,
+                    checkpoint_id=checkpoint_id,
+                    label=label,
+                )
+                applied.append(res["edit"])
+            except (KeyError, ValueError) as exc:
+                skipped.append(
+                    {"index": idx, "op": op, "target": target, "error": str(exc)}
+                )
+        return {
+            "applied_count": len(applied),
+            "skipped_count": len(skipped),
+            "applied": applied,
+            "skipped": skipped,
+            "history": self.get_history(model_id, checkpoint_id),
+        }

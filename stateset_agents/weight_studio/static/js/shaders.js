@@ -535,12 +535,27 @@ void main() {
   float fresnel = pow(1.0 - max(dot(N, V), 0.0), 2.4);
 
   float t = vMeta.x;
+  float lane = vMeta.y;
   float dir = mix(1.0, -1.0, uPulseMode);
   float travel = fract(t * 2.5 - uTime * uPulseSpeed * dir);
-  float packet = pow(smoothstep(0.65, 1.0, travel), 3.0) + pow(smoothstep(0.18, 0.0, travel), 2.0) * 0.5;
+  float packet = pow(smoothstep(0.62, 1.0, travel), 2.8) + pow(smoothstep(0.18, 0.0, travel), 2.0) * 0.45;
 
   vec3 baseCol = mix(vec3(0.08, 0.24, 0.36), vec3(0.32, 0.16, 0.08), uPulseMode);
   vec3 pulseCol = mix(vec3(0.25, 1.35, 1.65), vec3(1.85, 0.62, 0.20), uPulseMode);
+
+  if (lane > 1.5 && lane < 2.5) {
+    // Token -> Head attention flow ribbon (electric cyan -> violet)
+    baseCol = mix(vec3(0.08, 0.36, 0.56), vec3(0.38, 0.16, 0.62), t);
+    pulseCol = mix(vec3(0.28, 1.45, 1.85), vec3(1.15, 0.55, 1.95), t);
+  } else if (lane >= 2.5 && lane < 3.5) {
+    // Causal Circuit superhighway arc (molten amber -> rose gold)
+    baseCol = vec3(0.42, 0.20, 0.07);
+    pulseCol = mix(vec3(1.95, 1.18, 0.24), vec3(1.95, 0.36, 0.68), t);
+  } else if (lane >= 3.5) {
+    // Output unembedding logit beam (luminous emerald)
+    baseCol = vec3(0.08, 0.36, 0.24);
+    pulseCol = vec3(0.24, 1.75, 1.12);
+  }
 
   vec3 col = baseCol * (0.55 + fresnel * 0.85) + pulseCol * packet * (0.45 + vMeta.z * 1.15);
   float alpha = clamp(0.34 + fresnel * 0.35 + packet * 0.55, 0.18, 0.96);

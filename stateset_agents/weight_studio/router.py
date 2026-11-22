@@ -62,11 +62,20 @@ class ApplyEditRequest(BaseModel):
     checkpoint_id: str | None = None
     op: str = Field(
         ...,
-        pattern="^(scale|prune|svd_truncate|clamp|noise|region_edit|blend|head_edit|rank1_edit)$",
+        pattern="^(scale|prune|svd_truncate|clamp|noise|region_edit|blend|head_edit|rank1_edit|steer_bake)$",
     )
     target: str
     params: dict[str, Any] = Field(default_factory=dict)
     label: str = ""
+
+
+class ApplyRecipeRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_id: str
+    checkpoint_id: str | None = None
+    recipe: dict[str, Any]
+    reset_first: bool = True
 
 
 class HistoryActionRequest(BaseModel):
@@ -107,8 +116,51 @@ class InferenceRequest(BaseModel):
     seed: int = 42
     compare_base: bool = True
     causal_patches: list[dict[str, Any]] = Field(default_factory=list)
+    steering: dict[str, Any] | None = None
     endpoint_url: str = ""
     api_key: str = ""
+
+
+class CircuitRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_id: str
+    checkpoint_id: str | None = None
+    prompt: str = Field(..., min_length=1, max_length=8000)
+    system_prompt: str = ""
+    top_k: int = Field(10, ge=3, le=24)
+
+
+class SteeringExtractRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_id: str
+    checkpoint_id: str | None = None
+    name: str = Field("Custom Steering Vector", min_length=1, max_length=120)
+    positive_prompt: str = Field(..., min_length=1, max_length=4000)
+    negative_prompt: str = Field(..., min_length=1, max_length=4000)
+    layer_index: int | None = None
+
+
+class SteeringBakeRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_id: str
+    checkpoint_id: str | None = None
+    vector_id: str
+    strength: float = Field(0.65, ge=-2.5, le=2.5)
+    target_layer: int | None = None
+
+
+class BatchEvalRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_id: str
+    checkpoint_id: str | None = None
+    dataset_path: str | None = None
+    max_cases: int = Field(6, ge=2, le=12)
+    causal_patches: list[dict[str, Any]] = Field(default_factory=list)
+    steering: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -284,6 +336,28 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
         except (KeyError, ValueError, FileNotFoundError, OSError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @api.get("/edits/recipe")
+    async def export_edit_recipe(
+        model_id: str = Query(...),
+        checkpoint_id: str | None = Query(None),
+    ) -> dict[str, Any]:
+        try:
+            return _rt().editor.export_recipe(model_id, checkpoint_id)
+        except (KeyError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @api.post("/edits/recipe/apply")
+    async def apply_edit_recipe(req: ApplyRecipeRequest) -> dict[str, Any]:
+        try:
+            return _rt().editor.apply_recipe(
+                req.model_id,
+                req.recipe,
+                checkpoint_id=req.checkpoint_id,
+                reset_first=req.reset_first,
+            )
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     # --- Finetuning Workbench & Curated Datasets ---
 
     @api.get("/finetune/catalog")
@@ -427,11 +501,88 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
                 seed=req.seed,
                 compare_base=req.compare_base,
                 causal_patches=req.causal_patches,
+                steering=req.steering,
                 endpoint_url=req.endpoint_url,
                 api_key=req.api_key,
             )
         except (KeyError, FileNotFoundError) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @api.post("/inference/circuit")
+    async def discover_circuit(req: CircuitRequest) -> dict[str, Any]:
+        try:
+            return _rt().inference.discover_causal_circuit(
+                req.model_id,
+                req.prompt,
+                checkpoint_id=req.checkpoint_id,
+                system_prompt=req.system_prompt,
+                top_k=req.top_k,
+            )
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # --- Contrastive Activation Steering (CAA / RepE) & Weight Baking ---
+
+    @api.get("/steering/presets")
+    async def steering_presets() -> dict[str, Any]:
+        return {"presets": _rt().inference.list_steering_presets()}
+
+    @api.post("/steering/extract")
+    async def steering_extract(req: SteeringExtractRequest) -> dict[str, Any]:
+        try:
+            return _rt().inference.extract_steering_vector(
+                req.model_id,
+                req.positive_prompt,
+                req.negative_prompt,
+                checkpoint_id=req.checkpoint_id,
+                name=req.name,
+                layer_index=req.layer_index,
+            )
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @api.post("/steering/bake")
+    async def steering_bake(req: SteeringBakeRequest) -> dict[str, Any]:
+        rt = _rt()
+        try:
+            vec_rec = rt.inference.get_steering_vector(req.vector_id)
+            layer_idx = (
+                int(req.target_layer)
+                if req.target_layer is not None
+                else int(vec_rec["recommended_layer"])
+            )
+            layer_vecs = vec_rec.get("layer_vectors", {})
+            direction = layer_vecs.get(layer_idx) or vec_rec["direction"]
+            return rt.editor.apply_edit(
+                req.model_id,
+                "steer_bake",
+                f"layer:{layer_idx}",
+                {
+                    "concept": vec_rec["name"],
+                    "strength": req.strength,
+                    "direction": direction,
+                },
+                checkpoint_id=req.checkpoint_id,
+                label=f"Bake CAA '{vec_rec['name'][:18]}' (L{layer_idx:02d}, α={req.strength:+.2f})",
+            )
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # --- Batch Eval Gate (Pre-Export Regression Scorecard) ---
+
+    @api.post("/eval/run")
+    async def run_batch_eval(req: BatchEvalRequest) -> dict[str, Any]:
+        try:
+            return _rt().inference.run_batch_eval(
+                req.model_id,
+                checkpoint_id=req.checkpoint_id,
+                dataset_path=req.dataset_path,
+                max_cases=req.max_cases,
+                causal_patches=req.causal_patches,
+                steering=req.steering,
+            )
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return api
 

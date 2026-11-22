@@ -41,6 +41,9 @@
         <button class="mode-pill" data-mode="trajectory" role="tab" aria-selected="false">
           <span class="dot dot-emerald"></span>Trajectory 4D
         </button>
+        <button class="mode-pill" data-mode="circuit" role="tab" aria-selected="false">
+          <span class="dot dot-rose"></span>Circuit 3D
+        </button>
       </nav>
 
       <div class="topbar-actions">
@@ -65,10 +68,12 @@
           <button id="btn-undo" class="action-btn subtle" disabled title="Undo last weight edit">↶</button>
           <button id="btn-redo" class="action-btn subtle" disabled title="Redo weight edit">↷</button>
           <span id="edit-count-badge" class="status-badge">0 EDITS</span>
-          <button id="btn-export-modal" class="action-btn primary" title="Export verified safetensors & merge probe">
+          <button id="btn-export-modal" class="action-btn primary" title="Run eval gate & export verified safetensors">
             Export
           </button>
+          <button id="btn-record-360" class="icon-btn" title="Record 360° Turntable WebM Video">⏺</button>
           <button id="btn-screenshot" class="icon-btn" title="Capture 3D Viewport PNG">📷</button>
+          <button id="btn-zen-mode" class="icon-btn" title="Cinema Zen Mode (Press H)">⛶</button>
         </div>
       </div>
     </header>
@@ -126,6 +131,15 @@
         <!-- Screen-Projected 3D Spatial Rulers & Head Labels -->
         <div id="spatial-labels-layer" class="spatial-labels-layer"></div>
 
+        <!-- Real-Time 3D Split-Screen Wipe Curtain (Base vs. Edited) -->
+        <div id="split-curtain" class="split-curtain hidden">
+          <div id="split-divider" class="split-divider" style="left:50%">
+            <span class="split-badge left">BASE (UNEDITED)</span>
+            <span class="split-badge right">EDITED (LIVE)</span>
+            <div class="split-handle" title="Drag left/right to wipe Base vs Edited 3D crystals">⇄</div>
+          </div>
+        </div>
+
         <!-- Selected Tensor Floating Screen-Space Callout -->
         <div id="callout-3d" class="callout-3d hidden">
           <div class="callout-tag" id="callout-role">SELF_ATTN</div>
@@ -148,6 +162,9 @@
           <div id="microscope-hud" class="hud-chip glass hidden">
             <button id="btn-toggle-brush" class="mini-pill-btn" title="Paint a 3D surgical region directly on the matrix">
               ✦ 3D Brush
+            </button>
+            <button id="btn-toggle-split" class="mini-pill-btn" title="Real-time 3D Split-Screen Wipe: Base vs Edited (Press S)">
+              ◧ Split A|B
             </button>
             <button id="btn-zoom-crop" class="mini-pill-btn" title="Zoom deep into the active 3D Brush patch">
               ⊕ Crop
@@ -177,6 +194,14 @@
             <input id="spectral-rank-slider" type="range" min="1" max="32" value="16" class="hud-slider" />
             <span id="spectral-rank-val" class="mono-accent">k=16</span>
             <button id="btn-apply-svd-rank" class="mini-pill-btn accent">Commit SVD</button>
+          </div>
+
+          <!-- Circuit 3D quick bar -->
+          <div id="circuit-hud" class="hud-chip glass hidden">
+            <span class="hud-k">CAUSAL CIRCUIT</span>
+            <span id="circuit-summary-val" class="mono-accent">Top-10 Nodes</span>
+            <input id="circuit-topk-slider" type="range" min="4" max="20" value="10" class="hud-slider sm" />
+            <button id="btn-rediscover-circuit" class="mini-pill-btn accent">↻ Trace Prompt</button>
           </div>
         </div>
 
@@ -276,7 +301,12 @@
           <div class="section-card grow">
             <div class="card-title-row">
               <span class="card-title">EDIT RECIPE &amp; LINEAGE STACK</span>
-              <span id="stack-delta-summary" class="mono-accent">0 modified</span>
+              <div class="recipe-btn-row">
+                <button id="btn-export-recipe" class="mini-btn" title="Download reproducible .studio-recipe.json">↓ JSON</button>
+                <button id="btn-import-recipe" class="mini-btn" title="Replay a saved .studio-recipe.json">↑ Replay</button>
+                <input id="recipe-file-input" type="file" accept=".json" class="hidden" />
+                <span id="stack-delta-summary" class="mono-accent">0 modified</span>
+              </div>
             </div>
             <div id="edit-stack-list" class="edit-stack-list">
               <div class="empty-hint">No surgical edits yet. Try Scale, Wanda Prune, Head Surgery, ROME Rank-1, or TIES/DARE Merge above.</div>
@@ -442,10 +472,44 @@
             </details>
             <div class="op-action-row mt-8">
               <button id="btn-run-infer" class="action-btn primary full">⚡ Generate &amp; Fire 3D Wave</button>
+              <button id="btn-run-circuit" class="action-btn subtle" title="Discover top causal heads & MLPs in Circuit 3D">✦ Circuit</button>
               <label class="inline-toggle" style="white-space:nowrap">
                 <input id="inf-compare-base" type="checkbox" checked />
                 <span>A/B</span>
               </label>
+            </div>
+          </div>
+
+          <!-- Contrastive Activation Steering (CAA / RepE) & Weight Baking -->
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">ACTIVATION STEERING (CAA / RepE)</span>
+              <span id="steer-status-pill" class="steer-meta-pill">OFF</span>
+            </div>
+            <div class="patch-builder">
+              <select id="steer-preset-select" class="precision-select compact"></select>
+              <select id="steer-layer-select" class="precision-select compact" title="Injection layer"></select>
+              <button id="btn-extract-steer" class="mini-btn">Extract</button>
+            </div>
+            <details class="cli-drawer">
+              <summary>Edit Positive / Negative Contrast Pair</summary>
+              <label class="field mt-6">
+                <span>Positive Behavior (+v)</span>
+                <textarea id="steer-pos-prompt" class="precision-textarea" rows="2"></textarea>
+              </label>
+              <label class="field mt-6">
+                <span>Negative Contrast (−v)</span>
+                <textarea id="steer-neg-prompt" class="precision-textarea" rows="2"></textarea>
+              </label>
+            </details>
+            <label class="field mt-6">
+              <span>Live Steering Strength α <b id="steer-alpha-val" class="mono-accent">0.00</b></span>
+              <input id="steer-alpha" type="range" min="-2.0" max="2.0" step="0.1" value="0.0" />
+            </label>
+            <div class="op-action-row mt-6">
+              <button id="btn-bake-steer" class="mini-btn full" disabled title="Bake steering direction permanently into target layer weights (undoable)">
+                ✦ Bake Steering Into Weights
+              </button>
             </div>
           </div>
 
@@ -466,6 +530,17 @@
               <button id="btn-add-patch" class="mini-btn">+ Patch</button>
             </div>
             <div id="active-patches-wrap" class="chip-wrap mt-6"></div>
+          </div>
+
+          <!-- Discovered Causal Circuit Nodes -->
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">CAUSAL CIRCUIT NODES (CLICK TO PATCH)</span>
+              <span id="circuit-sparsity-pill" class="mono-muted">—</span>
+            </div>
+            <div id="circuit-node-list" class="circuit-node-list">
+              <div class="empty-hint">Click ✦ Circuit above or switch to Circuit 3D to map attention-flow arcs &amp; causal heads.</div>
+            </div>
           </div>
 
           <div id="infer-results" class="infer-results">
@@ -547,16 +622,28 @@
       </aside>
     </div>
 
-    <!-- Verified Export & Merge Effect Probe Modal -->
+    <!-- Verified Export, Batch Eval Gate & Merge Effect Probe Modal -->
     <div id="export-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
       <div class="modal-card">
         <div class="card-title-row">
-          <span class="card-title">EXPORT VERIFIED .SAFETENSORS &amp; MERGE PROBE</span>
+          <span class="card-title">EVAL GATE &amp; VERIFIED .SAFETENSORS EXPORT</span>
           <button id="btn-close-export" class="icon-btn">✕</button>
         </div>
         <p class="helper-copy">
-          Writes a new immutable <code>.safetensors</code> checkpoint with a SHA-256 <code>edit_manifest.json</code> and verifies exact reload fidelity. Original checkpoints are never modified.
+          Run the StateSet Batch Eval Gate to verify zero policy/reward regressions, then write an immutable <code>.safetensors</code> checkpoint with SHA-256 verification.
         </p>
+
+        <!-- Pre-Export Batch Eval Gate Scorecard -->
+        <div class="section-card mt-8">
+          <div class="card-title-row">
+            <span class="card-title">PRE-EXPORT BATCH EVAL GATE</span>
+            <span id="eval-verdict-pill" class="verdict-pill hidden">GO</span>
+          </div>
+          <div id="eval-summary-copy" class="helper-copy">Compare Base vs. Edited across 6 commerce, tool-schema, RLVR math &amp; safety boundary tests.</div>
+          <div id="eval-case-list" class="eval-case-list mt-6 hidden"></div>
+          <button id="btn-run-eval-gate" class="mini-btn full mt-6">⚡ Run 6-Case Regression Eval Gate</button>
+        </div>
+
         <label class="field mt-8">
           <span>Export Directory Name</span>
           <input id="export-name-input" class="precision-input mono" value="surgical-edit-v1" />

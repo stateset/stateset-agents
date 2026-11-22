@@ -398,3 +398,97 @@ def test_studio_fastapi_v2_routes_and_binary_stream(tmp_path: Path) -> None:
     assert r_inf.status_code == 200
     assert len(r_inf.json()["active"]["logit_lens"]) == 3
     assert StudioRuntime(workspace_root=ws).inspector.workspace_root == ws.resolve()
+
+
+def test_studio_v3_circuit_steering_eval_gate_and_recipes(tmp_path: Path) -> None:
+    ws = _make_sample_workspace(tmp_path)
+    app = create_studio_app(workspace_root=ws)
+    client = TestClient(app)
+    mid = "local:outputs/demo_lora_run"
+
+    # 1. Causal Circuit Discovery & 3D Attention-Flow Arcs
+    r_circ = client.post(
+        "/api/weight-studio/inference/circuit",
+        json={
+            "model_id": mid,
+            "prompt": "Customer says: My order #77701 arrived damaged. Can you refund me?",
+            "top_k": 8,
+        },
+    )
+    assert r_circ.status_code == 200
+    circ = r_circ.json()
+    assert len(circ["top_nodes"]) == 8
+    assert len(circ["arcs"]) > 4
+    assert len(circ["tokens"]) >= 4
+
+    # 2. Contrastive Activation Steering (CAA / RepE) extraction, live inference & weight baking
+    r_presets = client.get("/api/weight-studio/steering/presets")
+    assert r_presets.status_code == 200
+    presets = r_presets.json()["presets"]
+    assert len(presets) >= 4
+
+    r_ext = client.post(
+        "/api/weight-studio/steering/extract",
+        json={
+            "model_id": mid,
+            "name": presets[0]["name"],
+            "positive_prompt": presets[0]["positive"],
+            "negative_prompt": presets[0]["negative"],
+        },
+    )
+    assert r_ext.status_code == 200
+    vec = r_ext.json()
+    assert vec["vector_id"].startswith("sv_")
+    assert vec["peak_separation"] > 0.0
+
+    r_steered = client.post(
+        "/api/weight-studio/inference/run",
+        json={
+            "model_id": mid,
+            "prompt": "My order #77701 arrived damaged.",
+            "steering": {
+                "vector_id": vec["vector_id"],
+                "strength": 1.2,
+                "layer": vec["recommended_layer"],
+            },
+        },
+    )
+    assert r_steered.status_code == 200
+    assert r_steered.json()["comparison"]["hidden_l2_shift"] > 0.0
+
+    r_bake = client.post(
+        "/api/weight-studio/steering/bake",
+        json={
+            "model_id": mid,
+            "vector_id": vec["vector_id"],
+            "strength": 0.75,
+        },
+    )
+    assert r_bake.status_code == 200
+    assert r_bake.json()["edit"]["changed_weights"] > 0
+
+    # 3. Portable Edit Recipe Export & Deterministic Replay
+    r_rec = client.get("/api/weight-studio/edits/recipe", params={"model_id": mid})
+    assert r_rec.status_code == 200
+    recipe = r_rec.json()
+    assert recipe["format"] == "stateset-weight-studio-recipe"
+    assert len(recipe["operations"]) == 1
+
+    alt_id = "local:outputs/demo_lora_alt"
+    r_replay = client.post(
+        "/api/weight-studio/edits/recipe/apply",
+        json={"model_id": alt_id, "recipe": recipe, "reset_first": True},
+    )
+    assert r_replay.status_code == 200
+    assert r_replay.json()["applied_count"] == 1
+
+    # 4. Pre-Export Batch Eval Gate Scorecard
+    r_eval = client.post(
+        "/api/weight-studio/eval/run",
+        json={"model_id": mid, "max_cases": 6},
+    )
+    assert r_eval.status_code == 200
+    ev = r_eval.json()
+    assert ev["verdict"] in {"GO", "WARN", "BLOCK"}
+    assert ev["case_count"] == 6
+    assert len(ev["cases"]) == 6
