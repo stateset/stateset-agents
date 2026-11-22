@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Interactive 3D Weight Studio (`stateset-agents studio`, `python -m stateset_agents.weight_studio`, and mounted at `/studio` + `/api/weight-studio/*` on the FastAPI app) for browser-based neural weight exploration, surgical editing, finetuning, and model probing.
+  - Custom zero-dependency WebGL2 PBR renderer (`stateset_agents/weight_studio/static/`) with Cook-Torrance GGX shading, procedural HDR studio softbox IBL, beveled crystal prisms, dual-tier Gaussian bloom, ACES filmic tone mapping, 4 studio lighting rigs, 5 scientific colormaps, and 4 interactive 3D modes: **Architecture 3D**, **Microscope 64²** (with 3D surgical brush & pre-edit ghost overlay), **SVD Spectral** (exact LoRA QR-SVD & interactive 3D rank cutoff), and **Trajectory 4D** (multi-checkpoint evolution).
+  - Non-destructive surgical weight-editing engine (`stateset_agents/weight_studio/editor.py`) supporting Scale, Magnitude Pruning, Percentile Clamping, SVD Rank Truncation, Gaussian Perturbation, 3D Brush Region Edits, and Checkpoint Blending with Undo/Redo/Toggle history and SHA-256 reload-verified `.safetensors` export.
+  - Interactive Finetuning Workbench & Live PyTorch Micro-Trainer (`stateset_agents/weight_studio/finetune_engine.py`) with RL objective configuration (`GSPO`, `GRPO`, `DAPO`, `GEPO`, `VAPO`, `PPO`, `SFT`), 3D-linked LoRA target module isolation, VRAM & provider cost breakdown, CLI command export, and live SSE-streamed PyTorch autograd updates pulsing backprop waves into the 3D scene.
+  - Interactive Model Playground (`stateset_agents/weight_studio/inference_engine.py`) with Base-vs-Edited A/B comparison, clickable Token Logit Lens (Top-6 probabilities, entropy, KL shift), multi-axis StateSet reward rubric bars, and 3D forward-pass activation waves.
+
 ## [0.75.0] - 2026-11-20 — Inkling 2 Mini starter, tau-bench retail and BFCL environments, shared-prefix token loss
 
 ### Added

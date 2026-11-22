@@ -433,6 +433,14 @@ def create_app() -> FastAPI:
         app.include_router(training_lab.router)
         app.include_router(training_lab.ws_router)
 
+    # Mount the interactive 3D Weight Studio (non-v1 browser workbench)
+    try:
+        from stateset_agents.weight_studio.router import mount_studio_ui
+
+        mount_studio_ui(app)
+    except Exception as error:  # noqa: BLE001 - optional static/studio mount
+        logger.debug("Weight Studio mount skipped (%s)", type(error).__name__)
+
     # Compatibility aliases for legacy tests/clients
     app.add_api_route(
         "/conversation",

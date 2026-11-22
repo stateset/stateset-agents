@@ -343,6 +343,7 @@ include-package-data = true
 "stateset_agents" = ["py.typed", "config/presets/**/*.yaml", "config/presets/**/*.json", "evaluation/rubrics/*.md", "improvement/evidence-catalog.json"]
 "traceforge_rl" = ["py.typed"]
 "stateset_agents.swarm" = ["*.sh"]
+"stateset_agents.weight_studio" = ["static/*", "static/**/*"]
 
 
 # Bandit configuration
