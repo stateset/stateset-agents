@@ -131,12 +131,12 @@
         <!-- Screen-Projected 3D Spatial Rulers & Head Labels -->
         <div id="spatial-labels-layer" class="spatial-labels-layer"></div>
 
-        <!-- Real-Time 3D Split-Screen Wipe Curtain (Base vs. Edited) -->
+        <!-- Real-Time 3D Split-Screen Wipe Curtain (Base / Checkpoint B vs. Active) -->
         <div id="split-curtain" class="split-curtain hidden">
           <div id="split-divider" class="split-divider" style="left:50%">
-            <span class="split-badge left">BASE (UNEDITED)</span>
-            <span class="split-badge right">EDITED (LIVE)</span>
-            <div class="split-handle" title="Drag left/right to wipe Base vs Edited 3D crystals">⇄</div>
+            <span id="split-left-badge" class="split-badge left">BASE (UNEDITED)</span>
+            <span id="split-right-badge" class="split-badge right">ACTIVE (LIVE)</span>
+            <div class="split-handle" title="Drag left/right to wipe Base/Checkpoint B vs Active 3D crystals">⇄</div>
           </div>
         </div>
 
@@ -163,9 +163,12 @@
             <button id="btn-toggle-brush" class="mini-pill-btn" title="Paint a 3D surgical region directly on the matrix">
               ✦ 3D Brush
             </button>
-            <button id="btn-toggle-split" class="mini-pill-btn" title="Real-time 3D Split-Screen Wipe: Base vs Edited (Press S)">
+            <button id="btn-toggle-split" class="mini-pill-btn" title="Real-time 3D Split-Screen Wipe: Base or Checkpoint B vs Active (Press S)">
               ◧ Split A|B
             </button>
+            <select id="split-compare-select" class="mini-select" title="Select left-side comparator for 3D Split A|B wipe">
+              <option value="base">vs: Unedited Base</option>
+            </select>
             <button id="btn-zoom-crop" class="mini-pill-btn" title="Zoom deep into the active 3D Brush patch">
               ⊕ Crop
             </button>
@@ -431,6 +434,19 @@
               <button id="btn-copy-cli" class="mini-btn full">Copy CLI Command</button>
             </details>
           </div>
+
+          <!-- Managed CLI / Workspace Training Dispatch + Hot-Reload -->
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">DISPATCH TRAINING RUN &amp; HOT-RELOAD</span>
+              <span id="dispatch-status-pill" class="mono-muted">IDLE</span>
+            </div>
+            <div class="op-action-row">
+              <button id="btn-dispatch-dryrun" class="mini-btn full" title="Validate schema & generate SHA-256 plan.json">✓ Validate Plan</button>
+              <button id="btn-dispatch-local" class="mini-btn full" title="Launch isolated local stub CLI run and hot-reload catalog">🚀 Run Local Stub</button>
+            </div>
+            <pre id="dispatch-log-box" class="cli-code hidden"></pre>
+          </div>
         </section>
 
         <!-- TAB 3: USE MODEL, LOGIT LENS & CAUSAL PATCHING PLAYGROUND -->
@@ -540,6 +556,21 @@
             </div>
             <div id="circuit-node-list" class="circuit-node-list">
               <div class="empty-hint">Click ✦ Circuit above or switch to Circuit 3D to map attention-flow arcs &amp; causal heads.</div>
+            </div>
+          </div>
+
+          <!-- Sparse Autoencoder (SAE) Monosemantic Feature Explorer -->
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">SAE MONOSEMANTIC FEATURES</span>
+              <span id="sae-stats-pill" class="mono-muted">L0 —</span>
+            </div>
+            <div class="op-action-row mb-6">
+              <button id="btn-analyze-sae" class="mini-btn full">✦ Analyze SAE Features</button>
+              <button id="btn-clear-sae-clamps" class="mini-btn">Reset</button>
+            </div>
+            <div id="sae-feature-list" class="circuit-node-list">
+              <div class="empty-hint">Decompose residual activations into interpretable StateSet sparse features with live 0×/2.5× clamping.</div>
             </div>
           </div>
 

@@ -824,3 +824,157 @@ class FinetuneStudioEngine:
             self._publish(
                 job.job_id, {"type": "failed", "job_id": job.job_id, "error": job.error}
             )
+
+    # ------------------------------------------------------------------
+    # Managed CLI / Workspace Training Dispatch + Checkpoint Hot-Reload
+    # ------------------------------------------------------------------
+
+    def _dispatch_store(self) -> dict[str, dict[str, Any]]:
+        if not hasattr(self, "_dispatches"):
+            self._dispatches: dict[str, dict[str, Any]] = {}
+            self._dispatch_procs: dict[str, asyncio.subprocess.Process] = {}
+        return self._dispatches
+
+    def list_dispatch_runs(self) -> list[dict[str, Any]]:
+        return sorted(
+            self._dispatch_store().values(),
+            key=lambda r: float(r.get("started_at", 0.0)),
+            reverse=True,
+        )
+
+    def get_dispatch_run(self, run_id: str) -> dict[str, Any]:
+        store = self._dispatch_store()
+        if run_id not in store:
+            raise KeyError(f"Unknown dispatch run: {run_id}")
+        return store[run_id]
+
+    async def dispatch_training_run(
+        self,
+        model_id: str,
+        config: dict[str, Any],
+        *,
+        mode: str = "dry_run",
+        checkpoint_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Write a validated config bundle and launch a managed dry-run or local CLI run
+        with bounded log capture and automatic checkpoint catalog refresh on completion.
+        """
+        import hashlib
+        import sys
+
+        if mode not in {"dry_run", "local_stub"}:
+            raise ValueError("mode must be 'dry_run' or 'local_stub'")
+
+        est = self.estimate(model_id, config)
+        run_id = f"run_{uuid.uuid4().hex[:8]}"
+        runs_root = (
+            self.inspector.workspace_root / "outputs" / "weight_studio_runs" / run_id
+        ).resolve()
+        runs_root.mkdir(parents=True, exist_ok=True)
+
+        bundle = {
+            "run_id": run_id,
+            "mode": mode,
+            "model_id": model_id,
+            "checkpoint_id": checkpoint_id or "default",
+            "config": config,
+            "estimate": est,
+            "created_at": time.time(),
+        }
+        bundle_bytes = (json.dumps(bundle, indent=2) + "\n").encode("utf-8")
+        cfg_file = runs_root / "plan.json"
+        cfg_file.write_bytes(bundle_bytes)
+        plan_sha = hashlib.sha256(bundle_bytes).hexdigest()
+
+        record: dict[str, Any] = {
+            "run_id": run_id,
+            "mode": mode,
+            "model_id": model_id,
+            "status": "running",
+            "plan_path": cfg_file.relative_to(self.inspector.workspace_root).as_posix(),
+            "plan_sha256": plan_sha,
+            "cli_command": est["cli_command"],
+            "vram_gb": est["vram_gb"]["total"],
+            "est_cost_usd": est["compute"]["est_cost_usd"],
+            "started_at": time.time(),
+            "finished_at": None,
+            "exit_code": None,
+            "logs": [
+                f"[dispatch] Created validated plan {cfg_file.name} (sha256={plan_sha[:12]})",
+                f"[dispatch] Provider={config.get('provider', 'local')} · Algo={str(config.get('algorithm', 'gspo')).upper()} · VRAM={est['vram_gb']['total']:.1f} GB",
+            ],
+            "catalog_refreshed": False,
+        }
+        self._dispatch_store()[run_id] = record
+
+        if mode == "dry_run":
+            record["logs"].append(
+                f"[dry-run] Validated CLI command: {est['cli_command']}"
+            )
+            record["logs"].append(
+                "[dry-run] Schema & workspace preflight passed — ready for GPU execution."
+            )
+            record["status"] = "completed"
+            record["exit_code"] = 0
+            record["finished_at"] = time.time()
+            self.inspector.refresh_catalog()
+            record["catalog_refreshed"] = True
+            return record
+
+        # local_stub: run a real isolated subprocess invoking stateset-agents doctor/train --stub
+        cmd = [
+            sys.executable,
+            "-m",
+            "stateset_agents.cli",
+            "train",
+            "--stub",
+            "--episodes",
+            "2",
+            "--save",
+            str(runs_root / "ckpt"),
+        ]
+        record["logs"].append(f"[subprocess] Launching: {' '.join(cmd)}")
+
+        async def _runner() -> None:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    cwd=str(self.inspector.workspace_root),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
+                )
+                self._dispatch_procs[run_id] = proc
+                assert proc.stdout is not None
+                while True:
+                    line = await proc.stdout.readline()
+                    if not line:
+                        break
+                    text = line.decode("utf-8", errors="replace").rstrip()
+                    if text:
+                        record["logs"].append(text)
+                        if len(record["logs"]) > 120:
+                            record["logs"] = record["logs"][-120:]
+                rc = await proc.wait()
+                record["exit_code"] = int(rc)
+                record["status"] = "completed" if rc == 0 else "failed"
+            except Exception as exc:
+                record["logs"].append(f"[error] {type(exc).__name__}: {exc}")
+                record["status"] = "failed"
+                record["exit_code"] = 1
+            finally:
+                record["finished_at"] = time.time()
+                self._dispatch_procs.pop(run_id, None)
+                self.inspector.refresh_catalog()
+                record["catalog_refreshed"] = True
+
+        asyncio.create_task(_runner())
+        return record
+
+    def stop_dispatch_run(self, run_id: str) -> dict[str, Any]:
+        rec = self.get_dispatch_run(run_id)
+        proc = self._dispatch_procs.get(run_id)
+        if proc is not None and proc.returncode is None:
+            proc.terminate()
+            rec["status"] = "stopped"
+            rec["logs"].append("[dispatch] Terminated by user.")
+        return rec

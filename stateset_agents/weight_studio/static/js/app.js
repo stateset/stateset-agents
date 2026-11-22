@@ -48,8 +48,11 @@ const state = {
   steeringPresets: [],
   activeSteeringVector: null, // { vector_id, name, recommended_layer, ... }
   steeringAlpha: 0.0,
+  saeClamps: {}, // { feature_id: value }
   splitCompare: false,
   splitRatio: 0.5,
+  splitTargetSpec: 'base', // 'base' | 'cp:<id>' | 'model:<id>'
+  dispatchPollTimer: null,
   trajPlayTimer: null,
   lastInferResult: null,
 };
@@ -284,6 +287,7 @@ async function loadModelStructure(modelId, checkpointId = null) {
 
   renderLayerTree();
   renderEditHistory();
+  populateSplitComparators();
 
   const allNames = [];
   for (const l of struct.layers) for (const t of l.tensors) allNames.push(t.name);
@@ -311,6 +315,27 @@ async function loadModelStructure(modelId, checkpointId = null) {
   renderOpParams();
 }
 
+function getSecondaryQueryParams() {
+  if (state.splitCompare && state.splitTargetSpec && state.splitTargetSpec !== 'base') {
+    if (state.splitTargetSpec.startsWith('cp:')) {
+      return {
+        secondary_model_id: state.modelId,
+        secondary_checkpoint_id: state.splitTargetSpec.slice(3),
+      };
+    }
+    if (state.splitTargetSpec.startsWith('model:')) {
+      return {
+        secondary_model_id: state.splitTargetSpec.slice(6),
+        secondary_checkpoint_id: null,
+      };
+    }
+  }
+  if (state.secondaryModelId && renderer.colorMode === 'conflict') {
+    return { secondary_model_id: state.secondaryModelId, secondary_checkpoint_id: null };
+  }
+  return { secondary_model_id: null, secondary_checkpoint_id: null };
+}
+
 async function fetchBinaryGrid(tensorName, res) {
   const qs = new URLSearchParams({
     model_id: state.modelId,
@@ -318,9 +343,9 @@ async function fetchBinaryGrid(tensorName, res) {
     resolution: String(res),
   });
   if (state.checkpointId) qs.set('checkpoint_id', state.checkpointId);
-  if (state.secondaryModelId && renderer.colorMode === 'conflict') {
-    qs.set('secondary_model_id', state.secondaryModelId);
-  }
+  const sec = getSecondaryQueryParams();
+  if (sec.secondary_model_id) qs.set('secondary_model_id', sec.secondary_model_id);
+  if (sec.secondary_checkpoint_id) qs.set('secondary_checkpoint_id', sec.secondary_checkpoint_id);
   if (state.activeCrop) {
     qs.set('r0', String(state.activeCrop[0]));
     qs.set('r1', String(state.activeCrop[1]));
@@ -341,11 +366,13 @@ async function fetchBinaryGrid(tensorName, res) {
     matrix_shape: meta.matrix_shape,
     abs_max: meta.abs_max,
     delta_abs_max: meta.delta_abs_max,
+    secondary_abs_max: meta.secondary_abs_max || 0,
     conflict_rate: meta.conflict_rate || 0,
     values: null,
     delta: null,
     importance: null,
     conflict: null,
+    secondary: null,
   };
   (meta.channels || []).forEach((ch, idx) => {
     unpacked[ch] = floats.subarray(idx * stride, (idx + 1) * stride);
@@ -362,7 +389,8 @@ async function selectTensor(tensorName, { focusCamera = true } = {}) {
   });
 
   const res = Number($('microscope-res').value || 64);
-  const useBinary = res >= 96 || renderer.colorMode === 'conflict';
+  const sec = getSecondaryQueryParams();
+  const useBinary = res >= 96 || renderer.colorMode === 'conflict' || Boolean(sec.secondary_model_id);
 
   const qs = new URLSearchParams({
     model_id: state.modelId,
@@ -371,9 +399,8 @@ async function selectTensor(tensorName, { focusCamera = true } = {}) {
     include_svd: 'true',
   });
   if (state.checkpointId) qs.set('checkpoint_id', state.checkpointId);
-  if (state.secondaryModelId && renderer.colorMode === 'conflict') {
-    qs.set('secondary_model_id', state.secondaryModelId);
-  }
+  if (sec.secondary_model_id) qs.set('secondary_model_id', sec.secondary_model_id);
+  if (sec.secondary_checkpoint_id) qs.set('secondary_checkpoint_id', sec.secondary_checkpoint_id);
   if (state.activeCrop) {
     qs.set('r0', String(state.activeCrop[0]));
     qs.set('r1', String(state.activeCrop[1]));
@@ -1169,6 +1196,7 @@ async function reloadAfterEdit(toastMsg) {
   state.editHistory = struct.edit_history;
   renderLayerTree();
   renderEditHistory();
+  populateSplitComparators();
   renderer.setData({ structure: struct });
   if (state.selectedTensorName) {
     await selectTensor(state.selectedTensorName, { focusCamera: false });
@@ -1953,39 +1981,207 @@ async function runExportEvalGate() {
 }
 
 // ---------------------------------------------------------------------------
-// Split-Screen 3D A/B Wipe Curtain, Cinema Zen Mode & Keyboard Shortcuts
+// Split-Screen 3D A/B Wipe Curtain (Cross-Checkpoint / Base), SAE & Dispatch
 // ---------------------------------------------------------------------------
 
-function setSplitCompare(enabled) {
+function populateSplitComparators() {
+  const sel = $('split-compare-select');
+  if (!sel) return;
+  const prev = sel.value || 'base';
+  sel.innerHTML = '<option value="base">vs: Unedited Base</option>';
+
+  const cps = state.structure?.model?.checkpoints || [];
+  for (const cp of cps) {
+    if (cp.id === state.checkpointId) continue;
+    const opt = document.createElement('option');
+    opt.value = `cp:${cp.id}`;
+    opt.textContent = `vs: ${cp.label}`;
+    sel.appendChild(opt);
+  }
+  for (const m of state.models || []) {
+    if (m.model_id === state.modelId || m.kind === 'preset_twin') continue;
+    const opt = document.createElement('option');
+    opt.value = `model:${m.model_id}`;
+    opt.textContent = `vs: ${m.display_name}`;
+    sel.appendChild(opt);
+  }
+  if ([...sel.options].some((o) => o.value === prev)) {
+    sel.value = prev;
+  } else {
+    state.splitTargetSpec = 'base';
+  }
+  updateSplitBadgeLabels();
+}
+
+function updateSplitBadgeLabels() {
+  const sel = $('split-compare-select');
+  const leftEl = $('split-left-badge');
+  const rightEl = $('split-right-badge');
+  if (!leftEl || !rightEl) return;
+  const label = sel?.selectedOptions?.[0]?.textContent?.replace(/^vs:\s*/i, '') || 'BASE (UNEDITED)';
+  leftEl.textContent = label.toUpperCase();
+  const activeCp = state.structure?.checkpoint_id && state.structure.checkpoint_id !== 'default'
+    ? state.structure.checkpoint_id.toUpperCase()
+    : 'ACTIVE';
+  rightEl.textContent = state.tensorDetail?.edited ? `${activeCp} · EDITED` : `${activeCp} (LIVE)`;
+}
+
+async function setSplitCompare(enabled) {
   state.splitCompare = Boolean(enabled);
   $('btn-toggle-split').classList.toggle('active', state.splitCompare);
   $('split-curtain').classList.toggle('hidden', !state.splitCompare);
-  renderer.setSplitCompare(state.splitCompare, state.splitRatio);
+  updateSplitBadgeLabels();
+  if (state.splitCompare && state.splitTargetSpec !== 'base' && state.selectedTensorName) {
+    renderer.splitCompare = true;
+    await selectTensor(state.selectedTensorName, { focusCamera: false });
+  } else {
+    renderer.setSplitCompare(state.splitCompare, state.splitRatio);
+  }
   if (state.splitCompare) {
-    showToast('Split A|B 3D Wipe active — drag curtain left/right to compare Base vs Edited');
+    showToast(`Split A|B 3D Wipe active (${$('split-left-badge')?.textContent || 'BASE'} vs LIVE)`);
+  }
+}
+
+async function analyzeSaeFeatures() {
+  if (!state.modelId) return;
+  const prompt = ($('inf-prompt')?.value || '').trim() || 'Customer says: My order #77701 arrived damaged.';
+  const clamps = Object.entries(state.saeClamps).map(([feature_id, value]) => ({ feature_id, value }));
+  const layerVal = $('steer-layer-select')?.value;
+  try {
+    const res = await apiPost('/sae/analyze', {
+      model_id: state.modelId,
+      checkpoint_id: state.checkpointId,
+      prompt,
+      system_prompt: $('inf-system')?.value || '',
+      layer_index: layerVal !== '' ? Number(layerVal) : null,
+      top_k: 8,
+      clamps,
+    });
+    $('sae-stats-pill').textContent = `L${String(res.layer).padStart(2, '0')} · L0=${res.l0_active}/${res.dictionary_size} · R²=${res.reconstruction_r2}`;
+    const list = $('sae-feature-list');
+    list.innerHTML = '';
+    for (const f of res.features || []) {
+      const row = document.createElement('div');
+      row.className = 'circuit-node-row';
+      row.style.gridTemplateColumns = '34px 1fr 42px auto';
+      row.innerHTML = `
+        <span style="color:${f.clamped ? '#fbbf24' : '#38bdf8'};font-weight:700">${f.feature_id}</span>
+        <span style="color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.label} (${f.domain})">${f.label}</span>
+        <span style="color:#34d399;text-align:right">${f.activation.toFixed(2)}</span>
+        <span style="display:flex;gap:3px">
+          <button class="mini-btn" data-act="zero" title="Suppress feature to 0.0">0×</button>
+          <button class="mini-btn" data-act="amp" title="Amplify feature to 2.5">2.5×</button>
+        </span>
+      `;
+      row.querySelector('[data-act="zero"]').addEventListener('click', () => {
+        state.saeClamps[f.feature_id] = 0.0;
+        analyzeSaeFeatures();
+        renderer.triggerPulse('forward');
+        showToast(`Clamped SAE ${f.feature_id} (${f.label}) → 0.0`);
+      });
+      row.querySelector('[data-act="amp"]').addEventListener('click', () => {
+        state.saeClamps[f.feature_id] = 2.5;
+        analyzeSaeFeatures();
+        renderer.triggerPulse('forward');
+        showToast(`Amplified SAE ${f.feature_id} (${f.label}) → 2.5×`);
+      });
+      list.appendChild(row);
+    }
+    renderer.triggerPulse('forward');
+  } catch (err) {
+    showToast(`SAE error: ${err.message}`, 3200);
+  }
+}
+
+async function dispatchValidatedRun(mode) {
+  if (!state.modelId) return;
+  const pill = $('dispatch-status-pill');
+  const box = $('dispatch-log-box');
+  pill.textContent = 'RUNNING';
+  box.classList.remove('hidden');
+  box.textContent = `Dispatching ${mode} run…`;
+  try {
+    const rec = await apiPost('/finetune/dispatch', {
+      model_id: state.modelId,
+      checkpoint_id: state.checkpointId,
+      mode,
+      config: getCurrentFinetuneConfig(),
+    });
+    const renderRec = (r) => {
+      pill.textContent = String(r.status || '').toUpperCase();
+      box.textContent = (r.logs || []).join('\n');
+      box.scrollTop = box.scrollHeight;
+    };
+    renderRec(rec);
+    if (rec.status === 'completed') {
+      showToast(`Plan validated (${rec.plan_sha256.slice(0, 10)}) & catalog refreshed`);
+      return;
+    }
+    clearInterval(state.dispatchPollTimer);
+    state.dispatchPollTimer = setInterval(async () => {
+      try {
+        const cur = await apiGet(`/finetune/dispatch/${rec.run_id}`);
+        renderRec(cur);
+        if (['completed', 'failed', 'stopped'].includes(cur.status)) {
+          clearInterval(state.dispatchPollTimer);
+          state.dispatchPollTimer = null;
+          if (cur.status === 'completed') {
+            showToast('Local CLI run completed — checkpoints hot-reloaded!');
+            await loadModels(true);
+          }
+        }
+      } catch {
+        clearInterval(state.dispatchPollTimer);
+        state.dispatchPollTimer = null;
+      }
+    }, 900);
+  } catch (err) {
+    pill.textContent = 'ERROR';
+    box.textContent = String(err.message);
+    showToast(`Dispatch failed: ${err.message}`, 3200);
   }
 }
 
 function bindSplitCurtain() {
   const divider = $('split-divider');
   const stage = document.querySelector('.viewport-stage');
-  if (!divider || !stage) return;
-  let dragging = false;
+  if (divider && stage) {
+    let dragging = false;
+    divider.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      dragging = true;
+      divider.setPointerCapture(e.pointerId);
+    });
+    divider.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const rect = stage.getBoundingClientRect();
+      const frac = Math.max(0.08, Math.min(0.92, (e.clientX - rect.left) / Math.max(rect.width, 1)));
+      state.splitRatio = frac;
+      divider.style.left = `${(frac * 100).toFixed(2)}%`;
+      renderer.setSplitCompare(true, frac);
+    });
+    divider.addEventListener('pointerup', () => { dragging = false; });
+  }
 
-  divider.addEventListener('pointerdown', (e) => {
-    e.stopPropagation();
-    dragging = true;
-    divider.setPointerCapture(e.pointerId);
+  $('split-compare-select')?.addEventListener('change', async (e) => {
+    state.splitTargetSpec = e.target.value;
+    updateSplitBadgeLabels();
+    if (!state.splitCompare && state.splitTargetSpec !== 'base') {
+      await setSplitCompare(true);
+    } else if (state.splitCompare && state.selectedTensorName) {
+      await selectTensor(state.selectedTensorName, { focusCamera: false });
+    }
   });
-  divider.addEventListener('pointermove', (e) => {
-    if (!dragging) return;
-    const rect = stage.getBoundingClientRect();
-    const frac = Math.max(0.08, Math.min(0.92, (e.clientX - rect.left) / Math.max(rect.width, 1)));
-    state.splitRatio = frac;
-    divider.style.left = `${(frac * 100).toFixed(2)}%`;
-    renderer.setSplitCompare(true, frac);
+
+  $('btn-analyze-sae')?.addEventListener('click', analyzeSaeFeatures);
+  $('btn-clear-sae-clamps')?.addEventListener('click', () => {
+    state.saeClamps = {};
+    analyzeSaeFeatures();
+    showToast('Cleared all SAE feature clamps');
   });
-  divider.addEventListener('pointerup', () => { dragging = false; });
+
+  $('btn-dispatch-dryrun')?.addEventListener('click', () => dispatchValidatedRun('dry_run'));
+  $('btn-dispatch-local')?.addEventListener('click', () => dispatchValidatedRun('local_stub'));
 }
 
 function toggleZenMode() {

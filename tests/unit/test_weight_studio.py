@@ -523,3 +523,107 @@ def test_weight_studio_quickstart_example_and_cli_help(tmp_path: Path) -> None:
     assert cli_result.exit_code == 0
     assert "--workspace" in cli_result.output
     assert "--port" in cli_result.output
+
+
+def test_studio_v4_cross_checkpoint_sae_dispatch_and_mcp_tools(tmp_path: Path) -> None:
+    from stateset_agents.mcp_server import (
+        studio_apply_edit,
+        studio_discover_circuit,
+        studio_eval_and_export,
+        studio_extract_steering,
+        studio_inspect_model,
+        studio_list_models,
+    )
+
+    ws = _make_sample_workspace(tmp_path)
+    app = create_studio_app(workspace_root=ws)
+    client = TestClient(app)
+    mid = "local:outputs/demo_lora_run"
+    alt_id = "local:outputs/demo_lora_alt"
+
+    # 1. Cross-Checkpoint / Cross-Model secondary_grid + binary channel for Split A|B
+    r_struct = client.get(
+        "/api/weight-studio/models/structure", params={"model_id": mid}
+    )
+    first_tensor = r_struct.json()["layers"][0]["tensors"][0]["name"]
+    r_diff = client.get(
+        "/api/weight-studio/models/tensor",
+        params={
+            "model_id": mid,
+            "tensor_name": first_tensor,
+            "secondary_model_id": mid,
+            "secondary_checkpoint_id": "checkpoint-100",
+            "resolution": 16,
+        },
+    )
+    assert r_diff.status_code == 200
+    assert r_diff.json()["secondary_grid"] is not None
+
+    r_bin = client.get(
+        "/api/weight-studio/models/tensor.bin",
+        params={
+            "model_id": mid,
+            "tensor_name": first_tensor,
+            "secondary_model_id": alt_id,
+            "resolution": 16,
+        },
+    )
+    assert r_bin.status_code == 200
+    meta = json.loads(r_bin.headers["X-Tensor-Meta"])
+    assert "secondary" in meta["channels"]
+
+    # 2. SAE Monosemantic Feature Explorer & Live Feature Clamping
+    r_sae = client.post(
+        "/api/weight-studio/sae/analyze",
+        json={
+            "model_id": mid,
+            "prompt": "My order #77701 arrived damaged and I was billed twice.",
+            "top_k": 8,
+            "clamps": [{"feature_id": "F00", "value": 2.5}],
+        },
+    )
+    assert r_sae.status_code == 200
+    sae = r_sae.json()
+    assert sae["dictionary_size"] == 24
+    assert len(sae["features"]) == 8
+    f00 = [f for f in sae["features"] if f["feature_id"] == "F00"]
+    assert f00 and f00[0]["clamped"] is True and f00[0]["activation"] == 2.5
+
+    # 3. Managed Training Dispatch (Dry-Run Plan Validation + Hot-Reload)
+    r_disp = client.post(
+        "/api/weight-studio/finetune/dispatch",
+        json={
+            "model_id": mid,
+            "mode": "dry_run",
+            "config": {"algorithm": "gspo", "provider": "runpod_a40", "lora_r": 16},
+        },
+    )
+    assert r_disp.status_code == 200
+    disp = r_disp.json()
+    assert disp["status"] == "completed"
+    assert disp["catalog_refreshed"] is True
+    assert (ws / disp["plan_path"]).is_file()
+
+    # 4. Weight Studio MCP Server Tools (plain functions testable without optional mcp extra)
+    m_list = studio_list_models(workspace=str(ws))
+    assert m_list["count"] >= 2
+    m_insp = studio_inspect_model(mid, workspace=str(ws))
+    assert m_insp["summary"]["num_layers"] == 3
+    m_steer = studio_extract_steering(
+        mid,
+        "I will help verify your refund right away.",
+        "Request denied.",
+        workspace=str(ws),
+    )
+    assert m_steer["vector_id"].startswith("sv_")
+    m_edit = studio_apply_edit(
+        mid, "scale", first_tensor, {"factor": 1.05}, workspace=str(ws)
+    )
+    assert m_edit["edit"]["changed_weights"] > 0
+    m_circ = studio_discover_circuit(mid, "Check SKU-4092 stock", workspace=str(ws))
+    assert len(m_circ["top_nodes"]) == 10
+    m_exp = studio_eval_and_export(
+        mid, export_name="mcp-verified-v4", require_go=False, workspace=str(ws)
+    )
+    assert m_exp["exported"] is True
+    assert m_exp["manifest"]["reload_verified"] is True

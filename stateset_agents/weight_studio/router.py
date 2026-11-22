@@ -163,6 +163,27 @@ class BatchEvalRequest(BaseModel):
     steering: dict[str, Any] | None = None
 
 
+class SaeAnalyzeRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_id: str
+    checkpoint_id: str | None = None
+    prompt: str = Field(..., min_length=1, max_length=8000)
+    system_prompt: str = ""
+    layer_index: int | None = None
+    top_k: int = Field(10, ge=4, le=24)
+    clamps: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class DispatchRunRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_id: str
+    checkpoint_id: str | None = None
+    mode: str = Field("dry_run", pattern="^(dry_run|local_stub)$")
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
 # ---------------------------------------------------------------------------
 # Router Factory
 # ---------------------------------------------------------------------------
@@ -216,6 +237,7 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
         resolution: int = Query(64, ge=8, le=128),
         include_svd: bool = Query(True),
         secondary_model_id: str | None = Query(None),
+        secondary_checkpoint_id: str | None = Query(None),
         r0: int | None = Query(None),
         r1: int | None = Query(None),
         c0: int | None = Query(None),
@@ -237,6 +259,7 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
                 crop=crop,
                 edited_array=edited,
                 secondary_model_id=secondary_model_id,
+                secondary_checkpoint_id=secondary_checkpoint_id,
                 include_svd=include_svd,
             )
         except (KeyError, FileNotFoundError) as exc:
@@ -249,6 +272,7 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
         checkpoint_id: str | None = Query(None),
         resolution: int = Query(128, ge=8, le=128),
         secondary_model_id: str | None = Query(None),
+        secondary_checkpoint_id: str | None = Query(None),
         r0: int | None = Query(None),
         r1: int | None = Query(None),
         c0: int | None = Query(None),
@@ -271,6 +295,7 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
                 crop=crop,
                 edited_array=edited,
                 secondary_model_id=secondary_model_id,
+                secondary_checkpoint_id=secondary_checkpoint_id,
             )
             return Response(
                 content=raw_bytes,
@@ -583,6 +608,55 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
             )
         except (KeyError, ValueError, FileNotFoundError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # --- Sparse Autoencoder (SAE) Monosemantic Feature Explorer ---
+
+    @api.post("/sae/analyze")
+    async def sae_analyze(req: SaeAnalyzeRequest) -> dict[str, Any]:
+        try:
+            return _rt().inference.analyze_sae_features(
+                req.model_id,
+                req.prompt,
+                checkpoint_id=req.checkpoint_id,
+                system_prompt=req.system_prompt,
+                layer_index=req.layer_index,
+                top_k=req.top_k,
+                clamps=req.clamps,
+            )
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # --- Managed CLI / Workspace Training Dispatch + Hot-Reload ---
+
+    @api.post("/finetune/dispatch")
+    async def finetune_dispatch(req: DispatchRunRequest) -> dict[str, Any]:
+        try:
+            return await _rt().finetuner.dispatch_training_run(
+                req.model_id,
+                req.config,
+                mode=req.mode,
+                checkpoint_id=req.checkpoint_id,
+            )
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @api.get("/finetune/dispatch")
+    async def finetune_dispatch_list() -> dict[str, Any]:
+        return {"runs": _rt().finetuner.list_dispatch_runs()}
+
+    @api.get("/finetune/dispatch/{run_id}")
+    async def finetune_dispatch_status(run_id: str) -> dict[str, Any]:
+        try:
+            return _rt().finetuner.get_dispatch_run(run_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @api.post("/finetune/dispatch/{run_id}/stop")
+    async def finetune_dispatch_stop(run_id: str) -> dict[str, Any]:
+        try:
+            return _rt().finetuner.stop_dispatch_run(run_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     return api
 

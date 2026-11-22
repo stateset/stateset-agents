@@ -1,0 +1,110 @@
+name: Weight Studio WebGL2 Smoke
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    paths:
+      - "stateset_agents/weight_studio/**"
+      - "stateset_agents/mcp_server.py"
+      - "tests/unit/test_weight_studio.py"
+      - "examples/weight_studio_quickstart.py"
+      - ".github/workflows/weight-studio-smoke.yml"
+  pull_request:
+    branches: [ main, master, develop ]
+    paths:
+      - "stateset_agents/weight_studio/**"
+      - "stateset_agents/mcp_server.py"
+      - "tests/unit/test_weight_studio.py"
+      - "examples/weight_studio_quickstart.py"
+      - ".github/workflows/weight-studio-smoke.yml"
+  workflow_dispatch:
+
+jobs:
+  weight-studio-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install Weight Studio & dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,api]"
+          pip install playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Lint, type-check & unit tests
+        run: |
+          ruff check stateset_agents/weight_studio tests/unit/test_weight_studio.py examples/weight_studio_quickstart.py
+          mypy --config-file mypy.ini --no-incremental --cache-dir=/dev/null stateset_agents/weight_studio
+          pytest -q tests/unit/test_weight_studio.py tests/unit/test_torch_import_policy.py
+          python examples/weight_studio_quickstart.py
+
+      - name: Headless Chromium WebGL2 Studio E2E Smoke
+        run: |
+          python - <<'PY'
+          import subprocess
+          import sys
+          import time
+          import urllib.request
+          from playwright.sync_api import sync_playwright
+
+          server = subprocess.Popen(
+              [sys.executable, "-m", "stateset_agents.weight_studio", "--host", "127.0.0.1", "--port", "8765", "--workspace", "."],
+              stdout=subprocess.PIPE,
+              stderr=subprocess.STDOUT,
+          )
+          try:
+              for _ in range(40):
+                  try:
+                      with urllib.request.urlopen("http://127.0.0.1:8765/api/weight-studio/health", timeout=1.0) as r:
+                          if r.status == 200:
+                              break
+                  except Exception:
+                      time.sleep(0.25)
+
+              console_errors = []
+              page_errors = []
+              with sync_playwright() as p:
+                  browser = p.chromium.launch(
+                      headless=True,
+                      args=["--use-gl=angle", "--use-angle=swiftshader", "--enable-webgl", "--ignore-gpu-blocklist", "--disable-dev-shm-usage"],
+                  )
+                  page = browser.new_page(viewport={"width": 1440, "height": 900})
+                  page.on("console", lambda m: console_errors.append(m.text) if m.type == "error" else None)
+                  page.on("pageerror", lambda e: page_errors.append(str(e)))
+                  page.goto("http://127.0.0.1:8765/studio", wait_until="networkidle")
+                  page.wait_for_timeout(800)
+
+                  page.click('.mode-pill[data-mode="circuit"]')
+                  page.wait_for_timeout(600)
+                  page.click('.wb-tab[data-tab="infer"]')
+                  page.click("#btn-extract-steer")
+                  page.wait_for_timeout(500)
+                  page.click("#btn-analyze-sae")
+                  page.wait_for_timeout(500)
+                  page.click('.mode-pill[data-mode="microscope"]')
+                  page.wait_for_timeout(600)
+                  page.click("#btn-toggle-split")
+                  page.wait_for_timeout(400)
+                  page.click("#btn-export-modal")
+                  page.click("#btn-run-eval-gate")
+                  page.wait_for_timeout(800)
+
+                  verdict = page.text_content("#eval-verdict-pill")
+                  assert verdict in {"GO", "WARN", "BLOCK"}, f"Unexpected eval verdict: {verdict}"
+                  assert len(console_errors) == 0, f"Console errors: {console_errors}"
+                  assert len(page_errors) == 0, f"Page errors: {page_errors}"
+                  print("Weight Studio WebGL2 E2E Smoke PASSED (verdict=", verdict, ")")
+                  browser.close()
+          finally:
+              server.terminate()
+              server.wait(timeout=10)
+          PY

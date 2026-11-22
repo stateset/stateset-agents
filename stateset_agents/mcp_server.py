@@ -190,7 +190,7 @@ async def improve_run(
         )
 
         try:
-            return await run_improve_async(
+            res = await run_improve_async(
                 transcripts=transcripts_dir,
                 reward=reward,
                 output=output_dir,
@@ -198,6 +198,7 @@ async def improve_run(
                 format=format,
                 context_file=context_file,
             )
+            return dict(res)
         except (ImproveUsageError, ImproveDataError) as exc:
             return {"error": str(exc)}
     except (ValueError, OSError, json.JSONDecodeError, RuntimeError) as exc:
@@ -210,7 +211,7 @@ def improve_status(output_dir: str) -> dict[str, Any]:
         from stateset_agents.cli_improve import ImproveDataError, get_improve_status
 
         try:
-            return get_improve_status(output_dir)
+            return dict(get_improve_status(output_dir))
         except ImproveDataError as exc:
             return {"error": str(exc)}
     except (ValueError, OSError, json.JSONDecodeError) as exc:
@@ -283,6 +284,199 @@ def dry_run_finetune(model_preset: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Weight Studio MCP Tools (3D inspection, surgical editing, CAA steering,
+# causal circuits, eval gating, and SHA-256 verified .safetensors export)
+# ---------------------------------------------------------------------------
+
+_STUDIO_RUNTIMES: dict[str, Any] = {}
+
+
+def _get_mcp_studio_runtime(workspace: str = ".") -> Any:
+    from stateset_agents.weight_studio import StudioRuntime
+
+    resolved = str(Path(workspace).resolve())
+    rt = _STUDIO_RUNTIMES.get(resolved)
+    if rt is None:
+        rt = StudioRuntime(workspace_root=Path(resolved))
+        _STUDIO_RUNTIMES[resolved] = rt
+    return rt
+
+
+def studio_list_models(workspace: str = ".", refresh: bool = False) -> dict[str, Any]:
+    """List local .safetensors checkpoints, sharded models, and StateSet architecture twins."""
+    try:
+        rt = _get_mcp_studio_runtime(workspace)
+        models = (
+            rt.inspector.refresh_catalog() if refresh else rt.inspector.list_models()
+        )
+        return {
+            "workspace": str(rt.inspector.workspace_root),
+            "count": len(models),
+            "models": models,
+        }
+    except Exception as exc:
+        return _err(exc)
+
+
+def studio_inspect_model(
+    model_id: str,
+    workspace: str = ".",
+    checkpoint_id: str | None = None,
+) -> dict[str, Any]:
+    """Inspect a model's layer architecture, parameter counts, top layer norms, and active edits."""
+    try:
+        rt = _get_mcp_studio_runtime(workspace)
+        overrides = rt.editor.get_overrides(model_id, checkpoint_id)
+        struct = rt.inspector.get_model_structure(
+            model_id, checkpoint_id, overrides=overrides if overrides else None
+        )
+        history = rt.editor.get_history(model_id, checkpoint_id)
+        return {
+            "model": struct["model"],
+            "checkpoint_id": struct["checkpoint_id"],
+            "summary": struct["summary"],
+            "layers": [
+                {
+                    "index": layer["index"],
+                    "name": layer["name"],
+                    "layer_type": layer["layer_type"],
+                    "tensor_count": layer["tensor_count"],
+                    "frobenius_norm": layer["frobenius_norm"],
+                    "has_edits": layer["has_edits"],
+                }
+                for layer in struct["layers"]
+            ],
+            "edit_history": history,
+        }
+    except Exception as exc:
+        return _err(exc)
+
+
+def studio_apply_edit(
+    model_id: str,
+    op: str,
+    target: str,
+    params: dict[str, Any] | None = None,
+    label: str = "",
+    workspace: str = ".",
+    checkpoint_id: str | None = None,
+) -> dict[str, Any]:
+    """Apply a non-destructive surgical weight edit (scale, prune, clamp, svd_truncate,
+    head_edit, rank1_edit, steer_bake, region_edit, blend, or noise)."""
+    try:
+        rt = _get_mcp_studio_runtime(workspace)
+        return dict(
+            rt.editor.apply_edit(
+                model_id,
+                op,
+                target,
+                dict(params or {}),
+                checkpoint_id=checkpoint_id,
+                label=label,
+            )
+        )
+    except Exception as exc:
+        return _err(exc)
+
+
+def studio_extract_steering(
+    model_id: str,
+    positive_prompt: str,
+    negative_prompt: str,
+    name: str = "Steering Vector",
+    layer_index: int | None = None,
+    workspace: str = ".",
+    checkpoint_id: str | None = None,
+) -> dict[str, Any]:
+    """Extract a Contrastive Activation Steering (CAA / RepE) vector and locate the optimal layer."""
+    try:
+        rt = _get_mcp_studio_runtime(workspace)
+        return dict(
+            rt.inference.extract_steering_vector(
+                model_id,
+                positive_prompt,
+                negative_prompt,
+                checkpoint_id=checkpoint_id,
+                name=name,
+                layer_index=layer_index,
+            )
+        )
+    except Exception as exc:
+        return _err(exc)
+
+
+def studio_discover_circuit(
+    model_id: str,
+    prompt: str,
+    top_k: int = 10,
+    system_prompt: str = "",
+    workspace: str = ".",
+    checkpoint_id: str | None = None,
+) -> dict[str, Any]:
+    """Discover the Top-K causal attention heads & MLP cores driving a prompt."""
+    try:
+        rt = _get_mcp_studio_runtime(workspace)
+        res = rt.inference.discover_causal_circuit(
+            model_id,
+            prompt,
+            checkpoint_id=checkpoint_id,
+            system_prompt=system_prompt,
+            top_k=top_k,
+        )
+        return {
+            "model_id": res["model_id"],
+            "scenario": res["scenario"],
+            "tokens": res["tokens"],
+            "summary": res["summary"],
+            "top_nodes": res["top_nodes"],
+            "arc_count": len(res["arcs"]),
+        }
+    except Exception as exc:
+        return _err(exc)
+
+
+def studio_eval_and_export(
+    model_id: str,
+    export_name: str = "",
+    run_merge_probe: bool = True,
+    require_go: bool = True,
+    max_cases: int = 6,
+    workspace: str = ".",
+    checkpoint_id: str | None = None,
+) -> dict[str, Any]:
+    """Run the Pre-Export Batch Eval Gate (GO/WARN/BLOCK) and optionally export a
+    SHA-256 reload-verified .safetensors checkpoint + portable recipe."""
+    try:
+        rt = _get_mcp_studio_runtime(workspace)
+        gate = rt.inference.run_batch_eval(
+            model_id, checkpoint_id=checkpoint_id, max_cases=max_cases
+        )
+        out: dict[str, Any] = {
+            "eval_gate": gate,
+            "exported": False,
+            "manifest": None,
+            "recipe": rt.editor.export_recipe(model_id, checkpoint_id),
+        }
+        if export_name.strip():
+            if require_go and gate["verdict"] != "GO":
+                out["export_blocked_reason"] = (
+                    f"Gate verdict is {gate['verdict']}; pass require_go=False to override."
+                )
+            else:
+                manifest = rt.editor.export_verified_checkpoint(
+                    model_id,
+                    export_name.strip(),
+                    checkpoint_id=checkpoint_id,
+                    run_merge_probe=run_merge_probe,
+                )
+                out["exported"] = True
+                out["manifest"] = manifest
+        return out
+    except Exception as exc:
+        return _err(exc)
+
+
+# ---------------------------------------------------------------------------
 # Server factory
 # ---------------------------------------------------------------------------
 
@@ -298,11 +492,12 @@ def create_server() -> Any:
     mcp = FastMCP(
         "stateset-agents",
         instructions=(
-            "Drives the StateSet Agents framework's improvement loop: "
-            "ingest third-party conversation logs, grade transcripts with "
-            "rule-based reward functions, curate high-scoring examples, and "
-            "preview (dry-run only) fine-tuning configs. No tool starts "
-            "real GPU training in this version."
+            "Drives the StateSet Agents framework's improvement loop and "
+            "3D Weight Studio: ingest logs, grade transcripts, curate data, "
+            "preview fine-tuning configs, inspect weights, apply non-destructive "
+            "surgical edits, extract CAA steering vectors, discover causal circuits, "
+            "and run eval-gated .safetensors exports. No tool starts real GPU "
+            "training in this version."
         ),
     )
 
@@ -313,6 +508,12 @@ def create_server() -> Any:
     mcp.tool()(improve_status)
     mcp.tool()(list_model_presets)
     mcp.tool()(dry_run_finetune)
+    mcp.tool()(studio_list_models)
+    mcp.tool()(studio_inspect_model)
+    mcp.tool()(studio_apply_edit)
+    mcp.tool()(studio_extract_steering)
+    mcp.tool()(studio_discover_circuit)
+    mcp.tool()(studio_eval_and_export)
 
     return mcp
 

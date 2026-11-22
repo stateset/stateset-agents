@@ -1502,8 +1502,9 @@ class WeightInspector:
         crop: tuple[int, int, int, int] | None = None,
         edited_array: np.ndarray[Any, Any] | None = None,
         secondary_model_id: str | None = None,
+        secondary_checkpoint_id: str | None = None,
     ) -> tuple[bytes, dict[str, Any]]:
-        """Pack up to 128x128 Float32 grids (values + delta + Wanda importance + conflict) into one binary buffer."""
+        """Pack up to 128x128 Float32 grids (values + delta + Wanda importance + conflict + secondary) into one binary buffer."""
         base_arr = self.load_tensor_array(model_id, tensor_name, checkpoint_id)
         active_arr = edited_array if edited_array is not None else base_arr
         res = max(8, min(128, int(resolution)))
@@ -1535,19 +1536,29 @@ class WeightInspector:
         channel_names.append("importance")
 
         conflict_rate = 0.0
-        if secondary_model_id:
+        sec_abs_max = 0.0
+        sec_model = secondary_model_id or (
+            model_id if secondary_checkpoint_id is not None else None
+        )
+        if sec_model:
             try:
-                sec_arr = self.load_tensor_array(secondary_model_id, tensor_name, None)
+                sec_arr = self.load_tensor_array(
+                    sec_model, tensor_name, secondary_checkpoint_id
+                )
                 if sec_arr.shape == active_arr.shape:
                     sec_grid, _, _, _ = _downsample_2d_array(
                         sec_arr, max_rows=res, max_cols=res, crop=crop
                     )
-                    # Sign-conflict score: negative = opposing sign conflict, positive = aligned magnitude
                     sign_prod = np.sign(val_grid) * np.sign(sec_grid)
                     mag_prod = np.sqrt(np.abs(val_grid * sec_grid) + 1e-12)
                     c_grid = (sign_prod * mag_prod).astype("<f4")
                     channels.append(c_grid)
                     channel_names.append("conflict")
+                    channels.append(sec_grid.astype("<f4", copy=False))
+                    channel_names.append("secondary")
+                    sec_abs_max = (
+                        float(np.max(np.abs(sec_grid))) if sec_grid.size else 0.0
+                    )
                     conflict_rate = float(np.mean(sign_prod < 0))
             except (KeyError, FileNotFoundError):
                 pass
@@ -1565,6 +1576,7 @@ class WeightInspector:
                 6,
             ),
             "delta_abs_max": round(_safe_float(delta_abs_max), 6),
+            "secondary_abs_max": round(_safe_float(sec_abs_max), 6),
             "conflict_rate": round(_safe_float(conflict_rate), 4),
         }
         return packed, meta
@@ -1579,9 +1591,10 @@ class WeightInspector:
         crop: tuple[int, int, int, int] | None = None,
         edited_array: np.ndarray[Any, Any] | None = None,
         secondary_model_id: str | None = None,
+        secondary_checkpoint_id: str | None = None,
         include_svd: bool = True,
     ) -> dict[str, Any]:
-        """Return full 3D microscope relief grid, stats, Wanda importance, head metadata, conflict, and SVD."""
+        """Return full 3D microscope relief grid, stats, Wanda importance, head metadata, conflict, secondary diff, and SVD."""
         base_arr = self.load_tensor_array(model_id, tensor_name, checkpoint_id)
         active_arr = edited_array if edited_array is not None else base_arr
         entry = self.get_entry(model_id)
@@ -1608,11 +1621,20 @@ class WeightInspector:
             changed_fraction = float(np.mean(np.abs(diff) > 1e-7))
 
         conflict_grid: dict[str, Any] | None = None
+        secondary_grid: dict[str, Any] | None = None
         conflict_rate = 0.0
-        if secondary_model_id:
+        sec_model = secondary_model_id or (
+            model_id if secondary_checkpoint_id is not None else None
+        )
+        if sec_model:
             try:
-                sec_arr = self.load_tensor_array(secondary_model_id, tensor_name, None)
+                sec_arr = self.load_tensor_array(
+                    sec_model, tensor_name, secondary_checkpoint_id
+                )
                 if sec_arr.shape == active_arr.shape:
+                    secondary_grid = downsample_matrix(
+                        sec_arr, max_rows=res, max_cols=res, crop=crop
+                    )
                     sign_prod = np.sign(active_arr) * np.sign(sec_arr)
                     mag_prod = np.sqrt(np.abs(active_arr * sec_arr) + 1e-12)
                     conflict_arr = (sign_prod * mag_prod).astype(np.float32)
@@ -1622,6 +1644,7 @@ class WeightInspector:
                     conflict_rate = float(np.mean(sign_prod < 0))
             except (KeyError, FileNotFoundError):
                 conflict_grid = None
+                secondary_grid = None
 
         svd: dict[str, Any] | None = None
         if include_svd:
@@ -1667,6 +1690,7 @@ class WeightInspector:
             "delta_grid": delta_grid,
             "importance_grid": imp_grid,
             "conflict_grid": conflict_grid,
+            "secondary_grid": secondary_grid,
             "conflict_rate": round(_safe_float(conflict_rate), 4),
             "stats": stats,
             "base_stats": base_stats,

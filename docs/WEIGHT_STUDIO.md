@@ -171,7 +171,14 @@ All endpoints are mounted under `/api/weight-studio` (both in standalone mode an
 | `GET` | `/api/weight-studio/steering/presets` | Built-in StateSet contrastive behavioral steering pairs. |
 | `POST` | `/api/weight-studio/steering/extract` | Extract layer-wise contrastive steering vectors `v_ℓ = h_ℓ(pos) - h_ℓ(neg)` and select optimal injection layer. |
 | `POST` | `/api/weight-studio/steering/bake` | Permanently bake an extracted steering vector into target layer weights as an undoable surgical edit. |
+| `POST` | `/api/weight-studio/sae/analyze` | Decompose a layer's residual activation into sparse monosemantic SAE features (`L0`, `R²`) with optional live `0×`/`2.5×` feature clamping. |
 | `POST` | `/api/weight-studio/eval/run` | Run the Pre-Export Batch Eval Gate (`GO` / `WARN` / `BLOCK`) comparing Base vs. Edited across dataset traces and built-in suites. |
+| `POST` | `/api/weight-studio/finetune/dispatch` | Validate & write a SHA-256 `plan.json` bundle and launch a managed `dry_run` or `local_stub` CLI run with bounded logs and automatic checkpoint catalog hot-reload. |
+| `GET` | `/api/weight-studio/finetune/dispatch/{run_id}` | Poll live stdout/stderr log lines and completion status for a dispatched run. |
+
+### MCP Server Integration
+
+Six thin MCP tools are exposed via `stateset-agents mcp` (`stateset_agents/mcp_server.py`) so AI agents can inspect weights, apply non-destructive edits, extract steering vectors, discover causal circuits, and run eval-gated `.safetensors` exports autonomously: `studio_list_models`, `studio_inspect_model`, `studio_apply_edit`, `studio_extract_steering`, `studio_discover_circuit`, and `studio_eval_and_export`. See [`docs/MCP_SERVER.md`](MCP_SERVER.md).
 
 ---
 

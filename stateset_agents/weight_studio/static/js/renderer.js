@@ -1043,9 +1043,14 @@ export class WeightStudioRenderer {
     const cols = bin ? bin.cols : detail.grid.cols;
     const values = bin ? bin.values : detail.grid.values;
     const dValues = bin ? bin.delta : (detail?.delta_grid?.values || null);
+    const secValues = bin ? bin.secondary : (detail?.secondary_grid?.values || null);
     const impValues = bin ? bin.importance : (detail?.importance_grid?.values || null);
     const confValues = bin ? bin.conflict : (detail?.conflict_grid?.values || null);
-    const absMax = Math.max((bin ? bin.abs_max : detail.grid.abs_max) || 0.05, 1e-6);
+    const absMax = Math.max(
+      (bin ? bin.abs_max : detail.grid.abs_max) || 0.05,
+      (this.splitCompare && secValues) ? ((bin ? bin.secondary_abs_max : detail?.secondary_grid?.abs_max) || 0) : 0,
+      1e-6
+    );
     const deltaAbsMax = Math.max((bin ? bin.delta_abs_max : detail?.delta_grid?.abs_max) || 0.01, 1e-6);
     const cropBox = bin ? bin.crop : detail.grid.crop;
     const matShape = bin ? bin.matrix_shape : detail.grid.matrix_shape;
@@ -1187,7 +1192,9 @@ export class WeightStudioRenderer {
         );
 
         if (this.splitCompare) {
-          const origVal = dValues ? (val - dVal) : val;
+          const origVal = secValues
+            ? (secValues[idx] || 0)
+            : (dValues ? (val - dVal) : val);
           const origMag = clamp(Math.abs(origVal) / absMax, 0, 1);
           const origH = 0.07 + Math.pow(origMag, 0.78) * maxHeight;
           const baseMapped = mapWeightColor(
