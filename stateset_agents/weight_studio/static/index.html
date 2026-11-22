@@ -1,0 +1,772 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StateSet Weight Studio — 3D Neural Weight Explorer, Surgical Editor &amp; Finetuning Bench</title>
+  <link rel="stylesheet" href="/studio/static/styles.css" />
+</head>
+<body>
+  <div id="app" class="studio-shell">
+    <!-- Top Precision Command Bar -->
+    <header class="topbar">
+      <div class="brand-cluster">
+        <div class="brand-mark" aria-hidden="true">
+          <span class="brand-cube"></span>
+        </div>
+        <div class="brand-copy">
+          <div class="brand-title">STATESET <span class="brand-accent">WEIGHT STUDIO</span></div>
+          <div class="brand-sub">3D Silicon Photonics · Surgical Editor · Mechanistic &amp; RL Finetune Bench</div>
+        </div>
+      </div>
+
+      <div class="model-picker-wrap">
+        <label class="micro-label" for="model-select">ACTIVE MODEL / CHECKPOINT</label>
+        <div class="model-select-row">
+          <select id="model-select" class="precision-select" aria-label="Select Model"></select>
+          <button id="btn-hf-modal" class="icon-btn" title="Stream Hugging Face safetensors via zero-download HTTP Range">HF</button>
+          <button id="btn-refresh-models" class="icon-btn" title="Rescan local workspace checkpoints">↻</button>
+        </div>
+      </div>
+
+      <nav class="mode-switcher" role="tablist" aria-label="3D View Mode">
+        <button class="mode-pill active" data-mode="stack" role="tab" aria-selected="true">
+          <span class="dot dot-cyan"></span>Architecture 3D
+        </button>
+        <button class="mode-pill" data-mode="microscope" role="tab" aria-selected="false">
+          <span class="dot dot-amber"></span>Microscope 128²
+        </button>
+        <button class="mode-pill" data-mode="spectral" role="tab" aria-selected="false">
+          <span class="dot dot-violet"></span>SVD Spectral
+        </button>
+        <button class="mode-pill" data-mode="trajectory" role="tab" aria-selected="false">
+          <span class="dot dot-emerald"></span>Trajectory 4D
+        </button>
+        <button class="mode-pill" data-mode="circuit" role="tab" aria-selected="false">
+          <span class="dot dot-rose"></span>Circuit 3D
+        </button>
+      </nav>
+
+      <div class="topbar-actions">
+        <select id="colormap-select" class="precision-select compact" title="Weight Color Encoding">
+          <option value="signed">Map: Signed (±)</option>
+          <option value="magnitude">Map: Magnitude |W|</option>
+          <option value="delta">Map: Edit Delta ΔW</option>
+          <option value="quant_error">Map: Quant Error</option>
+          <option value="importance">Map: Wanda/Fisher</option>
+          <option value="conflict">Map: Sign Conflict</option>
+          <option value="gradient">Map: Thermal Heat</option>
+          <option value="outlier">Map: Outlier Z-Score</option>
+        </select>
+
+        <select id="rig-select" class="precision-select compact" title="Studio Lighting Rig">
+          <option value="obsidian">Rig: Obsidian Lab</option>
+          <option value="copper">Rig: Copper Forge</option>
+          <option value="photonics">Rig: Deep Photonics</option>
+          <option value="cleanroom">Rig: Cleanroom White</option>
+        </select>
+
+        <div class="edit-quick-group">
+          <button id="btn-undo" class="action-btn subtle" disabled title="Undo last weight edit">↶</button>
+          <button id="btn-redo" class="action-btn subtle" disabled title="Redo weight edit">↷</button>
+          <span id="edit-count-badge" class="status-badge">0 EDITS</span>
+          <button id="btn-export-modal" class="action-btn primary" title="Run eval gate & export verified safetensors">
+            Export
+          </button>
+          <button id="btn-record-360" class="icon-btn" title="Record 360° Turntable WebM Video">⏺</button>
+          <button id="btn-screenshot" class="icon-btn" title="Capture 3D Viewport PNG">📷</button>
+          <button id="btn-zen-mode" class="icon-btn" title="Cinema Zen Mode (Press H)">⛶</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main 3-Column Workstation Body -->
+    <div class="workspace-grid">
+      <!-- LEFT RAIL: Architecture Hierarchy & Tensor Telemetry -->
+      <aside class="panel left-rail">
+        <div class="panel-header">
+          <span class="panel-title">ARCHITECTURE TREE</span>
+          <span id="model-summary-pill" class="mono-pill">Loading…</span>
+        </div>
+
+        <div class="search-row">
+          <input id="tensor-search" class="precision-input" type="search" placeholder="Filter layers, q_proj, lora_B, mlp…" />
+        </div>
+
+        <!-- Checkpoint Timeline Scrubber -->
+        <div id="checkpoint-bar" class="checkpoint-strip hidden">
+          <div class="strip-head">
+            <span class="micro-label">CHECKPOINT TRAJECTORY</span>
+            <span id="checkpoint-step-label" class="mono-accent">Final</span>
+          </div>
+          <div class="timeline-controls">
+            <button id="btn-play-traj" class="mini-btn" title="Play/Pause Checkpoint Timelapse">▶</button>
+            <input id="checkpoint-slider" type="range" min="0" max="1" value="0" step="1" />
+          </div>
+        </div>
+
+        <!-- Scrollable Layer & Tensor Tree -->
+        <div id="layer-tree" class="layer-tree"></div>
+
+        <!-- Selected Tensor Distribution Telemetry -->
+        <div class="telemetry-dock">
+          <div class="strip-head">
+            <span class="micro-label">WEIGHT DISTRIBUTION</span>
+            <span id="selected-tensor-shape" class="mono-muted">—</span>
+          </div>
+          <canvas id="chart-histogram" class="mini-canvas" height="92"></canvas>
+          <div id="tensor-stats-grid" class="stats-grid">
+            <div class="stat-cell"><span class="k">‖W‖_F</span><span class="v" id="st-frob">—</span></div>
+            <div class="stat-cell"><span class="k">RMS</span><span class="v" id="st-rms">—</span></div>
+            <div class="stat-cell"><span class="k">STD σ</span><span class="v" id="st-std">—</span></div>
+            <div class="stat-cell"><span class="k">SPARSITY</span><span class="v" id="st-sparsity">—</span></div>
+            <div class="stat-cell"><span class="k">MIN / MAX</span><span class="v" id="st-minmax">—</span></div>
+            <div class="stat-cell"><span class="k">KURTOSIS</span><span class="v" id="st-kurt">—</span></div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- CENTER STAGE: Photorealistic WebGL2 PBR 3D Viewport -->
+      <main class="viewport-stage">
+        <canvas id="gl-canvas" class="gl-canvas"></canvas>
+
+        <!-- Screen-Projected 3D Spatial Rulers & Head Labels -->
+        <div id="spatial-labels-layer" class="spatial-labels-layer"></div>
+
+        <!-- Real-Time 3D Split-Screen Wipe Curtain (Base / Checkpoint B vs. Active) -->
+        <div id="split-curtain" class="split-curtain hidden">
+          <div id="split-divider" class="split-divider" style="left:50%">
+            <span id="split-left-badge" class="split-badge left">BASE (UNEDITED)</span>
+            <span id="split-right-badge" class="split-badge right">ACTIVE (LIVE)</span>
+            <div class="split-handle" title="Drag left/right to wipe Base/Checkpoint B vs Active 3D crystals">⇄</div>
+          </div>
+        </div>
+
+        <!-- Selected Tensor Floating Screen-Space Callout -->
+        <div id="callout-3d" class="callout-3d hidden">
+          <div class="callout-tag" id="callout-role">SELF_ATTN</div>
+          <div class="callout-name" id="callout-name">layers.0.self_attn.q_proj</div>
+          <div class="callout-meta" id="callout-meta">Shape [16, 1024] · ‖W‖_F 1.42</div>
+        </div>
+
+        <!-- Hover Reticle Tooltip -->
+        <div id="hover-tooltip" class="hover-tooltip hidden"></div>
+
+        <!-- Top-Left Viewport Mode Banner & Context Controls -->
+        <div class="viewport-hud-top">
+          <div class="hud-chip glass">
+            <span class="hud-k">SELECTED</span>
+            <span id="hud-selected-label" class="hud-v mono">—</span>
+            <span id="hud-delta-pill" class="delta-pill hidden">MODIFIED</span>
+          </div>
+
+          <!-- Microscope-specific quick bar -->
+          <div id="microscope-hud" class="hud-chip glass hidden">
+            <button id="btn-toggle-brush" class="mini-pill-btn" title="Paint a 3D surgical region directly on the matrix">
+              ✦ 3D Brush
+            </button>
+            <button id="btn-toggle-split" class="mini-pill-btn" title="Real-time 3D Split-Screen Wipe: Base or Checkpoint B vs Active (Press S)">
+              ◧ Split A|B
+            </button>
+            <select id="split-compare-select" class="mini-select" title="Select left-side comparator for 3D Split A|B wipe">
+              <option value="base">vs: Unedited Base</option>
+            </select>
+            <button id="btn-zoom-crop" class="mini-pill-btn" title="Zoom deep into the active 3D Brush patch">
+              ⊕ Crop
+            </button>
+            <button id="btn-reset-crop" class="mini-pill-btn hidden" title="Reset crop to full tensor">
+              Reset Crop
+            </button>
+            <label class="inline-toggle">
+              <input id="chk-ghost-overlay" type="checkbox" checked />
+              <span>Ghost</span>
+            </label>
+            <label class="inline-toggle">
+              <input id="chk-head-dividers" type="checkbox" checked />
+              <span>Heads</span>
+            </label>
+            <select id="microscope-res" class="mini-select" title="3D Crystal Resolution (128x128 uses binary Float32 stream)">
+              <option value="32">32² (1K)</option>
+              <option value="64" selected>64² (4K)</option>
+              <option value="96">96² (9.2K Bin)</option>
+              <option value="128">128² (16.4K Bin)</option>
+            </select>
+          </div>
+
+          <!-- Spectral-specific quick bar -->
+          <div id="spectral-hud" class="hud-chip glass hidden">
+            <span class="hud-k">RANK CUTOFF k</span>
+            <input id="spectral-rank-slider" type="range" min="1" max="32" value="16" class="hud-slider" />
+            <span id="spectral-rank-val" class="mono-accent">k=16</span>
+            <button id="btn-apply-svd-rank" class="mini-pill-btn accent">Commit SVD</button>
+          </div>
+
+          <!-- Circuit 3D quick bar -->
+          <div id="circuit-hud" class="hud-chip glass hidden">
+            <span class="hud-k">CAUSAL CIRCUIT</span>
+            <span id="circuit-summary-val" class="mono-accent">Top-10 Nodes</span>
+            <input id="circuit-topk-slider" type="range" min="4" max="20" value="10" class="hud-slider sm" />
+            <button id="btn-rediscover-circuit" class="mini-pill-btn accent">↻ Trace Prompt</button>
+          </div>
+          <!-- Tomographic MRI 3D Slice Plane quick bar -->
+          <div id="slice-hud" class="hud-chip glass hidden">
+            <span class="hud-k">MRI CUTAWAY</span>
+            <select id="slice-axis-select" class="mini-select">
+              <option value="1">X-Axis</option>
+              <option value="2" selected>Z-Axis</option>
+              <option value="3">Y-Axis</option>
+            </select>
+            <input id="slice-pos-slider" type="range" min="-14" max="14" step="0.25" value="2" class="hud-slider" />
+            <span id="slice-pos-val" class="mono-accent">+2.0</span>
+          </div>
+        </div>
+
+        <!-- Top-Right Telemetry & Optical Realism Controls -->
+        <div class="viewport-hud-topright">
+          <div class="hud-chip glass mono-telemetry">
+            <span id="hud-fps">60 FPS</span>
+            <span class="sep">·</span>
+            <span id="hud-instances">0 CRYSTALS</span>
+            <span class="sep">·</span>
+            <span>PBR·SSAO·ACES</span>
+          </div>
+          <div class="hud-chip glass slider-chip">
+            <span class="hud-k">BLOOM</span>
+            <input id="bloom-slider" type="range" min="0" max="1.0" step="0.05" value="0.32" class="hud-slider sm" />
+            <span class="hud-k">SPREAD</span>
+            <input id="spread-slider" type="range" min="0.55" max="2.1" step="0.05" value="1.0" class="hud-slider sm" />
+          </div>
+        </div>
+
+        <!-- Bottom-Left Camera & Optical Realism Dock -->
+        <div class="viewport-hud-bottomleft">
+          <div class="hud-chip glass cam-bar">
+            <button class="cam-btn" data-cam="iso" title="Isometric Perspective">ISO</button>
+            <button class="cam-btn" data-cam="top" title="Top-Down Plan">TOP</button>
+            <button class="cam-btn" data-cam="front" title="Front Elevation">FRONT</button>
+            <button class="cam-btn" data-cam="side" title="Side Profile">SIDE</button>
+            <button class="cam-btn" data-cam="reset" title="Reset Camera">FIT</button>
+            <span class="sep">|</span>
+            <button id="btn-orbit-toggle" class="cam-btn" title="Toggle Auto-Orbit">ORBIT</button>
+            <button id="btn-conduits-toggle" class="cam-btn active" title="Toggle Optical Conduits">RAILS</button>
+            <button id="btn-particles-toggle" class="cam-btn active" title="Toggle GPU Photon Particle Stream">PTCL</button>
+            <button id="btn-slice-toggle" class="cam-btn" title="Toggle 3D Tomographic MRI Cutaway Plane">SLICE</button>
+            <button id="btn-reflect-toggle" class="cam-btn active" title="Toggle Real-Time Planar Floor Reflections">REFL</button>
+            <button id="btn-shadow-toggle" class="cam-btn active" title="Toggle PCF Soft Shadow Maps">SHDW</button>
+            <button id="btn-ssao-toggle" class="cam-btn active" title="Toggle Depth-Crevice SSAO">SSAO</button>
+            <button id="btn-dof-toggle" class="cam-btn" title="Toggle Optical Bokeh Depth-of-Field">DOF</button>
+            <button id="btn-rulers-toggle" class="cam-btn active" title="Toggle 3D Spatial Rulers">RULER</button>
+          </div>
+          <div class="nav-hint">Drag: Orbit · Right-Drag: Pan · Scroll: Zoom · Dbl-Click: Microscope · Shift+Drag: 3D Brush</div>
+        </div>
+
+        <!-- Bottom-Right Colorbar Legend -->
+        <div class="viewport-hud-bottomright">
+          <div class="hud-chip glass legend-bar">
+            <span class="mono-muted" id="legend-lo">−Max</span>
+            <div class="legend-gradient" id="legend-gradient"></div>
+            <span class="mono-muted" id="legend-hi">+Max</span>
+          </div>
+        </div>
+      </main>
+
+      <!-- RIGHT WORKBENCH: 4 Deep Interactive Studio Panels -->
+      <aside class="panel right-workbench">
+        <div class="workbench-tabs" role="tablist">
+          <button class="wb-tab active" data-tab="edit" role="tab">Surgery</button>
+          <button class="wb-tab" data-tab="finetune" role="tab">Finetune</button>
+          <button class="wb-tab" data-tab="infer" role="tab">Use Model</button>
+          <button class="wb-tab" data-tab="analyze" role="tab">Spectral</button>
+        </div>
+
+        <!-- TAB 1: SURGICAL WEIGHT EDITING -->
+        <section id="tab-edit" class="wb-pane active">
+          <div class="section-card">
+            <div class="card-title">TARGET SCOPE</div>
+            <select id="edit-scope-select" class="precision-select">
+              <option value="selected">Selected Tensor Only</option>
+              <option value="layer">Entire Selected Layer</option>
+              <option value="role:self_attn">All Self-Attention Weights</option>
+              <option value="role:linear_attn">All Linear-Attention / Mamba Weights</option>
+              <option value="role:mlp">All MLP / SwiGLU Weights</option>
+              <option value="all">All Model Parameters</option>
+            </select>
+            <div id="edit-target-preview" class="target-preview mono-muted">Select a tensor in the tree or 3D viewport</div>
+          </div>
+
+          <div class="section-card">
+            <div class="card-title">SURGICAL OPERATIONS</div>
+            <div class="op-tabs">
+              <button class="op-chip active" data-op="scale">Scale</button>
+              <button class="op-chip" data-op="prune">Prune</button>
+              <button class="op-chip" data-op="clamp">Clamp</button>
+              <button class="op-chip" data-op="svd_truncate">SVD Rank</button>
+              <button class="op-chip" data-op="head_edit">Head Surgery</button>
+              <button class="op-chip" data-op="rank1_edit">ROME Rank-1</button>
+              <button class="op-chip" data-op="region_edit">3D Brush</button>
+              <button class="op-chip" data-op="quantize">Quantize Lab</button>
+              <button class="op-chip" data-op="blend">TIES/SLERP</button>
+              <button class="op-chip" data-op="noise">Perturb</button>
+            </div>
+
+            <div id="op-params-container" class="op-params"></div>
+
+            <div class="op-action-row">
+              <button id="btn-apply-edit" class="action-btn primary full">Apply Surgical Edit</button>
+              <button id="btn-reset-edits" class="action-btn danger subtle" title="Discard all edits">Reset</button>
+            </div>
+          </div>
+
+          <div class="section-card grow">
+            <div class="card-title-row">
+              <span class="card-title">EDIT RECIPE &amp; LINEAGE STACK</span>
+              <div class="recipe-btn-row">
+                <button id="btn-export-recipe" class="mini-btn" title="Download reproducible .studio-recipe.json">↓ JSON</button>
+                <button id="btn-import-recipe" class="mini-btn" title="Replay a saved .studio-recipe.json">↑ Replay</button>
+                <input id="recipe-file-input" type="file" accept=".json" class="hidden" />
+                <span id="stack-delta-summary" class="mono-accent">0 modified</span>
+              </div>
+            </div>
+            <div id="edit-stack-list" class="edit-stack-list">
+              <div class="empty-hint">No surgical edits yet. Try Scale, Wanda Prune, Head Surgery, ROME Rank-1, or TIES/DARE Merge above.</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 2: FINETUNING WORKBENCH & LIVE PYTORCH TRAINER -->
+        <section id="tab-finetune" class="wb-pane">
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">OBJECTIVE &amp; RL ALGORITHM</span>
+              <span id="ft-status-pill" class="status-badge">READY</span>
+            </div>
+            <div id="algo-pills" class="algo-grid"></div>
+            <p id="algo-desc" class="helper-copy">Sequence-level importance ratio clipping for stable long-horizon dialogue.</p>
+
+            <div class="form-grid-2">
+              <label class="field">
+                <span>Learning Rate</span>
+                <input id="ft-lr" type="number" step="0.000001" value="0.000005" class="precision-input mono" />
+              </label>
+              <label class="field">
+                <span>Max Steps</span>
+                <input id="ft-steps" type="number" min="4" max="200" value="32" class="precision-input mono" />
+              </label>
+              <label class="field">
+                <span>Clip Ratio ε</span>
+                <input id="ft-clip" type="number" step="0.02" min="0" max="1" value="0.20" class="precision-input mono" />
+              </label>
+              <label class="field">
+                <span>KL Coef β</span>
+                <input id="ft-kl" type="number" step="0.005" min="0" max="1" value="0.02" class="precision-input mono" />
+              </label>
+              <label class="field">
+                <span>Group Size G</span>
+                <input id="ft-group" type="number" min="1" max="16" value="4" class="precision-input mono" />
+              </label>
+              <label class="field">
+                <span>Batch × Accum</span>
+                <div class="inline-pair">
+                  <input id="ft-batch" type="number" min="1" max="64" value="4" class="precision-input mono" />
+                  <input id="ft-accum" type="number" min="1" max="64" value="4" class="precision-input mono" />
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">LORA ADAPTER TOPOLOGY (LIVE 3D LINK)</span>
+              <label class="inline-toggle">
+                <input id="ft-use-lora" type="checkbox" checked />
+                <span>LoRA</span>
+              </label>
+            </div>
+            <div class="form-grid-3">
+              <label class="field">
+                <span>Rank r</span>
+                <select id="ft-lora-r" class="precision-select compact">
+                  <option value="4">4</option>
+                  <option value="8">8</option>
+                  <option value="16" selected>16</option>
+                  <option value="32">32</option>
+                  <option value="64">64</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Alpha α</span>
+                <input id="ft-lora-alpha" type="number" value="32" class="precision-input mono" />
+              </label>
+              <label class="field">
+                <span>Precision</span>
+                <select id="ft-precision" class="precision-select compact">
+                  <option value="bf16" selected>BF16</option>
+                  <option value="fp16">FP16</option>
+                  <option value="nf4">NF4 QLoRA</option>
+                  <option value="int8">INT8</option>
+                  <option value="fp32">FP32</option>
+                </select>
+              </label>
+            </div>
+            <div class="micro-label mt-6">TARGET MODULES (CLICK TO ISOLATE IN 3D)</div>
+            <div id="lora-target-chips" class="chip-wrap"></div>
+          </div>
+
+          <!-- Curated Dataset & Reward Traces Card -->
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">CURATED DATASET &amp; REWARD TRACES</span>
+              <span id="dataset-stats-pill" class="mono-muted">—</span>
+            </div>
+            <select id="ft-dataset-select" class="precision-select compact mb-6"></select>
+            <div id="dataset-preview-list" class="trace-list"></div>
+          </div>
+
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">VRAM, WORKSPACE &amp; PROVIDER BUDGET</span>
+              <span id="vram-total-label" class="mono-accent">— GB</span>
+            </div>
+            <select id="ft-provider" class="precision-select compact mb-6"></select>
+            <div class="vram-bar" id="vram-stacked-bar"></div>
+            <div class="vram-legend" id="vram-legend"></div>
+            <div id="ft-warnings" class="warning-box hidden"></div>
+          </div>
+
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">LIVE PYTORCH MICRO-FINETUNING</span>
+              <span id="ft-step-counter" class="mono-muted">0 / 32</span>
+            </div>
+            <canvas id="chart-training" class="mini-canvas tall" height="124"></canvas>
+            <div class="ft-controls">
+              <button id="btn-ft-start" class="action-btn primary grow-btn">▶ Start Live Finetune</button>
+              <button id="btn-ft-pause" class="action-btn subtle" disabled>⏸</button>
+              <button id="btn-ft-stop" class="action-btn danger subtle" disabled>■</button>
+            </div>
+            <details class="cli-drawer">
+              <summary>Export Validated StateSet CLI Command</summary>
+              <pre id="ft-cli-preview" class="cli-code"></pre>
+              <button id="btn-copy-cli" class="mini-btn full">Copy CLI Command</button>
+            </details>
+          </div>
+
+          <!-- Managed CLI / Workspace Training Dispatch + Hot-Reload -->
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">DISPATCH TRAINING RUN &amp; HOT-RELOAD</span>
+              <span id="dispatch-status-pill" class="mono-muted">IDLE</span>
+            </div>
+            <div class="op-action-row">
+              <button id="btn-dispatch-dryrun" class="mini-btn full" title="Validate schema & generate SHA-256 plan.json">✓ Validate Plan</button>
+              <button id="btn-dispatch-local" class="mini-btn full" title="Launch isolated local stub CLI run and hot-reload catalog">🚀 Run Local Stub</button>
+            </div>
+            <pre id="dispatch-log-box" class="cli-code hidden"></pre>
+          </div>
+
+          <!-- External Trainer Telemetry Sync (trainer_state.json / W&B / JSONL) -->
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">SYNC EXTERNAL TELEMETRY (W&amp;B / TRAINER)</span>
+              <span id="telemetry-sync-pill" class="mono-muted">—</span>
+            </div>
+            <div class="patch-builder" style="grid-template-columns:1fr auto">
+              <select id="telemetry-source-select" class="precision-select compact"></select>
+              <button id="btn-sync-telemetry" class="mini-btn">Sync</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 3: USE MODEL, LOGIT LENS & CAUSAL PATCHING PLAYGROUND -->
+        <section id="tab-infer" class="wb-pane">
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">INTERACTIVE MODEL PLAYGROUND</span>
+              <span id="inf-backend-badge" class="status-badge">PROBE</span>
+            </div>
+            <div id="scenario-chips" class="chip-wrap mb-6"></div>
+            <label class="field">
+              <span>System Prompt</span>
+              <input id="inf-system" class="precision-input" value="You are Astra, a StateSet customer support agent. Verify order eligibility before issuing refunds." />
+            </label>
+            <label class="field mt-6">
+              <span>User Prompt</span>
+              <textarea id="inf-prompt" class="precision-textarea" rows="2">Customer says: My order #77701 arrived damaged after 9 days and I was billed twice. Can you refund me?</textarea>
+            </label>
+            <div class="form-grid-3 mt-6">
+              <label class="field">
+                <span>Temp <b id="inf-temp-val">0.70</b></span>
+                <input id="inf-temp" type="range" min="0.1" max="1.8" step="0.05" value="0.7" />
+              </label>
+              <label class="field">
+                <span>Top-P <b id="inf-topp-val">0.90</b></span>
+                <input id="inf-topp" type="range" min="0.1" max="1.0" step="0.05" value="0.9" />
+              </label>
+              <label class="field">
+                <span>Max Tokens</span>
+                <input id="inf-maxtok" type="number" min="8" max="128" value="48" class="precision-input mono" />
+              </label>
+            </div>
+            <details class="cli-drawer">
+              <summary>Optional Live vLLM / OpenAI Endpoint (serve-remote)</summary>
+              <div class="form-grid-2 mt-6">
+                <input id="inf-endpoint-url" class="precision-input mono" placeholder="http://127.0.0.1:8000/v1" />
+                <input id="inf-api-key" type="password" class="precision-input mono" placeholder="Bearer token (optional)" />
+              </div>
+            </details>
+            <div class="op-action-row mt-8">
+              <button id="btn-run-infer" class="action-btn primary full">⚡ Generate &amp; Fire 3D Wave</button>
+              <button id="btn-run-circuit" class="action-btn subtle" title="Discover top causal heads & MLPs in Circuit 3D">✦ Circuit</button>
+              <label class="inline-toggle" style="white-space:nowrap">
+                <input id="inf-compare-base" type="checkbox" checked />
+                <span>A/B</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Contrastive Activation Steering (CAA / RepE) & Weight Baking -->
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">ACTIVATION STEERING (CAA / RepE)</span>
+              <span id="steer-status-pill" class="steer-meta-pill">OFF</span>
+            </div>
+            <div class="patch-builder">
+              <select id="steer-preset-select" class="precision-select compact"></select>
+              <select id="steer-layer-select" class="precision-select compact" title="Injection layer"></select>
+              <button id="btn-extract-steer" class="mini-btn">Extract</button>
+            </div>
+            <details class="cli-drawer">
+              <summary>Edit Positive / Negative Contrast Pair</summary>
+              <label class="field mt-6">
+                <span>Positive Behavior (+v)</span>
+                <textarea id="steer-pos-prompt" class="precision-textarea" rows="2"></textarea>
+              </label>
+              <label class="field mt-6">
+                <span>Negative Contrast (−v)</span>
+                <textarea id="steer-neg-prompt" class="precision-textarea" rows="2"></textarea>
+              </label>
+            </details>
+            <label class="field mt-6">
+              <span>Live Steering Strength α <b id="steer-alpha-val" class="mono-accent">0.00</b></span>
+              <input id="steer-alpha" type="range" min="-2.0" max="2.0" step="0.1" value="0.0" />
+            </label>
+            <div class="op-action-row mt-6">
+              <button id="btn-bake-steer" class="mini-btn full" disabled title="Bake steering direction permanently into target layer weights (undoable)">
+                ✦ Bake Steering Into Weights
+              </button>
+            </div>
+          </div>
+
+          <!-- Causal Activation Patching Strip -->
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">CAUSAL ACTIVATION PATCHING</span>
+              <button id="btn-clear-patches" class="mini-btn">Clear</button>
+            </div>
+            <div class="patch-builder">
+              <select id="patch-layer-select" class="precision-select compact"></select>
+              <select id="patch-action-select" class="precision-select compact">
+                <option value="ablate">Ablate (Zero)</option>
+                <option value="amplify">Amplify 2.2×</option>
+                <option value="dampen">Dampen 0.25×</option>
+                <option value="invert">Invert (−h)</option>
+              </select>
+              <button id="btn-add-patch" class="mini-btn">+ Patch</button>
+            </div>
+            <div id="active-patches-wrap" class="chip-wrap mt-6"></div>
+          </div>
+
+          <!-- Discovered Causal Circuit Nodes -->
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">CAUSAL CIRCUIT NODES (CLICK TO PATCH)</span>
+              <span id="circuit-sparsity-pill" class="mono-muted">—</span>
+            </div>
+            <div id="circuit-node-list" class="circuit-node-list">
+              <div class="empty-hint">Click ✦ Circuit above or switch to Circuit 3D to map attention-flow arcs &amp; causal heads.</div>
+            </div>
+          </div>
+
+          <!-- Sparse Autoencoder (SAE) Monosemantic Feature Explorer -->
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">SAE MONOSEMANTIC FEATURES</span>
+              <span id="sae-stats-pill" class="mono-muted">L0 —</span>
+            </div>
+            <div class="op-action-row mb-6">
+              <button id="btn-analyze-sae" class="mini-btn full">✦ Analyze SAE Features</button>
+              <button id="btn-clear-sae-clamps" class="mini-btn">Reset</button>
+            </div>
+            <div id="sae-feature-list" class="circuit-node-list">
+              <div class="empty-hint">Decompose residual activations into interpretable StateSet sparse features with live 0×/2.5× clamping.</div>
+            </div>
+          </div>
+
+          <div id="infer-results" class="infer-results">
+            <div class="section-card">
+              <div class="card-title-row">
+                <span class="card-title">ACTIVE OUTPUT (CLICK TOKEN FOR LOGIT LENS)</span>
+                <span id="inf-latency" class="mono-muted">—</span>
+              </div>
+              <div id="inf-token-stream" class="token-stream">
+                <span class="empty-hint">Run a prompt to inspect token logits, Layer-by-Layer Logit Lens, and 3D activations.</span>
+              </div>
+              <div id="inf-ab-compare" class="ab-compare hidden">
+                <div class="ab-row">
+                  <span class="micro-label">BASE / UNPATCHED OUTPUT</span>
+                  <span id="inf-shift-metrics" class="mono-accent"></span>
+                </div>
+                <div id="inf-base-text" class="base-output-text"></div>
+              </div>
+            </div>
+
+            <div class="section-card">
+              <div class="card-title-row">
+                <span class="card-title">TOKEN LOGIT LENS &amp; REWARD RUBRIC</span>
+                <span id="inf-selected-tok" class="mono-accent">—</span>
+              </div>
+              <div id="logit-bars" class="logit-bars"></div>
+              <div id="reward-bars" class="reward-bars mt-8"></div>
+            </div>
+
+            <!-- Layer-by-Layer Logit Lens Matrix -->
+            <div class="section-card">
+              <div class="card-title-row">
+                <span class="card-title">LAYER-BY-LAYER LOGIT LENS (CLICK TO FOCUS 3D)</span>
+                <span class="mono-muted">h_ℓ · W_U</span>
+              </div>
+              <div id="layer-logit-lens" class="lens-list">
+                <div class="empty-hint">Run inference to decode intermediate residual predictions across all layers.</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 4: SPECTRAL SVD & LAYER DIAGNOSTICS -->
+        <section id="tab-analyze" class="wb-pane">
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">LAYER FROBENIUS PROFILE</span>
+              <span class="mono-muted">Click layer to focus 3D</span>
+            </div>
+            <canvas id="chart-layers" class="mini-canvas" height="106"></canvas>
+          </div>
+
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">SINGULAR VALUE SPECTRUM (SVD)</span>
+              <span id="svd-eff-rank" class="mono-accent">—</span>
+            </div>
+            <canvas id="chart-svd" class="mini-canvas" height="114"></canvas>
+            <div class="stats-grid mt-6">
+              <div class="stat-cell"><span class="k">SPECTRAL ‖W‖₂</span><span class="v" id="svd-norm">—</span></div>
+              <div class="stat-cell"><span class="k">COND κ</span><span class="v" id="svd-cond">—</span></div>
+              <div class="stat-cell"><span class="k">MODE</span><span class="v" id="svd-mode">—</span></div>
+            </div>
+          </div>
+
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">EXTREME WEIGHT OUTLIERS</span>
+              <button id="btn-clamp-outliers" class="mini-btn">Clamp P99</button>
+            </div>
+            <div id="outlier-list" class="outlier-list"></div>
+          </div>
+
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">AUTO-SENSITIVITY &amp; ADAPTIVE OPTIMIZER</span>
+              <span id="sens-comp-pill" class="mono-accent">—</span>
+            </div>
+            <div class="op-action-row mb-6">
+              <button id="btn-run-sensitivity" class="mini-btn full">⚡ Profile Sensitivity</button>
+              <button id="btn-apply-adaptive" class="mini-btn full" disabled>Apply Adaptive Recipe</button>
+            </div>
+            <div id="sensitivity-list" class="circuit-node-list">
+              <div class="empty-hint">Sweep all layers for Wanda/Fisher sensitivity &amp; effective SVD rank to synthesize an optimal mixed-rank/sparsity recipe.</div>
+            </div>
+          </div>
+
+          <div class="section-card">
+            <div class="card-title">CHECKPOINT METADATA &amp; LINEAGE</div>
+            <pre id="model-meta-json" class="meta-pre">{}</pre>
+          </div>
+        </section>
+      </aside>
+    </div>
+
+    <!-- Verified Export, Batch Eval Gate & Merge Effect Probe Modal -->
+    <div id="export-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+      <div class="modal-card">
+        <div class="card-title-row">
+          <span class="card-title">EVAL GATE &amp; VERIFIED .SAFETENSORS EXPORT</span>
+          <button id="btn-close-export" class="icon-btn">✕</button>
+        </div>
+        <p class="helper-copy">
+          Run the StateSet Batch Eval Gate to verify zero policy/reward regressions, export a shareable interactive HTML PR report, or write an immutable <code>.safetensors</code> checkpoint.
+        </p>
+
+        <!-- Pre-Export Batch Eval Gate Scorecard -->
+        <div class="section-card mt-8">
+          <div class="card-title-row">
+            <span class="card-title">PRE-EXPORT BATCH EVAL GATE</span>
+            <span id="eval-verdict-pill" class="verdict-pill hidden">GO</span>
+          </div>
+          <div id="eval-summary-copy" class="helper-copy">Compare Base vs. Edited across 6 commerce, tool-schema, RLVR math &amp; safety boundary tests.</div>
+          <div id="eval-case-list" class="eval-case-list mt-6 hidden"></div>
+          <button id="btn-run-eval-gate" class="mini-btn full mt-6">⚡ Run 6-Case Regression Eval Gate</button>
+        </div>
+
+        <label class="field mt-8">
+          <span>Export Directory Name</span>
+          <input id="export-name-input" class="precision-input mono" value="surgical-edit-v1" />
+        </label>
+        <label class="inline-toggle mt-8">
+          <input id="export-merge-probe" type="checkbox" checked />
+          <span>Run <code>merge_adapter</code> key-remap &amp; effect probe (<code>merge_probe.json</code>)</span>
+        </label>
+        <div id="export-result-box" class="export-result hidden"></div>
+        <div class="op-action-row mt-8">
+          <button id="btn-export-html-report" class="action-btn subtle" title="Download single-file offline interactive 3D HTML PR report">📄 HTML Report</button>
+          <button id="btn-confirm-export" class="action-btn primary full">Write &amp; Verify .safetensors</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Zero-Download Hugging Face HTTP-Range Inspector Modal -->
+    <div id="hf-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+      <div class="modal-card">
+        <div class="card-title-row">
+          <span class="card-title">ZERO-DOWNLOAD HUGGING FACE HTTP-RANGE LOADER</span>
+          <button id="btn-close-hf" class="icon-btn">✕</button>
+        </div>
+        <p class="helper-copy">
+          Inspect any public or gated Hugging Face <code>.safetensors</code> model (even 70B+ sharded models) by streaming only JSON headers and individual clicked tensor byte ranges.
+        </p>
+        <label class="field mt-8">
+          <span>Hugging Face Repo ID (org/model)</span>
+          <input id="hf-repo-input" class="precision-input mono" placeholder="Qwen/Qwen2.5-0.5B-Instruct" />
+        </label>
+        <div class="form-grid-2 mt-6">
+          <label class="field">
+            <span>Revision</span>
+            <input id="hf-rev-input" class="precision-input mono" value="main" />
+          </label>
+          <label class="field">
+            <span>HF Token (optional)</span>
+            <input id="hf-token-input" type="password" class="precision-input mono" placeholder="hf_..." />
+          </label>
+        </div>
+        <div class="op-action-row mt-8">
+          <button id="btn-confirm-hf" class="action-btn primary full">Stream Headers Over HTTP Range</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <script type="module" src="/studio/static/js/app.js"></script>
+</body>
+</html>

@@ -344,6 +344,14 @@ def create_app() -> FastAPI:
             "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         }
 
+    # Mount the interactive 3D Weight Studio (non-v1 browser workbench)
+    try:
+        from stateset_agents.weight_studio.router import mount_studio_ui
+
+        mount_studio_ui(app)
+    except Exception as error:  # noqa: BLE001 - optional static/studio mount
+        logger.debug("Weight Studio mount skipped (%s)", type(error).__name__)
+
     return app
 
 

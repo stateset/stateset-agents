@@ -2249,6 +2249,7 @@ stateset-agents train --stub
 stateset-agents train --config ./config.yaml --no-dry-run --save ./outputs/ckpt
 stateset-agents evaluate --checkpoint ./outputs/ckpt --message "Hello"
 stateset-agents serve --host 0.0.0.0 --port 8001
+stateset-agents studio --port 8765 --open
 stateset-agents auto-research --proposer smart --max-experiments 50
 ```
 
@@ -2279,9 +2280,12 @@ Other entry points:
 - `examples/train_with_gspo.py` – GSPO + GSPO‑token training
 - `examples/train_with_trl_grpo.py` – Hugging Face TRL GRPO integration
 - `examples/auto_research_quickstart.py` – autonomous experiment loop
+- `examples/weight_studio_quickstart.py` – runnable 3D Weight Studio v5 workflow (edit, steer, circuit discovery, eval gate, recipe, HTML report)
 
 Key docs:
 
+- `docs/GETTING_STARTED_STUDIO.md` — interactive 3D Weight Studio getting-started walkthrough
+- `docs/WEIGHT_STUDIO.md` — 3D Weight Studio reference manual (API, MCP tools, architecture)
 - `docs/AUTO_RESEARCH_GUIDE.md`
 - `docs/RL_FRAMEWORK_GUIDE.md` — canonical usage guide
 - `docs/GSPO_GUIDE.md`

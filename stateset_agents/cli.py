@@ -850,6 +850,45 @@ def _register_advanced_cli() -> None:
 _register_advanced_cli()
 
 
+@app.command("studio")
+def weight_studio_command(
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        help="Host interface to bind the 3D Weight Studio server.",
+    ),
+    port: int = typer.Option(
+        8765,
+        "--port",
+        min=1,
+        max=65535,
+        help="Port for the 3D Weight Studio browser server.",
+    ),
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Workspace directory containing outputs/ and checkpoints/.",
+    ),
+    open_browser: bool = typer.Option(
+        False,
+        "--open",
+        help="Open the 3D Weight Studio in your default browser.",
+    ),
+) -> None:
+    """Launch the interactive 3D Weight Studio in your browser."""
+    try:
+        from stateset_agents.weight_studio.__main__ import main as studio_main
+
+        argv = ["--host", host, "--port", str(port), "--workspace", str(workspace)]
+        if open_browser:
+            argv.append("--open")
+        studio_main(argv)
+    except (OSError, ValueError, TypeError, ImportError) as error:
+        _echo(f"Could not launch 3D Weight Studio: {error}", err=True)
+        raise typer.Exit(code=2) from error
+
+
 def run() -> None:
     # Windows consoles default to a legacy codepage (cp1252) that cannot
     # encode the CLI's unicode output (checkmarks, arrows); force UTF-8.

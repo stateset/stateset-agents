@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Interactive 3D WebGL2 Weight Studio (`stateset-agents studio`, `/studio`).**
+  Full browser-based weight inspection, mechanistic interpretability, and
+  surgical model editing workbench (`stateset_agents/weight_studio/`):
+  - **5 WebGL2 PBR 3D Topologies:** `Architecture 3D` (PCF soft shadows, planar
+    mirror reflections, SSAO, DoF, MRI Cutaway `SLICE`, GPU photon particles),
+    `Microscope 128²` (interactive weight heightfield & Cross-Checkpoint
+    `Split A|B`), `SVD Spectral`, `Trajectory 4D`, and `Circuit 3D` (causal
+    attention-flow arcs).
+  - **Non-Destructive Weight Surgery & Quantization Lab:** Scale, magnitude
+    prune, clamp, SVD truncate, Wanda/Fisher sensitivity pruning, attention head
+    surgery, ROME-style Rank-1 fact editing, TIES/DARE/SLERP checkpoint merging,
+    Quantize 3D Lab (`NF4`, `INT4 AWQ`, `FP8`, `INT8` + SmoothQuant), and
+    Zero-Download Hugging Face HTTP-Range inspection.
+  - **Mechanistic Interpretability & Steering:** Real PyTorch hook telemetry,
+    Logit Lens, causal activation patching, Contrastive Activation Steering
+    (CAA/RepE) with permanent `steer_bake` weight baking, SAE Feature Explorer
+    with feature clamping, and SSE token streaming.
+  - **Eval-Gated Export, Artifacts & Automation:** 6-case Pre-Export Batch Eval
+    Gate (`GO`/`WARN`/`BLOCK`), SHA-256 reload-verified `.safetensors` export,
+    portable `.studio-recipe.json`, standalone interactive HTML PR reports,
+    360° WebM turntable capture, 6 MCP tools (`studio_list_models`,
+    `studio_inspect_model`, `studio_apply_edit`, `studio_extract_steering`,
+    `studio_discover_circuit`, `studio_eval_and_export`), runnable quickstart
+    (`examples/weight_studio_quickstart.py`), documentation
+    (`docs/GETTING_STARTED_STUDIO.md`, `docs/WEIGHT_STUDIO.md`), and CI smoke
+    workflow (`.github/workflows/weight-studio-smoke.yml`).
 - **`SupportConversationReward` (support reward v2).** A conversation-level,
   hack-resistant customer-support reward in
   `stateset_agents.rewards.support_conversation_reward`: each assistant turn's

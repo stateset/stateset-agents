@@ -73,6 +73,12 @@ Add to your `claude_desktop_config.json`:
 | `improve_status(output_dir)` | `cli_improve.get_improve_status` | Return the summary JSON from a previous `improve_run`/`improve run`. |
 | `list_model_presets()` | `examples/model_presets.py` | List model preset names and key hyperparameter fields (model id, learning rate, prompt/completion lengths, LoRA/quantization flags). |
 | `dry_run_finetune(model_preset)` | `examples/finetune_gspo.py --dry-run` | Preview the resolved agent/reward/trainer config for a preset without downloading weights or training. |
+| `studio_list_models(workspace=".", refresh=False)` | `stateset_agents.weight_studio` | Discover local `.safetensors` checkpoints, sharded models, and StateSet architecture twins in the workspace. |
+| `studio_inspect_model(model_id, workspace=".", checkpoint_id=None)` | `stateset_agents.weight_studio` | Inspect layer architecture, tensor counts, Frobenius norms, and active non-destructive edit history. |
+| `studio_apply_edit(model_id, op, target, params=None, label="", workspace=".", checkpoint_id=None)` | `stateset_agents.weight_studio` | Apply a non-destructive surgical weight edit (`scale`, `prune`, `clamp`, `svd_truncate`, `head_edit`, `rank1_edit`, `steer_bake`, `region_edit`, `blend`, `noise`). |
+| `studio_extract_steering(model_id, positive_prompt, negative_prompt, name="Steering Vector", layer_index=None, workspace=".", checkpoint_id=None)` | `stateset_agents.weight_studio` | Extract a Contrastive Activation Steering (CAA/RepE) vector and identify the optimal injection layer. |
+| `studio_discover_circuit(model_id, prompt, top_k=10, system_prompt="", workspace=".", checkpoint_id=None)` | `stateset_agents.weight_studio` | Discover the Top-K causal attention heads & MLP cores and attention-flow arc count for a prompt. |
+| `studio_eval_and_export(model_id, export_name="", run_merge_probe=True, require_go=True, max_cases=6, workspace=".", checkpoint_id=None)` | `stateset_agents.weight_studio` | Run the Pre-Export Batch Eval Gate (`GO`/`WARN`/`BLOCK`) and optionally write a SHA-256 reload-verified `.safetensors` checkpoint + portable recipe. |
 
 Every tool validates its inputs and returns a structured dict — on failure
 that's `{"error": "..."}` rather than a raised traceback, so MCP clients get

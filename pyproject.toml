@@ -302,6 +302,7 @@ include-package-data = true
 
 [tool.setuptools.package-data]
 "stateset_agents" = ["py.typed", "config/presets/**/*.yaml", "evaluation/rubrics/*.md"]
+"stateset_agents.weight_studio" = ["static/*", "static/**/*"]
 
 
 # Bandit configuration
