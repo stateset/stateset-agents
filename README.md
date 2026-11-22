@@ -1517,6 +1517,7 @@ The CLI is a thin wrapper around the Python API:
 ```bash
 stateset-agents version
 stateset-agents doctor
+stateset-agents studio --port 8765 --open
 stateset-agents train --stub
 stateset-agents train --config ./config.yaml --no-dry-run --save ./outputs/ckpt
 stateset-agents evaluate --checkpoint ./outputs/ckpt --message "Hello"
@@ -1531,6 +1532,8 @@ For complex runs prefer the Python API and the examples folder.
 ## Examples and docs
 
 **Start here:**
+- [`docs/GETTING_STARTED_STUDIO.md`](docs/GETTING_STARTED_STUDIO.md) — 5-minute hands-on walkthrough of the interactive **3D Weight Studio** (weight exploration, surgical editing, CAA steering, Circuit 3D, live finetuning, and eval-gated `.safetensors` export).
+- [`docs/WEIGHT_STUDIO.md`](docs/WEIGHT_STUDIO.md) — complete Weight Studio reference manual, surgical op catalog, recipe schema, and REST/Binary/SSE API guide.
 - [`docs/WHITEPAPER.md`](docs/WHITEPAPER.md) — the v0.13.4 technical whitepaper. Anchored to a specific git commit; every claim is verifiable via Appendix C.
 - [`docs/WHITEPAPER_ERRATA.md`](docs/WHITEPAPER_ERRATA.md) — corrections published after each whitepaper revision.
 - [`docs/PLATFORM_TOUR.md`](docs/PLATFORM_TOUR.md) — a guided walk from `pip install` to a published v1.0 whitepaper revision (linear, journey-style).
