@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.79.0] - 2026-11-22 — 3D Weight Studio v4 with MCP tools, cross-checkpoint Split A|B, SAE feature explorer, training dispatch, docs, quickstart & CI WebGL2 smoke
+
+### Added
+
+- Weight Studio v4 MCP integration, Cross-Checkpoint 3D Split A|B, SAE Feature Explorer, Managed Training Dispatch, and CI WebGL2 Smoke (`stateset_agents/weight_studio/`, `stateset_agents/mcp_server.py`, `.github/workflows/weight-studio-smoke.yml`):
+  - **Weight Studio MCP Tools (`stateset-agents mcp`)**: added 6 thin agent-callable MCP tools (`studio_list_models`, `studio_inspect_model`, `studio_apply_edit`, `studio_extract_steering`, `studio_discover_circuit`, `studio_eval_and_export`) with workspace-cached sessions and fail-safe structured error returns.
+  - **Cross-Checkpoint & Cross-Model 3D `Split A|B` Diff**: extended `/models/tensor` and `/models/tensor.bin` with `secondary_checkpoint_id` and `secondary` Float32Array channel, plus a live `vs:` comparator dropdown in `Microscope 128²` to wipe between any two training steps (`Step 18` vs. `Final`) or local adapters in real-time 3D.
+  - **Sparse Autoencoder (SAE) Monosemantic Feature Explorer**: added `POST /api/weight-studio/sae/analyze` decomposing layer residual activations into interpretable StateSet sparse features (`L0`, reconstruction `R²`) with interactive `0×` Suppress / `2.5×` Amplify feature clamping.
+  - **Managed CLI Training Dispatch & Hot-Reload**: added `POST /api/weight-studio/finetune/dispatch` (`dry_run` SHA-256 `plan.json` validation and isolated `local_stub` CLI subprocess execution with live log streaming and automatic checkpoint catalog refresh).
+  - **CI WebGL2 Visual Smoke Workflow**: added `.github/workflows/weight-studio-smoke.yml` running `ruff`, `mypy`, `pytest`, `examples/weight_studio_quickstart.py`, and headless Chromium WebGL2 E2E checks on Weight Studio PRs.
+  - **Documentation & Quickstart**: added `docs/GETTING_STARTED_STUDIO.md`, `docs/WEIGHT_STUDIO.md`, `examples/weight_studio_quickstart.py`, `stateset-agents studio` CLI reference, and PEP 562 lazy top-level exports in `stateset_agents.weight_studio`.
+
 ## [0.78.0] - 2026-11-22 — 3D Weight Studio v3 with Circuit 3D attention ribbons, CAA steering & weight baking, Split A|B 3D wipe, Batch Eval Gate, recipes & 360 turntable
 
 ### Added
