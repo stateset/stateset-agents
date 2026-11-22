@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.78.0] - 2026-11-22 — 3D Weight Studio v3 with Circuit 3D attention ribbons, CAA steering & weight baking, Split A|B 3D wipe, Batch Eval Gate, recipes & 360 turntable
+
+### Added
+
+- Weight Studio v3 mechanistic interpretability, steering, comparison, and export-gating suite (`stateset_agents/weight_studio/`):
+  - **5th 3D Topology — `Circuit 3D`**: automated causal circuit discovery (`POST /api/weight-studio/inference/circuit`) ranking Top-K causal attention heads and MLP cores with multi-channel 3D cubic Bezier attention-flow ribbons (token→head, head→head/MLP, output unembedding beams), spatial labels, and 1-click head/layer ablation.
+  - **Contrastive Activation Steering (CAA / RepE) & Weight Baking**: built-in StateSet contrastive behavioral presets (`GET /steering/presets`), layer-wise contrastive vector extraction (`POST /steering/extract`), live steering strength `α ∈ [-2.0, +2.0]` residual injection in inference, and non-destructive rank-1 weight baking (`POST /steering/bake`, `steer_bake`) with protected-prompt drift verification.
+  - **Real-Time 3D Split-Screen Wipe Curtain (`Split A|B`)**: dual-pass WebGL2 `gl.SCISSOR_TEST` rendering in `Microscope 128²` comparing Unedited Base vs. Live Edited 3D crystal terrains across a draggable glass divider.
+  - **Pre-Export Batch Eval Gate (`GO` / `WARN` / `BLOCK`)**: `POST /api/weight-studio/eval/run` comparing Base vs. Edited across local workspace JSONL traces and StateSet commerce/tool/RLVR/safety suites directly inside the `.safetensors` export modal.
+  - **Portable Edit Recipes & Cinema Capture**: deterministic `.studio-recipe.json` export/replay (`GET /edits/recipe`, `POST /edits/recipe/apply`), 60 FPS 360° Turntable `.webm` video recording (`MediaRecorder`), Cinema Zen Mode (`H`), and keyboard shortcuts (`1–5`, `Space`, `S`, `H`).
+
 ## [0.77.0] - 2026-11-22 — 3D Weight Studio v2 with planar reflections, shadows, SSAO/DoF, PyTorch hooks, Logit Lens, causal patching, TIES/DARE/SLERP, Wanda, ROME, and 128x128 binary streaming
 
 ### Added
