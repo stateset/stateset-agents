@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.77.0] - 2026-11-22 — 3D Weight Studio v2 with planar reflections, shadows, SSAO/DoF, PyTorch hooks, Logit Lens, causal patching, TIES/DARE/SLERP, Wanda, ROME, and 128x128 binary streaming
+
 ### Added
 
 - Weight Studio v2 visual realism and mechanistic interpretability suite (`stateset_agents/weight_studio/`):
