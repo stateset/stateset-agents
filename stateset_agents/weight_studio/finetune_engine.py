@@ -978,3 +978,142 @@ class FinetuneStudioEngine:
             rec["status"] = "stopped"
             rec["logs"].append("[dispatch] Terminated by user.")
         return rec
+
+    # ------------------------------------------------------------------
+    # Live External Trainer Telemetry Sync (trainer_state.json / W&B / JSONL)
+    # ------------------------------------------------------------------
+
+    def list_telemetry_sources(self) -> list[dict[str, Any]]:
+        """Discover local trainer_state.json, metrics.jsonl, and wandb-history.jsonl files."""
+        sources: list[dict[str, Any]] = []
+        skip_dirs = {".git", ".venv", "venv", "node_modules", "__pycache__"}
+        targets = {
+            "trainer_state.json",
+            "metrics.jsonl",
+            "train_metrics.jsonl",
+            "wandb-history.jsonl",
+        }
+
+        for base_name in ("outputs", "checkpoints", "wandb", "."):
+            base = (self.inspector.workspace_root / base_name).resolve()
+            if not base.is_dir():
+                continue
+            max_depth = 5 if base_name != "." else 2
+            base_depth = len(base.parts)
+            for cur_root, dirnames, filenames in os.walk(base):
+                cur_path = Path(cur_root)
+                dirnames[:] = [d for d in dirnames if d not in skip_dirs]
+                if len(cur_path.parts) - base_depth >= max_depth:
+                    dirnames[:] = []
+                for fname in filenames:
+                    if fname in targets:
+                        fpath = cur_path / fname
+                        rel = fpath.relative_to(
+                            self.inspector.workspace_root
+                        ).as_posix()
+                        if any(s["path"] == rel for s in sources):
+                            continue
+                        sources.append(
+                            {
+                                "path": rel,
+                                "kind": (
+                                    "hf_trainer_state"
+                                    if fname == "trainer_state.json"
+                                    else (
+                                        "wandb_history"
+                                        if fname == "wandb-history.jsonl"
+                                        else "metrics_jsonl"
+                                    )
+                                ),
+                                "size_kb": round(fpath.stat().st_size / 1024.0, 1),
+                            }
+                        )
+                        if len(sources) >= 24:
+                            return sources
+        return sources
+
+    def sync_external_telemetry(self, rel_path: str) -> dict[str, Any]:
+        """Parse real training metrics from trainer_state.json, metrics.jsonl, or wandb-history.jsonl
+        and refresh discovered workspace checkpoints for Trajectory 4D."""
+        fpath = (self.inspector.workspace_root / rel_path).resolve()
+        if (
+            not str(fpath).startswith(str(self.inspector.workspace_root))
+            or not fpath.is_file()
+        ):
+            raise FileNotFoundError(f"Telemetry file not found: {rel_path}")
+
+        def _num(d: dict[str, Any], *keys: str, default: float = 0.0) -> float:
+            for k in keys:
+                val = d.get(k)
+                if isinstance(val, (int, float)):
+                    return float(val)
+            return default
+
+        history: list[dict[str, Any]] = []
+        if fpath.name == "trainer_state.json":
+            data = json.loads(fpath.read_text(encoding="utf-8"))
+            for idx, entry in enumerate(data.get("log_history") or []):
+                if not isinstance(entry, dict):
+                    continue
+                if (
+                    "loss" not in entry
+                    and "reward" not in entry
+                    and "train_loss" not in entry
+                ):
+                    continue
+                history.append(
+                    {
+                        "step": int(_num(entry, "step", default=float(idx + 1))),
+                        "loss": round(
+                            _safe_float(_num(entry, "loss", "train_loss")), 5
+                        ),
+                        "reward": round(
+                            _safe_float(
+                                _num(entry, "reward", "rewards/mean", default=0.5)
+                            ),
+                            4,
+                        ),
+                        "kl": round(_safe_float(_num(entry, "kl", "objective/kl")), 6),
+                        "lr": round(_safe_float(_num(entry, "learning_rate", "lr")), 7),
+                    }
+                )
+        else:
+            with fpath.open("r", encoding="utf-8") as fh:
+                for idx, raw in enumerate(fh):
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    try:
+                        entry = json.loads(raw)
+                    except ValueError:
+                        continue
+                    if not isinstance(entry, dict):
+                        continue
+                    history.append(
+                        {
+                            "step": int(
+                                _num(entry, "step", "_step", default=float(idx + 1))
+                            ),
+                            "loss": round(
+                                _safe_float(_num(entry, "loss", "train/loss")), 5
+                            ),
+                            "reward": round(
+                                _safe_float(
+                                    _num(entry, "reward", "train/reward", default=0.5)
+                                ),
+                                4,
+                            ),
+                            "kl": round(_safe_float(_num(entry, "kl", "train/kl")), 6),
+                            "lr": round(
+                                _safe_float(_num(entry, "lr", "learning_rate")), 7
+                            ),
+                        }
+                    )
+
+        self.inspector.refresh_catalog()
+        return {
+            "path": rel_path,
+            "points": len(history),
+            "history": history[-200:],
+            "catalog_refreshed": True,
+        }

@@ -627,3 +627,130 @@ def test_studio_v4_cross_checkpoint_sae_dispatch_and_mcp_tools(tmp_path: Path) -
     )
     assert m_exp["exported"] is True
     assert m_exp["manifest"]["reload_verified"] is True
+
+
+def test_studio_v5_hf_range_quantize_sensitivity_telemetry_stream_and_html_report(
+    tmp_path: Path,
+) -> None:
+    from safetensors.numpy import save_file
+
+    ws = _make_sample_workspace(tmp_path)
+    app = create_studio_app(workspace_root=ws)
+    client = TestClient(app)
+    mid = "local:outputs/demo_lora_run"
+
+    # 1. Zero-Download Hugging Face HTTP-Range safetensors inspection (mocked byte range fetcher)
+    remote_sf = tmp_path / "remote_mock.safetensors"
+    rng = np.random.default_rng(7)
+    save_file(
+        {
+            "model.layers.0.self_attn.q_proj.weight": rng.normal(
+                0, 0.05, size=(16, 16)
+            ).astype(np.float32),
+            "model.layers.1.mlp.down_proj.weight": rng.normal(
+                0, 0.05, size=(16, 16)
+            ).astype(np.float32),
+        },
+        str(remote_sf),
+    )
+    remote_bytes = remote_sf.read_bytes()
+    cfg_bytes = json.dumps({"model_type": "qwen2", "num_attention_heads": 4}).encode()
+
+    def _mock_range_fetcher(
+        url: str, start: int | None = None, end: int | None = None
+    ) -> bytes:
+        if url.endswith("config.json"):
+            return cfg_bytes
+        if url.endswith("model.safetensors"):
+            if start is not None and end is not None:
+                return remote_bytes[start : end + 1]
+            return remote_bytes
+        raise FileNotFoundError(url)
+
+    inspector = WeightInspector(workspace_root=ws)
+    hf_summary = inspector.register_remote_hf_model(
+        "stateset/mock-70b-twin", range_fetcher=_mock_range_fetcher
+    )
+    assert hf_summary["kind"] == "remote_hf"
+    assert hf_summary["num_layers"] == 2
+    hf_arr = inspector.load_tensor_array(
+        hf_summary["model_id"], "model.layers.0.self_attn.q_proj.weight"
+    )
+    assert hf_arr.shape == (16, 16)
+
+    # 2. Quantization Lab (NF4, INT4 AWQ, FP8, INT8 + SmoothQuant SQNR diagnostics)
+    r_struct = client.get(
+        "/api/weight-studio/models/structure", params={"model_id": mid}
+    )
+    first_tensor = r_struct.json()["layers"][0]["tensors"][0]["name"]
+    for scheme in ("nf4", "int4_awq", "fp8", "int8"):
+        r_q = client.post(
+            "/api/weight-studio/edits/apply",
+            json={
+                "model_id": mid,
+                "op": "quantize",
+                "target": first_tensor,
+                "params": {"scheme": scheme, "smooth_outliers": True},
+            },
+        )
+        assert r_q.status_code == 200
+        diag = r_q.json()["edit"]["diagnostics"]
+        assert diag["scheme"] == scheme
+        assert diag["sqnr_db"] > 5.0
+
+    # 3. Auto-Sensitivity Profiler & Adaptive Rank/Sparsity Recipe
+    r_sens = client.post(
+        "/api/weight-studio/models/sensitivity",
+        json={"model_id": mid, "target_compression": 0.35},
+    )
+    assert r_sens.status_code == 200
+    sens = r_sens.json()
+    assert len(sens["layers"]) == 3
+    assert sens["recommended_recipe"]["format"] == "stateset-weight-studio-recipe"
+
+    # 4. Live Token-by-Token SSE Inference Stream
+    r_stream = client.post(
+        "/api/weight-studio/inference/stream",
+        json={"model_id": mid, "prompt": "Check order #77701 refund", "max_tokens": 12},
+    )
+    assert r_stream.status_code == 200
+    assert '"type": "token"' in r_stream.text
+    assert '"type": "done"' in r_stream.text
+
+    # 5. External Trainer Telemetry Sync (trainer_state.json)
+    ts_file = ws / "outputs" / "demo_lora_run" / "trainer_state.json"
+    ts_file.write_text(
+        json.dumps(
+            {
+                "log_history": [
+                    {"step": 10, "loss": 1.42, "reward": 0.45, "learning_rate": 5e-6},
+                    {"step": 20, "loss": 0.91, "reward": 0.78, "learning_rate": 3e-6},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    r_srcs = client.get("/api/weight-studio/finetune/telemetry-sources")
+    assert r_srcs.status_code == 200
+    assert r_srcs.json()["count"] >= 1
+    r_sync = client.post(
+        "/api/weight-studio/finetune/sync-telemetry",
+        json={"path": r_srcs.json()["sources"][0]["path"]},
+    )
+    assert r_sync.status_code == 200
+    assert r_sync.json()["points"] == 2
+
+    # 6. Shareable Standalone Single-File Interactive HTML PR Report
+    r_html = client.post(
+        "/api/weight-studio/report/html",
+        json={
+            "model_id": mid,
+            "tensor_name": first_tensor,
+            "include_eval": True,
+            "include_sensitivity": True,
+        },
+    )
+    assert r_html.status_code == 200
+    assert "text/html" in r_html.headers["content-type"]
+    assert "STATESET 3D WEIGHT STUDIO" in r_html.text
+    assert 'canvas id="c3d"' in r_html.text

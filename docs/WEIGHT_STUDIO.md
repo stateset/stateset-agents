@@ -171,10 +171,15 @@ All endpoints are mounted under `/api/weight-studio` (both in standalone mode an
 | `GET` | `/api/weight-studio/steering/presets` | Built-in StateSet contrastive behavioral steering pairs. |
 | `POST` | `/api/weight-studio/steering/extract` | Extract layer-wise contrastive steering vectors `v_ℓ = h_ℓ(pos) - h_ℓ(neg)` and select optimal injection layer. |
 | `POST` | `/api/weight-studio/steering/bake` | Permanently bake an extracted steering vector into target layer weights as an undoable surgical edit. |
+| `POST` | `/api/weight-studio/models/register-hf` | Register any Hugging Face `.safetensors` repo (including 70B+ sharded models) by streaming only JSON headers & clicked tensor byte ranges via HTTP `Range:`. |
+| `POST` | `/api/weight-studio/models/sensitivity` | Run the Auto-Sensitivity Profiler (Wanda/Fisher salience + effective SVD rank) and synthesize an adaptive mixed-rank/sparsity `.studio-recipe.json`. |
+| `POST` | `/api/weight-studio/inference/stream` | Stream live token-by-token inference events (and real `top_logprobs` from vLLM/OpenAI/Ollama endpoints) over SSE. |
 | `POST` | `/api/weight-studio/sae/analyze` | Decompose a layer's residual activation into sparse monosemantic SAE features (`L0`, `R²`) with optional live `0×`/`2.5×` feature clamping. |
 | `POST` | `/api/weight-studio/eval/run` | Run the Pre-Export Batch Eval Gate (`GO` / `WARN` / `BLOCK`) comparing Base vs. Edited across dataset traces and built-in suites. |
 | `POST` | `/api/weight-studio/finetune/dispatch` | Validate & write a SHA-256 `plan.json` bundle and launch a managed `dry_run` or `local_stub` CLI run with bounded logs and automatic checkpoint catalog hot-reload. |
-| `GET` | `/api/weight-studio/finetune/dispatch/{run_id}` | Poll live stdout/stderr log lines and completion status for a dispatched run. |
+| `GET` | `/api/weight-studio/finetune/telemetry-sources` | Discover local `trainer_state.json`, `metrics.jsonl`, and `wandb-history.jsonl` training telemetry logs. |
+| `POST` | `/api/weight-studio/finetune/sync-telemetry` | Sync external trainer/W&B metrics directly into the Finetune chart and refresh discovered checkpoints. |
+| `POST` | `/api/weight-studio/report/html` | Export a shareable, offline single-file interactive 3D HTML PR report (orbitable heightfield, Eval Gate scorecard, sensitivity table, and portable edit recipe). |
 
 ### MCP Server Integration
 

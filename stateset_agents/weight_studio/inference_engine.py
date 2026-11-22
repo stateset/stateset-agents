@@ -688,8 +688,8 @@ class InferenceStudioEngine:
         api_key: str = "",
         temperature: float = 0.7,
         max_tokens: int = 48,
-    ) -> str | None:
-        """Optionally query a live OpenAI-compatible / vLLM serve-remote endpoint."""
+    ) -> dict[str, Any] | None:
+        """Optionally query a live OpenAI-compatible / vLLM / Ollama endpoint with real top_logprobs."""
         url = endpoint_url.strip().rstrip("/")
         if not (url.startswith("http://") or url.startswith("https://")):
             return None
@@ -711,6 +711,8 @@ class InferenceStudioEngine:
                 ],
                 "temperature": temperature,
                 "max_tokens": max_tokens,
+                "logprobs": True,
+                "top_logprobs": 6,
             }
         ).encode("utf-8")
         headers = {"Content-Type": "application/json"}
@@ -720,7 +722,61 @@ class InferenceStudioEngine:
         try:
             with urllib.request.urlopen(req, timeout=8.0) as resp:  # nosec: B310
                 data = json.loads(resp.read().decode("utf-8"))
-                return str(data["choices"][0]["message"]["content"])
+                choice = data["choices"][0]
+                text = str(choice["message"]["content"])
+                lp_content = (choice.get("logprobs") or {}).get("content")
+                parsed_tokens: list[dict[str, Any]] = []
+                if isinstance(lp_content, list):
+                    for pos, item in enumerate(lp_content):
+                        if not isinstance(item, dict):
+                            continue
+                        tok_s = str(item.get("token", ""))
+                        lp_val = float(item.get("logprob", -0.2))
+                        prob = math.exp(max(-20.0, min(0.0, lp_val)))
+                        top_cands: list[dict[str, Any]] = []
+                        for cand in item.get("top_logprobs") or []:
+                            if not isinstance(cand, dict):
+                                continue
+                            clp = float(cand.get("logprob", -2.0))
+                            top_cands.append(
+                                {
+                                    "token": str(cand.get("token", "")),
+                                    "prob": round(
+                                        _safe_float(
+                                            math.exp(max(-20.0, min(0.0, clp)))
+                                        ),
+                                        4,
+                                    ),
+                                    "logprob": round(_safe_float(clp), 4),
+                                }
+                            )
+                        ent = float(
+                            -sum(
+                                c["prob"] * math.log(max(c["prob"], 1e-9))
+                                for c in top_cands
+                            )
+                            if top_cands
+                            else -prob * math.log(max(prob, 1e-9))
+                        )
+                        parsed_tokens.append(
+                            {
+                                "index": pos,
+                                "token": tok_s,
+                                "prob": round(_safe_float(prob), 4),
+                                "logprob": round(_safe_float(lp_val), 4),
+                                "entropy": round(_safe_float(ent), 4),
+                                "kl_vs_base": 0.0,
+                                "top_candidates": top_cands[:6]
+                                or [
+                                    {
+                                        "token": tok_s,
+                                        "prob": round(_safe_float(prob), 4),
+                                        "logprob": round(_safe_float(lp_val), 4),
+                                    }
+                                ],
+                            }
+                        )
+                return {"text": text, "tokens": parsed_tokens}
         except Exception:
             return None
 
@@ -1004,11 +1060,13 @@ class InferenceStudioEngine:
             edited_probe["logit_lens"] = pt_active["logit_lens"]
             base_probe["logit_lens"] = pt_base["logit_lens"]
 
-        # Optional live OpenAI / vLLM serve-remote completion
+        # Optional live OpenAI / vLLM / Ollama completion (with real top_logprobs!)
+        remote_resp: dict[str, Any] | None = None
         remote_text: str | None = None
+        remote_tokens: list[dict[str, Any]] | None = None
         if endpoint_url.strip():
             entry = self.inspector.get_entry(model_id)
-            remote_text = self._try_remote_openai_completion(
+            remote_resp = self._try_remote_openai_completion(
                 endpoint_url,
                 entry.base_model,
                 system_prompt,
@@ -1017,7 +1075,10 @@ class InferenceStudioEngine:
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
-            if remote_text is not None:
+            if remote_resp is not None:
+                remote_text = str(remote_resp.get("text") or "")
+                toks = remote_resp.get("tokens")
+                remote_tokens = toks if isinstance(toks, list) and toks else None
                 execution_backend = "remote_vllm"
 
         h_base = base_probe["final_hidden"]
@@ -1197,6 +1258,12 @@ class InferenceStudioEngine:
             sparsity_delta,
             override_text=remote_text,
         )
+        if remote_tokens:
+            active_result["tokens"] = remote_tokens
+            active_result["mean_entropy"] = round(
+                _safe_float(float(np.mean([t["entropy"] for t in remote_tokens]))),
+                4,
+            )
         base_result = (
             _generate_trace(base_probe, "base", 0.0, 1.0, 0.0)
             if (compare_base and has_intervention)

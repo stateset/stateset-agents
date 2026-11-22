@@ -1052,6 +1052,22 @@ function renderOpParams() {
         <label class="field"><span>Value</span><input id="p-reg-val" type="number" step="0.1" value="0.25" class="precision-input mono" /></label>
       </div>
     `;
+  } else if (op === 'quantize') {
+    c.innerHTML = `
+      <label class="field">
+        <span>Quantization Precision Scheme</span>
+        <select id="p-quant-scheme" class="precision-select compact">
+          <option value="nf4" selected>NF4 (QLoRA NormalFloat4 · 4×)</option>
+          <option value="int4_awq">INT4 AWQ (Activation-Aware · 4×)</option>
+          <option value="fp8">FP8 (E4M3 Micro-Scale · 2×)</option>
+          <option value="int8">INT8 (Per-Channel Sym · 2×)</option>
+        </select>
+      </label>
+      <label class="inline-toggle mt-6">
+        <input id="p-quant-smooth" type="checkbox" checked />
+        <span>SmoothQuant Outlier Channel Protection</span>
+      </label>
+    `;
   } else if (op === 'blend') {
     const options = state.models
       .map((m) => `<option value="${m.model_id}"${m.model_id === state.secondaryModelId ? ' selected' : ''}>${m.display_name}</option>`)
@@ -1152,6 +1168,11 @@ async function handleApplyEditClick() {
     };
     target = state.selectedTensorName;
     label = `Brush ${params.action} [${params.row_start}:${params.row_end}, ${params.col_start}:${params.col_end}]`;
+  } else if (op === 'quantize') {
+    const scheme = $('p-quant-scheme').value;
+    const smooth_outliers = $('p-quant-smooth').checked;
+    params = { scheme, smooth_outliers };
+    label = `Quantize ${scheme.toUpperCase()}${smooth_outliers ? '+Smooth' : ''}`;
   } else if (op === 'blend') {
     const method = $('p-blend-method').value;
     params = {
@@ -1177,11 +1198,13 @@ async function executeSurgicalEdit(op, target, params, label) {
     });
     renderer.triggerPulse('backprop');
     const d = res.edit.diagnostics || {};
-    const extra = d.protected_mean_cosine
-      ? ` · Drift cos=${d.protected_mean_cosine} (${d.drift_passed ? 'PASS' : 'WARN'})`
-      : d.conflict_rate !== undefined
-        ? ` · Conflict ${(d.conflict_rate * 100).toFixed(1)}%`
-        : '';
+    const extra = d.sqnr_db !== undefined
+      ? ` · SQNR=${d.sqnr_db} dB (${d.compression_ratio}×)`
+      : d.protected_mean_cosine
+        ? ` · Drift cos=${d.protected_mean_cosine} (${d.drift_passed ? 'PASS' : 'WARN'})`
+        : d.conflict_rate !== undefined
+          ? ` · Conflict ${(d.conflict_rate * 100).toFixed(1)}%`
+          : '';
     await reloadAfterEdit(`Applied ${res.edit.label} (${res.edit.changed_weights.toLocaleString()} w${extra})`);
   } catch (err) {
     showToast(`Edit failed: ${err.message}`, 3200);
@@ -2182,6 +2205,179 @@ function bindSplitCurtain() {
 
   $('btn-dispatch-dryrun')?.addEventListener('click', () => dispatchValidatedRun('dry_run'));
   $('btn-dispatch-local')?.addEventListener('click', () => dispatchValidatedRun('local_stub'));
+
+  // Studio v5: GPU Photon Particles + 3D Tomographic MRI Slice Plane
+  $('btn-particles-toggle')?.addEventListener('click', (e) => {
+    renderer.showParticles = !renderer.showParticles;
+    e.currentTarget.classList.toggle('active', renderer.showParticles);
+  });
+  $('btn-slice-toggle')?.addEventListener('click', (e) => {
+    const active = renderer.sliceAxis === 0;
+    renderer.sliceAxis = active ? Number($('slice-axis-select')?.value || 2) : 0;
+    renderer.slicePos = Number($('slice-pos-slider')?.value || 2);
+    e.currentTarget.classList.toggle('active', active);
+    $('slice-hud')?.classList.toggle('hidden', !active);
+    showToast(active ? '3D MRI Cutaway Plane active — scrub slider to slice interior weights' : '3D MRI Cutaway OFF', 2000);
+  });
+  $('slice-axis-select')?.addEventListener('change', (e) => {
+    if (renderer.sliceAxis > 0) renderer.sliceAxis = Number(e.target.value);
+  });
+  $('slice-pos-slider')?.addEventListener('input', (e) => {
+    renderer.slicePos = Number(e.target.value);
+    const v = renderer.slicePos;
+    $('slice-pos-val').textContent = `${v >= 0 ? '+' : ''}${v.toFixed(1)}`;
+  });
+
+  // Studio v5: Zero-Download Hugging Face HTTP-Range Modal
+  const hfModal = $('hf-modal');
+  $('btn-hf-modal')?.addEventListener('click', () => hfModal?.classList.remove('hidden'));
+  $('btn-close-hf')?.addEventListener('click', () => hfModal?.classList.add('hidden'));
+  hfModal?.addEventListener('click', (e) => { if (e.target === hfModal) hfModal.classList.add('hidden'); });
+  $('btn-confirm-hf')?.addEventListener('click', async () => {
+    const repo_id = ($('hf-repo-input')?.value || '').trim();
+    if (!repo_id) { showToast('Enter a Hugging Face repo ID (org/model)'); return; }
+    const btn = $('btn-confirm-hf');
+    btn.disabled = true;
+    btn.textContent = 'Streaming headers…';
+    try {
+      const res = await apiPost('/models/register-hf', {
+        repo_id,
+        revision: ($('hf-rev-input')?.value || 'main').trim(),
+        token: ($('hf-token-input')?.value || '').trim(),
+      });
+      hfModal.classList.add('hidden');
+      await loadModels(false);
+      $('model-select').value = res.model.model_id;
+      await loadModelStructure(res.model.model_id, null);
+      showToast(`Streamed HF headers for ${repo_id} (${res.model.num_layers}L · ${res.model.num_tensors}T)`);
+    } catch (err) {
+      showToast(`HF Range error: ${err.message}`, 3600);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Stream Headers Over HTTP Range';
+    }
+  });
+
+  // Studio v5: Auto-Sensitivity Profiler & Adaptive Rank/Sparsity Optimizer
+  let lastAdaptiveRecipe = null;
+  $('btn-run-sensitivity')?.addEventListener('click', async () => {
+    if (!state.modelId) return;
+    try {
+      const rep = await apiPost('/models/sensitivity', {
+        model_id: state.modelId,
+        checkpoint_id: state.checkpointId,
+        target_compression: 0.35,
+      });
+      lastAdaptiveRecipe = rep.recommended_recipe;
+      $('sens-comp-pill').textContent = `−${rep.estimated_compression_pct}% params`;
+      $('btn-apply-adaptive').disabled = false;
+
+      const heat = {};
+      const list = $('sensitivity-list');
+      list.innerHTML = '';
+      for (const l of rep.layers || []) {
+        heat[l.layer] = l.sensitivity;
+        const col = l.tier === 'CRITICAL' ? '#fb7185' : l.tier === 'BALANCED' ? '#fbbf24' : '#34d399';
+        const row = document.createElement('div');
+        row.className = 'circuit-node-row';
+        row.innerHTML = `
+          <span style="color:${col};font-weight:700">${l.name}</span>
+          <span style="color:#94a3b8">${l.tier} · r=${l.recommended_rank}</span>
+          <span style="color:#38bdf8;text-align:right">sp ${Math.round(l.recommended_sparsity * 100)}%</span>
+          <span style="color:${col};text-align:right">${(l.sensitivity * 100).toFixed(0)}%</span>
+        `;
+        list.appendChild(row);
+      }
+      renderer.triggerPulse('forward', heat);
+      showToast(`Profiled ${rep.layers.length} layers — adaptive recipe saves ~${rep.estimated_compression_pct}% params`);
+    } catch (err) {
+      showToast(`Sensitivity error: ${err.message}`, 3200);
+    }
+  });
+
+  $('btn-apply-adaptive')?.addEventListener('click', async () => {
+    if (!state.modelId || !lastAdaptiveRecipe) return;
+    try {
+      const res = await apiPost('/edits/recipe/apply', {
+        model_id: state.modelId,
+        checkpoint_id: state.checkpointId,
+        recipe: lastAdaptiveRecipe,
+        reset_first: false,
+      });
+      await reloadAfterEdit(`Applied adaptive sensitivity recipe (${res.applied_count} layer ops)`);
+    } catch (err) {
+      showToast(`Adaptive apply failed: ${err.message}`, 3200);
+    }
+  });
+
+  // Studio v5: External Trainer Telemetry Sync (trainer_state.json / W&B / JSONL)
+  (async () => {
+    try {
+      const res = await apiGet('/finetune/telemetry-sources');
+      const sel = $('telemetry-source-select');
+      if (!sel) return;
+      sel.innerHTML = '';
+      if (!res.sources?.length) {
+        sel.innerHTML = '<option value="">No local trainer_state.json / W&B logs</option>';
+      } else {
+        for (const s of res.sources) {
+          const opt = document.createElement('option');
+          opt.value = s.path;
+          opt.textContent = `${s.path} (${s.size_kb} KB)`;
+          sel.appendChild(opt);
+        }
+      }
+    } catch { /* optional */ }
+  })();
+
+  $('btn-sync-telemetry')?.addEventListener('click', async () => {
+    const path = $('telemetry-source-select')?.value;
+    if (!path) { showToast('No telemetry file selected'); return; }
+    try {
+      const res = await apiPost('/finetune/sync-telemetry', { path });
+      state.ftHistory = res.history || [];
+      drawTrainingTelemetryChart($('chart-training'), state.ftHistory);
+      $('telemetry-sync-pill').textContent = `${res.points} pts`;
+      showToast(`Synced ${res.points} telemetry points & refreshed checkpoints`);
+    } catch (err) {
+      showToast(`Telemetry sync failed: ${err.message}`, 3200);
+    }
+  });
+
+  // Studio v5: Shareable Single-File Interactive HTML PR Report Export
+  $('btn-export-html-report')?.addEventListener('click', async () => {
+    if (!state.modelId) return;
+    const btn = $('btn-export-html-report');
+    btn.disabled = true;
+    btn.textContent = 'Building HTML…';
+    try {
+      const resp = await fetch(`${API}/report/html`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model_id: state.modelId,
+          checkpoint_id: state.checkpointId,
+          tensor_name: state.selectedTensorName,
+          include_eval: true,
+          include_sensitivity: true,
+        }),
+      });
+      if (!resp.ok) throw new Error(resp.statusText);
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `stateset-weight-studio-report-${Date.now()}.html`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      showToast('Exported standalone interactive 3D HTML PR report!');
+    } catch (err) {
+      showToast(`HTML Report error: ${err.message}`, 3200);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '📄 HTML Report';
+    }
+  });
 }
 
 function toggleZenMode() {

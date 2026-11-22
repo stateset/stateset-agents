@@ -40,6 +40,8 @@ import {
   FLOOR_VS,
   INSTANCED_PBR_FS,
   INSTANCED_PBR_VS,
+  PARTICLE_FS,
+  PARTICLE_VS,
   POST_VS,
   SHADOW_FS,
   SHADOW_VS,
@@ -226,6 +228,17 @@ function mapWeightColor(
       rgb: [lerp(0.06, 0.14, cMag), lerp(0.35, 0.86, cMag), lerp(0.26, 0.58, cMag)],
       emit: 0.08 + cMag * 0.48,
     };
+  }
+
+  if (colorMode === 'quant_error') {
+    const qMag = clamp(Math.abs(deltaVal) / Math.max(absMax * 0.16, 1e-6), 0, 1);
+    if (qMag < 0.04) return { rgb: [0.06, 0.09, 0.15], emit: 0.01 };
+    if (qMag < 0.45) {
+      const k = qMag / 0.45;
+      return { rgb: [lerp(0.08, 0.14, k), lerp(0.24, 0.78, k), lerp(0.45, 0.96, k)], emit: 0.08 + k * 0.35 };
+    }
+    const k = (qMag - 0.45) / 0.55;
+    return { rgb: [lerp(0.92, 1.0, k), lerp(0.32, 0.92, k), lerp(0.08, 0.62, k)], emit: 0.45 + k * 1.15 };
   }
 
   if (colorMode === 'delta') {
@@ -433,6 +446,10 @@ export class WeightStudioRenderer {
     this.viewMode = 'stack';
     this.layerSpread = 1.0;
     this.showConduits = true;
+    this.showParticles = true;
+    this.sliceAxis = 0; // 0=off, 1=X, 2=Z, 3=Y
+    this.slicePos = 0.0;
+    this.particleBurst = 0.0;
     this.showGhostOverlay = true;
     this.splitCompare = false;
     this.splitRatio = 0.5;
@@ -517,6 +534,7 @@ export class WeightStudioRenderer {
     this.progFloor = createProgram(gl, FLOOR_VS, FLOOR_FS);
     this.progPbr = createProgram(gl, INSTANCED_PBR_VS, INSTANCED_PBR_FS);
     this.progConduit = createProgram(gl, CONDUIT_VS, CONDUIT_FS);
+    this.progParticle = createProgram(gl, PARTICLE_VS, PARTICLE_FS);
     this.progBright = createProgram(gl, POST_VS, BRIGHT_PASS_FS);
     this.progBlur = createProgram(gl, POST_VS, BLUR_FS);
     this.progComposite = createProgram(gl, POST_VS, COMPOSITE_FS);
@@ -586,6 +604,27 @@ export class WeightStudioRenderer {
     this.conduitPosBuf = gl.createBuffer();
     this.conduitNormBuf = gl.createBuffer();
     this.conduitMetaBuf = gl.createBuffer();
+
+    // GPU Photon Particle Field (480 deterministic streaming optical photons)
+    this.particleCount = 480;
+    const pData = new Float32Array(this.particleCount * 4);
+    for (let i = 0; i < this.particleCount; i++) {
+      const s1 = Math.sin(i * 12.9898 + 1.23) * 43758.5453;
+      const s2 = Math.sin(i * 78.233 + 4.56) * 23421.631;
+      const s3 = Math.sin(i * 39.425 + 7.89) * 19191.123;
+      const s4 = Math.sin(i * 93.111 + 2.11) * 31337.777;
+      pData[i * 4 + 0] = (s1 - Math.floor(s1)) * 2.0 - 1.0; // laneX [-1, 1]
+      pData[i * 4 + 1] = s2 - Math.floor(s2);               // height [0, 1]
+      pData[i * 4 + 2] = s3 - Math.floor(s3);               // phase [0, 1]
+      pData[i * 4 + 3] = 0.55 + (s4 - Math.floor(s4)) * 0.9; // speed
+    }
+    this.particleVao = gl.createVertexArray();
+    gl.bindVertexArray(this.particleVao);
+    this.particleBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, pData, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 0, 0);
     gl.bindVertexArray(null);
   }
 
@@ -707,6 +746,7 @@ export class WeightStudioRenderer {
     this.pulseMode = mode === 'backprop' ? 1.0 : 0.0;
     this.pulseWave = mode === 'backprop' ? 1.15 : -0.15;
     this.pulseSpeed = mode === 'backprop' ? 0.75 : 0.65;
+    this.particleBurst = 1.0;
     if (layerIntensities) {
       this.layerHeat.clear();
       for (const [k, v] of Object.entries(layerIntensities)) {
@@ -1816,6 +1856,9 @@ export class WeightStudioRenderer {
   }
 
   _updatePulse(dt) {
+    if (this.particleBurst > 0.001) {
+      this.particleBurst = Math.max(0.0, this.particleBurst - dt * 0.65);
+    }
     if (this.pulseWave >= -0.2 && this.pulseWave <= 1.25) {
       const dir = this.pulseMode > 0.5 ? -1 : 1;
       this.pulseWave += dt * 0.72 * dir;
@@ -1844,6 +1887,8 @@ export class WeightStudioRenderer {
     gl.uniform1f(gl.getUniformLocation(prog, 'uTime'), this._elapsed);
     gl.uniform1f(gl.getUniformLocation(prog, 'uPulseWave'), this.pulseWave);
     gl.uniform1f(gl.getUniformLocation(prog, 'uPulseMode'), this.pulseMode);
+    gl.uniform1f(gl.getUniformLocation(prog, 'uSliceAxis'), mirrorY > 0 ? this.sliceAxis : 0.0);
+    gl.uniform1f(gl.getUniformLocation(prog, 'uSlicePos'), this.slicePos);
 
     if (this.fboShadow && this.enableShadows && mirrorY > 0) {
       gl.activeTexture(gl.TEXTURE3);
@@ -2010,6 +2055,24 @@ export class WeightStudioRenderer {
       gl.bindVertexArray(this.transVao);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, this.boxVertexCount, this.transCount);
     }
+
+    // 1f. GPU-Animated Optical Photon Particle Stream
+    if (this.showParticles && this.particleCount > 0 && this.progParticle) {
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+      gl.depthMask(false);
+      gl.disable(gl.CULL_FACE);
+      gl.useProgram(this.progParticle);
+      gl.uniformMatrix4fv(gl.getUniformLocation(this.progParticle, 'uViewProj'), false, this.viewProj);
+      gl.uniform1f(gl.getUniformLocation(this.progParticle, 'uTime'), this._elapsed);
+      gl.uniform1f(gl.getUniformLocation(this.progParticle, 'uSpanX'), Math.max(7.0, this.footprintSize[0]));
+      gl.uniform1f(gl.getUniformLocation(this.progParticle, 'uSpanZ'), Math.max(8.0, this.footprintSize[1]));
+      gl.uniform1f(gl.getUniformLocation(this.progParticle, 'uPulseMode'), this.pulseMode);
+      gl.uniform1f(gl.getUniformLocation(this.progParticle, 'uBurst'), this.particleBurst);
+      gl.bindVertexArray(this.particleVao);
+      gl.drawArrays(gl.POINTS, 0, this.particleCount);
+    }
+
     gl.depthMask(true);
     gl.disable(gl.BLEND);
     gl.disable(gl.CULL_FACE);

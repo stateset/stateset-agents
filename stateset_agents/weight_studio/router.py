@@ -62,11 +62,43 @@ class ApplyEditRequest(BaseModel):
     checkpoint_id: str | None = None
     op: str = Field(
         ...,
-        pattern="^(scale|prune|svd_truncate|clamp|noise|region_edit|blend|head_edit|rank1_edit|steer_bake)$",
+        pattern="^(scale|prune|svd_truncate|clamp|noise|region_edit|blend|head_edit|rank1_edit|steer_bake|quantize)$",
     )
     target: str
     params: dict[str, Any] = Field(default_factory=dict)
     label: str = ""
+
+
+class RegisterHfRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    repo_id: str = Field(..., min_length=3, max_length=200)
+    revision: str = "main"
+    token: str = ""
+
+
+class SensitivityRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_id: str
+    checkpoint_id: str | None = None
+    target_compression: float = Field(0.35, ge=0.1, le=0.65)
+
+
+class SyncTelemetryRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    path: str = Field(..., min_length=1, max_length=400)
+
+
+class ReportHtmlRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_id: str
+    checkpoint_id: str | None = None
+    tensor_name: str | None = None
+    include_eval: bool = True
+    include_sensitivity: bool = True
 
 
 class ApplyRecipeRequest(BaseModel):
@@ -657,6 +689,150 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
             return _rt().finetuner.stop_dispatch_run(run_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    # --- Zero-Download Hugging Face HTTP-Range Model Registration ---
+
+    @api.post("/models/register-hf")
+    async def register_hf_model(req: RegisterHfRequest) -> dict[str, Any]:
+        try:
+            summary = _rt().inspector.register_remote_hf_model(
+                req.repo_id, revision=req.revision, token=req.token
+            )
+            return {"model": summary}
+        except (ValueError, FileNotFoundError, OSError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # --- Auto-Sensitivity Profiler & Adaptive Rank/Sparsity Optimizer ---
+
+    @api.post("/models/sensitivity")
+    async def model_sensitivity(req: SensitivityRequest) -> dict[str, Any]:
+        rt = _rt()
+        try:
+            overrides = rt.editor.get_overrides(req.model_id, req.checkpoint_id)
+            return rt.inspector.profile_layer_sensitivity(
+                req.model_id,
+                checkpoint_id=req.checkpoint_id,
+                overrides=overrides if overrides else None,
+                target_compression=req.target_compression,
+            )
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # --- Live Token-by-Token SSE Inference Streaming ---
+
+    @api.post("/inference/stream")
+    async def stream_inference(req: InferenceRequest) -> StreamingResponse:
+        rt = _rt()
+        try:
+            result = rt.inference.run_inference(
+                req.model_id,
+                req.prompt,
+                checkpoint_id=req.checkpoint_id,
+                system_prompt=req.system_prompt,
+                temperature=req.temperature,
+                top_p=req.top_p,
+                max_tokens=req.max_tokens,
+                seed=req.seed,
+                compare_base=req.compare_base,
+                causal_patches=req.causal_patches,
+                steering=req.steering,
+                endpoint_url=req.endpoint_url,
+                api_key=req.api_key,
+            )
+        except (KeyError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        async def _tok_stream():
+            tokens = result["active"].get("tokens") or []
+            for tok in tokens:
+                yield f"data: {json.dumps({'type': 'token', 'token': tok})}\n\n"
+                await asyncio.sleep(0.018)
+            yield f"data: {json.dumps({'type': 'done', 'result': result})}\n\n"
+
+        return StreamingResponse(_tok_stream(), media_type="text/event-stream")
+
+    # --- External Trainer Telemetry Sync (trainer_state.json / W&B / JSONL) ---
+
+    @api.get("/finetune/telemetry-sources")
+    async def telemetry_sources() -> dict[str, Any]:
+        srcs = _rt().finetuner.list_telemetry_sources()
+        return {"sources": srcs, "count": len(srcs)}
+
+    @api.post("/finetune/sync-telemetry")
+    async def sync_telemetry(req: SyncTelemetryRequest) -> dict[str, Any]:
+        try:
+            return _rt().finetuner.sync_external_telemetry(req.path)
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    # --- Shareable Single-File Interactive HTML PR Report ---
+
+    @api.post("/report/html")
+    async def export_html_report(req: ReportHtmlRequest) -> Response:
+        from .report_exporter import build_standalone_html_report
+
+        rt = _rt()
+        try:
+            overrides = rt.editor.get_overrides(req.model_id, req.checkpoint_id)
+            struct = rt.inspector.get_model_structure(
+                req.model_id,
+                req.checkpoint_id,
+                overrides=overrides if overrides else None,
+            )
+            history = rt.editor.get_history(req.model_id, req.checkpoint_id)
+            recipe = rt.editor.export_recipe(req.model_id, req.checkpoint_id)
+            eval_rep = (
+                rt.inference.run_batch_eval(
+                    req.model_id, checkpoint_id=req.checkpoint_id, max_cases=6
+                )
+                if req.include_eval
+                else None
+            )
+            sens_rep = (
+                rt.inspector.profile_layer_sensitivity(
+                    req.model_id,
+                    checkpoint_id=req.checkpoint_id,
+                    overrides=overrides if overrides else None,
+                )
+                if req.include_sensitivity
+                else None
+            )
+            t_detail = None
+            if req.tensor_name:
+                try:
+                    edited = rt.editor.get_edited_tensor(
+                        req.model_id, req.tensor_name, req.checkpoint_id
+                    )
+                    t_detail = rt.inspector.inspect_tensor_detail(
+                        req.model_id,
+                        req.tensor_name,
+                        checkpoint_id=req.checkpoint_id,
+                        resolution=32,
+                        edited_array=edited,
+                        include_svd=False,
+                    )
+                except (KeyError, FileNotFoundError):
+                    t_detail = None
+
+            html_doc = build_standalone_html_report(
+                model_summary=struct["model"],
+                structure_summary=struct["summary"],
+                layers=struct["layers"],
+                edit_history=history,
+                recipe=recipe,
+                eval_report=eval_rep,
+                sensitivity_report=sens_rep,
+                tensor_detail=t_detail,
+            )
+            return Response(
+                content=html_doc,
+                media_type="text/html; charset=utf-8",
+                headers={
+                    "Content-Disposition": 'attachment; filename="stateset-weight-studio-report.html"'
+                },
+            )
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return api
 

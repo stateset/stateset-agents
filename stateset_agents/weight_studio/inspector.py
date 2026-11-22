@@ -986,6 +986,8 @@ class WeightInspector:
             result = self._build_preset_structure(
                 entry, checkpoint_id, overrides=overrides
             )
+        elif entry.kind == "remote_hf":
+            result = self._build_remote_hf_structure(entry, overrides=overrides)
         elif entry.kind == "local_sharded":
             idx_path = self._resolve_checkpoint_path(entry, checkpoint_id)
             if idx_path is None or not idx_path.is_file():
@@ -1463,6 +1465,8 @@ class WeightInspector:
                 int(target_info["layer"] or 0),
                 int(entry.metadata.get("num_layers", 12)),
             )
+        elif entry.kind == "remote_hf":
+            arr = self._fetch_remote_hf_tensor(model_id, tensor_name)
         elif entry.kind == "local_sharded":
             from safetensors import safe_open
 
@@ -1770,4 +1774,465 @@ class WeightInspector:
             "model_id": model_id,
             "steps": steps_data,
             "layer_names": layer_names,
+        }
+
+    # ------------------------------------------------------------------
+    # Zero-Download Hugging Face HTTP-Range .safetensors Inspector
+    # ------------------------------------------------------------------
+
+    def register_remote_hf_model(
+        self,
+        repo_id: str,
+        *,
+        revision: str = "main",
+        token: str = "",
+        range_fetcher: Any | None = None,
+    ) -> dict[str, Any]:
+        """Register any Hugging Face safetensors repo (including 70B+ sharded models) by
+        streaming ONLY the JSON header via HTTP Range requests — zero multi-GB downloads.
+        """
+        import struct
+        import urllib.request
+
+        clean_repo = repo_id.strip().strip("/")
+        if "/" not in clean_repo or len(clean_repo.split("/")) != 2:
+            raise ValueError("repo_id must be in 'org/model-name' format")
+
+        base_url = f"https://huggingface.co/{clean_repo}/resolve/{revision}"
+
+        def _default_fetch(
+            url: str, start: int | None = None, end: int | None = None
+        ) -> bytes:
+            headers = {"User-Agent": "stateset-weight-studio/0.80"}
+            if token.strip():
+                headers["Authorization"] = f"Bearer {token.strip()}"
+            if start is not None and end is not None:
+                headers["Range"] = f"bytes={start}-{end}"
+            req = urllib.request.Request(url, headers=headers, method="GET")
+            with urllib.request.urlopen(req, timeout=12.0) as resp:  # nosec: B310
+                return bytes(resp.read())
+
+        fetcher = range_fetcher or _default_fetch
+        if not hasattr(self, "_remote_meta"):
+            self._remote_meta: dict[str, dict[str, Any]] = {}
+
+        cfg_data: dict[str, Any] = {}
+        try:
+            cfg_data = json.loads(
+                fetcher(f"{base_url}/config.json", None, None).decode("utf-8")
+            )
+        except Exception:
+            cfg_data = {}
+
+        shard_map: dict[str, str] = {}
+        tensor_headers: dict[str, dict[str, Any]] = {}
+        data_offsets: dict[str, int] = {}
+        primary_file = "model.safetensors"
+
+        try:
+            idx_raw = fetcher(f"{base_url}/model.safetensors.index.json", None, None)
+            idx_json = json.loads(idx_raw.decode("utf-8"))
+            wm = idx_json.get("weight_map") or {}
+            if isinstance(wm, dict) and wm:
+                shard_map = {str(k): str(v) for k, v in wm.items()}
+                primary_file = "model.safetensors.index.json"
+        except Exception:
+            pass
+
+        if not shard_map:
+            for candidate in ("model.safetensors", "adapter_model.safetensors"):
+                try:
+                    url = f"{base_url}/{candidate}"
+                    hdr_len_bytes = fetcher(url, 0, 7)
+                    if len(hdr_len_bytes) < 8:
+                        continue
+                    hdr_len = int(struct.unpack("<Q", hdr_len_bytes[:8])[0])
+                    if hdr_len <= 0 or hdr_len > 64 * 1024 * 1024:
+                        continue
+                    hdr_bytes = fetcher(url, 8, 8 + hdr_len - 1)
+                    hdr = json.loads(hdr_bytes.decode("utf-8"))
+                    for k, v in hdr.items():
+                        if k == "__metadata__" or not isinstance(v, dict):
+                            continue
+                        tensor_headers[k] = v
+                        shard_map[k] = candidate
+                    data_offsets[candidate] = 8 + hdr_len
+                    primary_file = candidate
+                    break
+                except Exception:
+                    continue
+
+        if not shard_map:
+            raise FileNotFoundError(
+                f"Could not read safetensors headers from Hugging Face repo '{clean_repo}' ({revision})"
+            )
+
+        layers: set[int] = set()
+        total_params = 0
+        for k in shard_map:
+            li = extract_layer_index(k)
+            if li is not None:
+                layers.add(li)
+            meta_t = tensor_headers.get(k)
+            if meta_t and isinstance(meta_t.get("shape"), list):
+                p = 1
+                for d in meta_t["shape"]:
+                    p *= int(d)
+                total_params += p
+
+        model_id = f"hf:{clean_repo}@{revision}"
+        entry = CheckpointEntry(
+            model_id=model_id,
+            display_name=f"HF · {clean_repo}",
+            kind="remote_hf",
+            base_model=clean_repo,
+            path=f"{base_url}/{primary_file}",
+            architecture=f"HF HTTP-Range ({str(cfg_data.get('model_type') or 'safetensors')})",
+            size_mb=0.0,
+            num_tensors=len(shard_map),
+            num_layers=max(layers) + 1 if layers else 1,
+            total_params=total_params or len(shard_map) * 65536,
+            metadata={
+                "config": {
+                    k: v
+                    for k, v in cfg_data.items()
+                    if isinstance(v, (str, int, float, bool, list))
+                },
+                "remote_hf": True,
+                "revision": revision,
+                "primary_file": primary_file,
+            },
+        )
+        self._get_catalog()[model_id] = entry
+        self._remote_meta[model_id] = {
+            "base_url": base_url,
+            "shard_map": shard_map,
+            "tensor_headers": tensor_headers,
+            "data_offsets": data_offsets,
+            "fetcher": fetcher,
+        }
+        return entry.to_summary()
+
+    def _build_remote_hf_structure(
+        self,
+        entry: CheckpointEntry,
+        *,
+        overrides: dict[str, np.ndarray[Any, Any]] | None = None,
+    ) -> dict[str, Any]:
+        rm = getattr(self, "_remote_meta", {}).get(entry.model_id)
+        if not rm:
+            raise KeyError(f"Remote HF metadata missing for {entry.model_id}")
+
+        shard_map: dict[str, str] = rm["shard_map"]
+        tensor_headers: dict[str, dict[str, Any]] = rm["tensor_headers"]
+        layers_map: dict[int, list[dict[str, Any]]] = {}
+        global_tensors: list[dict[str, Any]] = []
+
+        for name in sorted(shard_map.keys()):
+            role = classify_tensor_role(name)
+            layer_idx = extract_layer_index(name)
+            t_meta = tensor_headers.get(name) or {}
+            raw_shape = t_meta.get("shape")
+            shape = (
+                [int(d) for d in raw_shape]
+                if isinstance(raw_shape, list) and raw_shape
+                else [64, 64]
+            )
+            dtype = str(t_meta.get("dtype") or "BF16")
+            if overrides and name in overrides:
+                arr = overrides[name]
+                edited = True
+                mini = downsample_matrix(arr, max_rows=8, max_cols=8)
+                rms = float(np.sqrt(np.mean(arr * arr)))
+                std = float(np.std(arr))
+                frob = float(np.linalg.norm(arr))
+                sparsity = float(np.mean(np.abs(arr) < 1e-4))
+            else:
+                edited = False
+                # Lightweight deterministic header preview until user clicks tensor to stream real HTTP Range bytes!
+                prev_arr = _build_synthetic_tensor(
+                    f"{entry.model_id}:{name}",
+                    (min(shape[0], 16), min(shape[-1], 16)),
+                    role,
+                    layer_idx or 0,
+                    max(entry.num_layers, 1),
+                )
+                mini = downsample_matrix(prev_arr, max_rows=8, max_cols=8)
+                rms = float(np.sqrt(np.mean(prev_arr * prev_arr)))
+                std = float(np.std(prev_arr))
+                frob = float(np.linalg.norm(prev_arr))
+                sparsity = float(np.mean(np.abs(prev_arr) < 1e-4))
+
+            params = 1
+            for d in shape:
+                params *= int(d)
+            rec = {
+                "name": name,
+                "label": short_tensor_label(name),
+                "role": role,
+                "layer": layer_idx,
+                "shape": shape,
+                "dtype": dtype,
+                "params": params,
+                "lora_part": None,
+                "pair_base": None,
+                "edited": edited,
+                "rms": round(_safe_float(rms), 6),
+                "mean": 0.0,
+                "std": round(_safe_float(std), 6),
+                "abs_max": round(_safe_float(mini["abs_max"]), 6),
+                "frobenius_norm": round(_safe_float(frob), 4),
+                "sparsity": round(_safe_float(sparsity), 4),
+                "mini_grid": mini["values"],
+                "mini_rows": mini["rows"],
+                "mini_cols": mini["cols"],
+                "mini_abs_max": mini["abs_max"],
+            }
+            if layer_idx is None:
+                global_tensors.append(rec)
+            else:
+                layers_map.setdefault(layer_idx, []).append(rec)
+
+        layers_list: list[dict[str, Any]] = []
+        for idx in sorted(layers_map.keys()):
+            tensors = layers_map[idx]
+            norms = [t["frobenius_norm"] for t in tensors]
+            roles = sorted({t["role"] for t in tensors})
+            layers_list.append(
+                {
+                    "index": idx,
+                    "name": f"Layer {idx:02d}",
+                    "layer_type": (
+                        "hybrid_linear_attn"
+                        if "linear_attn" in roles
+                        else "transformer_attn"
+                    ),
+                    "roles": roles,
+                    "tensor_count": len(tensors),
+                    "total_params": sum(t["params"] for t in tensors),
+                    "frobenius_norm": round(math.sqrt(sum(n * n for n in norms)), 4),
+                    "mean_rms": round(
+                        sum(t["rms"] for t in tensors) / max(len(tensors), 1), 6
+                    ),
+                    "mean_sparsity": round(
+                        sum(t["sparsity"] for t in tensors) / max(len(tensors), 1), 4
+                    ),
+                    "has_edits": any(t["edited"] for t in tensors),
+                    "tensors": tensors,
+                }
+            )
+
+        return {
+            "model": entry.to_summary(),
+            "checkpoint_id": "remote",
+            "layers": layers_list,
+            "global_tensors": global_tensors,
+            "lora_pairs": {},
+            "summary": {
+                "num_layers": len(layers_list),
+                "num_tensors": sum(len(layer["tensors"]) for layer in layers_list)
+                + len(global_tensors),
+                "total_params": sum(layer["total_params"] for layer in layers_list)
+                + sum(t["params"] for t in global_tensors),
+                "max_layer_norm": max(
+                    (layer["frobenius_norm"] for layer in layers_list), default=1.0
+                ),
+                "roles": sorted({r for layer in layers_list for r in layer["roles"]}),
+            },
+        }
+
+    def _fetch_remote_hf_tensor(
+        self, model_id: str, tensor_name: str
+    ) -> np.ndarray[Any, Any]:
+        """Stream only a single tensor's byte range from a registered Hugging Face safetensors repo."""
+        import struct
+
+        rm = getattr(self, "_remote_meta", {}).get(model_id)
+        if not rm:
+            raise KeyError(f"Remote HF metadata missing for {model_id}")
+        shard = rm["shard_map"].get(tensor_name)
+        if not shard:
+            raise KeyError(f"Tensor not found in remote HF repo: {tensor_name}")
+        url = f"{rm['base_url']}/{shard}"
+        fetcher = rm["fetcher"]
+
+        if tensor_name not in rm["tensor_headers"]:
+            hdr_len = int(struct.unpack("<Q", fetcher(url, 0, 7)[:8])[0])
+            hdr = json.loads(fetcher(url, 8, 8 + hdr_len - 1).decode("utf-8"))
+            rm["data_offsets"][shard] = 8 + hdr_len
+            for k, v in hdr.items():
+                if k != "__metadata__" and isinstance(v, dict):
+                    rm["tensor_headers"][k] = v
+
+        t_meta = rm["tensor_headers"][tensor_name]
+        dtype_str = str(t_meta.get("dtype", "F32")).upper()
+        shape = [int(d) for d in (t_meta.get("shape") or [16, 16])]
+        offs = t_meta.get("data_offsets") or [0, 0]
+        base_off = int(rm["data_offsets"][shard])
+        byte_start = base_off + int(offs[0])
+        byte_end = base_off + int(offs[1]) - 1
+        max_bytes = 2 * 1024 * 1024
+        if byte_end - byte_start + 1 > max_bytes:
+            byte_end = byte_start + max_bytes - 1
+        raw = fetcher(url, byte_start, byte_end)
+
+        if dtype_str == "BF16":
+            u16 = np.frombuffer(raw[: (len(raw) // 2) * 2], dtype="<u2")
+            u32 = u16.astype(np.uint32) << 16
+            flat = u32.view(np.float32)
+        elif dtype_str == "F16":
+            flat = np.frombuffer(raw[: (len(raw) // 2) * 2], dtype="<f2").astype(
+                np.float32
+            )
+        else:
+            flat = np.frombuffer(raw[: (len(raw) // 4) * 4], dtype="<f4").astype(
+                np.float32
+            )
+
+        total_needed = 1
+        for d in shape:
+            total_needed *= d
+        if flat.size >= total_needed:
+            res: np.ndarray[Any, Any] = np.asarray(
+                flat[:total_needed].reshape(shape), dtype=np.float32
+            ).copy()
+            return res
+        side = max(8, min(128, int(math.sqrt(max(flat.size, 64)))))
+        if flat.size < side * side:
+            pad: np.ndarray[Any, Any] = np.zeros((side * side,), dtype=np.float32)
+            pad[: flat.size] = flat
+            return pad.reshape(side, side)
+        cropped: np.ndarray[Any, Any] = np.asarray(
+            flat[: side * side].reshape(side, side), dtype=np.float32
+        ).copy()
+        return cropped
+
+    # ------------------------------------------------------------------
+    # Auto-Sensitivity Profiler & Adaptive Rank/Sparsity Optimizer
+    # ------------------------------------------------------------------
+
+    def profile_layer_sensitivity(
+        self,
+        model_id: str,
+        *,
+        checkpoint_id: str | None = None,
+        overrides: dict[str, np.ndarray[Any, Any]] | None = None,
+        target_compression: float = 0.35,
+    ) -> dict[str, Any]:
+        """Sweep every layer computing Wanda/Fisher sensitivity, effective SVD rank, and
+        outlier ratio, then synthesize an adaptive mixed-rank/mixed-sparsity edit recipe.
+        """
+        struct = self.get_model_structure(model_id, checkpoint_id, overrides=overrides)
+        layers = struct["layers"]
+        if not layers:
+            raise ValueError("Model has no layers to profile")
+
+        raw_rows: list[dict[str, Any]] = []
+        for layer in layers:
+            rep = next(
+                (
+                    t
+                    for t in layer["tensors"]
+                    if len(t["shape"]) == 2
+                    and t["role"] in {"self_attn", "linear_attn", "mlp"}
+                ),
+                layer["tensors"][0] if layer["tensors"] else None,
+            )
+            if rep is None:
+                continue
+            mini = np.asarray(rep["mini_grid"], dtype=np.float32).reshape(
+                int(rep["mini_rows"]), int(rep["mini_cols"])
+            )
+            imp = compute_wanda_fisher_importance(
+                mini, seed_key=f"{model_id}:{rep['name']}"
+            )
+            sens_raw = float(np.mean(imp)) * (
+                0.4 + 0.6 * float(layer["frobenius_norm"])
+            )
+            svd_vals = np.linalg.svd(mini, compute_uv=False)
+            svd_vals = svd_vals[svd_vals > 1e-8]
+            if svd_vals.size > 0:
+                p = svd_vals / np.sum(svd_vals)
+                eff_rank = float(np.exp(-np.sum(p * np.log(p + 1e-12))))
+            else:
+                eff_rank = 1.0
+            std_v = float(np.std(mini)) + 1e-6
+            outlier_ratio = float(np.mean(np.abs(mini) > 2.5 * std_v))
+            raw_rows.append(
+                {
+                    "layer": int(layer["index"]),
+                    "name": layer["name"],
+                    "layer_type": layer["layer_type"],
+                    "frobenius_norm": float(layer["frobenius_norm"]),
+                    "raw_sens": sens_raw,
+                    "effective_rank": round(_safe_float(eff_rank), 2),
+                    "outlier_ratio": round(_safe_float(outlier_ratio), 4),
+                    "total_params": int(layer["total_params"]),
+                }
+            )
+
+        max_s = max((r["raw_sens"] for r in raw_rows), default=1.0)
+        min_s = min((r["raw_sens"] for r in raw_rows), default=0.0)
+        span = max(max_s - min_s, 1e-6)
+        tgt = max(0.10, min(0.65, float(target_compression)))
+
+        profiled: list[dict[str, Any]] = []
+        recipe_ops: list[dict[str, Any]] = []
+        total_params = 0
+        pruned_params = 0
+
+        for r in raw_rows:
+            norm_s = (r["raw_sens"] - min_s) / span
+            if norm_s >= 0.72:
+                rec_rank = 32
+                rec_sparsity = round(max(0.0, tgt * 0.25), 2)
+                tier = "CRITICAL"
+            elif norm_s >= 0.38:
+                rec_rank = 16
+                rec_sparsity = round(tgt * 0.85, 2)
+                tier = "BALANCED"
+            else:
+                rec_rank = 8
+                rec_sparsity = round(min(0.75, tgt * 1.45), 2)
+                tier = "COMPRESSIBLE"
+
+            total_params += r["total_params"]
+            pruned_params += int(r["total_params"] * rec_sparsity)
+            profiled.append(
+                {
+                    "layer": r["layer"],
+                    "name": r["name"],
+                    "layer_type": r["layer_type"],
+                    "sensitivity": round(_safe_float(norm_s), 4),
+                    "effective_rank": r["effective_rank"],
+                    "outlier_ratio": r["outlier_ratio"],
+                    "recommended_rank": rec_rank,
+                    "recommended_sparsity": rec_sparsity,
+                    "tier": tier,
+                }
+            )
+            if rec_sparsity >= 0.15:
+                recipe_ops.append(
+                    {
+                        "op": "prune",
+                        "target": f"layer:{r['layer']}",
+                        "params": {"mode": "wanda", "sparsity": rec_sparsity},
+                        "label": f"Adaptive Wanda L{r['layer']:02d} ({int(rec_sparsity * 100)}%)",
+                    }
+                )
+
+        est_comp_pct = round((pruned_params / max(total_params, 1)) * 100.0, 1)
+        return {
+            "model_id": model_id,
+            "checkpoint_id": checkpoint_id or "default",
+            "target_compression": tgt,
+            "estimated_compression_pct": est_comp_pct,
+            "layers": profiled,
+            "recommended_recipe": {
+                "schema_version": 1,
+                "format": "stateset-weight-studio-recipe",
+                "source_model_id": model_id,
+                "generated_by": "auto-sensitivity-profiler",
+                "operations": recipe_ops,
+            },
         }

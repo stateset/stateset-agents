@@ -24,6 +24,7 @@
         <label class="micro-label" for="model-select">ACTIVE MODEL / CHECKPOINT</label>
         <div class="model-select-row">
           <select id="model-select" class="precision-select" aria-label="Select Model"></select>
+          <button id="btn-hf-modal" class="icon-btn" title="Stream Hugging Face safetensors via zero-download HTTP Range">HF</button>
           <button id="btn-refresh-models" class="icon-btn" title="Rescan local workspace checkpoints">↻</button>
         </div>
       </div>
@@ -51,6 +52,7 @@
           <option value="signed">Map: Signed (±)</option>
           <option value="magnitude">Map: Magnitude |W|</option>
           <option value="delta">Map: Edit Delta ΔW</option>
+          <option value="quant_error">Map: Quant Error</option>
           <option value="importance">Map: Wanda/Fisher</option>
           <option value="conflict">Map: Sign Conflict</option>
           <option value="gradient">Map: Thermal Heat</option>
@@ -206,6 +208,17 @@
             <input id="circuit-topk-slider" type="range" min="4" max="20" value="10" class="hud-slider sm" />
             <button id="btn-rediscover-circuit" class="mini-pill-btn accent">↻ Trace Prompt</button>
           </div>
+          <!-- Tomographic MRI 3D Slice Plane quick bar -->
+          <div id="slice-hud" class="hud-chip glass hidden">
+            <span class="hud-k">MRI CUTAWAY</span>
+            <select id="slice-axis-select" class="mini-select">
+              <option value="1">X-Axis</option>
+              <option value="2" selected>Z-Axis</option>
+              <option value="3">Y-Axis</option>
+            </select>
+            <input id="slice-pos-slider" type="range" min="-14" max="14" step="0.25" value="2" class="hud-slider" />
+            <span id="slice-pos-val" class="mono-accent">+2.0</span>
+          </div>
         </div>
 
         <!-- Top-Right Telemetry & Optical Realism Controls -->
@@ -236,6 +249,8 @@
             <span class="sep">|</span>
             <button id="btn-orbit-toggle" class="cam-btn" title="Toggle Auto-Orbit">ORBIT</button>
             <button id="btn-conduits-toggle" class="cam-btn active" title="Toggle Optical Conduits">RAILS</button>
+            <button id="btn-particles-toggle" class="cam-btn active" title="Toggle GPU Photon Particle Stream">PTCL</button>
+            <button id="btn-slice-toggle" class="cam-btn" title="Toggle 3D Tomographic MRI Cutaway Plane">SLICE</button>
             <button id="btn-reflect-toggle" class="cam-btn active" title="Toggle Real-Time Planar Floor Reflections">REFL</button>
             <button id="btn-shadow-toggle" class="cam-btn active" title="Toggle PCF Soft Shadow Maps">SHDW</button>
             <button id="btn-ssao-toggle" class="cam-btn active" title="Toggle Depth-Crevice SSAO">SSAO</button>
@@ -289,6 +304,7 @@
               <button class="op-chip" data-op="head_edit">Head Surgery</button>
               <button class="op-chip" data-op="rank1_edit">ROME Rank-1</button>
               <button class="op-chip" data-op="region_edit">3D Brush</button>
+              <button class="op-chip" data-op="quantize">Quantize Lab</button>
               <button class="op-chip" data-op="blend">TIES/SLERP</button>
               <button class="op-chip" data-op="noise">Perturb</button>
             </div>
@@ -446,6 +462,18 @@
               <button id="btn-dispatch-local" class="mini-btn full" title="Launch isolated local stub CLI run and hot-reload catalog">🚀 Run Local Stub</button>
             </div>
             <pre id="dispatch-log-box" class="cli-code hidden"></pre>
+          </div>
+
+          <!-- External Trainer Telemetry Sync (trainer_state.json / W&B / JSONL) -->
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">SYNC EXTERNAL TELEMETRY (W&amp;B / TRAINER)</span>
+              <span id="telemetry-sync-pill" class="mono-muted">—</span>
+            </div>
+            <div class="patch-builder" style="grid-template-columns:1fr auto">
+              <select id="telemetry-source-select" class="precision-select compact"></select>
+              <button id="btn-sync-telemetry" class="mini-btn">Sync</button>
+            </div>
           </div>
         </section>
 
@@ -646,6 +674,20 @@
           </div>
 
           <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">AUTO-SENSITIVITY &amp; ADAPTIVE OPTIMIZER</span>
+              <span id="sens-comp-pill" class="mono-accent">—</span>
+            </div>
+            <div class="op-action-row mb-6">
+              <button id="btn-run-sensitivity" class="mini-btn full">⚡ Profile Sensitivity</button>
+              <button id="btn-apply-adaptive" class="mini-btn full" disabled>Apply Adaptive Recipe</button>
+            </div>
+            <div id="sensitivity-list" class="circuit-node-list">
+              <div class="empty-hint">Sweep all layers for Wanda/Fisher sensitivity &amp; effective SVD rank to synthesize an optimal mixed-rank/sparsity recipe.</div>
+            </div>
+          </div>
+
+          <div class="section-card">
             <div class="card-title">CHECKPOINT METADATA &amp; LINEAGE</div>
             <pre id="model-meta-json" class="meta-pre">{}</pre>
           </div>
@@ -661,7 +703,7 @@
           <button id="btn-close-export" class="icon-btn">✕</button>
         </div>
         <p class="helper-copy">
-          Run the StateSet Batch Eval Gate to verify zero policy/reward regressions, then write an immutable <code>.safetensors</code> checkpoint with SHA-256 verification.
+          Run the StateSet Batch Eval Gate to verify zero policy/reward regressions, export a shareable interactive HTML PR report, or write an immutable <code>.safetensors</code> checkpoint.
         </p>
 
         <!-- Pre-Export Batch Eval Gate Scorecard -->
@@ -685,7 +727,38 @@
         </label>
         <div id="export-result-box" class="export-result hidden"></div>
         <div class="op-action-row mt-8">
-          <button id="btn-confirm-export" class="action-btn primary full">Write &amp; Verify SHA-256 Checkpoint</button>
+          <button id="btn-export-html-report" class="action-btn subtle" title="Download single-file offline interactive 3D HTML PR report">📄 HTML Report</button>
+          <button id="btn-confirm-export" class="action-btn primary full">Write &amp; Verify .safetensors</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Zero-Download Hugging Face HTTP-Range Inspector Modal -->
+    <div id="hf-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+      <div class="modal-card">
+        <div class="card-title-row">
+          <span class="card-title">ZERO-DOWNLOAD HUGGING FACE HTTP-RANGE LOADER</span>
+          <button id="btn-close-hf" class="icon-btn">✕</button>
+        </div>
+        <p class="helper-copy">
+          Inspect any public or gated Hugging Face <code>.safetensors</code> model (even 70B+ sharded models) by streaming only JSON headers and individual clicked tensor byte ranges.
+        </p>
+        <label class="field mt-8">
+          <span>Hugging Face Repo ID (org/model)</span>
+          <input id="hf-repo-input" class="precision-input mono" placeholder="Qwen/Qwen2.5-0.5B-Instruct" />
+        </label>
+        <div class="form-grid-2 mt-6">
+          <label class="field">
+            <span>Revision</span>
+            <input id="hf-rev-input" class="precision-input mono" value="main" />
+          </label>
+          <label class="field">
+            <span>HF Token (optional)</span>
+            <input id="hf-token-input" type="password" class="precision-input mono" placeholder="hf_..." />
+          </label>
+        </div>
+        <div class="op-action-row mt-8">
+          <button id="btn-confirm-hf" class="action-btn primary full">Stream Headers Over HTTP Range</button>
         </div>
       </div>
     </div>

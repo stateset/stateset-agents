@@ -346,6 +346,8 @@ uniform float uPulseWave;
 uniform float uPulseMode;
 uniform sampler2D uShadowMap;
 uniform float uShadowEnabled;
+uniform float uSliceAxis; // 0=off, 1=X, 2=Z, 3=Y
+uniform float uSlicePos;
 
 out vec4 fragColor;
 
@@ -419,6 +421,15 @@ vec3 evalLight(vec3 N, vec3 V, vec3 L, vec3 radiance, vec3 albedo, float roughne
 }
 
 void main() {
+  // Optional 3D Tomographic MRI Cutaway Plane with luminous laser cross-section edge
+  float sliceGlow = 0.0;
+  if (uSliceAxis > 0.5) {
+    float coord = (uSliceAxis < 1.5) ? vWorldPos.x : ((uSliceAxis < 2.5) ? vWorldPos.z : vWorldPos.y);
+    float dSlice = coord - uSlicePos;
+    if (dSlice > 0.0) discard;
+    sliceGlow = smoothstep(-0.18, 0.0, dSlice);
+  }
+
   vec3 N = normalize(vNormal);
   vec3 V = normalize(uCameraPos - vWorldPos);
   float NdotV = max(dot(N, V), 0.001);
@@ -480,7 +491,7 @@ void main() {
     emission += heatCol * actHeat * (0.28 + fresnel * 0.5);
   }
 
-  vec3 col = ambient + Lo * rootAO + emission;
+  vec3 col = ambient + Lo * rootAO + emission + vec3(0.20, 1.55, 1.95) * sliceGlow * 1.35;
 
   float camDist = length(uCameraPos - vWorldPos);
   float fog = 1.0 - exp(-camDist * camDist * 0.000085);
@@ -694,5 +705,50 @@ void main() {
   mapped = pow(max(mapped, 0.0), vec3(1.0 / 2.2));
   float dither = (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;
   fragColor = vec4(clamp(mapped + dither, 0.0, 1.0), 1.0);
+}
+`;
+
+export const PARTICLE_VS = `#version 300 es
+precision highp float;
+layout(location = 0) in vec4 aSeed; // x=laneX, y=height, z=phase, w=speed
+uniform mat4 uViewProj;
+uniform float uTime;
+uniform float uSpanX;
+uniform float uSpanZ;
+uniform float uPulseMode;
+uniform float uBurst;
+out float vAlpha;
+out vec3 vCol;
+
+void main() {
+  float dir = mix(1.0, -1.0, uPulseMode);
+  float t = fract(aSeed.z + uTime * aSeed.w * (0.14 + uBurst * 0.42) * dir);
+  float x = aSeed.x * uSpanX + sin(uTime * 0.7 + aSeed.z * 18.0) * 0.35;
+  float y = 0.55 + aSeed.y * (3.6 + uBurst * 1.4) + sin(t * 3.14159) * 1.1;
+  float z = (t * 2.0 - 1.0) * uSpanZ;
+
+  vec4 clip = uViewProj * vec4(x, y, z, 1.0);
+  gl_Position = clip;
+  gl_PointSize = clamp((38.0 + uBurst * 26.0) / max(clip.w, 2.0), 2.0, 9.0);
+
+  float edgeFade = smoothstep(0.0, 0.14, t) * smoothstep(1.0, 0.86, t);
+  vAlpha = edgeFade * (0.28 + uBurst * 0.48);
+  vec3 fwdCol = mix(vec3(0.24, 0.86, 1.0), vec3(0.75, 0.48, 1.0), fract(aSeed.y * 3.7));
+  vec3 bwdCol = mix(vec3(1.0, 0.58, 0.18), vec3(1.0, 0.28, 0.58), fract(aSeed.y * 3.7));
+  vCol = mix(fwdCol, bwdCol, uPulseMode);
+}
+`;
+
+export const PARTICLE_FS = `#version 300 es
+precision highp float;
+in float vAlpha;
+in vec3 vCol;
+out vec4 fragColor;
+void main() {
+  vec2 p = gl_PointCoord * 2.0 - 1.0;
+  float r2 = dot(p, p);
+  if (r2 > 1.0) discard;
+  float core = exp(-r2 * 4.5);
+  fragColor = vec4(vCol * (0.9 + core * 1.4), core * vAlpha);
 }
 `;

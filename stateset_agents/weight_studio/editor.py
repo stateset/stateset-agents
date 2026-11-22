@@ -367,6 +367,126 @@ def _apply_op_to_array(
         }
         return out, diag
 
+    if op == "quantize":
+        # Quantization & AWQ / SmoothQuant 3D Lab:
+        # Supports FP8 (E4M3), INT8 per-channel, NF4 (QLoRA NormalFloat codebook), and INT4 AWQ.
+        scheme = str(params.get("scheme", "nf4")).lower()
+        smooth_outliers = bool(params.get("smooth_outliers", False))
+        orig_f: np.ndarray[Any, Any] = np.asarray(out, dtype=np.float32).copy()
+
+        work = orig_f.copy()
+        orig_shape = work.shape
+        if work.ndim == 1:
+            work_2d = work.reshape(1, -1)
+        else:
+            work_2d = work.reshape(work.shape[0], -1)
+
+        # Optional SmoothQuant / AWQ outlier-channel scaling protection
+        channel_scales = np.ones((work_2d.shape[1],), dtype=np.float32)
+        protected_channels = 0
+        if smooth_outliers or scheme == "int4_awq":
+            col_max = np.max(np.abs(work_2d), axis=0) + 1e-6
+            med = float(np.median(col_max)) + 1e-6
+            salient_mask = col_max > (med * 2.2)
+            protected_channels = int(np.sum(salient_mask))
+            if scheme == "int4_awq":
+                channel_scales = np.where(
+                    salient_mask, np.sqrt(col_max / med), 1.0
+                ).astype(np.float32)
+            else:
+                channel_scales = np.where(
+                    salient_mask, np.power(col_max / med, 0.35), 1.0
+                ).astype(np.float32)
+            work_2d = work_2d * channel_scales[None, :]
+
+        if scheme == "int8":
+            row_scale = (
+                np.maximum(np.max(np.abs(work_2d), axis=1, keepdims=True), 1e-8) / 127.0
+            )
+            q = np.clip(np.round(work_2d / row_scale), -127.0, 127.0)
+            deq = q * row_scale
+            compression_ratio = 2.0
+        elif scheme == "fp8":
+            # E4M3 dynamic per-row micro-scaling simulation (4-bit exponent, 3-bit mantissa)
+            row_scale = (
+                np.maximum(np.max(np.abs(work_2d), axis=1, keepdims=True), 1e-8) / 448.0
+            )
+            scaled = work_2d / row_scale
+            sign = np.sign(scaled)
+            mag = np.abs(scaled)
+            exp = np.floor(np.log2(np.maximum(mag, 2.0**-9)))
+            mant = np.round((mag / np.power(2.0, exp) - 1.0) * 8.0) / 8.0
+            deq = (
+                sign
+                * np.where(mag < 2.0**-9, 0.0, (1.0 + mant) * np.power(2.0, exp))
+                * row_scale
+            )
+            compression_ratio = 2.0
+        elif scheme == "nf4":
+            # Exact QLoRA 16-level NormalFloat4 codebook
+            nf4_codebook = np.array(
+                [
+                    -1.0,
+                    -0.6961928,
+                    -0.52507305,
+                    -0.39491749,
+                    -0.28444138,
+                    -0.18477343,
+                    -0.09105004,
+                    0.0,
+                    0.0795803,
+                    0.1609302,
+                    0.2461123,
+                    0.33791524,
+                    0.44070983,
+                    0.562617,
+                    0.72295684,
+                    1.0,
+                ],
+                dtype=np.float32,
+            )
+            row_max = np.maximum(np.max(np.abs(work_2d), axis=1, keepdims=True), 1e-8)
+            normed = np.clip(work_2d / row_max, -1.0, 1.0)
+            idx = np.argmin(
+                np.abs(normed[..., None] - nf4_codebook[None, None, :]), axis=-1
+            )
+            deq = nf4_codebook[idx] * row_max
+            compression_ratio = 4.0
+        elif scheme == "int4_awq":
+            # Group-wise INT4 AWQ quantization (group size 64)
+            group_sz = 64
+            cols_n = work_2d.shape[1]
+            deq = np.empty_like(work_2d)
+            for c0 in range(0, cols_n, group_sz):
+                c1 = min(cols_n, c0 + group_sz)
+                blk = work_2d[:, c0:c1]
+                sc = np.maximum(np.max(np.abs(blk), axis=1, keepdims=True), 1e-8) / 7.0
+                deq[:, c0:c1] = np.clip(np.round(blk / sc), -8.0, 7.0) * sc
+            compression_ratio = 4.0
+        else:
+            raise ValueError(f"Unsupported quantization scheme: {scheme}")
+
+        if smooth_outliers or scheme == "int4_awq":
+            deq = deq / channel_scales[None, :]
+
+        out = deq.reshape(orig_shape).astype(np.float32)
+        err = out - orig_f
+        sig_pow = float(np.mean(orig_f * orig_f)) + 1e-12
+        noise_pow = float(np.mean(err * err)) + 1e-12
+        sqnr_db = 10.0 * math.log10(sig_pow / noise_pow)
+        diag = {
+            "scheme": scheme,
+            "smooth_outliers": smooth_outliers,
+            "sqnr_db": round(_safe_float(sqnr_db), 2),
+            "rmse": round(_safe_float(math.sqrt(noise_pow)), 6),
+            "max_abs_error": round(
+                _safe_float(float(np.max(np.abs(err))) if err.size else 0.0), 6
+            ),
+            "compression_ratio": compression_ratio,
+            "outlier_channels_protected": protected_channels,
+        }
+        return out, diag
+
     if op == "blend":
         alpha = max(-0.5, min(1.5, float(params.get("alpha", 0.5))))
         method = str(params.get("method", "linear")).lower()
