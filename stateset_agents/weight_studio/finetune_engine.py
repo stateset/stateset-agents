@@ -1,16 +1,19 @@
-"""Interactive Finetuning Workbench, VRAM/Cost Estimator, and Live PyTorch Micro-Trainer.
+"""Interactive Finetuning Workbench, Dataset & Reward Trace Inspector,
+StateSet Workspace Integration, VRAM/Cost Estimator, and Live PyTorch Micro-Trainer.
 
-All ``torch`` imports stay strictly lazy inside functions to satisfy the repo's
-torch-import policy.
+All ``torch`` imports stay strictly lazy inside functions.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import math
+import os
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -144,7 +147,7 @@ class FinetuneJobState:
     job_id: str
     model_id: str
     checkpoint_id: str | None
-    status: str = "idle"  # idle, running, paused, completed, stopped, failed
+    status: str = "idle"
     config: dict[str, Any] = field(default_factory=dict)
     current_step: int = 0
     total_steps: int = 40
@@ -168,7 +171,6 @@ def estimate_finetune_plan(
     entry = inspector.get_entry(model_id)
     base_name = entry.base_model.lower()
 
-    # Infer real model parameter scale from base model identifier
     inferred_billions = 1.0
     for token, b_val in (
         ("816b", 816.0),
@@ -213,7 +215,6 @@ def estimate_finetune_plan(
     num_layers = max(1, entry.num_layers)
 
     if use_lora:
-        # Approx hidden dim scales with sqrt(params / layers)
         est_hidden = int(
             max(512, min(8192, math.sqrt(base_params / max(num_layers * 12, 1))))
         )
@@ -231,12 +232,11 @@ def estimate_finetune_plan(
     grad_ckpt = bool(config.get("gradient_checkpointing", True))
     max_steps = max(1, int(config.get("max_steps", 40)))
     lr = float(config.get("learning_rate", 5e-6))
+    dataset_path = str(config.get("dataset_path") or "improved/curated.jsonl")
 
-    # Memory breakdown in GB
     base_weights_gb = (base_params * bytes_per_param) / (1024**3)
     adapter_gb = (trainable_params * 2.0) / (1024**3) if use_lora else 0.0
     gradients_gb = (trainable_params * 2.0) / (1024**3)
-    # AdamW FP32 master + m + v = 12 bytes/trainable param (or 4 bytes for 8-bit AdamW)
     optimizer_gb = (trainable_params * 12.0) / (1024**3)
     rl_mult = num_generations if algorithm != "sft" else 1
     act_factor = 0.35 if grad_ckpt else 1.25
@@ -263,7 +263,6 @@ def estimate_finetune_plan(
         1, int(math.ceil(total_vram_gb / max(float(provider["vram_gb"]) * 0.88, 1.0)))
     )
 
-    # Estimate wall time and dollars
     tokens_per_step = (
         batch_size
         * grad_accum
@@ -277,14 +276,13 @@ def estimate_finetune_plan(
     est_minutes = est_seconds / 60.0
     est_cost_usd = (est_seconds / 3600.0) * float(provider["hourly_usd"]) * gpus_needed
 
-    # Generate exact StateSet CLI command
     target_csv = ",".join(targets)
     if provider_key.startswith("runpod"):
         cli_cmd = (
             f"stateset-agents train-remote --provider runpod "
             f'--gpu "{provider["gpu"]}" --gpu-count {gpus_needed} '
             f"--base-model {entry.base_model} "
-            f"--dataset improved/curated.jsonl "
+            f"--dataset {dataset_path} "
             f"--max-cost {max(2.0, round(est_cost_usd * 1.5, 2))}"
         )
     else:
@@ -308,6 +306,35 @@ def estimate_finetune_plan(
             f"{algorithm.upper()} requires num_generations >= 2 for group-relative baselines."
         )
 
+    # Validate against StateSet's canonical finetune_workspace rules when available
+    workspace_valid = True
+    try:
+        from stateset_agents.finetune_workspace import check_config_values
+
+        ws_provider = (
+            "runpod"
+            if provider_key.startswith("runpod")
+            else (
+                provider_key if provider_key in {"local", "modal", "river"} else "local"
+            )
+        )
+        ws_method = algorithm if algorithm in {"sft", "grpo", "gspo", "dapo"} else "sft"
+        ws_errors = check_config_values(
+            {
+                "method": ws_method,
+                "provider": ws_provider,
+                "base_model": entry.base_model,
+                "learning_rate": lr,
+                "lora_r": lora_r,
+                "lora_alpha": int(lora_alpha),
+            }
+        )
+        if ws_errors:
+            workspace_valid = False
+            warnings.extend(str(e) for e in ws_errors[:2])
+    except Exception:
+        pass
+
     return {
         "model_id": model_id,
         "base_model": entry.base_model,
@@ -315,6 +342,7 @@ def estimate_finetune_plan(
         "base_params": base_params,
         "trainable_params": int(trainable_params),
         "trainable_pct": round(_safe_float(trainable_pct), 4),
+        "workspace_validated": workspace_valid,
         "vram_gb": {
             "base_weights": round(base_weights_gb, 2),
             "adapters": round(adapter_gb, 3),
@@ -349,7 +377,7 @@ def estimate_finetune_plan(
 
 
 class FinetuneStudioEngine:
-    """Runs real live PyTorch autograd micro-finetuning loops that update the 3D weights live."""
+    """Runs live PyTorch autograd micro-finetuning loops, curated dataset inspection, and workspace integration."""
 
     def __init__(self, inspector: WeightInspector, editor: WeightEditEngine) -> None:
         self.inspector = inspector
@@ -368,6 +396,126 @@ class FinetuneStudioEngine:
 
     def estimate(self, model_id: str, config: dict[str, Any]) -> dict[str, Any]:
         return estimate_finetune_plan(self.inspector, model_id, config)
+
+    def list_datasets(self) -> list[dict[str, Any]]:
+        """Discover local curated JSONL training datasets & reward trace files."""
+        root = self.inspector.workspace_root
+        candidates: list[dict[str, Any]] = []
+        search_dirs = [root / "outputs", root / "examples", root / "data"]
+        for base in search_dirs:
+            if not base.is_dir():
+                continue
+            base_depth = len(base.parts)
+            for cur, dirs, files in os.walk(base, followlinks=False):
+                cur_path = Path(cur)
+                depth = len(cur_path.parts) - base_depth
+                dirs[:] = [
+                    d for d in sorted(dirs) if not d.startswith(".") and depth < 3
+                ]
+                for fname in sorted(files):
+                    if not fname.endswith(".jsonl"):
+                        continue
+                    fp = cur_path / fname
+                    try:
+                        size_kb = fp.stat().st_size / 1024.0
+                        if size_kb <= 0 or size_kb > 64_000:
+                            continue
+                        rel = fp.relative_to(root).as_posix()
+                        candidates.append(
+                            {
+                                "path": rel,
+                                "name": fname,
+                                "size_kb": round(size_kb, 1),
+                            }
+                        )
+                    except OSError:
+                        continue
+                if len(candidates) >= 24:
+                    break
+        candidates.sort(key=lambda d: (0 if "curated" in d["path"] else 1, d["path"]))
+        return candidates[:24]
+
+    def inspect_dataset(self, rel_path: str, *, max_samples: int = 8) -> dict[str, Any]:
+        """Inspect a local curated JSONL dataset: row count, reward stats, and turn previews."""
+        root = self.inspector.workspace_root
+        full = (root / rel_path).resolve()
+        if not str(full).startswith(str(root)) or not full.is_file():
+            raise FileNotFoundError(f"Dataset not found: {rel_path}")
+
+        rows: list[dict[str, Any]] = []
+        total_rows = 0
+        rewards: list[float] = []
+        char_lens: list[int] = []
+
+        with full.open("r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                total_rows += 1
+                try:
+                    obj = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(obj, dict):
+                    continue
+                r_val = obj.get("reward") or obj.get("score") or obj.get("total_reward")
+                if isinstance(r_val, (int, float)) and math.isfinite(float(r_val)):
+                    rewards.append(float(r_val))
+                text_preview = ""
+                msgs = obj.get("messages")
+                if isinstance(msgs, list) and msgs:
+                    parts = [
+                        f"{m.get('role', 'msg')}: {str(m.get('content', ''))[:140]}"
+                        for m in msgs[:3]
+                        if isinstance(m, dict)
+                    ]
+                    text_preview = " · ".join(parts)
+                elif "prompt" in obj or "completion" in obj:
+                    text_preview = f"prompt: {str(obj.get('prompt', ''))[:120]} → {str(obj.get('completion', ''))[:120]}"
+                else:
+                    text_preview = json.dumps(obj)[:200]
+                char_lens.append(len(line))
+                if len(rows) < max_samples:
+                    rows.append(
+                        {
+                            "index": total_rows - 1,
+                            "reward": (
+                                round(float(r_val), 3)
+                                if isinstance(r_val, (int, float))
+                                else None
+                            ),
+                            "preview": text_preview,
+                            "num_turns": len(msgs) if isinstance(msgs, list) else 1,
+                        }
+                    )
+                if total_rows >= 2000:
+                    break
+
+        return {
+            "path": rel_path,
+            "total_rows": total_rows,
+            "mean_chars": round(sum(char_lens) / max(len(char_lens), 1), 1),
+            "mean_reward": round(sum(rewards) / len(rewards), 3) if rewards else None,
+            "min_reward": round(min(rewards), 3) if rewards else None,
+            "max_reward": round(max(rewards), 3) if rewards else None,
+            "samples": rows,
+        }
+
+    def list_workspace_runs(self) -> list[dict[str, Any]]:
+        """Query StateSet's finetune_workspace for retained operator studio runs."""
+        ws_dir = self.inspector.workspace_root / "outputs" / "finetune"
+        if not ws_dir.is_dir():
+            return []
+        try:
+            from stateset_agents.finetune_workspace import list_runs
+
+            raw = list_runs(ws_dir)
+            if isinstance(raw, list):
+                return [r for r in raw if isinstance(r, dict)][:20]
+        except Exception:
+            pass
+        return []
 
     def get_job(self, job_id: str) -> dict[str, Any]:
         if job_id not in self._jobs:
@@ -411,8 +559,6 @@ class FinetuneStudioEngine:
         *,
         checkpoint_id: str | None = None,
     ) -> dict[str, Any]:
-        """Start an async real-PyTorch live micro-finetuning run pushing deltas to the 3D view."""
-        # Stop any previously running job for this model so weights stay consistent
         for jid, existing in list(self._jobs.items()):
             if existing.model_id == model_id and existing.status in {
                 "running",
@@ -469,7 +615,6 @@ class FinetuneStudioEngine:
         return self._jobs[job_id].to_dict()
 
     async def _run_pytorch_loop(self, job: FinetuneJobState) -> None:
-        """Execute real PyTorch AdamW + RL/SFT autograd updates on active model tensors."""
         try:
             import torch
             import torch.nn.functional as F
@@ -478,13 +623,11 @@ class FinetuneStudioEngine:
             target_modules = set(job.config.get("target_modules") or [])
             algorithm = str(job.config.get("algorithm", "gspo")).lower()
             lr = float(job.config.get("learning_rate", 5e-4))
-            # Scale LR gently for live visual micro-finetuning so weight adaptation is unmistakable yet stable
             effective_lr = max(5e-4, min(4e-2, lr * 40.0 if lr < 1e-4 else lr))
             kl_coef = float(job.config.get("kl_coef", 0.02))
             clip_ratio = float(job.config.get("clip_ratio", 0.2))
             group_size = max(2, min(8, int(job.config.get("num_generations", 4))))
 
-            # Select up to 16 representative trainable tensors across layers matching target_modules
             selected: list[dict[str, Any]] = []
             for layer in struct["layers"]:
                 for t in layer["tensors"]:
@@ -500,18 +643,15 @@ class FinetuneStudioEngine:
                     for t in layer["tensors"]:
                         if len(t["shape"]) >= 2:
                             selected.append(t)
-            # Sample evenly across depth so every layer region participates
             if len(selected) > 16:
                 idxs = np.linspace(0, len(selected) - 1, 16, dtype=int)
                 selected = [selected[i] for i in idxs]
 
             job.active_tensors = [t["name"] for t in selected]
 
-            # Construct real PyTorch Parameters (working on compact projections if tensor > 256x256,
-            # while mapping updates cleanly back onto full-size arrays so 3D view reflects real autograd!)
             params_list: list[torch.nn.Parameter] = []
             ref_list: list[torch.Tensor] = []
-            full_arrays: list[np.ndarray] = []
+            full_arrays: list[np.ndarray[Any, Any]] = []
             slice_shapes: list[tuple[int, int]] = []
             layer_tags: list[str] = []
 
@@ -550,7 +690,6 @@ class FinetuneStudioEngine:
                 weight_decay=float(job.config.get("weight_decay", 0.01)),
             )
 
-            # Fixed synthetic task teacher manifold so reward & loss genuinely improve via autograd!
             targets_vec = [torch.randn(p.shape[0], 4) * 0.25 for p in params_list]
             inputs_vec = [torch.randn(p.shape[1], 4) * 0.35 for p in params_list]
 
@@ -563,7 +702,6 @@ class FinetuneStudioEngine:
                     job.status = "stopped"
                     break
 
-                # Cosine LR schedule
                 progress = step / max(job.total_steps, 1)
                 cos_mult = 0.1 + 0.9 * 0.5 * (1.0 + math.cos(math.pi * progress))
                 for pg in optimizer.param_groups:
@@ -571,7 +709,6 @@ class FinetuneStudioEngine:
 
                 optimizer.zero_grad()
 
-                # Real PyTorch forward + objective (GRPO/GSPO clipped policy surrogate + KL or SFT)
                 policy_losses: list[torch.Tensor] = []
                 kl_terms: list[torch.Tensor] = []
                 rewards_acc: list[float] = []
@@ -579,14 +716,12 @@ class FinetuneStudioEngine:
                 for p, ref, x, y_tgt in zip(
                     params_list, ref_list, inputs_vec, targets_vec, strict=True
                 ):
-                    # Group-sampled batch perturbation around task input
                     noise = torch.randn(x.shape[0], group_size) * 0.15
                     x_batch = x[:, :1].expand(-1, group_size) + noise
                     out = p @ x_batch
                     ref_out = ref @ x_batch
                     tgt = y_tgt[:, :1].expand(-1, group_size)
 
-                    # Per-rollout reward: negative MSE alignment to target policy manifold
                     per_sample_err = torch.mean((out - tgt) ** 2, dim=0)
                     rollout_rewards = torch.exp(-per_sample_err * 2.5)
                     rewards_acc.append(float(rollout_rewards.mean().item()))
@@ -595,11 +730,9 @@ class FinetuneStudioEngine:
                         loss_i = F.mse_loss(out, tgt)
                         kl_i = torch.mean((out - ref_out) ** 2)
                     else:
-                        # Group-relative advantages (GRPO/GSPO/DAPO style!)
                         adv = (rollout_rewards - rollout_rewards.mean()) / (
                             rollout_rewards.std() + 1e-4
                         )
-                        # Surrogate log-prob ratio proxy from policy vs reference projection
                         logp = -0.5 * per_sample_err
                         with torch.no_grad():
                             ref_logp = -0.5 * torch.mean((ref_out - tgt) ** 2, dim=0)
@@ -607,7 +740,6 @@ class FinetuneStudioEngine:
                         ratio = torch.exp(log_ratio)
                         clipped = torch.clamp(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
                         surrogate = -torch.minimum(ratio * adv, clipped * adv).mean()
-                        # Add gentle supervised anchor + KL regularization
                         loss_i = 0.45 * surrogate + 0.55 * per_sample_err.mean()
                         kl_i = torch.mean((p - ref) ** 2)
 
@@ -619,7 +751,6 @@ class FinetuneStudioEngine:
                 total_loss = mean_policy_loss + kl_coef * mean_kl
                 total_loss.backward()
 
-                # Measure real per-layer gradient norms before clipping
                 layer_grads: dict[str, float] = {}
                 total_grad_sq = 0.0
                 for p, ltag in zip(params_list, layer_tags, strict=True):
@@ -630,14 +761,12 @@ class FinetuneStudioEngine:
                 torch.nn.utils.clip_grad_norm_(params_list, max_norm=1.0)
                 optimizer.step()
 
-                # Push real updated weights into the studio editor overlay!
-                deltas_payload: dict[str, np.ndarray] = {}
+                deltas_payload: dict[str, np.ndarray[Any, Any]] = {}
                 for t_info, p, full_arr, (sr, sc) in zip(
                     selected, params_list, full_arrays, slice_shapes, strict=True
                 ):
                     updated = full_arr.copy()
                     updated[:sr, :sc] = p.detach().cpu().numpy()
-                    # Propagate smooth low-rank adaptation delta across tiled slices so full-matrix 3D view responds visibly
                     if updated.shape[0] > sr or updated.shape[1] > sc:
                         delta_sub = p.detach().cpu().numpy() - full_arr[:sr, :sc]
                         r_rep = int(math.ceil(updated.shape[0] / sr))
@@ -682,7 +811,6 @@ class FinetuneStudioEngine:
                     {"type": "step", "job_id": job.job_id, "metric": step_metric},
                 )
 
-                # Pace cleanly (~3.5 steps/sec) so the user can watch the 3D backprop waves & weight crystals evolve!
                 await asyncio.sleep(0.28)
 
             if job.status == "running":

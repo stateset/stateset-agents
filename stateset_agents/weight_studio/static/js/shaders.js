@@ -1,12 +1,14 @@
 /**
- * Custom GLSL ES 3.00 Shaders for the StateSet 3D Weight Studio.
+ * Custom GLSL ES 3.00 Shaders for StateSet 3D Weight Studio v2.
  *
  * Implements:
- * - Cook-Torrance GGX physically-based instanced crystal & machined chassis shading
+ * - Real-time 1024x1024 PCF soft shadow mapping
+ * - Real-time planar optical-bench floor reflections with anisotropic brushed blur
+ * - Cook-Torrance GGX PBR instanced crystal & chassis shading + shadow self-occlusion
  * - Procedural HDR studio softbox IBL environment reflections
- * - Anodized brushed-metal optical bench floor with analytic soft contact shadows
  * - Volumetric curved optical conduits with traveling forward/backprop photon waves
- * - Multi-pass HDR Bright-Pass, 9-tap Separable Gaussian Bloom, and ACES Filmic Tonemapping
+ * - Multi-pass HDR Bright-Pass, dual-tier Gaussian Bloom, Depth SSAO crevice occlusion,
+ *   Optical Bokeh Depth-of-Field, and ACES Filmic Tonemapping
  */
 
 export const STUDIO_RIGS = {
@@ -17,7 +19,7 @@ export const STUDIO_RIGS = {
     floorColor: [0.014, 0.019, 0.030],
     gridColor: [0.09, 0.24, 0.44],
     keyDir: [0.58, 0.72, 0.36],
-    keyColor: [1.35, 1.24, 1.08],
+    keyColor: [1.38, 1.26, 1.10],
     rimDir: [-0.70, 0.38, -0.60],
     rimColor: [0.48, 0.98, 1.48],
     fillDir: [0.0, 0.95, -0.32],
@@ -76,6 +78,27 @@ export const STUDIO_RIGS = {
   },
 };
 
+export const SHADOW_VS = `#version 300 es
+precision highp float;
+layout(location = 0) in vec3 aPos;
+layout(location = 2) in vec4 aInstPosScale;
+layout(location = 3) in vec4 aInstDimMat;
+uniform mat4 uLightViewProj;
+void main() {
+  vec3 scale = vec3(aInstPosScale.w, aInstDimMat.x, aInstDimMat.y);
+  vec3 worldPos = aInstPosScale.xyz + aPos * scale;
+  gl_Position = uLightViewProj * vec4(worldPos, 1.0);
+}
+`;
+
+export const SHADOW_FS = `#version 300 es
+precision highp float;
+out vec4 fragColor;
+void main() {
+  fragColor = vec4(1.0);
+}
+`;
+
 export const SKYBOX_VS = `#version 300 es
 precision highp float;
 const vec2 POS[3] = vec2[](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
@@ -107,13 +130,11 @@ void main() {
   float h = clamp(dir.y * 0.85 + 0.22, 0.0, 1.0);
   vec3 col = mix(uBgHorizon, uBgTop, pow(h, 0.65));
 
-  // Subtle studio dome softbox atmospheric glow
   float keyGlow = pow(max(dot(dir, normalize(uKeyDir)), 0.0), 18.0);
   float rimGlow = pow(max(dot(dir, normalize(uRimDir)), 0.0), 14.0);
   col += uKeyColor * keyGlow * 0.045;
   col += uRimColor * rimGlow * 0.038;
 
-  // Horizon studio ring haze
   float band = exp(-abs(dir.y) * 9.0);
   col += mix(uBgHorizon, uRimColor * 0.14, 0.22) * band * 0.35;
 
@@ -125,18 +146,26 @@ export const FLOOR_VS = `#version 300 es
 precision highp float;
 layout(location = 0) in vec3 aPos;
 uniform mat4 uViewProj;
+uniform mat4 uLightViewProj;
 uniform float uFloorY;
 out vec3 vWorldPos;
+out vec4 vClipPos;
+out vec4 vLightPos;
 void main() {
   vec3 wp = vec3(aPos.x, uFloorY, aPos.z);
   vWorldPos = wp;
-  gl_Position = uViewProj * vec4(wp, 1.0);
+  vClipPos = uViewProj * vec4(wp, 1.0);
+  vLightPos = uLightViewProj * vec4(wp, 1.0);
+  gl_Position = vClipPos;
 }
 `;
 
 export const FLOOR_FS = `#version 300 es
 precision highp float;
 in vec3 vWorldPos;
+in vec4 vClipPos;
+in vec4 vLightPos;
+
 uniform vec3 uCameraPos;
 uniform vec3 uFloorColor;
 uniform vec3 uGridColor;
@@ -149,6 +178,10 @@ uniform vec2 uFootprintSize;
 uniform vec3 uGlowCenter;
 uniform vec3 uGlowColor;
 uniform float uTime;
+uniform sampler2D uReflectTex;
+uniform float uReflectStrength;
+uniform sampler2D uShadowMap;
+uniform float uShadowEnabled;
 out vec4 fragColor;
 
 float gridLine(vec2 p, float stepSize, float width) {
@@ -156,6 +189,22 @@ float gridLine(vec2 p, float stepSize, float width) {
   vec2 grid = abs(fract(coord - 0.5) - 0.5) / max(fwidth(coord), 0.0005);
   float line = min(grid.x, grid.y);
   return 1.0 - smoothstep(0.0, width, line);
+}
+
+float sampleShadow(vec4 lp) {
+  if (uShadowEnabled < 0.5) return 1.0;
+  vec3 proj = lp.xyz / max(lp.w, 0.0001) * 0.5 + 0.5;
+  if (proj.x < 0.0 || proj.x > 1.0 || proj.y < 0.0 || proj.y > 1.0 || proj.z > 1.0) return 1.0;
+  vec2 texel = vec2(1.0 / 1024.0);
+  float shadow = 0.0;
+  float bias = 0.003;
+  for (int x = -1; x <= 1; x++) {
+    for (int y = -1; y <= 1; y++) {
+      float d = texture(uShadowMap, proj.xy + vec2(float(x), float(y)) * texel * 1.6).r;
+      shadow += (proj.z - bias > d) ? 0.35 : 1.0;
+    }
+  }
+  return shadow / 9.0;
 }
 
 void main() {
@@ -177,31 +226,46 @@ void main() {
   float radialFade = exp(-dist * dist * 0.00055);
   vec3 gridEmit = uGridColor * ((fine + major + ring) + (axisX + axisZ) * 0.45) * radialFade;
 
-  // Analytic soft contact shadow under the 3D neural bench footprint
+  // Analytic soft contact shadow + real PCF shadow map
   vec2 dBox = abs(vWorldPos.xz) - uFootprintSize;
   float sd = length(max(dBox, 0.0)) + min(max(dBox.x, dBox.y), 0.0);
-  float shadow = smoothstep(-0.8, 3.8, sd);
-  float ao = mix(0.42, 1.0, shadow);
+  float contactAO = mix(0.45, 1.0, smoothstep(-0.8, 3.6, sd));
+  float castShadow = sampleShadow(vLightPos);
+  float ao = contactAO * mix(0.65, 1.0, castShadow);
 
-  // Specular studio softbox reflections on the optical bench
+  // Specular studio softbox reflections
   vec3 L1 = normalize(uKeyDir);
   vec3 H1 = normalize(L1 + V);
-  float spec1 = pow(max(dot(N, H1), 0.0), 42.0) * 0.22;
+  float spec1 = pow(max(dot(N, H1), 0.0), 42.0) * 0.22 * castShadow;
 
   vec3 L2 = normalize(uRimDir);
   vec3 H2 = normalize(L2 + V);
   float spec2 = pow(max(dot(N, H2), 0.0), 28.0) * 0.16;
 
-  float fresnel = pow(1.0 - max(dot(N, V), 0.0), 4.0);
-  vec3 refl = mix(baseCol, uBgHorizon * 1.15, fresnel * 0.55);
+  float fresnel = pow(1.0 - max(dot(N, V), 0.0), 3.6);
+  vec3 refl = mix(baseCol, uBgHorizon * 1.15, fresnel * 0.45);
 
-  // Subtle colored bounce glow from active 3D crystals above
+  // Real-time planar reflection of the 3D crystal towers with brushed anodized blur!
+  // Because the reflection pass mirrors worldPos.y -> -worldPos.y under the same uViewProj,
+  // each reflected point lands directly at screenUv beneath its optical-bench footprint.
+  vec3 planarRefl = vec3(0.0);
+  if (uReflectStrength > 0.01) {
+    vec2 rUv = (vClipPos.xy / max(vClipPos.w, 0.0001)) * 0.5 + 0.5;
+    float blurR = 0.0028;
+    vec3 rSum = texture(uReflectTex, clamp(rUv, 0.005, 0.995)).rgb * 0.40;
+    rSum += texture(uReflectTex, clamp(rUv + vec2(blurR, 0.0), 0.005, 0.995)).rgb * 0.15;
+    rSum += texture(uReflectTex, clamp(rUv - vec2(blurR, 0.0), 0.005, 0.995)).rgb * 0.15;
+    rSum += texture(uReflectTex, clamp(rUv + vec2(0.0, blurR * 2.0), 0.005, 0.995)).rgb * 0.15;
+    rSum += texture(uReflectTex, clamp(rUv - vec2(0.0, blurR * 2.0), 0.005, 0.995)).rgb * 0.15;
+    float reflMask = clamp(0.18 + fresnel * 0.65, 0.0, 0.85) * radialFade * uReflectStrength;
+    planarRefl = rSum * reflMask;
+  }
+
   float glowDist = length(vWorldPos.xz - uGlowCenter.xz);
-  vec3 bounce = uGlowColor * exp(-glowDist * glowDist * 0.014) * 0.28;
+  vec3 bounce = uGlowColor * exp(-glowDist * glowDist * 0.014) * 0.24;
 
-  vec3 col = refl * ao + (uKeyColor * spec1 + uRimColor * spec2) * ao + gridEmit + bounce;
+  vec3 col = refl * ao + planarRefl + (uKeyColor * spec1 + uRimColor * spec2) * ao + gridEmit + bounce;
 
-  // Seamless atmospheric horizon blend
   float fog = 1.0 - exp(-dist * dist * 0.00028);
   col = mix(col, uBgHorizon, clamp(fog, 0.0, 1.0));
 
@@ -209,17 +273,6 @@ void main() {
 }
 `;
 
-/**
- * Instanced PBR Beveled Crystal & Chassis Shader.
- * Per-instance attributes (stride = 12 floats / 3 vec4s):
- *   aInstPosScale: xyz = center position, w = scaleX
- *   aInstDimMat:   x = scaleY, y = scaleZ, z = roughness (0..1), w = metallic (0..1)
- *   aInstColor:    rgb = base PBR albedo, a = emissive/heat intensity (0..3)
- *   aInstFlags:    x = highlight (0=normal, 1=hover, 2=selected, 3=brush, 4=edited),
- *                  y = alpha (1.0 opaque, <1.0 translucent glass/ghost),
- *                  z = pulse phase (layer/rank normalized 0..1),
- *                  w = extra intensity (activation / gradient heat)
- */
 export const INSTANCED_PBR_VS = `#version 300 es
 precision highp float;
 
@@ -232,20 +285,29 @@ layout(location = 4) in vec4 aInstColor;
 layout(location = 5) in vec4 aInstFlags;
 
 uniform mat4 uViewProj;
+uniform mat4 uLightViewProj;
+uniform float uMirrorY; // 1.0 normal, -1.0 planar reflection pass
 uniform float uTime;
 
 out vec3 vWorldPos;
 out vec3 vNormal;
 out vec3 vLocalPos;
 out vec4 vColor;
-out vec4 vMat;     // x=roughness, y=metallic, z=scaleY, w=heightNorm
+out vec4 vMat;
 out vec4 vFlags;
+out vec4 vLightPos;
 
 void main() {
   vec3 scale = vec3(aInstPosScale.w, aInstDimMat.x, aInstDimMat.y);
   vec3 worldPos = aInstPosScale.xyz + aPos * scale;
-  // Non-uniform normal scaling
   vec3 scaledNormal = normalize(aNormal / max(scale, vec3(0.0001)));
+
+  vLightPos = uLightViewProj * vec4(worldPos, 1.0);
+
+  if (uMirrorY < 0.0) {
+    worldPos.y = -worldPos.y;
+    scaledNormal.y = -scaledNormal.y;
+  }
 
   vWorldPos = worldPos;
   vNormal = scaledNormal;
@@ -267,6 +329,7 @@ in vec3 vLocalPos;
 in vec4 vColor;
 in vec4 vMat;
 in vec4 vFlags;
+in vec4 vLightPos;
 
 uniform vec3 uCameraPos;
 uniform vec3 uBgTop;
@@ -279,8 +342,10 @@ uniform vec3 uFillDir;
 uniform vec3 uFillColor;
 uniform vec3 uAmbient;
 uniform float uTime;
-uniform float uPulseWave;     // -1 inactive, >= 0 traveling forward/backprop wave position
-uniform float uPulseMode;     // 0=forward cyan-emerald, 1=backprop amber-crimson
+uniform float uPulseWave;
+uniform float uPulseMode;
+uniform sampler2D uShadowMap;
+uniform float uShadowEnabled;
 
 out vec4 fragColor;
 
@@ -307,17 +372,30 @@ vec3 F_Schlick(float cosTheta, vec3 F0) {
   return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-// Procedural HDR studio IBL softbox reflection
+float evalShadow(vec4 lp, vec3 N, vec3 L) {
+  if (uShadowEnabled < 0.5) return 1.0;
+  vec3 proj = lp.xyz / max(lp.w, 0.0001) * 0.5 + 0.5;
+  if (proj.x < 0.0 || proj.x > 1.0 || proj.y < 0.0 || proj.y > 1.0 || proj.z > 1.0) return 1.0;
+  float bias = max(0.0025 * (1.0 - max(dot(N, L), 0.0)), 0.0012);
+  vec2 texel = vec2(1.0 / 1024.0);
+  float occ = 0.0;
+  for (int x = -1; x <= 1; x++) {
+    for (int y = -1; y <= 1; y++) {
+      float d = texture(uShadowMap, proj.xy + vec2(float(x), float(y)) * texel).r;
+      occ += (proj.z - bias > d) ? 0.42 : 1.0;
+    }
+  }
+  return occ / 9.0;
+}
+
 vec3 sampleStudioEnv(vec3 R, float roughness) {
   float up = clamp(R.y * 0.65 + 0.35, 0.0, 1.0);
   vec3 env = mix(uBgHorizon * 0.9, uBgTop * 1.4, up);
 
-  // Overhead rectangular softbox strip
   float strip = smoothstep(0.68 - roughness * 0.45, 0.96, R.y) *
                 smoothstep(0.25, 0.85, 1.0 - abs(R.z));
   env += vec3(1.15, 1.22, 1.35) * strip * (1.2 - roughness * 0.7);
 
-  // Key & Rim softboxes
   float kBox = pow(max(dot(R, normalize(uKeyDir)), 0.0), mix(26.0, 3.0, roughness));
   float rBox = pow(max(dot(R, normalize(uRimDir)), 0.0), mix(22.0, 3.0, roughness));
   env += uKeyColor * kBox * 0.45 + uRimColor * rBox * 0.38;
@@ -351,29 +429,27 @@ void main() {
   float metallic = clamp(vMat.y, 0.0, 1.0);
   float heightNorm = vMat.w;
 
-  // Height-based cavity AO at the crystal root + rich vertical crystal depth
   float rootAO = mix(0.42, 1.0, smoothstep(0.0, 0.52, heightNorm));
   albedo *= mix(0.72, 1.08, heightNorm);
 
   vec3 F0 = mix(vec3(0.045), albedo, metallic);
+  vec3 Lkey = normalize(uKeyDir);
+  float keyShadow = evalShadow(vLightPos, N, Lkey);
 
   vec3 Lo = vec3(0.0);
-  Lo += evalLight(N, V, normalize(uKeyDir), uKeyColor, albedo, roughness, metallic, F0);
+  Lo += evalLight(N, V, Lkey, uKeyColor * keyShadow, albedo, roughness, metallic, F0);
   Lo += evalLight(N, V, normalize(uRimDir), uRimColor, albedo, roughness, metallic, F0);
   Lo += evalLight(N, V, normalize(uFillDir), uFillColor, albedo, roughness, metallic, F0);
 
-  // Procedural HDR studio IBL
   vec3 R = reflect(-V, N);
   vec3 envRefl = sampleStudioEnv(R, roughness);
   vec3 F_env = F_Schlick(NdotV, F0);
   vec3 kD_env = (vec3(1.0) - F_env) * (1.0 - metallic);
   vec3 ambient = (kD_env * albedo * (uAmbient * 1.9 + uBgHorizon * 0.25) + F_env * envRefl * (0.72 - roughness * 0.42)) * rootAO;
 
-  // Subsurface / optical crystal emission concentrated toward upper facets & Fresnel edges
   float fresnel = pow(1.0 - NdotV, 3.2);
   vec3 emission = albedo * emitBase * (0.24 + 0.42 * heightNorm + fresnel * 0.48);
 
-  // Crisp chamfer micro-edge specular accent
   vec3 edgeDist = abs(vLocalPos);
   float bevelMask = smoothstep(0.41, 0.495, max(edgeDist.x, max(edgeDist.y, edgeDist.z)));
   emission += albedo * bevelMask * (0.04 + emitBase * 0.10);
@@ -381,22 +457,17 @@ void main() {
   // Highlight states: 1=hover, 2=selected, 3=brush, 4=edited
   float flag = vFlags.x;
   if (flag > 0.5 && flag < 1.5) {
-    // Hover laser sheen
     emission += vec3(0.35, 0.85, 1.25) * (0.35 + fresnel * 0.9);
   } else if (flag >= 1.5 && flag < 2.5) {
-    // Selected precision lock-on
     float beat = 0.78 + 0.22 * sin(uTime * 4.5);
     emission += vec3(0.25, 0.95, 1.35) * (0.55 + fresnel * 1.4) * beat;
   } else if (flag >= 2.5 && flag < 3.5) {
-    // 3D Brush surgical target selection
     float scan = 0.75 + 0.25 * sin(uTime * 7.0 + vWorldPos.x * 2.0);
     emission += vec3(1.45, 0.35, 0.85) * (0.75 + fresnel * 1.3) * scan;
   } else if (flag >= 3.5) {
-    // Surgically edited tensor emerald/gold contour
-    emission += vec3(0.18, 1.15, 0.72) * (0.22 + fresnel * 0.75);
+    emission += vec3(0.10, 0.72, 0.46) * (0.05 + fresnel * 0.34);
   }
 
-  // Traveling activation / backpropagation wave along the neural stack!
   float phase = vFlags.z;
   float actHeat = vFlags.w;
   if (uPulseWave >= 0.0) {
@@ -411,14 +482,12 @@ void main() {
 
   vec3 col = ambient + Lo * rootAO + emission;
 
-  // Gentle distance atmospheric integration
   float camDist = length(uCameraPos - vWorldPos);
   float fog = 1.0 - exp(-camDist * camDist * 0.000085);
   col = mix(col, uBgHorizon, clamp(fog * 0.65, 0.0, 0.65));
 
   float alpha = vFlags.y;
   if (alpha < 0.99) {
-    // Translucent optical glass / pre-edit ghost surface
     alpha = clamp(alpha + fresnel * 0.38, 0.08, 0.92);
   }
   fragColor = vec4(col, alpha);
@@ -429,16 +498,23 @@ export const CONDUIT_VS = `#version 300 es
 precision highp float;
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;
-layout(location = 2) in vec3 aMeta; // x = path t (0..1), y = lane type, z = intensity
+layout(location = 2) in vec3 aMeta;
 uniform mat4 uViewProj;
+uniform float uMirrorY;
 out vec3 vWorldPos;
 out vec3 vNormal;
 out vec3 vMeta;
 void main() {
-  vWorldPos = aPos;
-  vNormal = aNormal;
+  vec3 wp = aPos;
+  vec3 wn = aNormal;
+  if (uMirrorY < 0.0) {
+    wp.y = -wp.y;
+    wn.y = -wn.y;
+  }
+  vWorldPos = wp;
+  vNormal = wn;
   vMeta = aMeta;
-  gl_Position = uViewProj * vec4(aPos, 1.0);
+  gl_Position = uViewProj * vec4(wp, 1.0);
 }
 `;
 
@@ -450,7 +526,7 @@ in vec3 vMeta;
 uniform vec3 uCameraPos;
 uniform float uTime;
 uniform float uPulseSpeed;
-uniform float uPulseMode; // 0 = forward cyan/emerald, 1 = backprop amber/crimson
+uniform float uPulseMode;
 out vec4 fragColor;
 
 void main() {
@@ -521,11 +597,30 @@ export const COMPOSITE_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
 uniform sampler2D uScene;
+uniform sampler2D uDepth;
 uniform sampler2D uBloom1;
 uniform sampler2D uBloom2;
+uniform vec2 uTexelSize;
 uniform float uExposure;
 uniform float uBloomStrength;
+uniform float uSsaoStrength;
+uniform float uDofStrength;
+uniform float uFocusDist;
 out vec4 fragColor;
+
+const vec2 POISSON[8] = vec2[](
+  vec2(-0.707, -0.707), vec2(0.707, -0.707),
+  vec2(-0.707,  0.707), vec2(0.707,  0.707),
+  vec2(-1.0,    0.0  ), vec2(1.0,    0.0  ),
+  vec2( 0.0,   -1.0  ), vec2(0.0,    1.0  )
+);
+
+float linearizeDepth(float d) {
+  float near = 0.2;
+  float far = 260.0;
+  float z = d * 2.0 - 1.0;
+  return (2.0 * near * far) / max(far + near - z * (far - near), 0.0001);
+}
 
 vec3 acesFilm(vec3 x) {
   float a = 2.51;
@@ -537,19 +632,50 @@ vec3 acesFilm(vec3 x) {
 }
 
 void main() {
+  float rawD = texture(uDepth, vUv).r;
+  float linD = linearizeDepth(rawD);
+
+  // 1. Optional Optical Bokeh Depth-of-Field gather around camera focal plane
   vec3 scene = texture(uScene, vUv).rgb;
+  if (uDofStrength > 0.01 && rawD < 0.9995) {
+    float coc = clamp(abs(linD - uFocusDist) / max(uFocusDist * 0.55, 2.0), 0.0, 1.0) * uDofStrength;
+    if (coc > 0.03) {
+      vec3 acc = scene;
+      float wSum = 1.0;
+      float radius = coc * 5.2;
+      for (int i = 0; i < 8; i++) {
+        vec2 off = POISSON[i] * uTexelSize * radius;
+        acc += texture(uScene, clamp(vUv + off, 0.001, 0.999)).rgb;
+        wSum += 1.0;
+      }
+      scene = acc / wSum;
+    }
+  }
+
+  // 2. Fast Screen-Space Depth-Crevice Ambient Occlusion (SSAO)
+  float ao = 1.0;
+  if (uSsaoStrength > 0.01 && rawD < 0.998) {
+    float occ = 0.0;
+    float radiusPx = clamp(24.0 / max(linD, 3.0), 1.5, 5.5);
+    for (int i = 0; i < 8; i++) {
+      vec2 suv = clamp(vUv + POISSON[i] * uTexelSize * radiusPx, 0.001, 0.999);
+      float sd = linearizeDepth(texture(uDepth, suv).r);
+      float diff = linD - sd;
+      if (diff > 0.04 && diff < 1.8) {
+        occ += smoothstep(0.04, 0.85, diff) * (1.0 - smoothstep(0.85, 1.8, diff));
+      }
+    }
+    ao = 1.0 - clamp((occ / 8.0) * uSsaoStrength * 0.85, 0.0, 0.52);
+  }
+
   vec3 bloom = texture(uBloom1, vUv).rgb * 0.58 + texture(uBloom2, vUv).rgb * 0.42;
-  vec3 hdr = scene + bloom * uBloomStrength;
+  vec3 hdr = scene * ao + bloom * uBloomStrength;
 
-  // ACES Filmic Tonemapping
+  // 3. ACES Filmic Tonemapping + Optical Vignette + Micro-dither
   vec3 mapped = acesFilm(hdr * uExposure);
-
-  // Subtle precision optical vignette
   vec2 q = vUv - 0.5;
-  float vig = 1.0 - dot(q, q) * 0.36;
+  float vig = 1.0 - dot(q, q) * 0.34;
   mapped *= clamp(vig, 0.72, 1.0);
-
-  // sRGB gamma encode + subtle micro-dither to prevent dark gradient banding
   mapped = pow(max(mapped, 0.0), vec3(1.0 / 2.2));
   float dither = (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;
   fragColor = vec4(clamp(mapped + dither, 0.0, 1.0), 1.0);

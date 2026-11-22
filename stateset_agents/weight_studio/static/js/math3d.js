@@ -74,6 +74,21 @@ export function mat4Perspective(fovRad, aspect, near, far, out = new Float32Arra
   return out;
 }
 
+export function mat4Ortho(left, right, bottom, top, near, far, out = new Float32Array(16)) {
+  const lr = 1.0 / (left - right);
+  const bt = 1.0 / (bottom - top);
+  const nf = 1.0 / (near - far);
+  out.fill(0);
+  out[0] = -2.0 * lr;
+  out[5] = -2.0 * bt;
+  out[10] = 2.0 * nf;
+  out[12] = (left + right) * lr;
+  out[13] = (top + bottom) * bt;
+  out[14] = (far + near) * nf;
+  out[15] = 1.0;
+  return out;
+}
+
 export function mat4LookAt(eye, target, up, out = new Float32Array(16)) {
   const z = normalize3(sub3(eye, target));
   const x = normalize3(cross3(up, z));

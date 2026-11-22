@@ -1,5 +1,14 @@
 /**
- * StateSet 3D Weight Studio — Interactive Application Controller.
+ * StateSet 3D Weight Studio v2 — Interactive Application Controller.
+ *
+ * Connects:
+ * - Binary Float32Array 128x128 Microscope streaming + Crop Zoom/Pan
+ * - Wanda/Fisher Importance & Adapter Sign-Conflict 3D visualization
+ * - Surgical Weight Editor (Scale, Magnitude/Wanda Prune, Clamp, SVD, Head Surgery,
+ *   ROME Rank-1 w/ Drift Check, 3D Brush, TIES/DARE/SLERP Merge)
+ * - Finetuning Workbench (Datasets & Traces, Workspace Validation, VRAM/Cost, Live PyTorch SSE)
+ * - Interactive Model Playground (PyTorch Hooks / Remote vLLM / Weight Probe,
+ *   Layer-by-Layer Logit Lens, Causal Activation Patching, A/B Diff & Reward Rubric)
  */
 
 import {
@@ -16,9 +25,12 @@ const state = {
   models: [],
   modelId: null,
   checkpointId: null,
+  secondaryModelId: null,
   structure: null,
   selectedTensorName: null,
   tensorDetail: null,
+  binaryGrid: null,
+  activeCrop: null, // [r0, r1, c0, c1] or null
   trajectory: null,
   editHistory: null,
   activeOp: 'scale',
@@ -26,10 +38,12 @@ const state = {
   ftCatalog: null,
   ftAlgorithm: 'gspo',
   ftSelectedTargets: new Set(['q_proj', 'k_proj', 'v_proj', 'o_proj']),
+  ftDatasetPath: '',
   ftJobId: null,
-  ftWs: null,
+  ftStream: null,
   ftPollTimer: null,
   ftHistory: [],
+  causalPatches: [], // [{ layer, action }]
   trajPlayTimer: null,
   lastInferResult: null,
 };
@@ -88,17 +102,14 @@ async function init() {
     },
     onSelectTensor: async (tensorName, openMicroscope) => {
       await selectTensor(tensorName, { focusCamera: !openMicroscope });
-      if (openMicroscope) {
-        setViewMode('microscope');
-      }
+      if (openMicroscope) setViewMode('microscope');
     },
     onHover: (hit) => renderHoverTooltip(hit),
     onProjection: (pt, hit) => render3DCallout(pt, hit),
+    onSpatialLabels: (labels) => renderSpatialLabels(labels),
     onBrushRegion: (region) => {
       state.brushRegion = region;
-      if (state.activeOp === 'region_edit') {
-        renderOpParams();
-      }
+      if (state.activeOp === 'region_edit') renderOpParams();
       showToast(
         `3D Brush Patch: rows [${region.row_start}:${region.row_end}] × cols [${region.col_start}:${region.col_end}]`,
         1600
@@ -118,11 +129,45 @@ async function init() {
   bindInferenceControls();
   bindExportModal();
 
-  await Promise.all([loadFinetuneCatalog(), loadInferenceScenarios(), loadModels(false)]);
+  await Promise.all([
+    loadFinetuneCatalog(),
+    loadDatasets(),
+    loadInferenceScenarios(),
+    loadModels(false),
+  ]);
 }
 
 // ---------------------------------------------------------------------------
-// Model & Tensor Loading
+// Spatial 3D Labels (Pooled DOM elements for zero GC jitter)
+// ---------------------------------------------------------------------------
+
+let _labelPool = [];
+function renderSpatialLabels(labels) {
+  const layer = $('spatial-labels-layer');
+  if (!layer) return;
+  while (_labelPool.length < labels.length) {
+    const el = document.createElement('div');
+    el.className = 'spatial-tag';
+    layer.appendChild(el);
+    _labelPool.push(el);
+  }
+  for (let i = 0; i < _labelPool.length; i++) {
+    const el = _labelPool[i];
+    if (i < labels.length) {
+      const l = labels[i];
+      el.style.display = 'block';
+      el.style.left = `${l.x.toFixed(1)}px`;
+      el.style.top = `${l.y.toFixed(1)}px`;
+      el.textContent = l.text;
+      el.className = `spatial-tag ${l.kind || ''}`;
+    } else {
+      el.style.display = 'none';
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Model & Tensor Loading (with Binary Float32Array 128x128 Streaming!)
 // ---------------------------------------------------------------------------
 
 async function loadModels(refresh = false) {
@@ -149,10 +194,14 @@ async function loadModels(refresh = false) {
   if (presetGroup.children.length) select.appendChild(presetGroup);
 
   if (state.models.length > 0) {
-    const preferred = state.modelId && state.models.some((m) => m.model_id === state.modelId)
-      ? state.modelId
-      : state.models[0].model_id;
+    const preferred =
+      state.modelId && state.models.some((m) => m.model_id === state.modelId)
+        ? state.modelId
+        : state.models[0].model_id;
     select.value = preferred;
+    // Default secondary model for Sign Conflict / TIES merge
+    const alt = state.models.find((m) => m.model_id !== preferred && m.kind === state.models[0].kind) || state.models[1] || state.models[0];
+    state.secondaryModelId = alt?.model_id || preferred;
     await loadModelStructure(preferred, null);
   }
 }
@@ -161,6 +210,9 @@ async function loadModelStructure(modelId, checkpointId = null) {
   state.modelId = modelId;
   state.checkpointId = checkpointId;
   state.trajectory = null;
+  state.activeCrop = null;
+  state.causalPatches = [];
+  renderActivePatches();
 
   const qs = new URLSearchParams({ model_id: modelId });
   if (checkpointId) qs.set('checkpoint_id', checkpointId);
@@ -187,10 +239,18 @@ async function loadModelStructure(modelId, checkpointId = null) {
     2
   );
 
-  // Sync LoRA target chips to this model's actual modules
+  // Populate Causal Patching layer dropdown
+  const patchSel = $('patch-layer-select');
+  patchSel.innerHTML = '';
+  for (const l of struct.layers || []) {
+    const opt = document.createElement('option');
+    opt.value = String(l.index);
+    opt.textContent = l.name;
+    patchSel.appendChild(opt);
+  }
+
   initLoraTargetChipsForModel(struct);
 
-  // Checkpoint timeline visibility
   const cps = m.checkpoints || [];
   const cpBar = $('checkpoint-bar');
   if (cps.length > 1) {
@@ -209,7 +269,6 @@ async function loadModelStructure(modelId, checkpointId = null) {
   renderLayerTree();
   renderEditHistory();
 
-  // Select first interesting 2D tensor if current selection isn't in this model
   const allNames = [];
   for (const l of struct.layers) for (const t of l.tensors) allNames.push(t.name);
   for (const t of struct.global_tensors) allNames.push(t.name);
@@ -236,33 +295,89 @@ async function loadModelStructure(modelId, checkpointId = null) {
   renderOpParams();
 }
 
+async function fetchBinaryGrid(tensorName, res) {
+  const qs = new URLSearchParams({
+    model_id: state.modelId,
+    tensor_name: tensorName,
+    resolution: String(res),
+  });
+  if (state.checkpointId) qs.set('checkpoint_id', state.checkpointId);
+  if (state.secondaryModelId && renderer.colorMode === 'conflict') {
+    qs.set('secondary_model_id', state.secondaryModelId);
+  }
+  if (state.activeCrop) {
+    qs.set('r0', String(state.activeCrop[0]));
+    qs.set('r1', String(state.activeCrop[1]));
+    qs.set('c0', String(state.activeCrop[2]));
+    qs.set('c1', String(state.activeCrop[3]));
+  }
+
+  const resp = await fetch(`${API}/models/tensor.bin?${qs.toString()}`);
+  if (!resp.ok) return null;
+  const meta = JSON.parse(resp.headers.get('X-Tensor-Meta') || '{}');
+  const buf = await resp.arrayBuffer();
+  const floats = new Float32Array(buf);
+  const stride = (meta.rows || 1) * (meta.cols || 1);
+  const unpacked = {
+    rows: meta.rows,
+    cols: meta.cols,
+    crop: meta.crop,
+    matrix_shape: meta.matrix_shape,
+    abs_max: meta.abs_max,
+    delta_abs_max: meta.delta_abs_max,
+    conflict_rate: meta.conflict_rate || 0,
+    values: null,
+    delta: null,
+    importance: null,
+    conflict: null,
+  };
+  (meta.channels || []).forEach((ch, idx) => {
+    unpacked[ch] = floats.subarray(idx * stride, (idx + 1) * stride);
+  });
+  return unpacked;
+}
+
 async function selectTensor(tensorName, { focusCamera = true } = {}) {
   if (!tensorName || !state.modelId) return;
   state.selectedTensorName = tensorName;
 
-  // Highlight in left tree
   document.querySelectorAll('.tensor-row').forEach((el) => {
     el.classList.toggle('selected', el.dataset.tensor === tensorName);
   });
 
   const res = Number($('microscope-res').value || 64);
+  const useBinary = res >= 96 || renderer.colorMode === 'conflict';
+
   const qs = new URLSearchParams({
     model_id: state.modelId,
     tensor_name: tensorName,
-    resolution: String(res),
+    resolution: String(Math.min(res, 64)),
     include_svd: 'true',
   });
   if (state.checkpointId) qs.set('checkpoint_id', state.checkpointId);
+  if (state.secondaryModelId && renderer.colorMode === 'conflict') {
+    qs.set('secondary_model_id', state.secondaryModelId);
+  }
+  if (state.activeCrop) {
+    qs.set('r0', String(state.activeCrop[0]));
+    qs.set('r1', String(state.activeCrop[1]));
+    qs.set('c0', String(state.activeCrop[2]));
+    qs.set('c1', String(state.activeCrop[3]));
+  }
 
-  const detail = await apiGet(`/models/tensor?${qs.toString()}`);
+  const [detail, binGrid] = await Promise.all([
+    apiGet(`/models/tensor?${qs.toString()}`),
+    useBinary ? fetchBinaryGrid(tensorName, res) : Promise.resolve(null),
+  ]);
   state.tensorDetail = detail;
+  state.binaryGrid = binGrid;
 
-  // Update HUD & left telemetry dock
   $('hud-selected-label').textContent =
     detail.layer !== null ? `L${String(detail.layer).padStart(2, '0')} · ${detail.label}` : detail.label;
   $('hud-delta-pill').classList.toggle('hidden', !detail.edited);
   $('selected-tensor-shape').textContent = `[${detail.shape.join(' × ')}]`;
   $('edit-target-preview').textContent = `${tensorName} [${detail.shape.join('×')}]`;
+  $('btn-reset-crop').classList.toggle('hidden', !state.activeCrop);
 
   const s = detail.stats;
   $('st-frob').textContent = s.frobenius_norm.toFixed(3);
@@ -272,7 +387,6 @@ async function selectTensor(tensorName, { focusCamera = true } = {}) {
   $('st-minmax').textContent = `${s.min.toFixed(2)} / ${s.max.toFixed(2)}`;
   $('st-kurt').textContent = s.kurtosis.toFixed(2);
 
-  // Sync SVD controls
   if (detail.svd) {
     const rank = detail.svd.rank || 1;
     const slider = $('spectral-rank-slider');
@@ -286,7 +400,6 @@ async function selectTensor(tensorName, { focusCamera = true } = {}) {
     $('svd-mode').textContent = detail.svd.mode === 'lora_exact_qr' ? 'LoRA QR' : 'Dense SVD';
   }
 
-  // Outliers list
   const outEl = $('outlier-list');
   outEl.innerHTML = '';
   for (const o of detail.grid.outliers || []) {
@@ -296,8 +409,9 @@ async function selectTensor(tensorName, { focusCamera = true } = {}) {
     outEl.appendChild(row);
   }
 
-  renderer.setData({ tensorDetail: detail, selectedTensorName: tensorName });
+  renderer.setData({ tensorDetail: detail, binaryGrid: binGrid, selectedTensorName: tensorName });
   if (focusCamera) renderer.focusOnTensor(tensorName);
+  if (state.activeOp === 'head_edit' || state.activeOp === 'svd_truncate') renderOpParams();
   redrawVisibleCharts();
 }
 
@@ -378,8 +492,12 @@ function renderLayerTree() {
           <span class="mono-muted">${t.shape.join('×')}</span>
         </div>
       `;
-      row.addEventListener('click', () => selectTensor(t.name, { focusCamera: true }));
+      row.addEventListener('click', () => {
+        state.activeCrop = null;
+        selectTensor(t.name, { focusCamera: true });
+      });
       row.addEventListener('dblclick', async () => {
+        state.activeCrop = null;
         await selectTensor(t.name, { focusCamera: false });
         setViewMode('microscope');
       });
@@ -401,7 +519,7 @@ function renderLayerTree() {
 }
 
 // ---------------------------------------------------------------------------
-// Topbar, Camera, Mode Switching & Overlays
+// Topbar, Camera, Optics & Mode Switching
 // ---------------------------------------------------------------------------
 
 function setViewMode(mode) {
@@ -418,16 +536,20 @@ function setViewMode(mode) {
   } else {
     renderer.setViewMode(mode);
   }
-  if (mode === 'spectral') {
-    redrawVisibleCharts();
-  }
+  if (mode === 'spectral') redrawVisibleCharts();
 }
 
 function updateLegendGradient(colorMode) {
   const bar = $('legend-gradient');
   const lo = $('legend-lo');
   const hi = $('legend-hi');
-  if (colorMode === 'magnitude') {
+  if (colorMode === 'importance') {
+    bar.style.background = 'linear-gradient(90deg, #0d1220 0%, #7c2d12 45%, #f59e0b 78%, #fef08a 100%)';
+    lo.textContent = 'Prunable'; hi.textContent = 'Critical';
+  } else if (colorMode === 'conflict') {
+    bar.style.background = 'linear-gradient(90deg, #ec4899 0%, #141c2c 50%, #10b981 100%)';
+    lo.textContent = 'Conflict'; hi.textContent = 'Aligned';
+  } else if (colorMode === 'magnitude') {
     bar.style.background = 'linear-gradient(90deg, #131924 0%, #0ea5e9 38%, #f59e0b 75%, #fffbeb 100%)';
     lo.textContent = '0.0'; hi.textContent = '|Max|';
   } else if (colorMode === 'delta') {
@@ -454,23 +576,21 @@ function bindTopbarControls() {
     btn.addEventListener('click', () => setViewMode(btn.dataset.mode));
   });
 
-  $('colormap-select').addEventListener('change', (e) => {
+  $('colormap-select').addEventListener('change', async (e) => {
     renderer.colorMode = e.target.value;
     updateLegendGradient(e.target.value);
-    renderer.rebuildScene();
+    if (e.target.value === 'conflict' && state.selectedTensorName) {
+      await selectTensor(state.selectedTensorName, { focusCamera: false });
+    } else {
+      renderer.rebuildScene(true);
+    }
   });
 
-  $('rig-select').addEventListener('change', (e) => {
-    renderer.setRig(e.target.value);
-  });
-
-  $('bloom-slider').addEventListener('input', (e) => {
-    renderer.bloomOverride = Number(e.target.value);
-  });
-
+  $('rig-select').addEventListener('change', (e) => renderer.setRig(e.target.value));
+  $('bloom-slider').addEventListener('input', (e) => { renderer.bloomOverride = Number(e.target.value); });
   $('spread-slider').addEventListener('input', (e) => {
     renderer.layerSpread = Number(e.target.value);
-    renderer.rebuildScene();
+    renderer.rebuildScene(false);
   });
 
   document.querySelectorAll('.cam-btn[data-cam]').forEach((btn) => {
@@ -481,10 +601,29 @@ function bindTopbarControls() {
     renderer.autoOrbit = !renderer.autoOrbit;
     e.currentTarget.classList.toggle('active', renderer.autoOrbit);
   });
-
   $('btn-conduits-toggle').addEventListener('click', (e) => {
     renderer.showConduits = !renderer.showConduits;
     e.currentTarget.classList.toggle('active', renderer.showConduits);
+  });
+  $('btn-reflect-toggle').addEventListener('click', (e) => {
+    renderer.enableReflections = !renderer.enableReflections;
+    e.currentTarget.classList.toggle('active', renderer.enableReflections);
+  });
+  $('btn-shadow-toggle').addEventListener('click', (e) => {
+    renderer.enableShadows = !renderer.enableShadows;
+    e.currentTarget.classList.toggle('active', renderer.enableShadows);
+  });
+  $('btn-ssao-toggle').addEventListener('click', (e) => {
+    renderer.ssaoStrength = renderer.ssaoStrength > 0 ? 0.0 : 0.65;
+    e.currentTarget.classList.toggle('active', renderer.ssaoStrength > 0);
+  });
+  $('btn-dof-toggle').addEventListener('click', (e) => {
+    renderer.dofStrength = renderer.dofStrength > 0 ? 0.0 : 0.72;
+    e.currentTarget.classList.toggle('active', renderer.dofStrength > 0);
+  });
+  $('btn-rulers-toggle').addEventListener('click', (e) => {
+    renderer.showSpatialRulers = !renderer.showSpatialRulers;
+    e.currentTarget.classList.toggle('active', renderer.showSpatialRulers);
   });
 
   $('btn-toggle-brush').addEventListener('click', (e) => {
@@ -498,9 +637,27 @@ function bindTopbarControls() {
     }
   });
 
+  $('btn-zoom-crop').addEventListener('click', async () => {
+    const br = state.brushRegion;
+    if (!br || !state.selectedTensorName) return;
+    state.activeCrop = [br.row_start, br.row_end, br.col_start, br.col_end];
+    renderer.brushRect = null;
+    await selectTensor(state.selectedTensorName, { focusCamera: false });
+    showToast(`Deep-zoomed to rows [${br.row_start}:${br.row_end}] × cols [${br.col_start}:${br.col_end}]`);
+  });
+
+  $('btn-reset-crop').addEventListener('click', async () => {
+    state.activeCrop = null;
+    if (state.selectedTensorName) await selectTensor(state.selectedTensorName, { focusCamera: false });
+  });
+
   $('chk-ghost-overlay').addEventListener('change', (e) => {
     renderer.showGhostOverlay = e.target.checked;
-    renderer.rebuildScene();
+    renderer.rebuildScene(false);
+  });
+  $('chk-head-dividers').addEventListener('change', (e) => {
+    renderer.showHeadDividers = e.target.checked;
+    renderer.rebuildScene(false);
   });
 
   $('microscope-res').addEventListener('change', () => {
@@ -613,7 +770,7 @@ function render3DCallout(pt, hit) {
 }
 
 // ---------------------------------------------------------------------------
-// Workbench Tabs & Surgical Weight Editing
+// Workbench Tabs & Advanced Surgical Weight Editing
 // ---------------------------------------------------------------------------
 
 function bindWorkbenchTabs() {
@@ -622,12 +779,8 @@ function bindWorkbenchTabs() {
       const key = tab.dataset.tab;
       document.querySelectorAll('.wb-tab').forEach((t) => t.classList.toggle('active', t === tab));
       document.querySelectorAll('.wb-pane').forEach((p) => p.classList.toggle('active', p.id === `tab-${key}`));
-      // Highlight LoRA targets in 3D when user enters Finetune tab, clear when leaving
-      if (key === 'finetune') {
-        renderer.setLoraTargets([...state.ftSelectedTargets]);
-      } else {
-        renderer.setLoraTargets([]);
-      }
+      if (key === 'finetune') renderer.setLoraTargets([...state.ftSelectedTargets]);
+      else renderer.setLoraTargets([]);
       setTimeout(redrawVisibleCharts, 30);
     });
   });
@@ -673,19 +826,22 @@ function renderOpParams() {
         <input id="p-scale" type="range" min="0" max="2.5" step="0.05" value="1.25" />
       </label>
     `;
-    $('p-scale').addEventListener('input', (e) => {
-      $('p-scale-val').textContent = `${Number(e.target.value).toFixed(2)}×`;
-    });
+    $('p-scale').addEventListener('input', (e) => { $('p-scale-val').textContent = `${Number(e.target.value).toFixed(2)}×`; });
   } else if (op === 'prune') {
     c.innerHTML = `
+      <label class="field">
+        <span>Pruning Criterion</span>
+        <select id="p-prune-mode" class="precision-select compact">
+          <option value="wanda" selected>Wanda + Fisher Importance (Smart)</option>
+          <option value="percentile">Magnitude Percentile |W|</option>
+        </select>
+      </label>
       <label class="field">
         <span>Target Sparsity <b id="p-prune-val" class="mono-accent">35%</b></span>
         <input id="p-prune" type="range" min="0.05" max="0.95" step="0.05" value="0.35" />
       </label>
     `;
-    $('p-prune').addEventListener('input', (e) => {
-      $('p-prune-val').textContent = `${Math.round(Number(e.target.value) * 100)}%`;
-    });
+    $('p-prune').addEventListener('input', (e) => { $('p-prune-val').textContent = `${Math.round(Number(e.target.value) * 100)}%`; });
   } else if (op === 'clamp') {
     c.innerHTML = `
       <label class="field">
@@ -693,9 +849,7 @@ function renderOpParams() {
         <input id="p-clamp" type="range" min="80" max="99.9" step="0.5" value="98" />
       </label>
     `;
-    $('p-clamp').addEventListener('input', (e) => {
-      $('p-clamp-val').textContent = `P${Number(e.target.value).toFixed(1)}`;
-    });
+    $('p-clamp').addEventListener('input', (e) => { $('p-clamp-val').textContent = `P${Number(e.target.value).toFixed(1)}`; });
   } else if (op === 'svd_truncate') {
     const maxR = state.tensorDetail?.svd?.rank || 16;
     const defR = Math.max(1, Math.floor(maxR * 0.5));
@@ -705,20 +859,52 @@ function renderOpParams() {
         <input id="p-svd" type="range" min="1" max="${maxR}" step="1" value="${defR}" />
       </label>
     `;
-    $('p-svd').addEventListener('input', (e) => {
-      $('p-svd-val').textContent = `k = ${e.target.value} / ${maxR}`;
-    });
-  } else if (op === 'noise') {
+    $('p-svd').addEventListener('input', (e) => { $('p-svd-val').textContent = `k = ${e.target.value} / ${maxR}`; });
+  } else if (op === 'head_edit') {
+    const nh = state.tensorDetail?.head_info?.num_heads || 8;
+    const headOpts = Array.from({ length: nh }, (_, i) => `<option value="${i}">Head H${i}</option>`).join('');
     c.innerHTML = `
       <div class="form-grid-2">
         <label class="field">
-          <span>Gaussian σ</span>
-          <input id="p-sigma" type="number" step="0.002" min="0.0005" max="0.2" value="0.01" class="precision-input mono" />
+          <span>Attention Head (${nh} total)</span>
+          <select id="p-head-idx" class="precision-select compact">${headOpts}</select>
         </label>
         <label class="field">
-          <span>Seed</span>
-          <input id="p-seed" type="number" value="42" class="precision-input mono" />
+          <span>Head Action</span>
+          <select id="p-head-action" class="precision-select compact">
+            <option value="ablate">Ablate (Zero)</option>
+            <option value="scale">Scale Head</option>
+            <option value="prune">Prune Head</option>
+            <option value="invert">Invert Sign</option>
+          </select>
         </label>
+      </div>
+      <label class="field">
+        <span>Scale / Sparsity Value</span>
+        <input id="p-head-val" type="number" step="0.1" value="0.5" class="precision-input mono" />
+      </label>
+    `;
+  } else if (op === 'rank1_edit') {
+    c.innerHTML = `
+      <label class="field">
+        <span>Key Subject (k)</span>
+        <input id="p-r1-subj" class="precision-input" value="Order #77701 refund window" />
+      </label>
+      <label class="field">
+        <span>Target Association (v*)</span>
+        <input id="p-r1-val" class="precision-input" value="Auto-approve within 30 days" />
+      </label>
+      <label class="field">
+        <span>Update Strength <b id="p-r1-str-val" class="mono-accent">0.65</b></span>
+        <input id="p-r1-str" type="range" min="0.1" max="1.5" step="0.05" value="0.65" />
+      </label>
+    `;
+    $('p-r1-str').addEventListener('input', (e) => { $('p-r1-str-val').textContent = Number(e.target.value).toFixed(2); });
+  } else if (op === 'noise') {
+    c.innerHTML = `
+      <div class="form-grid-2">
+        <label class="field"><span>Gaussian σ</span><input id="p-sigma" type="number" step="0.002" min="0.0005" max="0.2" value="0.01" class="precision-input mono" /></label>
+        <label class="field"><span>Seed</span><input id="p-seed" type="number" value="42" class="precision-input mono" /></label>
       </div>
     `;
   } else if (op === 'region_edit') {
@@ -740,28 +926,46 @@ function renderOpParams() {
             <option value="clamp">Clamp Patch</option>
           </select>
         </label>
-        <label class="field">
-          <span>Value</span>
-          <input id="p-reg-val" type="number" step="0.1" value="0.25" class="precision-input mono" />
-        </label>
+        <label class="field"><span>Value</span><input id="p-reg-val" type="number" step="0.1" value="0.25" class="precision-input mono" /></label>
       </div>
     `;
   } else if (op === 'blend') {
     const options = state.models
-      .map((m) => `<option value="${m.model_id}">${m.display_name}</option>`)
+      .map((m) => `<option value="${m.model_id}"${m.model_id === state.secondaryModelId ? ' selected' : ''}>${m.display_name}</option>`)
       .join('');
     c.innerHTML = `
       <label class="field">
-        <span>Secondary Checkpoint</span>
+        <span>Secondary Adapter / Checkpoint</span>
         <select id="p-blend-model" class="precision-select">${options}</select>
       </label>
-      <label class="field">
-        <span>Interpolation λ <b id="p-blend-val" class="mono-accent">0.50</b></span>
-        <input id="p-blend-alpha" type="range" min="0" max="1" step="0.05" value="0.5" />
-      </label>
+      <div class="form-grid-2">
+        <label class="field">
+          <span>Merge Method</span>
+          <select id="p-blend-method" class="precision-select compact">
+            <option value="ties" selected>TIES-Merging</option>
+            <option value="dare">DARE Drop+Rescale</option>
+            <option value="slerp">SLERP Spherical</option>
+            <option value="linear">Linear Lerp</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Weight λ <b id="p-blend-val" class="mono-accent">0.50</b></span>
+          <input id="p-blend-alpha" type="range" min="0" max="1" step="0.05" value="0.5" />
+        </label>
+      </div>
+      <button id="btn-preview-conflict" class="mini-btn full">✦ Visualize 3D Sign-Conflict Map (A vs B)</button>
     `;
-    $('p-blend-alpha').addEventListener('input', (e) => {
-      $('p-blend-val').textContent = Number(e.target.value).toFixed(2);
+    $('p-blend-alpha').addEventListener('input', (e) => { $('p-blend-val').textContent = Number(e.target.value).toFixed(2); });
+    $('p-blend-model').addEventListener('change', (e) => { state.secondaryModelId = e.target.value; });
+    $('btn-preview-conflict').addEventListener('click', async () => {
+      state.secondaryModelId = $('p-blend-model').value;
+      $('colormap-select').value = 'conflict';
+      renderer.colorMode = 'conflict';
+      updateLegendGradient('conflict');
+      setViewMode('microscope');
+      if (state.selectedTensorName) await selectTensor(state.selectedTensorName, { focusCamera: false });
+      const cr = state.binaryGrid?.conflict_rate ?? state.tensorDetail?.conflict_rate ?? 0;
+      showToast(`3D Sign Conflict: ${(cr * 100).toFixed(1)}% opposing signs between Adapter A & B`);
     });
   }
 }
@@ -770,12 +974,8 @@ async function handleApplyEditClick() {
   if (!state.modelId) return;
   const scope = $('edit-scope-select').value;
   let target = state.selectedTensorName;
-  if (scope === 'layer') {
-    const lIdx = state.tensorDetail?.layer ?? 0;
-    target = `layer:${lIdx}`;
-  } else if (scope !== 'selected') {
-    target = scope;
-  }
+  if (scope === 'layer') target = `layer:${state.tensorDetail?.layer ?? 0}`;
+  else if (scope !== 'selected') target = scope;
   if (!target) {
     showToast('Select a tensor first');
     return;
@@ -790,8 +990,9 @@ async function handleApplyEditClick() {
     label = `Scale ×${factor.toFixed(2)}`;
   } else if (op === 'prune') {
     const sparsity = Number($('p-prune').value);
-    params = { mode: 'percentile', sparsity };
-    label = `Prune ${Math.round(sparsity * 100)}%`;
+    const mode = $('p-prune-mode').value;
+    params = { mode, sparsity };
+    label = `${mode === 'wanda' ? 'Wanda' : 'Mag'} Prune ${Math.round(sparsity * 100)}%`;
   } else if (op === 'clamp') {
     const percentile = Number($('p-clamp').value);
     params = { mode: 'percentile', percentile };
@@ -800,6 +1001,20 @@ async function handleApplyEditClick() {
     const rank = Number($('p-svd').value);
     params = { rank };
     label = `SVD Rank-k=${rank}`;
+  } else if (op === 'head_edit') {
+    const head_index = Number($('p-head-idx').value);
+    const action = $('p-head-action').value;
+    const value = Number($('p-head-val').value);
+    params = { head_index, action, value };
+    target = state.selectedTensorName;
+    label = `Head H${head_index} ${action}`;
+  } else if (op === 'rank1_edit') {
+    const subject = $('p-r1-subj').value;
+    const target_fact = $('p-r1-val').value;
+    const strength = Number($('p-r1-str').value);
+    params = { subject, target_fact, strength };
+    target = state.selectedTensorName;
+    label = `ROME Rank-1 (${subject.slice(0, 18)})`;
   } else if (op === 'noise') {
     params = { sigma: Number($('p-sigma').value), seed: Number($('p-seed').value) };
     label = `Noise σ=${params.sigma}`;
@@ -815,11 +1030,13 @@ async function handleApplyEditClick() {
     target = state.selectedTensorName;
     label = `Brush ${params.action} [${params.row_start}:${params.row_end}, ${params.col_start}:${params.col_end}]`;
   } else if (op === 'blend') {
+    const method = $('p-blend-method').value;
     params = {
       secondary_model_id: $('p-blend-model').value,
       alpha: Number($('p-blend-alpha').value),
+      method,
     };
-    label = `Blend λ=${params.alpha.toFixed(2)}`;
+    label = `${method.toUpperCase()} Merge λ=${params.alpha.toFixed(2)}`;
   }
 
   await executeSurgicalEdit(op, target, params, label);
@@ -836,7 +1053,13 @@ async function executeSurgicalEdit(op, target, params, label) {
       label,
     });
     renderer.triggerPulse('backprop');
-    await reloadAfterEdit(`Applied ${res.edit.label} (${res.edit.changed_weights.toLocaleString()} weights Δ=${res.edit.frobenius_delta})`);
+    const d = res.edit.diagnostics || {};
+    const extra = d.protected_mean_cosine
+      ? ` · Drift cos=${d.protected_mean_cosine} (${d.drift_passed ? 'PASS' : 'WARN'})`
+      : d.conflict_rate !== undefined
+        ? ` · Conflict ${(d.conflict_rate * 100).toFixed(1)}%`
+        : '';
+    await reloadAfterEdit(`Applied ${res.edit.label} (${res.edit.changed_weights.toLocaleString()} w${extra})`);
   } catch (err) {
     showToast(`Edit failed: ${err.message}`, 3200);
   }
@@ -870,17 +1093,23 @@ function renderEditHistory() {
 
   const list = $('edit-stack-list');
   if (!edits.length) {
-    list.innerHTML = '<div class="empty-hint">No surgical edits yet. Scale, prune, clamp, or paint a 3D brush patch above.</div>';
+    list.innerHTML = '<div class="empty-hint">No surgical edits yet. Try Scale, Wanda Prune, Head Surgery, ROME Rank-1, or TIES/DARE Merge above.</div>';
     return;
   }
   list.innerHTML = '';
   for (const e of [...edits].reverse()) {
+    const diag = e.diagnostics || {};
+    const diagTag = diag.protected_mean_cosine
+      ? ` · drift=${diag.protected_mean_cosine}`
+      : diag.conflict_rate !== undefined
+        ? ` · conflict=${(diag.conflict_rate * 100).toFixed(0)}%`
+        : '';
     const item = document.createElement('div');
     item.className = `edit-item${e.enabled ? '' : ' disabled'}`;
     item.innerHTML = `
       <div>
         <div class="edit-item-title">${e.label}</div>
-        <div class="edit-item-sub">${e.affected_tensors.length}T · ${e.changed_weights.toLocaleString()} w · Δ‖W‖=${e.frobenius_delta}</div>
+        <div class="edit-item-sub">${e.affected_tensors.length}T · ${e.changed_weights.toLocaleString()} w · Δ‖W‖=${e.frobenius_delta}${diagTag}</div>
       </div>
       <button class="mini-btn" title="Enable/Disable Edit">${e.enabled ? 'ON' : 'OFF'}</button>
     `;
@@ -897,7 +1126,7 @@ function renderEditHistory() {
 }
 
 // ---------------------------------------------------------------------------
-// Finetuning Workbench & Live PyTorch Micro-Finetuning
+// Finetuning Workbench, Curated Datasets & Live PyTorch Trainer
 // ---------------------------------------------------------------------------
 
 async function loadFinetuneCatalog() {
@@ -932,6 +1161,47 @@ async function loadFinetuneCatalog() {
     provSel.appendChild(opt);
   }
   provSel.value = 'runpod_a40';
+}
+
+async function loadDatasets() {
+  try {
+    const res = await apiGet('/finetune/datasets');
+    const sel = $('ft-dataset-select');
+    sel.innerHTML = '';
+    if (!res.datasets?.length) {
+      sel.innerHTML = '<option value="improved/curated.jsonl">No local JSONL found (improved/curated.jsonl)</option>';
+      return;
+    }
+    for (const ds of res.datasets) {
+      const opt = document.createElement('option');
+      opt.value = ds.path;
+      opt.textContent = `${ds.path} (${ds.size_kb} KB)`;
+      sel.appendChild(opt);
+    }
+    state.ftDatasetPath = res.datasets[0].path;
+    await inspectSelectedDataset(state.ftDatasetPath);
+  } catch {
+    // Optional discovery
+  }
+}
+
+async function inspectSelectedDataset(path) {
+  if (!path) return;
+  try {
+    const info = await apiGet(`/finetune/datasets/inspect?path=${encodeURIComponent(path)}`);
+    const rwStr = info.mean_reward !== null ? ` · avgR=${info.mean_reward}` : '';
+    $('dataset-stats-pill').textContent = `${info.total_rows} rows${rwStr}`;
+    const list = $('dataset-preview-list');
+    list.innerHTML = (info.samples || [])
+      .slice(0, 4)
+      .map(
+        (s) =>
+          `<div class="trace-row"><span class="mono-accent">#${s.index}${s.reward !== null ? ` R=${s.reward}` : ''}</span> ${s.preview.replace(/</g, '&lt;')}</div>`
+      )
+      .join('');
+  } catch {
+    $('dataset-stats-pill').textContent = '—';
+  }
 }
 
 function initLoraTargetChipsForModel(struct) {
@@ -984,6 +1254,7 @@ function getCurrentFinetuneConfig() {
     precision: $('ft-precision').value,
     provider: $('ft-provider').value,
     target_modules: [...state.ftSelectedTargets],
+    dataset_path: state.ftDatasetPath || 'improved/curated.jsonl',
     gradient_checkpointing: true,
   };
 }
@@ -1010,7 +1281,8 @@ async function updateFinetuneEstimate() {
       .join('');
     $('vram-legend').innerHTML =
       segs.map((s) => `<span class="vram-item"><span class="vram-swatch" style="background:${s.color}"></span>${s.label} ${s.val.toFixed(1)}G</span>`).join('') +
-      `<span class="vram-item" style="color:#fbbf24">Trainable ${est.trainable_pct.toFixed(2)}% (${formatParams(est.trainable_params)})</span>`;
+      `<span class="vram-item" style="color:#fbbf24">Trainable ${est.trainable_pct.toFixed(2)}% (${formatParams(est.trainable_params)})</span>` +
+      (est.workspace_validated ? '<span class="vram-item" style="color:#34d399">✓ Schema Valid</span>' : '');
 
     const warnBox = $('ft-warnings');
     if (est.warnings?.length) {
@@ -1029,6 +1301,11 @@ function bindFinetuneControls() {
   for (const id of ['ft-lr', 'ft-steps', 'ft-clip', 'ft-kl', 'ft-group', 'ft-batch', 'ft-accum', 'ft-use-lora', 'ft-lora-r', 'ft-lora-alpha', 'ft-precision', 'ft-provider']) {
     $(id).addEventListener('change', updateFinetuneEstimate);
   }
+  $('ft-dataset-select').addEventListener('change', async (e) => {
+    state.ftDatasetPath = e.target.value;
+    await inspectSelectedDataset(state.ftDatasetPath);
+    await updateFinetuneEstimate();
+  });
 
   $('btn-copy-cli').addEventListener('click', () => {
     navigator.clipboard?.writeText($('ft-cli-preview').textContent || '');
@@ -1053,9 +1330,9 @@ function bindFinetuneControls() {
 
 async function startLiveFinetune() {
   if (!state.modelId) return;
-  if (state.ftWs) {
-    state.ftWs.close();
-    state.ftWs = null;
+  if (state.ftStream) {
+    state.ftStream.close();
+    state.ftStream = null;
   }
   state.ftHistory = [];
   const cfg = getCurrentFinetuneConfig();
@@ -1072,9 +1349,8 @@ async function startLiveFinetune() {
   $('btn-ft-stop').disabled = false;
   showToast(`Started live PyTorch ${cfg.algorithm.toUpperCase()} micro-finetuning (${job.total_steps} steps)`);
 
-  // Connect SSE EventSource for live step metrics & 3D backprop pulses (works natively over HTTP/1.1!)
   const es = new EventSource(`${API}/finetune/stream/${job.job_id}`);
-  state.ftWs = es;
+  state.ftStream = es;
 
   let last3DRefresh = 0;
   es.onmessage = async (evt) => {
@@ -1085,7 +1361,6 @@ async function startLiveFinetune() {
       $('ft-step-counter').textContent = `${m.step} / ${m.total_steps}`;
       drawTrainingTelemetryChart($('chart-training'), state.ftHistory);
 
-      // Map per-layer gradient norms directly to glowing 3D backprop heat!
       const heatMap = {};
       const grads = Object.entries(m.layer_grad_norms || {});
       const maxG = Math.max(1e-5, ...grads.map(([, v]) => v));
@@ -1095,14 +1370,13 @@ async function startLiveFinetune() {
       }
       renderer.triggerPulse('backprop', heatMap);
 
-      // Refresh actual 3D crystal heights every 4 steps so user sees real weights morph!
       const now = performance.now();
       if (now - last3DRefresh > 1100 || m.step === m.total_steps) {
         last3DRefresh = now;
         await reloadAfterEdit(null);
       }
     } else if (msg.type === 'completed') {
-      await reloadAfterEdit('Live PyTorch finetuning completed — 3D weights updated!');
+      await reloadAfterEdit('Live PyTorch finetuning completed — 3D weights morphed!');
       finishFinetuneStream('COMPLETED');
     } else if (msg.type === 'failed') {
       showToast(`Finetune failed: ${msg.error}`, 3600);
@@ -1130,9 +1404,9 @@ async function startLiveFinetune() {
 }
 
 function finishFinetuneStream(statusText) {
-  if (state.ftWs) {
-    state.ftWs.close();
-    state.ftWs = null;
+  if (state.ftStream) {
+    state.ftStream.close();
+    state.ftStream = null;
   }
   if (state.ftPollTimer) {
     clearInterval(state.ftPollTimer);
@@ -1149,7 +1423,7 @@ function finishFinetuneStream(statusText) {
 }
 
 // ---------------------------------------------------------------------------
-// Interactive Model Inference & Logit Lens Playground
+// Interactive Model Playground, Causal Activation Patching & Logit Lens
 // ---------------------------------------------------------------------------
 
 async function loadInferenceScenarios() {
@@ -1170,14 +1444,45 @@ async function loadInferenceScenarios() {
   }
 }
 
+function renderActivePatches() {
+  const wrap = $('active-patches-wrap');
+  if (!state.causalPatches.length) {
+    wrap.innerHTML = '<span class="empty-hint" style="padding:2px">No active causal patches (unpatched forward pass).</span>';
+    return;
+  }
+  wrap.innerHTML = '';
+  state.causalPatches.forEach((p, idx) => {
+    const chip = document.createElement('button');
+    chip.className = 'target-chip active';
+    chip.style.borderColor = 'rgba(251, 113, 133, 0.55)';
+    chip.style.color = '#fda4af';
+    chip.textContent = `L${String(p.layer).padStart(2, '0')} · ${p.action} ✕`;
+    chip.addEventListener('click', () => {
+      state.causalPatches.splice(idx, 1);
+      renderActivePatches();
+    });
+    wrap.appendChild(chip);
+  });
+}
+
 function bindInferenceControls() {
-  $('inf-temp').addEventListener('input', (e) => {
-    $('inf-temp-val').textContent = Number(e.target.value).toFixed(2);
-  });
-  $('inf-topp').addEventListener('input', (e) => {
-    $('inf-topp-val').textContent = Number(e.target.value).toFixed(2);
-  });
+  $('inf-temp').addEventListener('input', (e) => { $('inf-temp-val').textContent = Number(e.target.value).toFixed(2); });
+  $('inf-topp').addEventListener('input', (e) => { $('inf-topp-val').textContent = Number(e.target.value).toFixed(2); });
   $('btn-run-infer').addEventListener('click', runModelInference);
+
+  $('btn-add-patch').addEventListener('click', () => {
+    const layer = Number($('patch-layer-select').value || 0);
+    const action = $('patch-action-select').value;
+    state.causalPatches = state.causalPatches.filter((p) => p.layer !== layer);
+    state.causalPatches.push({ layer, action });
+    renderActivePatches();
+    showToast(`Added causal patch: Layer ${layer} → ${action}`);
+  });
+  $('btn-clear-patches').addEventListener('click', () => {
+    state.causalPatches = [];
+    renderActivePatches();
+  });
+  renderActivePatches();
 }
 
 async function runModelInference() {
@@ -1194,10 +1499,16 @@ async function runModelInference() {
     top_p: Number($('inf-topp').value || 0.9),
     max_tokens: Number($('inf-maxtok').value || 48),
     compare_base: $('inf-compare-base').checked,
+    causal_patches: state.causalPatches,
+    endpoint_url: $('inf-endpoint-url').value || '',
+    api_key: $('inf-api-key').value || '',
   });
   state.lastInferResult = res;
 
-  // Fire luminous forward-pass activation wave through the 3D architecture!
+  const badge = $('inf-backend-badge');
+  badge.textContent = (res.execution_backend || 'probe').replace('_', ' ').toUpperCase();
+  badge.classList.toggle('active', res.execution_backend === 'pytorch_hooks' || res.execution_backend === 'remote_vllm');
+
   const actMap = {};
   for (const la of res.active.layer_activations || []) {
     actMap[la.layer] = la.intensity;
@@ -1206,18 +1517,15 @@ async function runModelInference() {
 
   $('inf-latency').textContent = `${res.latency_ms} ms · H=${res.active.mean_entropy}`;
 
-  // Interactive token probability chips
   const stream = $('inf-token-stream');
   stream.innerHTML = '';
   res.active.tokens.forEach((tok, idx) => {
     const span = document.createElement('span');
     span.className = `tok-chip${idx === 0 ? ' selected' : ''}`;
-    // Color-code by confidence (high prob emerald/cyan, high KL shift amber/rose)
     const klGlow = Math.min(1, tok.kl_vs_base * 6);
-    const bg = klGlow > 0.25
+    span.style.background = klGlow > 0.25
       ? `rgba(251, 191, 36, ${0.18 + klGlow * 0.35})`
       : `rgba(56, 189, 248, ${0.10 + tok.prob * 0.28})`;
-    span.style.background = bg;
     span.textContent = tok.token;
     span.title = `p=${(tok.prob * 100).toFixed(1)}% · H=${tok.entropy} · KL=${tok.kl_vs_base}`;
     span.addEventListener('click', () => {
@@ -1228,13 +1536,10 @@ async function runModelInference() {
     stream.appendChild(span);
   });
 
-  if (res.active.tokens.length) {
-    renderTokenLogitLens(res.active.tokens[0]);
-  }
+  if (res.active.tokens.length) renderTokenLogitLens(res.active.tokens[0]);
 
-  // Base vs Edited A/B diff section
   const ab = $('inf-ab-compare');
-  if (res.has_edits && $('inf-compare-base').checked) {
+  if ((res.has_edits || state.causalPatches.length > 0) && $('inf-compare-base').checked) {
     ab.classList.remove('hidden');
     $('inf-base-text').textContent = res.base.text;
     const rd = res.comparison.reward_delta;
@@ -1244,7 +1549,6 @@ async function runModelInference() {
     ab.classList.add('hidden');
   }
 
-  // StateSet Multi-Axis Reward Rubric Bars
   const rw = res.active.rewards;
   $('reward-bars').innerHTML = Object.entries(rw)
     .map(([k, val]) => `
@@ -1255,6 +1559,28 @@ async function runModelInference() {
       </div>
     `)
     .join('');
+
+  // Render Layer-by-Layer Logit Lens Matrix!
+  const lensWrap = $('layer-logit-lens');
+  lensWrap.innerHTML = '';
+  for (const row of res.active.logit_lens || []) {
+    const top1 = row.top_tokens?.[0] || { token: '—', prob: 0 };
+    const el = document.createElement('div');
+    el.className = `lens-row${row.patched ? ' patched' : ''}`;
+    el.title = `Click to focus 3D camera on ${row.name} (H=${row.entropy})`;
+    el.innerHTML = `
+      <span style="color:#94a3b8">${row.name}</span>
+      <span style="color:#fde68a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">"${top1.token}"</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.round(top1.prob * 100)}%"></div></div>
+      <span style="text-align:right">${(top1.prob * 100).toFixed(0)}%</span>
+    `;
+    el.addEventListener('click', () => {
+      const targetLayer = state.structure?.layers?.find((l) => l.index === row.layer);
+      const firstT = targetLayer?.tensors?.[0];
+      if (firstT) selectTensor(firstT.name, { focusCamera: true });
+    });
+    lensWrap.appendChild(el);
+  }
 }
 
 function renderTokenLogitLens(tok) {
@@ -1271,7 +1597,7 @@ function renderTokenLogitLens(tok) {
 }
 
 // ---------------------------------------------------------------------------
-// Verified .safetensors Export Modal
+// Verified .safetensors Export & merge_adapter Effect Probe Modal
 // ---------------------------------------------------------------------------
 
 function bindExportModal() {
@@ -1281,25 +1607,28 @@ function bindExportModal() {
     modal.classList.remove('hidden');
   });
   $('btn-close-export').addEventListener('click', () => modal.classList.add('hidden'));
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) modal.classList.add('hidden');
-  });
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
 
   $('btn-confirm-export').addEventListener('click', async () => {
     if (!state.modelId) return;
     const name = ($('export-name-input').value || '').trim() || `edited-${Date.now()}`;
+    const runProbe = $('export-merge-probe').checked;
     try {
       const manifest = await apiPost('/edits/export', {
         model_id: state.modelId,
         checkpoint_id: state.checkpointId,
         export_name: name,
+        run_merge_probe: runProbe,
       });
       const box = $('export-result-box');
+      const probeHtml = manifest.merge_probe
+        ? `<br/><b>Merge Probe:</b> effect=${manifest.merge_probe.effect_verified ? 'VERIFIED' : 'NONE'} · Δ‖W‖=${manifest.merge_probe.total_delta_frobenius} · keys remapped=${manifest.merge_probe.composite_keys_remapped}`
+        : '';
       box.innerHTML = `
         <b>✓ Exported &amp; Reload-Verified</b><br/>
         File: ${manifest.export_file}<br/>
         SHA-256: ${manifest.sha256.slice(0, 24)}…<br/>
-        Tensors: ${manifest.tensor_count} (${manifest.modified_tensors.length} modified)
+        Tensors: ${manifest.tensor_count} (${manifest.modified_tensors.length} modified)${probeHtml}
       `;
       box.classList.remove('hidden');
       showToast('Verified .safetensors checkpoint exported!');

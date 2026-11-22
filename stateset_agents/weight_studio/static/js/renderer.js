@@ -1,12 +1,14 @@
 /**
- * StateSet 3D Weight Studio — Custom WebGL2 Physically-Based (PBR) 3D Engine.
+ * StateSet 3D Weight Studio v2 — Custom WebGL2 Physically-Based (PBR) 3D Engine.
  *
- * Features:
- * - Chamfered beveled crystal prism & machined chassis procedural geometry
- * - Hardware-instanced rendering of 10,000+ beveled PBR weight columns at 60 FPS
+ * Graphics Features:
+ * - Real-time 1024x1024 PCF soft shadow maps
+ * - Real-time planar optical-bench floor reflections (half-res mirrored camera pass)
+ * - Screen-space depth-crevice SSAO + Optical Bokeh Depth-of-Field
  * - Multi-pass HDR FBO + Dual-tier Gaussian Bloom + ACES Filmic Tonemapping
- * - 4 interactive 3D scenes: Architecture Tower, Tensor Microscope 3D, SVD Spectrometer, Trajectory 4D
- * - Smooth spring-damped Orbit / Pan / Zoom / Fly-To camera + accurate raycast picking & 3D brush
+ * - Smooth 60 FPS GPU-uploaded liquid-crystal morphing across edits, checkpoints & live finetuning
+ * - Supports 128x128 (16,384 crystals!) binary Float32Array Microscope grids + GQA head dividers
+ * - Screen-projected 3D spatial rulers (Layer IDs, Head H0..Hn dividers, SVD stage markers)
  */
 
 import {
@@ -17,6 +19,7 @@ import {
   mat4Invert,
   mat4LookAt,
   mat4Multiply,
+  mat4Ortho,
   mat4Perspective,
   normalize3,
   projectPoint,
@@ -38,19 +41,13 @@ import {
   INSTANCED_PBR_FS,
   INSTANCED_PBR_VS,
   POST_VS,
+  SHADOW_FS,
+  SHADOW_VS,
   SKYBOX_FS,
   SKYBOX_VS,
   STUDIO_RIGS,
 } from './shaders.js';
 
-// ---------------------------------------------------------------------------
-// Procedural Precision Geometry Builders
-// ---------------------------------------------------------------------------
-
-/**
- * Build a unit [-0.5..0.5]^3 chamfered box with 45-degree beveled edges & smooth facet normals.
- * Real edge bevels catch HDR studio softbox glints dramatically better than raw 12-tri cubes.
- */
 function createChamferedBoxGeometry(bevel = 0.085) {
   const positions = [];
   const normals = [];
@@ -66,34 +63,29 @@ function createChamferedBoxGeometry(bevel = 0.085) {
     pushTri(a, c, d, n);
   };
 
-  // 6 inset main faces
-  pushQuad([-b, h, -b], [-b, h, b], [b, h, b], [b, h, -b], [0, 1, 0]);       // +Y top
-  pushQuad([-b, -h, b], [-b, -h, -b], [b, -h, -b], [b, -h, b], [0, -1, 0]);  // -Y bottom
-  pushQuad([h, -b, b], [h, -b, -b], [h, b, -b], [h, b, b], [1, 0, 0]);       // +X
-  pushQuad([-h, -b, -b], [-h, -b, b], [-h, b, b], [-h, b, -b], [-1, 0, 0]);  // -X
-  pushQuad([-b, -b, h], [b, -b, h], [b, b, h], [-b, b, h], [0, 0, 1]);       // +Z
-  pushQuad([b, -b, -h], [-b, -b, -h], [-b, b, -h], [b, b, -h], [0, 0, -1]);  // -Z
+  pushQuad([-b, h, -b], [-b, h, b], [b, h, b], [b, h, -b], [0, 1, 0]);
+  pushQuad([-b, -h, b], [-b, -h, -b], [b, -h, -b], [b, -h, b], [0, -1, 0]);
+  pushQuad([h, -b, b], [h, -b, -b], [h, b, -b], [h, b, b], [1, 0, 0]);
+  pushQuad([-h, -b, -b], [-h, -b, b], [-h, b, b], [-h, b, -b], [-1, 0, 0]);
+  pushQuad([-b, -b, h], [b, -b, h], [b, b, h], [-b, b, h], [0, 0, 1]);
+  pushQuad([b, -b, -h], [-b, -b, -h], [-b, b, -h], [b, b, -h], [0, 0, -1]);
 
   const s = Math.SQRT1_2;
-  // 4 top bevel edges
   pushQuad([-b, h, b], [-b, b, h], [b, b, h], [b, h, b], [0, s, s]);
   pushQuad([b, h, -b], [b, b, -h], [-b, b, -h], [-b, h, -b], [0, s, -s]);
   pushQuad([b, h, b], [h, b, b], [h, b, -b], [b, h, -b], [s, s, 0]);
   pushQuad([-b, h, -b], [-h, b, -b], [-h, b, b], [-b, h, b], [-s, s, 0]);
 
-  // 4 bottom bevel edges
   pushQuad([-b, -b, h], [-b, -h, b], [b, -h, b], [b, -b, h], [0, -s, s]);
   pushQuad([b, -b, -h], [b, -h, -b], [-b, -h, -b], [-b, -b, -h], [0, -s, -s]);
   pushQuad([h, -b, b], [b, -h, b], [b, -h, -b], [h, -b, -b], [s, -s, 0]);
   pushQuad([-h, -b, -b], [-b, -h, -b], [-b, -h, b], [-h, -b, b], [-s, -s, 0]);
 
-  // 4 vertical bevel edges
   pushQuad([b, -b, h], [h, -b, b], [h, b, b], [b, b, h], [s, 0, s]);
   pushQuad([h, -b, -b], [b, -b, -h], [b, b, -h], [h, b, -b], [s, 0, -s]);
   pushQuad([-b, -b, -h], [-h, -b, -b], [-h, b, -b], [-b, b, -h], [-s, 0, -s]);
   pushQuad([-h, -b, b], [-b, -b, h], [-b, b, h], [-h, b, b], [-s, 0, s]);
 
-  // 8 corner bevel triangles
   const cNorm = 1.0 / Math.sqrt(3);
   for (const sx of [-1, 1]) {
     for (const sy of [-1, 1]) {
@@ -115,15 +107,12 @@ function createChamferedBoxGeometry(bevel = 0.085) {
   };
 }
 
-/**
- * Extrude smooth cylindrical optical conduit tubes along cubic Bezier curves.
- */
 function createConduitGeometry(curves) {
   const pos = [];
   const norm = [];
   const meta = [];
   const radialSegs = 8;
-  const pathSegs = 18;
+  const pathSegs = 16;
 
   const evalBezier = (p0, p1, p2, p3, t) => {
     const u = 1 - t;
@@ -187,37 +176,70 @@ function createConduitGeometry(curves) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Scientific Colormap & Role Palette Engine
-// ---------------------------------------------------------------------------
-
 const ROLE_STYLES = {
-  linear_attn: { base: [0.16, 0.56, 0.88], rim: [0.35, 0.82, 1.0], metal: 0.65, rough: 0.24 },
-  self_attn: { base: [0.82, 0.55, 0.18], rim: [1.0, 0.78, 0.36], metal: 0.78, rough: 0.22 },
-  mlp: { base: [0.18, 0.72, 0.56], rim: [0.32, 0.94, 0.72], metal: 0.58, rough: 0.26 },
-  norm: { base: [0.58, 0.64, 0.76], rim: [0.80, 0.86, 0.96], metal: 0.85, rough: 0.18 },
-  embedding: { base: [0.64, 0.42, 0.88], rim: [0.85, 0.62, 1.0], metal: 0.55, rough: 0.28 },
-  other: { base: [0.46, 0.54, 0.66], rim: [0.68, 0.76, 0.88], metal: 0.60, rough: 0.30 },
+  linear_attn: { base: [0.16, 0.56, 0.88], metal: 0.65, rough: 0.24 },
+  self_attn: { base: [0.82, 0.55, 0.18], metal: 0.78, rough: 0.22 },
+  mlp: { base: [0.18, 0.72, 0.56], metal: 0.58, rough: 0.26 },
+  norm: { base: [0.58, 0.64, 0.76], metal: 0.85, rough: 0.18 },
+  embedding: { base: [0.64, 0.42, 0.88], metal: 0.55, rough: 0.28 },
+  other: { base: [0.46, 0.54, 0.66], metal: 0.60, rough: 0.30 },
 };
 
-function mapWeightColor(value, absMax, colorMode = 'signed', deltaVal = 0, stdVal = 0.05) {
+function mapWeightColor(
+  value,
+  absMax,
+  colorMode = 'signed',
+  deltaVal = 0,
+  stdVal = 0.05,
+  importanceVal = 0,
+  conflictVal = 0
+) {
   const norm = clamp(value / Math.max(absMax, 1e-8), -1, 1);
   const mag = Math.abs(norm);
 
+  if (colorMode === 'importance') {
+    const t = clamp(importanceVal, 0, 1.2) / 1.2;
+    if (t < 0.28) {
+      const k = t / 0.28;
+      return { rgb: [lerp(0.05, 0.12, k), lerp(0.07, 0.14, k), lerp(0.12, 0.24, k)], emit: 0.01 + k * 0.05 };
+    }
+    if (t < 0.68) {
+      const k = (t - 0.28) / 0.40;
+      return { rgb: [lerp(0.12, 0.92, k), lerp(0.14, 0.42, k), lerp(0.24, 0.08, k)], emit: 0.06 + k * 0.38 };
+    }
+    const k = (t - 0.68) / 0.32;
+    return { rgb: [lerp(0.92, 1.0, k), lerp(0.42, 0.90, k), lerp(0.08, 0.28, k)], emit: 0.44 + k * 0.95 };
+  }
+
+  if (colorMode === 'conflict') {
+    const cMag = clamp(Math.abs(conflictVal) / Math.max(absMax * 0.55, 1e-6), 0, 1);
+    if (cMag < 0.03) return { rgb: [0.08, 0.11, 0.17], emit: 0.02 };
+    if (conflictVal < 0) {
+      // Sign conflict between Adapter A and Adapter B -> blazing electric magenta/rose!
+      return {
+        rgb: [lerp(0.55, 1.0, cMag), lerp(0.08, 0.18, cMag), lerp(0.36, 0.72, cMag)],
+        emit: 0.22 + cMag * 1.15,
+      };
+    }
+    // Sign aligned -> calm luminous emerald
+    return {
+      rgb: [lerp(0.06, 0.14, cMag), lerp(0.35, 0.86, cMag), lerp(0.26, 0.58, cMag)],
+      emit: 0.08 + cMag * 0.48,
+    };
+  }
+
   if (colorMode === 'delta') {
     const dMag = clamp(Math.abs(deltaVal) / Math.max(absMax * 0.45, 1e-6), 0, 1);
-    if (dMag < 0.02) {
-      return { rgb: [0.11, 0.15, 0.22], emit: 0.02 };
-    }
+    if (dMag < 0.02) return { rgb: [0.09, 0.12, 0.18], emit: 0.02 };
     if (deltaVal >= 0) {
       return {
-        rgb: [lerp(0.08, 0.18, dMag), lerp(0.45, 0.98, dMag), lerp(0.32, 0.68, dMag)],
-        emit: 0.25 + dMag * 1.45,
+        rgb: [lerp(0.08, 0.16, dMag), lerp(0.45, 0.96, dMag), lerp(0.32, 0.64, dMag)],
+        emit: 0.22 + dMag * 1.05,
       };
     }
     return {
-      rgb: [lerp(0.55, 0.98, dMag), lerp(0.14, 0.26, dMag), lerp(0.34, 0.58, dMag)],
-      emit: 0.25 + dMag * 1.45,
+      rgb: [lerp(0.55, 0.98, dMag), lerp(0.14, 0.24, dMag), lerp(0.34, 0.56, dMag)],
+      emit: 0.22 + dMag * 1.05,
     };
   }
 
@@ -255,10 +277,7 @@ function mapWeightColor(value, absMax, colorMode = 'signed', deltaVal = 0, stdVa
     return { rgb: [lerp(0.88, 1.0, k), lerp(0.12, 0.52, k), lerp(0.44, 0.78, k)], emit: 0.42 + k * 1.15 };
   }
 
-  // Default: 'signed' diverging Deep Cobalt Sapphire-Cyan <-> Smoked Obsidian <-> Burnished Copper-Gold
-  if (mag < 0.04) {
-    return { rgb: [0.06, 0.08, 0.13], emit: 0.01 };
-  }
+  if (mag < 0.04) return { rgb: [0.06, 0.08, 0.13], emit: 0.01 };
   const t = Math.pow(mag, 0.84);
   if (norm < 0) {
     return {
@@ -271,10 +290,6 @@ function mapWeightColor(value, absMax, colorMode = 'signed', deltaVal = 0, stdVa
     emit: 0.04 + Math.pow(t, 1.5) * 0.72,
   };
 }
-
-// ---------------------------------------------------------------------------
-// WebGL2 Helpers
-// ---------------------------------------------------------------------------
 
 function compileShader(gl, type, src) {
   const shader = gl.createShader(type);
@@ -305,7 +320,7 @@ function createProgram(gl, vsSrc, fsSrc) {
   return prog;
 }
 
-function createFramebuffer(gl, width, height, { withDepth = false, hdr = false } = {}) {
+function createFramebuffer(gl, width, height, { withDepthTex = false, withDepthRb = false, hdr = false } = {}) {
   const fb = gl.createFramebuffer();
   gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
 
@@ -323,8 +338,18 @@ function createFramebuffer(gl, width, height, { withDepth = false, hdr = false }
   }
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
 
+  let depthTex = null;
   let depthRb = null;
-  if (withDepth) {
+  if (withDepthTex) {
+    depthTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, depthTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, width, height, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, depthTex, 0);
+  } else if (withDepthRb) {
     depthRb = gl.createRenderbuffer();
     gl.bindRenderbuffer(gl.RENDERBUFFER, depthRb);
     gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, width, height);
@@ -335,23 +360,46 @@ function createFramebuffer(gl, width, height, { withDepth = false, hdr = false }
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   if (status !== gl.FRAMEBUFFER_COMPLETE) {
     gl.deleteTexture(tex);
+    if (depthTex) gl.deleteTexture(depthTex);
     if (depthRb) gl.deleteRenderbuffer(depthRb);
     gl.deleteFramebuffer(fb);
     return null;
   }
-  return { fb, tex, depthRb, width, height };
+  return { fb, tex, depthTex, depthRb, width, height };
+}
+
+function createShadowFramebuffer(gl, size = 1024) {
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+
+  const depthTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, depthTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, size, size, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, depthTex, 0);
+  gl.drawBuffers([gl.NONE]);
+  gl.readBuffer(gl.NONE);
+
+  const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  if (status !== gl.FRAMEBUFFER_COMPLETE) {
+    gl.deleteTexture(depthTex);
+    gl.deleteFramebuffer(fb);
+    return null;
+  }
+  return { fb, depthTex, width: size, height: size };
 }
 
 function destroyFramebuffer(gl, target) {
   if (!target) return;
   if (target.tex) gl.deleteTexture(target.tex);
+  if (target.depthTex) gl.deleteTexture(target.depthTex);
   if (target.depthRb) gl.deleteRenderbuffer(target.depthRb);
   if (target.fb) gl.deleteFramebuffer(target.fb);
 }
-
-// ---------------------------------------------------------------------------
-// Main WeightStudioRenderer
-// ---------------------------------------------------------------------------
 
 export class WeightStudioRenderer {
   constructor(canvas, callbacks = {}) {
@@ -362,7 +410,7 @@ export class WeightStudioRenderer {
       antialias: true,
       alpha: false,
       depth: true,
-      preserveDrawingBuffer: true, // enables clean 4K PNG screenshot export
+      preserveDrawingBuffer: true,
       powerPreference: 'high-performance',
     });
     if (!gl) {
@@ -371,12 +419,18 @@ export class WeightStudioRenderer {
     this.gl = gl;
     this.hdrSupported = Boolean(gl.getExtension('EXT_color_buffer_float'));
 
-    // Visual settings
+    // Visual realism toggles & settings
     this.rigKey = 'obsidian';
     this.exposureOverride = null;
     this.bloomOverride = null;
+    this.enableReflections = true;
+    this.enableShadows = true;
+    this.ssaoStrength = 0.65;
+    this.dofStrength = 0.0; // toggleable cinematic bokeh DoF!
+    this.showSpatialRulers = true;
+    this.showHeadDividers = true;
     this.colorMode = 'signed';
-    this.viewMode = 'stack'; // stack | microscope | spectral | trajectory
+    this.viewMode = 'stack';
     this.layerSpread = 1.0;
     this.showConduits = true;
     this.showGhostOverlay = true;
@@ -387,49 +441,57 @@ export class WeightStudioRenderer {
     // Spring-damped spherical camera
     this.cam = {
       yaw: 0.62,
-      pitch: 0.44,
+      pitch: 0.42,
       distance: 26,
       target: vec3(0, 1.5, 0),
       goalYaw: 0.62,
-      goalPitch: 0.44,
+      goalPitch: 0.42,
       goalDistance: 26,
       goalTarget: vec3(0, 1.5, 0),
     };
     this.viewProj = new Float32Array(16);
     this.invViewProj = new Float32Array(16);
+    this.lightViewProj = new Float32Array(16);
     this.cameraPos = vec3(0, 10, 22);
 
     // Scene state
     this.structure = null;
     this.tensorDetail = null;
+    this.binaryGrid = null; // optional 128x128 Float32Array binary payload
     this.trajectory = null;
     this.selectedTensorName = null;
     this.hoveredHit = null;
     this.svdCutoffRank = 16;
     this.activeCheckpointIdx = 0;
 
-    // 3D Microscope Brush selection in grid coordinates
-    this.brushRect = null; // { r0, r1, c0, c1 }
+    // 3D Microscope Brush selection
+    this.brushRect = null;
     this._brushDragging = false;
     this._brushAnchor = null;
 
     // Live activation / backprop pulse state
     this.pulseWave = -1.0;
-    this.pulseMode = 0.0; // 0 forward, 1 backprop
+    this.pulseMode = 0.0;
     this.pulseSpeed = 0.35;
-    this.layerHeat = new Map(); // layerIdx -> 0..1
+    this.layerHeat = new Map();
 
-    // Instance buffers (opaque + translucent pass)
+    // GPU Liquid-Crystal Morphing buffers
+    this._morphPrev = null;
+    this._morphGoal = null;
+    this._morphWork = null;
+    this._morphT = 1.0;
+    this._morphDuration = 0.38;
+
     this.opaqueCount = 0;
     this.transCount = 0;
     this.conduitVertexCount = 0;
     this.hitBoxes = [];
+    this.spatialAnchors = []; // 3D world-space ruler anchors projected every frame
     this.microscopeMeta = null;
     this.footprintSize = [12, 12];
     this.glowCenter = [0, 0, 0];
     this.glowColor = [0.22, 0.58, 0.95];
 
-    // Telemetry
     this.fps = 60;
     this._frameCount = 0;
     this._fpsTimer = performance.now();
@@ -445,6 +507,7 @@ export class WeightStudioRenderer {
 
   _initPrograms() {
     const gl = this.gl;
+    this.progShadow = createProgram(gl, SHADOW_VS, SHADOW_FS);
     this.progSkybox = createProgram(gl, SKYBOX_VS, SKYBOX_FS);
     this.progFloor = createProgram(gl, FLOOR_VS, FLOOR_FS);
     this.progPbr = createProgram(gl, INSTANCED_PBR_VS, INSTANCED_PBR_FS);
@@ -456,18 +519,11 @@ export class WeightStudioRenderer {
 
   _initGeometry() {
     const gl = this.gl;
-
-    // Fullscreen empty VAO for skybox & post passes
     this.emptyVao = gl.createVertexArray();
 
-    // Floor quad VAO
     const floorVerts = new Float32Array([
-      -120, 0, -120,
-      120, 0, -120,
-      120, 0, 120,
-      -120, 0, -120,
-      120, 0, 120,
-      -120, 0, 120,
+      -120, 0, -120, 120, 0, -120, 120, 0, 120,
+      -120, 0, -120, 120, 0, 120, -120, 0, 120,
     ]);
     this.floorVao = gl.createVertexArray();
     gl.bindVertexArray(this.floorVao);
@@ -477,7 +533,6 @@ export class WeightStudioRenderer {
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
 
-    // Chamfered box instanced VAOs (opaque & translucent)
     const box = createChamferedBoxGeometry(0.085);
     this.boxVertexCount = box.vertexCount;
     this.boxPosBuf = gl.createBuffer();
@@ -500,7 +555,7 @@ export class WeightStudioRenderer {
 
       const instBuf = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
-      const stride = 16 * 4; // 4 vec4 attributes
+      const stride = 16 * 4;
       for (let loc = 2; loc <= 5; loc++) {
         gl.enableVertexAttribArray(loc);
         gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, stride, (loc - 2) * 16);
@@ -517,13 +572,11 @@ export class WeightStudioRenderer {
     this.transVao = trn.vao;
     this.transInstBuf = trn.instBuf;
 
-    // Conduit VAO
     this.conduitVao = gl.createVertexArray();
     gl.bindVertexArray(this.conduitVao);
     this.conduitPosBuf = gl.createBuffer();
     this.conduitNormBuf = gl.createBuffer();
     this.conduitMetaBuf = gl.createBuffer();
-
     gl.bindVertexArray(null);
   }
 
@@ -537,7 +590,7 @@ export class WeightStudioRenderer {
       this.canvas.height = h;
     }
 
-    for (const key of ['fboScene', 'fboBright', 'fboBlur1A', 'fboBlur1B', 'fboBlur2A', 'fboBlur2B']) {
+    for (const key of ['fboScene', 'fboReflect', 'fboShadow', 'fboBright', 'fboBlur1A', 'fboBlur1B', 'fboBlur2A', 'fboBlur2B']) {
       destroyFramebuffer(gl, this[key]);
       this[key] = null;
     }
@@ -548,8 +601,11 @@ export class WeightStudioRenderer {
     const qh = Math.max(2, Math.floor(h / 4));
 
     const tryHdr = this.hdrSupported;
-    this.fboScene = createFramebuffer(gl, w, h, { withDepth: true, hdr: tryHdr }) ||
-      createFramebuffer(gl, w, h, { withDepth: true, hdr: false });
+    this.fboScene = createFramebuffer(gl, w, h, { withDepthTex: true, hdr: tryHdr }) ||
+      createFramebuffer(gl, w, h, { withDepthTex: true, hdr: false });
+    this.fboReflect = createFramebuffer(gl, hw, hh, { withDepthRb: true, hdr: tryHdr }) ||
+      createFramebuffer(gl, hw, hh, { withDepthRb: true, hdr: false });
+    this.fboShadow = createShadowFramebuffer(gl, 1024);
     this.fboBright = createFramebuffer(gl, hw, hh, { hdr: tryHdr }) ||
       createFramebuffer(gl, hw, hh, { hdr: false });
     this.fboBlur1A = createFramebuffer(gl, hw, hh, { hdr: tryHdr }) ||
@@ -562,17 +618,13 @@ export class WeightStudioRenderer {
       createFramebuffer(gl, qw, qh, { hdr: false });
 
     this.postReady = Boolean(
-      this.fboScene && this.fboBright && this.fboBlur1A && this.fboBlur1B && this.fboBlur2A && this.fboBlur2B
+      this.fboScene && this.fboScene.depthTex && this.fboBright && this.fboBlur1A && this.fboBlur1B && this.fboBlur2A && this.fboBlur2B
     );
   }
 
   resize() {
     this._initPostBuffers();
   }
-
-  // -------------------------------------------------------------------------
-  // Camera & Interaction Controls
-  // -------------------------------------------------------------------------
 
   setCameraPreset(preset) {
     if (preset === 'iso') {
@@ -633,7 +685,7 @@ export class WeightStudioRenderer {
         );
         this.cam.goalDistance = clamp(this.cam.goalDistance, 9.5, 16.5);
       }
-      this.rebuildScene();
+      this.rebuildScene(false);
     }
   }
 
@@ -646,7 +698,7 @@ export class WeightStudioRenderer {
       for (const [k, v] of Object.entries(layerIntensities)) {
         this.layerHeat.set(Number(k), clamp(Number(v), 0, 1.5));
       }
-      this.rebuildScene();
+      this.rebuildScene(true);
     }
   }
 
@@ -657,11 +709,13 @@ export class WeightStudioRenderer {
   setViewMode(mode) {
     this.viewMode = mode;
     this.brushRect = null;
-    this.rebuildScene();
+    this._morphPrev = null; // hard reset morph across distinct topologies
+    this.rebuildScene(false);
     this._fitCameraToViewMode();
   }
 
-  setData({ structure, tensorDetail, trajectory, selectedTensorName }) {
+  setData({ structure, tensorDetail, binaryGrid, trajectory, selectedTensorName }) {
+    const animateMorph = (tensorDetail !== undefined || structure !== undefined);
     if (structure !== undefined) this.structure = structure;
     if (tensorDetail !== undefined) {
       this.tensorDetail = tensorDetail;
@@ -669,47 +723,49 @@ export class WeightStudioRenderer {
         this.svdCutoffRank = Math.min(this.svdCutoffRank || tensorDetail.svd.rank, tensorDetail.svd.rank);
       }
     }
+    if (binaryGrid !== undefined) this.binaryGrid = binaryGrid;
     if (trajectory !== undefined) this.trajectory = trajectory;
     if (selectedTensorName !== undefined) this.selectedTensorName = selectedTensorName;
-    this.rebuildScene();
+    this.rebuildScene(animateMorph);
   }
 
   setSvdCutoff(rank) {
     this.svdCutoffRank = Math.max(1, rank);
-    if (this.viewMode === 'spectral') this.rebuildScene();
+    if (this.viewMode === 'spectral') this.rebuildScene(true);
   }
 
   setActiveCheckpointIndex(idx) {
     this.activeCheckpointIdx = idx;
-    if (this.viewMode === 'trajectory') this.rebuildScene();
+    if (this.viewMode === 'trajectory') this.rebuildScene(true);
   }
 
   setLoraTargets(targetsList) {
     this.loraTargetHighlight = new Set(targetsList || []);
-    if (this.viewMode === 'stack') this.rebuildScene();
+    if (this.viewMode === 'stack') this.rebuildScene(true);
   }
 
   captureScreenshotDataUrl() {
-    this._renderFrame(0);
+    this._renderFrame();
     return this.canvas.toDataURL('image/png');
   }
 
   // -------------------------------------------------------------------------
-  // Scene Builders (4 High-Detail 3D Modes)
+  // Scene Builders
   // -------------------------------------------------------------------------
 
-  rebuildScene() {
+  rebuildScene(animateMorph = true) {
     const opaque = [];
     const trans = [];
     const curves = [];
     this.hitBoxes = [];
+    this.spatialAnchors = [];
     this.microscopeMeta = null;
 
     const pushInst = (list, x, y, z, sx, sy, sz, rough, metal, r, g, b, emit, flag = 0, alpha = 1, phase = 0, heat = 0) => {
       list.push(x, y, z, sx, sy, sz, rough, metal, r, g, b, emit, flag, alpha, phase, heat);
     };
 
-    if (this.viewMode === 'microscope' && this.tensorDetail) {
+    if (this.viewMode === 'microscope' && (this.binaryGrid || this.tensorDetail)) {
       this._buildMicroscopeScene(opaque, trans, curves, pushInst);
     } else if (this.viewMode === 'spectral' && this.tensorDetail?.svd) {
       this._buildSpectralScene(opaque, trans, curves, pushInst);
@@ -719,7 +775,7 @@ export class WeightStudioRenderer {
       this._buildArchitectureScene(opaque, trans, curves, pushInst);
     }
 
-    this._uploadInstances(opaque, trans, curves);
+    this._uploadInstances(opaque, trans, curves, animateMorph);
   }
 
   _buildArchitectureScene(opaque, trans, curves, pushInst) {
@@ -739,11 +795,9 @@ export class WeightStudioRenderer {
     this.glowCenter = [0, 0, 0];
     this.glowColor = this.pulseMode > 0.5 ? [0.95, 0.42, 0.14] : [0.22, 0.62, 0.96];
 
-    // Twin precision brushed-gold residual highway rails beneath the entire stack
     const railLen = totalZ + 4.4;
     for (const rx of [-waferW * 0.46, waferW * 0.46]) {
       pushInst(opaque, rx, 0.16, 0, 0.24, 0.18, railLen, 0.22, 0.92, 0.85, 0.64, 0.28, 0.18, 0, 1, 0.5, 0);
-      // Optical photon rail conduits running end-to-end
       curves.push({
         p0: [rx, 0.30, zStart - 2.0],
         p1: [rx, 0.34, zStart + totalZ * 0.33],
@@ -755,7 +809,6 @@ export class WeightStudioRenderer {
       });
     }
 
-    // Embedding & LM-Head pedestals at front and rear of the optical bench
     globals.forEach((gt, gIdx) => {
       const isHead = gt.name.includes('head') || gIdx === globals.length - 1;
       const gz = isHead ? zStart + totalZ + 2.3 : zStart - 2.3;
@@ -780,7 +833,7 @@ export class WeightStudioRenderer {
       });
     });
 
-    // Build every Transformer Layer Wafer + Real 8x8 Mini Weight Crystal Reliefs!
+    const labelStep = nLayers > 16 ? 4 : nLayers > 8 ? 2 : 1;
     layers.forEach((layer, li) => {
       const phase = nLayers > 1 ? li / (nLayers - 1) : 0.5;
       const z = zStart + li * zStep;
@@ -788,7 +841,14 @@ export class WeightStudioRenderer {
       const actHeat = this.layerHeat.get(layer.index) || 0;
       const isHybrid = layer.layer_type === 'hybrid_linear_attn';
 
-      // Machined dark anodized titanium wafer chassis
+      if (li % labelStep === 0 || li === nLayers - 1) {
+        this.spatialAnchors.push({
+          pos: [-waferW * 0.5 - 1.05, 0.52, z],
+          text: `L${String(layer.index).padStart(2, '0')}`,
+          kind: isHybrid ? 'cyan' : 'amber',
+        });
+      }
+
       const chassisTint = isHybrid ? [0.10, 0.14, 0.21] : [0.14, 0.13, 0.17];
       pushInst(
         opaque,
@@ -800,7 +860,6 @@ export class WeightStudioRenderer {
         layer.has_edits ? 4 : 0, 1.0, phase, actHeat
       );
 
-      // Left/Right luminous architectural edge LEDs indicating layer type & Frobenius energy
       const ledCol = layer.has_edits
         ? [0.18, 0.95, 0.65]
         : isHybrid
@@ -810,7 +869,6 @@ export class WeightStudioRenderer {
       pushInst(opaque, -waferW * 0.503, 0.46, z, 0.09, 0.16, waferD * 0.86, 0.15, 0.3, ledCol[0], ledCol[1], ledCol[2], ledEmit, 0, 1, phase, actHeat);
       pushInst(opaque, waferW * 0.503, 0.46, z, 0.09, 0.16, waferD * 0.86, 0.15, 0.3, ledCol[0], ledCol[1], ledCol[2], ledEmit, 0, 1, phase, actHeat);
 
-      // Limit displayed modules per wafer cleanly (pair or group if >12 so spacing stays crisp)
       const rawTensors = layer.tensors || [];
       const maxSlots = 12;
       const stepT = rawTensors.length > maxSlots ? Math.ceil(rawTensors.length / maxSlots) : 1;
@@ -830,10 +888,8 @@ export class WeightStudioRenderer {
           this.loraTargetHighlight.size > 0 &&
           [...this.loraTargetHighlight].some((tok) => tensor.name.includes(tok));
         const dimmed = this.loraTargetHighlight.size > 0 && !isLoraMatch;
-
         const flag = isSel ? 2 : isHov ? 1 : tensor.edited ? 4 : 0;
 
-        // Module mounting plinth
         const plinthAlpha = dimmed ? 0.32 : 1.0;
         const plinthList = dimmed ? trans : opaque;
         pushInst(
@@ -848,11 +904,10 @@ export class WeightStudioRenderer {
           flag, plinthAlpha, phase, actHeat
         );
 
-        // Real 3D Weight Crystal Relief Miniature right on top of each module (6x6 or 4x4 pillars)
         const mg = tensor.mini_grid || [];
         const mr = tensor.mini_rows || 8;
         const mc = tensor.mini_cols || 8;
-        const subStep = mCount > 8 ? 2 : 1; // keep total instances sleek (~4k-9k) for silky 60fps
+        const subStep = mCount > 8 ? 2 : 1;
         const outR = Math.max(1, Math.floor(mr / subStep));
         const outC = Math.max(1, Math.floor(mc / subStep));
         const cellW = (modW * 0.86) / outC;
@@ -870,7 +925,9 @@ export class WeightStudioRenderer {
             const cy = 0.69 + h * 0.5;
             if (0.69 + h > peakY) peakY = 0.69 + h;
 
-            const mapped = mapWeightColor(val, mAbs, this.colorMode, tensor.edited ? val * 0.5 : 0, tensor.std || 0.05);
+            const mapped = mapWeightColor(
+              val, mAbs, this.colorMode, tensor.edited ? val * 0.5 : 0, tensor.std || 0.05, mag, val
+            );
             const colR = dimmed ? mapped.rgb[0] * 0.35 : mapped.rgb[0];
             const colG = dimmed ? mapped.rgb[1] * 0.35 : mapped.rgb[1];
             const colB = dimmed ? mapped.rgb[2] * 0.35 : mapped.rgb[2];
@@ -901,7 +958,6 @@ export class WeightStudioRenderer {
         });
       });
 
-      // Inter-layer curved optical signal conduits arcing over the stack
       if (li < nLayers - 1) {
         const zNext = zStart + (li + 1) * zStep;
         const arcH = 1.95 + normRatio * 0.95;
@@ -920,27 +976,84 @@ export class WeightStudioRenderer {
   }
 
   _buildMicroscopeScene(opaque, trans, curves, pushInst) {
+    // Prefer binary Float32Array payload (supports up to 128x128 = 16,384 crystals!)
+    const bin = this.binaryGrid;
     const detail = this.tensorDetail;
-    const grid = detail.grid;
-    const deltaGrid = detail.delta_grid;
-    const rows = grid.rows;
-    const cols = grid.cols;
-    const values = grid.values;
-    const dValues = deltaGrid?.values || null;
-    const absMax = Math.max(grid.abs_max || 0.05, 1e-6);
-    const stdVal = detail.stats?.std || 0.05;
+    const rows = bin ? bin.rows : detail.grid.rows;
+    const cols = bin ? bin.cols : detail.grid.cols;
+    const values = bin ? bin.values : detail.grid.values;
+    const dValues = bin ? bin.delta : (detail?.delta_grid?.values || null);
+    const impValues = bin ? bin.importance : (detail?.importance_grid?.values || null);
+    const confValues = bin ? bin.conflict : (detail?.conflict_grid?.values || null);
+    const absMax = Math.max((bin ? bin.abs_max : detail.grid.abs_max) || 0.05, 1e-6);
+    const deltaAbsMax = Math.max((bin ? bin.delta_abs_max : detail?.delta_grid?.abs_max) || 0.01, 1e-6);
+    const cropBox = bin ? bin.crop : detail.grid.crop;
+    const matShape = bin ? bin.matrix_shape : detail.grid.matrix_shape;
+    const stdVal = detail?.stats?.std || 0.05;
 
     const stageW = 16.4;
     const stageD = 16.4;
     this.footprintSize = [stageW * 0.56, stageD * 0.56];
     this.glowCenter = [0, 0, 0];
-    this.glowColor = detail.edited ? [0.16, 0.88, 0.62] : [0.30, 0.68, 1.0];
+    this.glowColor = detail?.edited ? [0.16, 0.88, 0.62] : [0.30, 0.68, 1.0];
 
-    // Precision machined dark anodized micrometer stage base + gold calibration rails
     pushInst(opaque, 0, 0.22, 0, stageW + 1.1, 0.36, stageD + 1.1, 0.26, 0.84, 0.10, 0.13, 0.18, 0.04, 0, 1, 0.5, 0);
-    // Brass/Gold Row & Column vernier rails
     pushInst(opaque, 0, 0.44, -stageD * 0.5 - 0.35, stageW + 0.6, 0.14, 0.22, 0.20, 0.94, 0.90, 0.68, 0.28, 0.25, 0, 1, 0, 0);
     pushInst(opaque, -stageW * 0.5 - 0.35, 0.44, 0, 0.22, 0.14, stageD + 0.6, 0.20, 0.94, 0.28, 0.78, 0.96, 0.25, 0, 1, 0, 0);
+
+    // Spatial Vernier Row/Col ticks along micrometer rails
+    const [cr0, cr1, cc0, cc1] = cropBox;
+    for (let t = 0; t <= 4; t++) {
+      const frac = t / 4;
+      const rTick = Math.round(lerp(cr0, cr1, frac));
+      const cTick = Math.round(lerp(cc0, cc1, frac));
+      this.spatialAnchors.push({
+        pos: [-stageW * 0.5 - 0.95, 0.56, -stageD * 0.5 + frac * stageD],
+        text: `r${rTick}`,
+        kind: 'cyan',
+      });
+      this.spatialAnchors.push({
+        pos: [-stageW * 0.5 + frac * stageW, 0.56, -stageD * 0.5 - 0.95],
+        text: `c${cTick}`,
+        kind: 'amber',
+      });
+    }
+
+    // GQA Attention-Head Partition Divider Rails right across the 3D crystal stage!
+    const headInfo = detail?.head_info;
+    if (this.showHeadDividers && headInfo?.supports_heads && headInfo.num_heads > 1) {
+      const nh = Math.min(16, headInfo.num_heads);
+      const axis = headInfo.axis;
+      for (let hIdx = 0; hIdx < nh; hIdx++) {
+        const fracStart = hIdx / nh;
+        const fracMid = (hIdx + 0.5) / nh;
+        if (axis === 0) {
+          const zLine = -stageD * 0.5 + fracStart * stageD;
+          if (hIdx > 0) {
+            pushInst(trans, 0, 0.95, zLine, stageW + 0.2, 0.9, 0.04, 0.1, 0.2, 0.35, 0.85, 1.0, 1.1, 0, 0.24, 0.5, 0);
+          }
+          if (nh <= 8 || hIdx % 2 === 0) {
+            this.spatialAnchors.push({
+              pos: [stageW * 0.5 + 0.85, 0.65, -stageD * 0.5 + fracMid * stageD],
+              text: `H${hIdx}`,
+              kind: 'emerald',
+            });
+          }
+        } else {
+          const xLine = -stageW * 0.5 + fracStart * stageW;
+          if (hIdx > 0) {
+            pushInst(trans, xLine, 0.95, 0, 0.04, 0.9, stageD + 0.2, 0.1, 0.2, 0.35, 0.85, 1.0, 1.1, 0, 0.24, 0.5, 0);
+          }
+          if (nh <= 8 || hIdx % 2 === 0) {
+            this.spatialAnchors.push({
+              pos: [-stageW * 0.5 + fracMid * stageW, 0.65, stageD * 0.5 + 0.85],
+              text: `H${hIdx}`,
+              kind: 'emerald',
+            });
+          }
+        }
+      }
+    }
 
     const cellW = stageW / cols;
     const cellD = stageD / rows;
@@ -955,8 +1068,8 @@ export class WeightStudioRenderer {
       cellW,
       cellD,
       baseY,
-      matrixShape: grid.matrix_shape,
-      crop: grid.crop,
+      matrixShape: matShape,
+      crop: cropBox,
       values,
       dValues,
     };
@@ -972,12 +1085,18 @@ export class WeightStudioRenderer {
         const idx = r * cols + c;
         const val = values[idx] || 0;
         const dVal = dValues ? (dValues[idx] || 0) : 0;
+        const impVal = impValues ? (impValues[idx] || 0) : 0;
+        const confVal = confValues ? (confValues[idx] || 0) : 0;
         const cx = -stageW * 0.5 + (c + 0.5) * cellW;
 
-        const metricMag =
-          this.colorMode === 'delta' && dValues
-            ? clamp(Math.abs(dVal) / Math.max(deltaGrid.abs_max || 0.01, 1e-6), 0, 1)
-            : clamp(Math.abs(val) / absMax, 0, 1);
+        let metricMag = clamp(Math.abs(val) / absMax, 0, 1);
+        if (this.colorMode === 'delta' && dValues) {
+          metricMag = clamp(Math.abs(dVal) / deltaAbsMax, 0, 1);
+        } else if (this.colorMode === 'importance' && impValues) {
+          metricMag = clamp(impVal / 1.2, 0, 1);
+        } else if (this.colorMode === 'conflict' && confValues) {
+          metricMag = clamp(Math.abs(confVal) / Math.max(absMax * 0.55, 1e-6), 0, 1);
+        }
 
         const h = 0.07 + Math.pow(metricMag, 0.78) * maxHeight;
         const cy = baseY + h * 0.5;
@@ -992,22 +1111,21 @@ export class WeightStudioRenderer {
         const isEditedCell = Math.abs(dVal) > 1e-6;
         const flag = inBrush ? 3 : isHov ? 1 : (isEditedCell && this.colorMode !== 'delta' ? 4 : 0);
 
-        const mapped = mapWeightColor(val, absMax, this.colorMode, dVal, stdVal);
+        const mapped = mapWeightColor(val, absMax, this.colorMode, dVal, stdVal, impVal, confVal);
         pushInst(
           opaque,
           cx, cy, cz,
-          cellW * 0.84, h, cellD * 0.84,
+          cellW * 0.86, h, cellD * 0.86,
           0.18, 0.36,
           mapped.rgb[0], mapped.rgb[1], mapped.rgb[2],
           mapped.emit,
           flag, 1.0, phase, 0
         );
 
-        // Pre-edit translucent glass ghost pillar showing where weight moved from!
-        if (this.showGhostOverlay && dValues && Math.abs(dVal) > absMax * 0.03) {
+        if (this.showGhostOverlay && dValues && rows <= 64 && Math.abs(dVal) > absMax * 0.03) {
           const origVal = val - dVal;
           const origH = 0.07 + Math.pow(clamp(Math.abs(origVal) / absMax, 0, 1), 0.78) * maxHeight;
-          if (Math.abs(origH - h) > 0.12) {
+          if (Math.abs(origH - h) > 0.14) {
             pushInst(
               trans,
               cx, baseY + origH * 0.5, cz,
@@ -1021,16 +1139,16 @@ export class WeightStudioRenderer {
       }
     }
 
-    // Glowing outlier laser beacons on top 4 peaks
-    for (const out of (grid.outliers || []).slice(0, 4)) {
-      const cx = -stageW * 0.5 + (out.grid_col + 0.5) * cellW;
-      const cz = -stageD * 0.5 + (out.grid_row + 0.5) * cellD;
+    for (const out of (detail?.grid?.outliers || []).slice(0, 4)) {
+      const gx = clamp(out.grid_col, 0, cols - 1);
+      const gz = clamp(out.grid_row, 0, rows - 1);
+      const cx = -stageW * 0.5 + (gx + 0.5) * cellW;
+      const cz = -stageD * 0.5 + (gz + 0.5) * cellD;
       const mag = clamp(Math.abs(out.value) / absMax, 0, 1);
       const topY = baseY + 0.07 + Math.pow(mag, 0.78) * maxHeight;
       pushInst(trans, cx, topY + 0.65, cz, 0.08, 1.2, 0.08, 0.1, 0.2, 1.0, 0.38, 0.72, 1.8, 0, 0.55, 0.5, 0);
     }
 
-    // Perimeter optical diagnostic frame conduits
     curves.push({
       p0: [-stageW * 0.52, 0.55, -stageD * 0.52],
       p1: [0, 0.55, -stageD * 0.55],
@@ -1053,7 +1171,13 @@ export class WeightStudioRenderer {
     this.glowCenter = [0, 0, 0];
     this.glowColor = [0.95, 0.68, 0.24];
 
-    // 1. Central Illuminated Singular Value Spectrometer Arc (z = -3.8)
+    this.spatialAnchors.push(
+      { pos: [-8.2, 2.5, 3.2], text: 'FACTOR A / Vᵀ', kind: 'cyan' },
+      { pos: [8.2, 2.5, 3.2], text: 'FACTOR B / U', kind: 'amber' },
+      { pos: [0, 6.4, -4.0], text: `SPECTRUM Σ (k=${cutoff}/${rank})`, kind: 'emerald' },
+      { pos: [0, 3.8, 3.2], text: 'RANK-k RECONSTRUCTION', kind: 'amber' }
+    );
+
     const specW = 14.5;
     pushInst(opaque, 0, 0.20, -4.0, specW + 1.2, 0.30, 2.8, 0.25, 0.86, 0.11, 0.14, 0.20, 0.05, 0, 1, 0.5, 0);
     const rodStep = specW / rank;
@@ -1063,31 +1187,26 @@ export class WeightStudioRenderer {
       const h = 0.25 + Math.pow(frac, 0.72) * 5.6;
       const x = -specW * 0.5 + (i + 0.5) * rodStep;
       const col = kept
-        ? [lerp(0.24, 1.0, frac), lerp(0.76, 0.78, frac), lerp(1.0, 0.28, frac)]
-        : [0.18, 0.22, 0.30];
+        ? [lerp(0.14, 0.98, frac), lerp(0.62, 0.66, frac), lerp(0.96, 0.16, frac)]
+        : [0.16, 0.20, 0.28];
       const list = kept ? opaque : trans;
       pushInst(
         list,
         x, 0.36 + h * 0.5, -4.0,
         Math.min(0.55, rodStep * 0.68), h, Math.min(0.55, rodStep * 0.68),
-        kept ? 0.16 : 0.45, kept ? 0.68 : 0.25,
+        kept ? 0.18 : 0.45, kept ? 0.68 : 0.25,
         col[0], col[1], col[2],
-        kept ? (0.45 + frac * 1.4) : 0.05,
+        kept ? (0.28 + frac * 0.95) : 0.04,
         0, kept ? 1.0 : 0.28, i / Math.max(rank - 1, 1), 0
       );
     }
 
-    // Translucent 3D Rank-k Cutoff Laser Wall
     const cutX = -specW * 0.5 + cutoff * rodStep;
-    pushInst(trans, cutX, 3.2, -4.0, 0.09, 6.2, 3.0, 0.1, 0.1, 1.0, 0.22, 0.48, 1.85, 0, 0.38, 0.5, 0);
+    pushInst(trans, cutX, 3.2, -4.0, 0.09, 6.2, 3.0, 0.1, 0.1, 1.0, 0.22, 0.48, 1.65, 0, 0.38, 0.5, 0);
 
-    // 2. Left Stage: Factor A / V^T plate (x = -8.2, z = 3.2)
     this._renderMiniFactorPlate(opaque, pushInst, svd.factor_a, -8.2, 3.2, 5.4, 5.4, 1.8, [0.20, 0.68, 0.98]);
-
-    // 3. Right Stage: Factor B / U plate (x = +8.2, z = 3.2)
     this._renderMiniFactorPlate(opaque, pushInst, svd.factor_b, 8.2, 3.2, 5.4, 5.4, 1.8, [0.95, 0.62, 0.22]);
 
-    // 4. Center Foreground Stage: Live Rank-k Reconstructed Surface sum_{i<k} sigma_i u_i v_i^T !
     const uBasis = svd.u_basis;
     const vBasis = svd.v_basis;
     if (uBasis && vBasis) {
@@ -1133,7 +1252,6 @@ export class WeightStudioRenderer {
       }
     }
 
-    // Optical data conduits connecting Factor A & Factor B through Spectrometer to Reconstructed Surface
     curves.push({
       p0: [-8.2, 0.5, 0.5], p1: [-7.5, 2.2, -3.5], p2: [-3.5, 2.2, -4.0], p3: [-1.0, 0.8, -4.0],
       radius: 0.045, lane: 0, intensity: 0.9,
@@ -1218,7 +1336,12 @@ export class WeightStudioRenderer {
       const isAct = si === activeIdx;
       const arr = useDelta ? st.layer_deltas : st.layer_norms;
 
-      // Illuminated checkpoint step rail
+      this.spatialAnchors.push({
+        pos: [-stageW * 0.5 - 1.15, 0.65, cz],
+        text: st.label,
+        kind: isAct ? 'emerald' : 'cyan',
+      });
+
       pushInst(
         opaque,
         0, 0.40, cz,
@@ -1246,11 +1369,9 @@ export class WeightStudioRenderer {
       }
     }
 
-    // Translucent 3D Scanner Plane highlighting active checkpoint step
     const scanZ = -stageD * 0.5 + (activeIdx + 0.5) * cd;
     pushInst(trans, 0, 3.1, scanZ, stageW + 0.9, 5.8, 0.09, 0.1, 0.1, 0.20, 0.95, 0.85, 1.45, 0, 0.26, 0.5, 0);
 
-    // Trajectory conduits along training time
     for (const lx of [-stageW * 0.48, 0, stageW * 0.48]) {
       curves.push({
         p0: [lx, 0.65, -stageD * 0.5],
@@ -1264,11 +1385,25 @@ export class WeightStudioRenderer {
     }
   }
 
-  _uploadInstances(opaque, trans, curves) {
+  _uploadInstances(opaque, trans, curves, animateMorph = true) {
     const gl = this.gl;
-    this.opaqueCount = opaque.length / 16;
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.opaqueInstBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(opaque), gl.DYNAMIC_DRAW);
+    const nextGoal = new Float32Array(opaque);
+    this.opaqueCount = nextGoal.length / 16;
+
+    // Liquid-crystal GPU morphing when instance count matches previous state!
+    if (animateMorph && this._morphGoal && this._morphGoal.length === nextGoal.length && nextGoal.length > 0) {
+      this._morphPrev = new Float32Array(this._morphWork || this._morphGoal);
+      this._morphGoal = nextGoal;
+      this._morphWork = new Float32Array(nextGoal.length);
+      this._morphT = 0.0;
+    } else {
+      this._morphPrev = null;
+      this._morphGoal = nextGoal;
+      this._morphWork = nextGoal;
+      this._morphT = 1.0;
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.opaqueInstBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, nextGoal, gl.DYNAMIC_DRAW);
+    }
 
     this.transCount = trans.length / 16;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.transInstBuf);
@@ -1306,8 +1441,23 @@ export class WeightStudioRenderer {
     }
   }
 
+  _stepMorph(dt) {
+    if (this._morphT >= 1.0 || !this._morphPrev || !this._morphGoal || !this._morphWork) return;
+    this._morphT = Math.min(1.0, this._morphT + dt / this._morphDuration);
+    const e = 1.0 - Math.pow(1.0 - this._morphT, 3.0); // cubic ease-out
+    const prev = this._morphPrev;
+    const goal = this._morphGoal;
+    const work = this._morphWork;
+    for (let i = 0; i < goal.length; i++) {
+      work[i] = prev[i] + (goal[i] - prev[i]) * e;
+    }
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.opaqueInstBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, work, gl.DYNAMIC_DRAW);
+  }
+
   // -------------------------------------------------------------------------
-  // Render Pipeline (HDR Scene -> Dual-Tier Bloom -> ACES Filmic Composite)
+  // Render Pipeline (Shadow -> Reflection -> HDR Scene -> Bloom -> SSAO+DoF+ACES)
   // -------------------------------------------------------------------------
 
   _startLoop() {
@@ -1318,7 +1468,8 @@ export class WeightStudioRenderer {
 
       this._updateCamera(dt);
       this._updatePulse(dt);
-      this._renderFrame(dt);
+      this._stepMorph(dt);
+      this._renderFrame();
 
       this._frameCount++;
       if (now - this._fpsTimer >= 500) {
@@ -1363,6 +1514,15 @@ export class WeightStudioRenderer {
     const view = mat4LookAt(this.cameraPos, this.cam.target, vec3(0, 1, 0));
     mat4Multiply(proj, view, this.viewProj);
     mat4Invert(this.viewProj, this.invViewProj);
+
+    // Light-space orthographic matrix for key softbox shadow mapping
+    const rig = STUDIO_RIGS[this.rigKey] || STUDIO_RIGS.obsidian;
+    const ld = normalize3(rig.keyDir);
+    const lightEye = vec3(ld[0] * 36, ld[1] * 36, ld[2] * 36);
+    const lView = mat4LookAt(lightEye, vec3(0, 1.0, 0), vec3(0, 1, 0));
+    const extent = Math.max(22, this.footprintSize[0] * 1.4, this.footprintSize[1] * 1.3);
+    const lProj = mat4Ortho(-extent, extent, -extent, extent, 2.0, 95.0);
+    mat4Multiply(lProj, lView, this.lightViewProj);
   }
 
   _updatePulse(dt) {
@@ -1376,9 +1536,11 @@ export class WeightStudioRenderer {
     }
   }
 
-  _setPbrUniforms(prog, rig) {
+  _setPbrUniforms(prog, rig, mirrorY = 1.0) {
     const gl = this.gl;
     gl.uniformMatrix4fv(gl.getUniformLocation(prog, 'uViewProj'), false, this.viewProj);
+    gl.uniformMatrix4fv(gl.getUniformLocation(prog, 'uLightViewProj'), false, this.lightViewProj);
+    gl.uniform1f(gl.getUniformLocation(prog, 'uMirrorY'), mirrorY);
     gl.uniform3fv(gl.getUniformLocation(prog, 'uCameraPos'), this.cameraPos);
     gl.uniform3fv(gl.getUniformLocation(prog, 'uBgTop'), rig.bgTop);
     gl.uniform3fv(gl.getUniformLocation(prog, 'uBgHorizon'), rig.bgHorizon);
@@ -1392,6 +1554,15 @@ export class WeightStudioRenderer {
     gl.uniform1f(gl.getUniformLocation(prog, 'uTime'), this._elapsed);
     gl.uniform1f(gl.getUniformLocation(prog, 'uPulseWave'), this.pulseWave);
     gl.uniform1f(gl.getUniformLocation(prog, 'uPulseMode'), this.pulseMode);
+
+    if (this.fboShadow && this.enableShadows && mirrorY > 0) {
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_2D, this.fboShadow.depthTex);
+      gl.uniform1i(gl.getUniformLocation(prog, 'uShadowMap'), 3);
+      gl.uniform1f(gl.getUniformLocation(prog, 'uShadowEnabled'), 1.0);
+    } else {
+      gl.uniform1f(gl.getUniformLocation(prog, 'uShadowEnabled'), 0.0);
+    }
   }
 
   _renderFrame() {
@@ -1400,7 +1571,41 @@ export class WeightStudioRenderer {
     const w = this.canvas.width;
     const h = this.canvas.height;
 
-    // 1. Render 3D scene into HDR scene framebuffer (or screen if post unavailable)
+    // Pass 0: Real-Time PCF Shadow Map (1024x1024 depth pass)
+    if (this.enableShadows && this.fboShadow && this.opaqueCount > 0) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboShadow.fb);
+      gl.viewport(0, 0, this.fboShadow.width, this.fboShadow.height);
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthMask(true);
+      gl.clear(gl.DEPTH_BUFFER_BIT);
+      gl.enable(gl.CULL_FACE);
+      gl.cullFace(gl.FRONT);
+      gl.useProgram(this.progShadow);
+      gl.uniformMatrix4fv(gl.getUniformLocation(this.progShadow, 'uLightViewProj'), false, this.lightViewProj);
+      gl.bindVertexArray(this.opaqueVao);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, this.boxVertexCount, this.opaqueCount);
+      gl.cullFace(gl.BACK);
+    }
+
+    // Pass 0b: Real-Time Planar Floor Reflection (half-res Y-mirrored pass)
+    if (this.enableReflections && this.fboReflect && this.opaqueCount > 0) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboReflect.fb);
+      gl.viewport(0, 0, this.fboReflect.width, this.fboReflect.height);
+      gl.clearColor(rig.bgHorizon[0] * 0.5, rig.bgHorizon[1] * 0.5, rig.bgHorizon[2] * 0.5, 1.0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthMask(true);
+      gl.disable(gl.BLEND);
+      gl.enable(gl.CULL_FACE);
+      gl.cullFace(gl.FRONT); // mirrored Y flips winding
+      gl.useProgram(this.progPbr);
+      this._setPbrUniforms(this.progPbr, rig, -1.0);
+      gl.bindVertexArray(this.opaqueVao);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, this.boxVertexCount, this.opaqueCount);
+      gl.cullFace(gl.BACK);
+    }
+
+    // Pass 1: Main HDR Scene + Readable Depth Buffer
     if (this.postReady) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboScene.fb);
     } else {
@@ -1410,9 +1615,10 @@ export class WeightStudioRenderer {
     gl.clearColor(rig.bgTop[0], rig.bgTop[1], rig.bgTop[2], 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    // 1a. Procedural HDR Studio Dome Skybox
+    // 1a. Studio Dome Skybox
     gl.disable(gl.DEPTH_TEST);
     gl.depthMask(false);
+    gl.disable(gl.CULL_FACE);
     gl.useProgram(this.progSkybox);
     gl.uniformMatrix4fv(gl.getUniformLocation(this.progSkybox, 'uInvViewProj'), false, this.invViewProj);
     gl.uniform3fv(gl.getUniformLocation(this.progSkybox, 'uCameraPos'), this.cameraPos);
@@ -1425,12 +1631,13 @@ export class WeightStudioRenderer {
     gl.bindVertexArray(this.emptyVao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-    // 1b. Precision Optical Bench Floor
+    // 1b. Anodized Optical Bench Floor (with Planar Reflection + Cast Shadows!)
     gl.enable(gl.DEPTH_TEST);
     gl.depthMask(true);
     gl.disable(gl.BLEND);
     gl.useProgram(this.progFloor);
     gl.uniformMatrix4fv(gl.getUniformLocation(this.progFloor, 'uViewProj'), false, this.viewProj);
+    gl.uniformMatrix4fv(gl.getUniformLocation(this.progFloor, 'uLightViewProj'), false, this.lightViewProj);
     gl.uniform1f(gl.getUniformLocation(this.progFloor, 'uFloorY'), 0.0);
     gl.uniform3fv(gl.getUniformLocation(this.progFloor, 'uCameraPos'), this.cameraPos);
     gl.uniform3fv(gl.getUniformLocation(this.progFloor, 'uFloorColor'), rig.floorColor);
@@ -1444,6 +1651,22 @@ export class WeightStudioRenderer {
     gl.uniform3fv(gl.getUniformLocation(this.progFloor, 'uGlowCenter'), this.glowCenter);
     gl.uniform3fv(gl.getUniformLocation(this.progFloor, 'uGlowColor'), this.glowColor);
     gl.uniform1f(gl.getUniformLocation(this.progFloor, 'uTime'), this._elapsed);
+    if (this.enableReflections && this.fboReflect) {
+      gl.activeTexture(gl.TEXTURE4);
+      gl.bindTexture(gl.TEXTURE_2D, this.fboReflect.tex);
+      gl.uniform1i(gl.getUniformLocation(this.progFloor, 'uReflectTex'), 4);
+      gl.uniform1f(gl.getUniformLocation(this.progFloor, 'uReflectStrength'), this.rigKey === 'cleanroom' ? 0.25 : 0.62);
+    } else {
+      gl.uniform1f(gl.getUniformLocation(this.progFloor, 'uReflectStrength'), 0.0);
+    }
+    if (this.enableShadows && this.fboShadow) {
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_2D, this.fboShadow.depthTex);
+      gl.uniform1i(gl.getUniformLocation(this.progFloor, 'uShadowMap'), 3);
+      gl.uniform1f(gl.getUniformLocation(this.progFloor, 'uShadowEnabled'), 1.0);
+    } else {
+      gl.uniform1f(gl.getUniformLocation(this.progFloor, 'uShadowEnabled'), 0.0);
+    }
     gl.bindVertexArray(this.floorVao);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
@@ -1451,7 +1674,7 @@ export class WeightStudioRenderer {
     gl.enable(gl.CULL_FACE);
     gl.cullFace(gl.BACK);
     gl.useProgram(this.progPbr);
-    this._setPbrUniforms(this.progPbr, rig);
+    this._setPbrUniforms(this.progPbr, rig, 1.0);
     if (this.opaqueCount > 0) {
       gl.bindVertexArray(this.opaqueVao);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, this.boxVertexCount, this.opaqueCount);
@@ -1465,6 +1688,7 @@ export class WeightStudioRenderer {
       gl.disable(gl.CULL_FACE);
       gl.useProgram(this.progConduit);
       gl.uniformMatrix4fv(gl.getUniformLocation(this.progConduit, 'uViewProj'), false, this.viewProj);
+      gl.uniform1f(gl.getUniformLocation(this.progConduit, 'uMirrorY'), 1.0);
       gl.uniform3fv(gl.getUniformLocation(this.progConduit, 'uCameraPos'), this.cameraPos);
       gl.uniform1f(gl.getUniformLocation(this.progConduit, 'uTime'), this._elapsed);
       gl.uniform1f(gl.getUniformLocation(this.progConduit, 'uPulseSpeed'), this.pulseSpeed);
@@ -1473,14 +1697,14 @@ export class WeightStudioRenderer {
       gl.drawArrays(gl.TRIANGLES, 0, this.conduitVertexCount);
     }
 
-    // 1e. Translucent Optical Glass / Ghost Pre-Edit Reference Overlay / Rank Cutoff Wall
+    // 1e. Translucent Optical Glass / Ghost Pre-Edit Reference Overlay / Head Dividers
     if (this.transCount > 0) {
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
       gl.depthMask(false);
       gl.enable(gl.CULL_FACE);
       gl.useProgram(this.progPbr);
-      this._setPbrUniforms(this.progPbr, rig);
+      this._setPbrUniforms(this.progPbr, rig, 1.0);
       gl.bindVertexArray(this.transVao);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, this.boxVertexCount, this.transCount);
     }
@@ -1490,7 +1714,7 @@ export class WeightStudioRenderer {
 
     if (!this.postReady) return;
 
-    // 2. HDR Bright-Pass Extraction (half-res)
+    // Pass 2: HDR Bright-Pass Extraction
     gl.disable(gl.DEPTH_TEST);
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboBright.fb);
     gl.viewport(0, 0, this.fboBright.width, this.fboBright.height);
@@ -1498,19 +1722,17 @@ export class WeightStudioRenderer {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.fboScene.tex);
     gl.uniform1i(gl.getUniformLocation(this.progBright, 'uScene'), 0);
-    gl.uniform1f(gl.getUniformLocation(this.progBright, 'uThreshold'), this.rigKey === 'cleanroom' ? 1.35 : 0.82);
+    gl.uniform1f(gl.getUniformLocation(this.progBright, 'uThreshold'), this.rigKey === 'cleanroom' ? 1.35 : 0.85);
     gl.bindVertexArray(this.emptyVao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-    // 3. Separable Gaussian Blur Tier 1 (half-res)
+    // Pass 3-4: Dual-Tier Separable Gaussian Bloom
     this._runBlurPass(this.fboBright.tex, this.fboBlur1A, 1, 0);
     this._runBlurPass(this.fboBlur1A.tex, this.fboBlur1B, 0, 1);
-
-    // 4. Separable Gaussian Blur Tier 2 (quarter-res wider soft halation)
     this._runBlurPass(this.fboBlur1B.tex, this.fboBlur2A, 1.4, 0);
     this._runBlurPass(this.fboBlur2A.tex, this.fboBlur2B, 0, 1.4);
 
-    // 5. Final ACES Filmic Composite to Screen
+    // Pass 5: Final SSAO + Bokeh DoF + ACES Filmic Composite
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, w, h);
     gl.useProgram(this.progComposite);
@@ -1523,20 +1745,30 @@ export class WeightStudioRenderer {
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, this.fboBlur2B.tex);
     gl.uniform1i(gl.getUniformLocation(this.progComposite, 'uBloom2'), 2);
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_2D, this.fboScene.depthTex);
+    gl.uniform1i(gl.getUniformLocation(this.progComposite, 'uDepth'), 5);
+
+    gl.uniform2f(gl.getUniformLocation(this.progComposite, 'uTexelSize'), 1.0 / w, 1.0 / h);
     gl.uniform1f(gl.getUniformLocation(this.progComposite, 'uExposure'), this.exposureOverride ?? rig.exposure);
     gl.uniform1f(gl.getUniformLocation(this.progComposite, 'uBloomStrength'), this.bloomOverride ?? rig.bloomStrength);
+    gl.uniform1f(gl.getUniformLocation(this.progComposite, 'uSsaoStrength'), this.ssaoStrength);
+    gl.uniform1f(gl.getUniformLocation(this.progComposite, 'uDofStrength'), this.dofStrength);
+    gl.uniform1f(gl.getUniformLocation(this.progComposite, 'uFocusDist'), this.cam.distance);
     gl.bindVertexArray(this.emptyVao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-    // Update screen-projected callout for selected/hovered 3D element
+    // Project floating callout & 3D spatial ruler labels
+    const cw = this.canvas.clientWidth;
+    const ch = this.canvas.clientHeight;
     if (this.callbacks.onProjection && this.selectedTensorName && this.viewMode === 'stack') {
       const hit = this.hitBoxes.find((hb) => hb.tensorName === this.selectedTensorName);
       if (hit) {
         const pt = projectPoint(
           [(hit.min[0] + hit.max[0]) * 0.5, hit.max[1] + 0.12, (hit.min[2] + hit.max[2]) * 0.5],
           this.viewProj,
-          this.canvas.clientWidth,
-          this.canvas.clientHeight
+          cw,
+          ch
         );
         this.callbacks.onProjection(pt, hit);
       } else {
@@ -1544,6 +1776,21 @@ export class WeightStudioRenderer {
       }
     } else if (this.callbacks.onProjection) {
       this.callbacks.onProjection(null, null);
+    }
+
+    if (this.callbacks.onSpatialLabels) {
+      if (!this.showSpatialRulers || !this.spatialAnchors.length) {
+        this.callbacks.onSpatialLabels([]);
+      } else {
+        const projected = [];
+        for (const a of this.spatialAnchors) {
+          const p = projectPoint(a.pos, this.viewProj, cw, ch);
+          if (p && p.x > 16 && p.x < cw - 16 && p.y > 46 && p.y < ch - 46) {
+            projected.push({ x: p.x, y: p.y, text: a.text, kind: a.kind });
+          }
+        }
+        this.callbacks.onSpatialLabels(projected);
+      }
     }
   }
 
@@ -1555,17 +1802,13 @@ export class WeightStudioRenderer {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, srcTex);
     gl.uniform1i(gl.getUniformLocation(this.progBlur, 'uTex'), 0);
-    gl.uniform2f(
-      gl.getUniformLocation(this.progBlur, 'uTexelStep'),
-      dx / dstFbo.width,
-      dy / dstFbo.height
-    );
+    gl.uniform2f(gl.getUniformLocation(this.progBlur, 'uTexelStep'), dx / dstFbo.width, dy / dstFbo.height);
     gl.bindVertexArray(this.emptyVao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
   // -------------------------------------------------------------------------
-  // Mouse / Pointer Picking, Orbit/Pan/Zoom, and 3D Surgical Brush
+  // Picking, Orbit/Pan/Zoom, and 3D Surgical Brush
   // -------------------------------------------------------------------------
 
   _pickAtClient(clientX, clientY) {
@@ -1639,7 +1882,7 @@ export class WeightStudioRenderer {
           this._brushDragging = true;
           this._brushAnchor = { r: hit.gridRow, c: hit.gridCol };
           this.brushRect = { r0: hit.gridRow, r1: hit.gridRow, c0: hit.gridCol, c1: hit.gridCol };
-          this.rebuildScene();
+          this.rebuildScene(false);
           this._emitBrushSelection();
           return;
         }
@@ -1659,7 +1902,7 @@ export class WeightStudioRenderer {
             c0: this._brushAnchor.c,
             c1: hit.gridCol,
           };
-          this.rebuildScene();
+          this.rebuildScene(false);
           this._emitBrushSelection();
         }
         return;
@@ -1685,18 +1928,15 @@ export class WeightStudioRenderer {
         return;
       }
 
-      // Hover picking
       const hit = this._pickAtClient(e.clientX, e.clientY);
       const prevKey = this.hoveredHit ? `${this.hoveredHit.tensorName}:${this.hoveredHit.gridRow}:${this.hoveredHit.gridCol}` : '';
       const nextKey = hit ? `${hit.tensorName}:${hit.gridRow}:${hit.gridCol}` : '';
       this.hoveredHit = hit;
       this.canvas.style.cursor = hit ? (this.brushMode && this.viewMode === 'microscope' ? 'crosshair' : 'pointer') : 'grab';
       if (prevKey !== nextKey && (this.viewMode === 'stack' || this.viewMode === 'microscope')) {
-        this.rebuildScene();
+        this.rebuildScene(false);
       }
-      if (this.callbacks.onHover) {
-        this.callbacks.onHover(hit);
-      }
+      if (this.callbacks.onHover) this.callbacks.onHover(hit);
     });
 
     this.canvas.addEventListener('pointerup', (e) => {
@@ -1718,7 +1958,7 @@ export class WeightStudioRenderer {
     this.canvas.addEventListener('dblclick', (e) => {
       const hit = this._pickAtClient(e.clientX, e.clientY);
       if (hit && hit.kind === 'tensor' && this.callbacks.onSelectTensor) {
-        this.callbacks.onSelectTensor(hit.tensorName, true); // double-click opens Microscope 3D!
+        this.callbacks.onSelectTensor(hit.tensorName, true);
       }
     });
 

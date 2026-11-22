@@ -1,8 +1,9 @@
-"""FastAPI router and standalone app for the 3D Weight Studio."""
+"""FastAPI router and standalone app for the StateSet 3D Weight Studio."""
 
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,7 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -60,7 +61,8 @@ class ApplyEditRequest(BaseModel):
     model_id: str
     checkpoint_id: str | None = None
     op: str = Field(
-        ..., pattern="^(scale|prune|svd_truncate|clamp|noise|region_edit|blend)$"
+        ...,
+        pattern="^(scale|prune|svd_truncate|clamp|noise|region_edit|blend|head_edit|rank1_edit)$",
     )
     target: str
     params: dict[str, Any] = Field(default_factory=dict)
@@ -81,6 +83,7 @@ class ExportCheckpointRequest(BaseModel):
     model_id: str
     checkpoint_id: str | None = None
     export_name: str = Field(..., min_length=1, max_length=120)
+    run_merge_probe: bool = False
 
 
 class FinetuneConfigRequest(BaseModel):
@@ -103,6 +106,9 @@ class InferenceRequest(BaseModel):
     max_tokens: int = Field(48, ge=4, le=256)
     seed: int = 42
     compare_base: bool = True
+    causal_patches: list[dict[str, Any]] = Field(default_factory=list)
+    endpoint_url: str = ""
+    api_key: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -155,8 +161,9 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
         model_id: str = Query(...),
         tensor_name: str = Query(...),
         checkpoint_id: str | None = Query(None),
-        resolution: int = Query(64, ge=8, le=96),
+        resolution: int = Query(64, ge=8, le=128),
         include_svd: bool = Query(True),
+        secondary_model_id: str | None = Query(None),
         r0: int | None = Query(None),
         r1: int | None = Query(None),
         c0: int | None = Query(None),
@@ -177,7 +184,46 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
                 resolution=resolution,
                 crop=crop,
                 edited_array=edited,
+                secondary_model_id=secondary_model_id,
                 include_svd=include_svd,
+            )
+        except (KeyError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @api.get("/models/tensor.bin")
+    async def tensor_binary(
+        model_id: str = Query(...),
+        tensor_name: str = Query(...),
+        checkpoint_id: str | None = Query(None),
+        resolution: int = Query(128, ge=8, le=128),
+        secondary_model_id: str | None = Query(None),
+        r0: int | None = Query(None),
+        r1: int | None = Query(None),
+        c0: int | None = Query(None),
+        c1: int | None = Query(None),
+    ) -> Response:
+        """High-speed binary Float32Array transport for up to 128x128 (16K crystal) Microscope grids."""
+        rt = _rt()
+        crop = (
+            (r0, r1, c0, c1)
+            if r0 is not None and r1 is not None and c0 is not None and c1 is not None
+            else None
+        )
+        try:
+            edited = rt.editor.get_edited_tensor(model_id, tensor_name, checkpoint_id)
+            raw_bytes, meta = rt.inspector.build_binary_tensor_payload(
+                model_id,
+                tensor_name,
+                checkpoint_id=checkpoint_id,
+                resolution=resolution,
+                crop=crop,
+                edited_array=edited,
+                secondary_model_id=secondary_model_id,
+            )
+            return Response(
+                content=raw_bytes,
+                media_type="application/octet-stream",
+                headers={"X-Tensor-Meta": json.dumps(meta)},
             )
         except (KeyError, FileNotFoundError) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -230,16 +276,35 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
         rt = _rt()
         try:
             return rt.editor.export_verified_checkpoint(
-                req.model_id, req.export_name, checkpoint_id=req.checkpoint_id
+                req.model_id,
+                req.export_name,
+                checkpoint_id=req.checkpoint_id,
+                run_merge_probe=req.run_merge_probe,
             )
         except (KeyError, ValueError, FileNotFoundError, OSError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # --- Finetuning Workbench ---
+    # --- Finetuning Workbench & Curated Datasets ---
 
     @api.get("/finetune/catalog")
     async def finetune_catalog() -> dict[str, Any]:
         return _rt().finetuner.get_catalog()
+
+    @api.get("/finetune/datasets")
+    async def finetune_datasets() -> dict[str, Any]:
+        ds = _rt().finetuner.list_datasets()
+        return {"datasets": ds, "count": len(ds)}
+
+    @api.get("/finetune/datasets/inspect")
+    async def finetune_dataset_inspect(path: str = Query(...)) -> dict[str, Any]:
+        try:
+            return _rt().finetuner.inspect_dataset(path)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @api.get("/finetune/workspace-runs")
+    async def finetune_workspace_runs() -> dict[str, Any]:
+        return {"runs": _rt().finetuner.list_workspace_runs()}
 
     @api.post("/finetune/estimate")
     async def finetune_estimate(req: FinetuneConfigRequest) -> dict[str, Any]:
@@ -291,8 +356,6 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
 
     @api.get("/finetune/stream/{job_id}")
     async def finetune_sse_stream(job_id: str) -> StreamingResponse:
-        import json as _json
-
         rt = _rt()
         try:
             snapshot = rt.finetuner.get_job(job_id)
@@ -302,13 +365,13 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
         async def _events():
             queue = rt.finetuner.subscribe(job_id)
             try:
-                yield f"data: {_json.dumps({'type': 'snapshot', 'job': snapshot})}\n\n"
+                yield f"data: {json.dumps({'type': 'snapshot', 'job': snapshot})}\n\n"
                 if snapshot.get("status") in {"completed", "failed", "stopped"}:
                     return
                 while True:
                     try:
                         event = await asyncio.wait_for(queue.get(), timeout=15.0)
-                        yield f"data: {_json.dumps(event)}\n\n"
+                        yield f"data: {json.dumps(event)}\n\n"
                         if event.get("type") in {"completed", "failed"}:
                             break
                     except asyncio.TimeoutError:
@@ -324,7 +387,6 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
         rt = _rt()
         queue = rt.finetuner.subscribe(job_id)
         try:
-            # Send current snapshot immediately
             try:
                 await websocket.send_json(
                     {"type": "snapshot", "job": rt.finetuner.get_job(job_id)}
@@ -364,6 +426,9 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
                 max_tokens=req.max_tokens,
                 seed=req.seed,
                 compare_base=req.compare_base,
+                causal_patches=req.causal_patches,
+                endpoint_url=req.endpoint_url,
+                api_key=req.api_key,
             )
         except (KeyError, FileNotFoundError) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -394,7 +459,7 @@ def create_studio_app(workspace_root: Path | None = None) -> FastAPI:
     app = FastAPI(
         title="StateSet 3D Weight Studio",
         description="Interactive 3D neural weight explorer, surgical editor, finetuning workbench & inference playground.",
-        version="1.0.0",
+        version="2.0.0",
     )
     mount_studio_ui(app, runtime=runtime)
 

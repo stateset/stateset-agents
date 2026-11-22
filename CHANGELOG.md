@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Weight Studio v2 visual realism and mechanistic interpretability suite (`stateset_agents/weight_studio/`):
+  - **WebGL2 PBR v2 Pipeline**: real-time planar floor reflections with brushed-metal blur, 1024×1024 PCF soft shadow maps, depth-crevice SSAO, toggleable optical Bokeh Depth-of-Field, 60 FPS liquid-crystal GPU morphing, and screen-projected 3D spatial rulers & GQA attention-head dividers.
+  - **Real PyTorch Hooks, Logit Lens & Causal Patching**: genuine `AutoModelForCausalLM` `register_forward_hook` execution on local causal LM checkpoints, optional live OpenAI/vLLM (`serve-remote`) endpoint probing, clickable Layer-by-Layer Logit Lens (`h_ℓ · W_U`), and interactive per-layer Causal Activation Patching (Ablate, Amplify, Dampen, Invert) with Base-vs-Patched A/B diff.
+  - **Advanced Weight Surgery & Multi-Adapter Merging**: TIES-Merging, DARE, and SLERP merging with a 3D Sign-Conflict colormap (`Map: Sign Conflict`), GQA Per-Head Attention Surgery (`head_edit`), Wanda + diagonal Fisher importance heatmap & smart pruning, ROME/MEMIT Rank-1 associative edits (`rank1_edit`) with automated 12-probe protected-prompt drift verification, and 1-click `merge_adapter` key-remap & `merge_probe.json` export verification.
+  - **Scale & Control-Plane Integration**: multi-shard `model.safetensors.index.json` lazy header discovery, binary `Float32Array` tensor transport (`/api/weight-studio/models/tensor.bin`) supporting 128×128 (16.4K crystal) Microscope deep-zoom cropping, curated JSONL dataset & reward trace browser, and `finetune_workspace` config validation.
+
 ## [0.76.0] - 2026-11-22 — interactive 3D Weight Studio for weight exploration, surgical editing, finetuning, and inference
 
 ### Added

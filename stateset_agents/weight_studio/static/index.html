@@ -16,7 +16,7 @@
         </div>
         <div class="brand-copy">
           <div class="brand-title">STATESET <span class="brand-accent">WEIGHT STUDIO</span></div>
-          <div class="brand-sub">3D Silicon Photonics Inspector · Surgical Editor · RL Finetune Bench</div>
+          <div class="brand-sub">3D Silicon Photonics · Surgical Editor · Mechanistic &amp; RL Finetune Bench</div>
         </div>
       </div>
 
@@ -33,7 +33,7 @@
           <span class="dot dot-cyan"></span>Architecture 3D
         </button>
         <button class="mode-pill" data-mode="microscope" role="tab" aria-selected="false">
-          <span class="dot dot-amber"></span>Microscope 64²
+          <span class="dot dot-amber"></span>Microscope 128²
         </button>
         <button class="mode-pill" data-mode="spectral" role="tab" aria-selected="false">
           <span class="dot dot-violet"></span>SVD Spectral
@@ -44,15 +44,15 @@
       </nav>
 
       <div class="topbar-actions">
-        <div class="colormap-wrap">
-          <select id="colormap-select" class="precision-select compact" title="Weight Color Encoding">
-            <option value="signed">Colormap: Signed (±)</option>
-            <option value="magnitude">Colormap: Magnitude |W|</option>
-            <option value="delta">Colormap: Edit Delta ΔW</option>
-            <option value="gradient">Colormap: Thermal Heat</option>
-            <option value="outlier">Colormap: Outlier Z-Score</option>
-          </select>
-        </div>
+        <select id="colormap-select" class="precision-select compact" title="Weight Color Encoding">
+          <option value="signed">Map: Signed (±)</option>
+          <option value="magnitude">Map: Magnitude |W|</option>
+          <option value="delta">Map: Edit Delta ΔW</option>
+          <option value="importance">Map: Wanda/Fisher</option>
+          <option value="conflict">Map: Sign Conflict</option>
+          <option value="gradient">Map: Thermal Heat</option>
+          <option value="outlier">Map: Outlier Z-Score</option>
+        </select>
 
         <select id="rig-select" class="precision-select compact" title="Studio Lighting Rig">
           <option value="obsidian">Rig: Obsidian Lab</option>
@@ -65,7 +65,7 @@
           <button id="btn-undo" class="action-btn subtle" disabled title="Undo last weight edit">↶</button>
           <button id="btn-redo" class="action-btn subtle" disabled title="Redo weight edit">↷</button>
           <span id="edit-count-badge" class="status-badge">0 EDITS</span>
-          <button id="btn-export-modal" class="action-btn primary" title="Export verified safetensors checkpoint">
+          <button id="btn-export-modal" class="action-btn primary" title="Export verified safetensors & merge probe">
             Export
           </button>
           <button id="btn-screenshot" class="icon-btn" title="Capture 3D Viewport PNG">📷</button>
@@ -86,7 +86,7 @@
           <input id="tensor-search" class="precision-input" type="search" placeholder="Filter layers, q_proj, lora_B, mlp…" />
         </div>
 
-        <!-- Checkpoint Timeline Scrubber (visible for multi-checkpoint trajectories) -->
+        <!-- Checkpoint Timeline Scrubber -->
         <div id="checkpoint-bar" class="checkpoint-strip hidden">
           <div class="strip-head">
             <span class="micro-label">CHECKPOINT TRAJECTORY</span>
@@ -107,7 +107,7 @@
             <span class="micro-label">WEIGHT DISTRIBUTION</span>
             <span id="selected-tensor-shape" class="mono-muted">—</span>
           </div>
-          <canvas id="chart-histogram" class="mini-canvas" height="96"></canvas>
+          <canvas id="chart-histogram" class="mini-canvas" height="92"></canvas>
           <div id="tensor-stats-grid" class="stats-grid">
             <div class="stat-cell"><span class="k">‖W‖_F</span><span class="v" id="st-frob">—</span></div>
             <div class="stat-cell"><span class="k">RMS</span><span class="v" id="st-rms">—</span></div>
@@ -122,6 +122,9 @@
       <!-- CENTER STAGE: Photorealistic WebGL2 PBR 3D Viewport -->
       <main class="viewport-stage">
         <canvas id="gl-canvas" class="gl-canvas"></canvas>
+
+        <!-- Screen-Projected 3D Spatial Rulers & Head Labels -->
+        <div id="spatial-labels-layer" class="spatial-labels-layer"></div>
 
         <!-- Selected Tensor Floating Screen-Space Callout -->
         <div id="callout-3d" class="callout-3d hidden">
@@ -144,16 +147,27 @@
           <!-- Microscope-specific quick bar -->
           <div id="microscope-hud" class="hud-chip glass hidden">
             <button id="btn-toggle-brush" class="mini-pill-btn" title="Paint a 3D surgical region directly on the matrix">
-              ✦ 3D Surgical Brush
+              ✦ 3D Brush
+            </button>
+            <button id="btn-zoom-crop" class="mini-pill-btn" title="Zoom deep into the active 3D Brush patch">
+              ⊕ Crop
+            </button>
+            <button id="btn-reset-crop" class="mini-pill-btn hidden" title="Reset crop to full tensor">
+              Reset Crop
             </button>
             <label class="inline-toggle">
               <input id="chk-ghost-overlay" type="checkbox" checked />
-              <span>Pre-Edit Ghost</span>
+              <span>Ghost</span>
             </label>
-            <select id="microscope-res" class="mini-select" title="3D Crystal Resolution">
-              <option value="32">32×32 (1K)</option>
-              <option value="48">48×48 (2.3K)</option>
-              <option value="64" selected>64×64 (4.1K)</option>
+            <label class="inline-toggle">
+              <input id="chk-head-dividers" type="checkbox" checked />
+              <span>Heads</span>
+            </label>
+            <select id="microscope-res" class="mini-select" title="3D Crystal Resolution (128x128 uses binary Float32 stream)">
+              <option value="32">32² (1K)</option>
+              <option value="64" selected>64² (4K)</option>
+              <option value="96">96² (9.2K Bin)</option>
+              <option value="128">128² (16.4K Bin)</option>
             </select>
           </div>
 
@@ -162,18 +176,18 @@
             <span class="hud-k">RANK CUTOFF k</span>
             <input id="spectral-rank-slider" type="range" min="1" max="32" value="16" class="hud-slider" />
             <span id="spectral-rank-val" class="mono-accent">k=16</span>
-            <button id="btn-apply-svd-rank" class="mini-pill-btn accent">Commit SVD Surgery</button>
+            <button id="btn-apply-svd-rank" class="mini-pill-btn accent">Commit SVD</button>
           </div>
         </div>
 
-        <!-- Top-Right Telemetry & Optical Rig Controls -->
+        <!-- Top-Right Telemetry & Optical Realism Controls -->
         <div class="viewport-hud-topright">
           <div class="hud-chip glass mono-telemetry">
             <span id="hud-fps">60 FPS</span>
             <span class="sep">·</span>
             <span id="hud-instances">0 CRYSTALS</span>
             <span class="sep">·</span>
-            <span>WebGL2 PBR+ACES</span>
+            <span>PBR·SSAO·ACES</span>
           </div>
           <div class="hud-chip glass slider-chip">
             <span class="hud-k">BLOOM</span>
@@ -183,7 +197,7 @@
           </div>
         </div>
 
-        <!-- Bottom-Left Camera & Navigation Dock -->
+        <!-- Bottom-Left Camera & Optical Realism Dock -->
         <div class="viewport-hud-bottomleft">
           <div class="hud-chip glass cam-bar">
             <button class="cam-btn" data-cam="iso" title="Isometric Perspective">ISO</button>
@@ -193,9 +207,14 @@
             <button class="cam-btn" data-cam="reset" title="Reset Camera">FIT</button>
             <span class="sep">|</span>
             <button id="btn-orbit-toggle" class="cam-btn" title="Toggle Auto-Orbit">ORBIT</button>
-            <button id="btn-conduits-toggle" class="cam-btn active" title="Toggle Optical Signal Conduits">RAILS</button>
+            <button id="btn-conduits-toggle" class="cam-btn active" title="Toggle Optical Conduits">RAILS</button>
+            <button id="btn-reflect-toggle" class="cam-btn active" title="Toggle Real-Time Planar Floor Reflections">REFL</button>
+            <button id="btn-shadow-toggle" class="cam-btn active" title="Toggle PCF Soft Shadow Maps">SHDW</button>
+            <button id="btn-ssao-toggle" class="cam-btn active" title="Toggle Depth-Crevice SSAO">SSAO</button>
+            <button id="btn-dof-toggle" class="cam-btn" title="Toggle Optical Bokeh Depth-of-Field">DOF</button>
+            <button id="btn-rulers-toggle" class="cam-btn active" title="Toggle 3D Spatial Rulers">RULER</button>
           </div>
-          <div class="nav-hint">Drag: Orbit · Right-Drag: Pan · Scroll: Zoom · Double-Click: Microscope 3D · Shift+Drag: 3D Brush</div>
+          <div class="nav-hint">Drag: Orbit · Right-Drag: Pan · Scroll: Zoom · Dbl-Click: Microscope · Shift+Drag: 3D Brush</div>
         </div>
 
         <!-- Bottom-Right Colorbar Legend -->
@@ -239,12 +258,13 @@
               <button class="op-chip" data-op="prune">Prune</button>
               <button class="op-chip" data-op="clamp">Clamp</button>
               <button class="op-chip" data-op="svd_truncate">SVD Rank</button>
-              <button class="op-chip" data-op="noise">Perturb</button>
+              <button class="op-chip" data-op="head_edit">Head Surgery</button>
+              <button class="op-chip" data-op="rank1_edit">ROME Rank-1</button>
               <button class="op-chip" data-op="region_edit">3D Brush</button>
-              <button class="op-chip" data-op="blend">Blend</button>
+              <button class="op-chip" data-op="blend">TIES/SLERP</button>
+              <button class="op-chip" data-op="noise">Perturb</button>
             </div>
 
-            <!-- Dynamic Op Parameters -->
             <div id="op-params-container" class="op-params"></div>
 
             <div class="op-action-row">
@@ -259,7 +279,7 @@
               <span id="stack-delta-summary" class="mono-accent">0 modified</span>
             </div>
             <div id="edit-stack-list" class="edit-stack-list">
-              <div class="empty-hint">No surgical edits yet. Scale, prune, clamp, or paint a 3D brush patch above.</div>
+              <div class="empty-hint">No surgical edits yet. Try Scale, Wanda Prune, Head Surgery, ROME Rank-1, or TIES/DARE Merge above.</div>
             </div>
           </div>
         </section>
@@ -343,9 +363,19 @@
             <div id="lora-target-chips" class="chip-wrap"></div>
           </div>
 
+          <!-- Curated Dataset & Reward Traces Card -->
           <div class="section-card">
             <div class="card-title-row">
-              <span class="card-title">VRAM &amp; PROVIDER BUDGET</span>
+              <span class="card-title">CURATED DATASET &amp; REWARD TRACES</span>
+              <span id="dataset-stats-pill" class="mono-muted">—</span>
+            </div>
+            <select id="ft-dataset-select" class="precision-select compact mb-6"></select>
+            <div id="dataset-preview-list" class="trace-list"></div>
+          </div>
+
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">VRAM, WORKSPACE &amp; PROVIDER BUDGET</span>
               <span id="vram-total-label" class="mono-accent">— GB</span>
             </div>
             <select id="ft-provider" class="precision-select compact mb-6"></select>
@@ -359,7 +389,7 @@
               <span class="card-title">LIVE PYTORCH MICRO-FINETUNING</span>
               <span id="ft-step-counter" class="mono-muted">0 / 32</span>
             </div>
-            <canvas id="chart-training" class="mini-canvas tall" height="128"></canvas>
+            <canvas id="chart-training" class="mini-canvas tall" height="124"></canvas>
             <div class="ft-controls">
               <button id="btn-ft-start" class="action-btn primary grow-btn">▶ Start Live Finetune</button>
               <button id="btn-ft-pause" class="action-btn subtle" disabled>⏸</button>
@@ -373,15 +403,12 @@
           </div>
         </section>
 
-        <!-- TAB 3: USE MODEL & A/B ACTIVATION PLAYGROUND -->
+        <!-- TAB 3: USE MODEL, LOGIT LENS & CAUSAL PATCHING PLAYGROUND -->
         <section id="tab-infer" class="wb-pane">
           <div class="section-card">
             <div class="card-title-row">
               <span class="card-title">INTERACTIVE MODEL PLAYGROUND</span>
-              <label class="inline-toggle">
-                <input id="inf-compare-base" type="checkbox" checked />
-                <span>A/B vs Base</span>
-              </label>
+              <span id="inf-backend-badge" class="status-badge">PROBE</span>
             </div>
             <div id="scenario-chips" class="chip-wrap mb-6"></div>
             <label class="field">
@@ -390,7 +417,7 @@
             </label>
             <label class="field mt-6">
               <span>User Prompt</span>
-              <textarea id="inf-prompt" class="precision-textarea" rows="3">Customer says: My order #77701 arrived damaged after 9 days and I was billed twice. Can you refund me?</textarea>
+              <textarea id="inf-prompt" class="precision-textarea" rows="2">Customer says: My order #77701 arrived damaged after 9 days and I was billed twice. Can you refund me?</textarea>
             </label>
             <div class="form-grid-3 mt-6">
               <label class="field">
@@ -406,9 +433,39 @@
                 <input id="inf-maxtok" type="number" min="8" max="128" value="48" class="precision-input mono" />
               </label>
             </div>
-            <button id="btn-run-infer" class="action-btn primary full mt-8">
-              ⚡ Generate &amp; Fire 3D Activation Wave
-            </button>
+            <details class="cli-drawer">
+              <summary>Optional Live vLLM / OpenAI Endpoint (serve-remote)</summary>
+              <div class="form-grid-2 mt-6">
+                <input id="inf-endpoint-url" class="precision-input mono" placeholder="http://127.0.0.1:8000/v1" />
+                <input id="inf-api-key" type="password" class="precision-input mono" placeholder="Bearer token (optional)" />
+              </div>
+            </details>
+            <div class="op-action-row mt-8">
+              <button id="btn-run-infer" class="action-btn primary full">⚡ Generate &amp; Fire 3D Wave</button>
+              <label class="inline-toggle" style="white-space:nowrap">
+                <input id="inf-compare-base" type="checkbox" checked />
+                <span>A/B</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Causal Activation Patching Strip -->
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">CAUSAL ACTIVATION PATCHING</span>
+              <button id="btn-clear-patches" class="mini-btn">Clear</button>
+            </div>
+            <div class="patch-builder">
+              <select id="patch-layer-select" class="precision-select compact"></select>
+              <select id="patch-action-select" class="precision-select compact">
+                <option value="ablate">Ablate (Zero)</option>
+                <option value="amplify">Amplify 2.2×</option>
+                <option value="dampen">Dampen 0.25×</option>
+                <option value="invert">Invert (−h)</option>
+              </select>
+              <button id="btn-add-patch" class="mini-btn">+ Patch</button>
+            </div>
+            <div id="active-patches-wrap" class="chip-wrap mt-6"></div>
           </div>
 
           <div id="infer-results" class="infer-results">
@@ -418,11 +475,11 @@
                 <span id="inf-latency" class="mono-muted">—</span>
               </div>
               <div id="inf-token-stream" class="token-stream">
-                <span class="empty-hint">Run a prompt to inspect token probabilities, KL shift vs base, and 3D layer activations.</span>
+                <span class="empty-hint">Run a prompt to inspect token logits, Layer-by-Layer Logit Lens, and 3D activations.</span>
               </div>
               <div id="inf-ab-compare" class="ab-compare hidden">
                 <div class="ab-row">
-                  <span class="micro-label">BASE MODEL OUTPUT</span>
+                  <span class="micro-label">BASE / UNPATCHED OUTPUT</span>
                   <span id="inf-shift-metrics" class="mono-accent"></span>
                 </div>
                 <div id="inf-base-text" class="base-output-text"></div>
@@ -436,6 +493,17 @@
               </div>
               <div id="logit-bars" class="logit-bars"></div>
               <div id="reward-bars" class="reward-bars mt-8"></div>
+            </div>
+
+            <!-- Layer-by-Layer Logit Lens Matrix -->
+            <div class="section-card">
+              <div class="card-title-row">
+                <span class="card-title">LAYER-BY-LAYER LOGIT LENS (CLICK TO FOCUS 3D)</span>
+                <span class="mono-muted">h_ℓ · W_U</span>
+              </div>
+              <div id="layer-logit-lens" class="lens-list">
+                <div class="empty-hint">Run inference to decode intermediate residual predictions across all layers.</div>
+              </div>
             </div>
           </div>
         </section>
@@ -479,19 +547,23 @@
       </aside>
     </div>
 
-    <!-- Verified Export Modal -->
+    <!-- Verified Export & Merge Effect Probe Modal -->
     <div id="export-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
       <div class="modal-card">
         <div class="card-title-row">
-          <span class="card-title">EXPORT VERIFIED .SAFETENSORS CHECKPOINT</span>
+          <span class="card-title">EXPORT VERIFIED .SAFETENSORS &amp; MERGE PROBE</span>
           <button id="btn-close-export" class="icon-btn">✕</button>
         </div>
         <p class="helper-copy">
-          Writes a new immutable <code>.safetensors</code> checkpoint alongside a SHA-256 <code>edit_manifest.json</code> and verifies exact reload fidelity. Original checkpoints are never modified.
+          Writes a new immutable <code>.safetensors</code> checkpoint with a SHA-256 <code>edit_manifest.json</code> and verifies exact reload fidelity. Original checkpoints are never modified.
         </p>
         <label class="field mt-8">
           <span>Export Directory Name</span>
           <input id="export-name-input" class="precision-input mono" value="surgical-edit-v1" />
+        </label>
+        <label class="inline-toggle mt-8">
+          <input id="export-merge-probe" type="checkbox" checked />
+          <span>Run <code>merge_adapter</code> key-remap &amp; effect probe (<code>merge_probe.json</code>)</span>
         </label>
         <div id="export-result-box" class="export-result hidden"></div>
         <div class="op-action-row mt-8">
