@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.80.0] - 2026-11-22 — 3D Weight Studio v5 with HF HTTP-Range loader, Quantize 3D Lab, Auto-Sensitivity, MRI cutaway, GPU particles, SSE streaming, telemetry sync & HTML PR reports
+
+### Added
+
+- Weight Studio v5 flagship visual realism, quantization, zero-download HF streaming, sensitivity optimization, telemetry sync, and standalone PR reports (`stateset_agents/weight_studio/`):
+  - **Zero-Download Hugging Face HTTP-Range `.safetensors` Inspector**: added `POST /api/weight-studio/models/register-hf` and HTTP `Range:` header/tensor byte-slice streaming (`register_remote_hf_model`, `_fetch_remote_hf_tensor`) supporting single-file and multi-shard 70B+ HF models without downloading full checkpoints.
+  - **Quantization & AWQ / SmoothQuant 3D Lab**: added `quantize` surgical op supporting `NF4` (exact QLoRA 16-level NormalFloat codebook), `INT4 AWQ`, `FP8` (E4M3), and `INT8` per-channel quantization with optional SmoothQuant outlier-channel protection, SQNR (dB) diagnostics, and `Map: Quant Error` 3D colormap.
+  - **Auto-Sensitivity Profiler & Adaptive Rank/Sparsity Optimizer**: added `POST /api/weight-studio/models/sensitivity` sweeping all layers for Wanda/Fisher salience, effective SVD rank, and outlier ratios to synthesize a 1-click adaptive `.studio-recipe.json`.
+  - **Live Token Streaming & Real `top_logprobs`**: added `POST /api/weight-studio/inference/stream` SSE token streaming and real `logprobs`/`top_logprobs` extraction from live OpenAI / vLLM / Ollama endpoints.
+  - **3D Tomographic MRI Cutaway & GPU Photon Particle Field**: added interactive X/Y/Z optical cutaway plane (`SLICE`) with glowing laser cross-section edge in `INSTANCED_PBR_FS` and a 480-particle GPU-animated optical photon stream (`PARTICLE_VS`/`PARTICLE_FS`, `PTCL`) that bursts on edits and inference waves.
+  - **External Trainer Telemetry Sync**: added `GET /finetune/telemetry-sources` & `POST /finetune/sync-telemetry` parsing local `trainer_state.json`, `metrics.jsonl`, and `wandb-history.jsonl` logs directly into the Finetune workbench with checkpoint hot-reload.
+  - **Shareable Standalone Interactive HTML PR Report**: added `stateset_agents/weight_studio/report_exporter.py` and `POST /api/weight-studio/report/html` generating a zero-dependency single-file HTML report with an embedded orbitable 3D canvas, Batch Eval Gate scorecard, sensitivity breakdown, and copyable recipe JSON.
+
 ## [0.79.0] - 2026-11-22 — 3D Weight Studio v4 with MCP tools, cross-checkpoint Split A|B, SAE feature explorer, training dispatch, docs, quickstart & CI WebGL2 smoke
 
 ### Added

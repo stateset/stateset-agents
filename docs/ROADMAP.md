@@ -1,6 +1,6 @@
 # StateSet Agents roadmap
 
-Current tagged version: **v0.79.0**. [Release notes and package availability](../README.md#whats-new)
+Current tagged version: **v0.80.0**. [Release notes and package availability](../README.md#whats-new)
 
 The roadmap is evidence-driven. A checked box means the behavior exists and
 has retained tests or live evidence; an unchecked box is not a product claim.
@@ -268,7 +268,7 @@ canaries, and binds every benchmark and publish-readiness result to one commit.
 7. Verify trusted publishing for future npm and PyPI releases, configure
    Fireworks and Docker credentials, and retire the scoped PyPI-token fallback
    after the trusted-publisher identity is independently verified.
-   [Published Node.js client](https://www.npmjs.com/package/@stateset/agents/v/0.79.0)
+   [Published Node.js client](https://www.npmjs.com/package/@stateset/agents/v/0.80.0)
 
 ## Contribution policy
 
