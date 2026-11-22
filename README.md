@@ -195,7 +195,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python candidate:** `stateset-agents==0.75.0`, publication pending.
+- **Current Python candidate:** `stateset-agents==0.76.0`, publication pending.
 - **Latest verified PyPI release:** `stateset-agents==0.74.0`. The wheel and source
   distribution on PyPI match the SHA-256 digests of the locally verified builds.
   [Published artifacts](https://pypi.org/project/stateset-agents/0.74.0/#files)
@@ -481,7 +481,13 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**v0.75.0 (latest candidate; publication pending):**
+**v0.76.0 (latest candidate; publication pending):**
+
+- **3D Weight Studio.** `stateset-agents studio` (or `python -m stateset_agents.weight_studio`) launches a browser-based, custom WebGL2 PBR 3D workbench for exploring local `.safetensors` checkpoints and model presets across four 3D views (Architecture Tower, Microscope 64², SVD Spectral, and Trajectory 4D).
+- **Surgical weight editing.** Apply non-destructive Scale, Magnitude Prune, Percentile Clamp, SVD Rank Truncation, Gaussian Perturbation, 3D Brush Region Edits, and Checkpoint Blending with full Undo/Redo history and SHA-256 reload-verified `.safetensors` export.
+- **Interactive finetuning & model probing.** Configure GSPO/GRPO/DAPO/GEPO/VAPO/PPO/SFT runs with live 3D LoRA target highlighting, VRAM/provider cost estimates, live SSE-streamed PyTorch micro-finetuning updates, and Base-vs-Edited A/B inference with Token Logit Lens and 3D activation waves.
+
+**v0.75.0:**
 
 - **Benchmarks as environments.** τ-bench retail and BFCL V4 function calling
   can be used for training and evaluation. The three-arm τ-bench retail study
@@ -654,7 +660,7 @@ pip install "stateset-agents==0.74.0" # latest verified PyPI release
 To install from the corresponding Git tag, run
 
 ```bash
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.75.0"
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.76.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1521,7 +1527,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest candidate `v0.75.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest candidate `v0.76.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — retained test,
   provider, GPU, and publication records for earlier releases.
 

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.76.0] - 2026-11-22 — interactive 3D Weight Studio for weight exploration, surgical editing, finetuning, and inference
+
 ### Added
 
 - Interactive 3D Weight Studio (`stateset-agents studio`, `python -m stateset_agents.weight_studio`, and mounted at `/studio` + `/api/weight-studio/*` on the FastAPI app) for browser-based neural weight exploration, surgical editing, finetuning, and model probing.
