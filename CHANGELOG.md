@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.81.0] - 2026-11-22 — 3D Weight Studio v5
+
 ### Added
 
 - **Interactive 3D WebGL2 Weight Studio (`stateset-agents studio`, `/studio`).**
