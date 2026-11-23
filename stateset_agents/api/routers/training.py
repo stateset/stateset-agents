@@ -4,7 +4,7 @@ Training Router Module
 API endpoints for training job management.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -228,7 +228,9 @@ async def list_training_jobs(
         TrainingJobDetail(
             training_id=job_id,
             status=job.get("status", "unknown"),
-            created_at=job.get("created_at", datetime.utcnow()),
+            created_at=job.get(
+                "created_at", datetime.now(timezone.utc).replace(tzinfo=None)
+            ),
             started_at=job.get("started_at"),
             completed_at=job.get("completed_at"),
             completion_scope=job.get("completion_scope"),
@@ -289,7 +291,9 @@ async def get_training_status(
     return TrainingJobDetail(
         training_id=training_id,
         status=job.get("status", "unknown"),
-        created_at=job.get("created_at", datetime.utcnow()),
+        created_at=job.get(
+            "created_at", datetime.now(timezone.utc).replace(tzinfo=None)
+        ),
         started_at=job.get("started_at"),
         completed_at=job.get("completed_at"),
         completion_scope=job.get("completion_scope"),

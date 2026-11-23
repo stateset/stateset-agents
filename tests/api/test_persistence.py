@@ -10,7 +10,7 @@ Comprehensive tests for database persistence including:
 
 import os
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -235,7 +235,7 @@ class TestInMemoryRepository:
 
         assert updated.name == "Updated"
         # `created_at`/`updated_at` are both independently stamped with
-        # `datetime.utcnow()` (see BaseEntity + Repository.update in
+        # `datetime.now(timezone.utc).replace(tzinfo=None)` (see BaseEntity + Repository.update in
         # stateset_agents/api/persistence.py). On a coarse-resolution
         # system clock (observed on Windows CI, ~15.6ms granularity) a
         # create-then-immediately-update in the same test can legitimately

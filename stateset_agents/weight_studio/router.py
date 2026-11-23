@@ -16,16 +16,23 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from ._stats import authorize_mcp_request
+from ._stats import (
+    SlidingWindowRateLimiter,
+    authorize_mcp_request,
+    get_studio_ingress_config,
+)
 from .canary_engine import CanaryRolloutEngine
 from .editor import WeightEditEngine
 from .finetune_engine import FinetuneStudioEngine
 from .inference_engine import InferenceStudioEngine
 from .inspector import WeightInspector
+from .judge import PluggableRewardJudge
+from .ledger_store import StudioSQLiteStore
 from .live_serving import LiveServingBridge
 from .mcp_bridge import StudioEventBus, handle_mcp_jsonrpc
 from .redteam_engine import RedTeamSurgeryEngine
@@ -41,6 +48,7 @@ class StudioRuntime:
 
     def __init__(self, workspace_root: Path | None = None) -> None:
         self.inspector = WeightInspector(workspace_root=workspace_root)
+        self.store = StudioSQLiteStore(self.inspector.workspace_root)
         self.editor = WeightEditEngine(self.inspector)
         self.finetuner = FinetuneStudioEngine(self.inspector, self.editor)
         self.inference = InferenceStudioEngine(self.inspector, self.editor)
@@ -49,11 +57,19 @@ class StudioRuntime:
         self.tournament = ModelTournamentEngine(
             self.inspector, self.editor, self.inference, self.redteam
         )
-        self.canary = CanaryRolloutEngine(
-            self.inspector, self.editor, self.inference, self.healer, self.redteam
-        )
         self.serving = LiveServingBridge(self.inspector.workspace_root)
-        self.traces = LiveTraceCollector(self.inspector.workspace_root)
+        self.canary = CanaryRolloutEngine(
+            self.inspector,
+            self.editor,
+            self.inference,
+            self.healer,
+            self.redteam,
+            store=self.store,
+            serving=self.serving,
+        )
+        self.traces = LiveTraceCollector(
+            self.inspector.workspace_root, store=self.store
+        )
         self.events = StudioEventBus()
 
 
@@ -352,6 +368,9 @@ class RedTeamRunRequest(BaseModel):
     output_name: str = ""
     lora_rank: int = Field(16, ge=1, le=128)
     lora_alpha: int = Field(32, ge=1, le=512)
+    live_endpoint_url: str = ""
+    live_model: str = ""
+    live_api_key: str = ""
 
 
 class TournamentRunRequest(BaseModel):
@@ -387,6 +406,10 @@ class CanaryGateRequest(BaseModel):
     max_requests: int = Field(6, ge=1, le=20)
     max_asr: float = Field(0.25, ge=0.0, le=1.0)
     record_ledger: bool = True
+    live_endpoint_url: str = ""
+    live_baseline_model: str = ""
+    live_candidate_model: str = ""
+    live_api_key: str = ""
 
 
 class AutopilotReleaseRequest(BaseModel):
@@ -445,6 +468,11 @@ class TraceIngestRequest(BaseModel):
         pattern="^(composite|customer_support|tool_calling|gsm8k)$",
     )
     fail_threshold: float = Field(0.72, ge=0.0, le=1.0)
+    judge_mode: str = Field("heuristic", pattern="^(heuristic|llm_judge|hybrid)$")
+    judge_endpoint_url: str = ""
+    judge_model: str = ""
+    judge_api_key: str = ""
+    judge_weight: float = Field(0.65, ge=0.0, le=1.0)
 
 
 class CalibrationAuditRequest(BaseModel):
@@ -1128,6 +1156,9 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
                 output_name=req.output_name,
                 lora_rank=req.lora_rank,
                 lora_alpha=req.lora_alpha,
+                live_endpoint_url=req.live_endpoint_url,
+                live_model=req.live_model,
+                live_api_key=req.live_api_key,
             )
             rt.events.publish(
                 "studio_redteam",
@@ -1195,6 +1226,10 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
                 max_requests=req.max_requests,
                 max_asr=req.max_asr,
                 record_ledger=req.record_ledger,
+                live_endpoint_url=req.live_endpoint_url,
+                live_baseline_model=req.live_baseline_model,
+                live_candidate_model=req.live_candidate_model,
+                live_api_key=req.live_api_key,
             )
             rt.events.publish(
                 "studio_canary",
@@ -1308,11 +1343,23 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
     async def traces_ingest(req: TraceIngestRequest) -> dict[str, Any]:
         rt = _rt()
         try:
+            judge = (
+                PluggableRewardJudge(
+                    mode=req.judge_mode,
+                    judge_endpoint_url=req.judge_endpoint_url,
+                    judge_model=req.judge_model,
+                    judge_api_key=req.judge_api_key,
+                    judge_weight=req.judge_weight,
+                )
+                if req.judge_mode != "heuristic"
+                else None
+            )
             res = await asyncio.to_thread(
                 rt.traces.ingest_payload,
                 req.payload,
                 reward_fn=req.reward_fn,
                 fail_threshold=req.fail_threshold,
+                judge=judge,
             )
             rt.events.publish(
                 "trace_ingested",
@@ -1323,12 +1370,48 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
                 pulse="forward",
             )
             return res
-        except (ValueError, OSError) as exc:
+        except (ValueError, OSError, RuntimeError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @api.get("/traces/summary")
     async def traces_summary() -> dict[str, Any]:
         return _rt().traces.summary()
+
+    @api.get("/store/traces")
+    async def query_store_traces(
+        failed_only: bool = False,
+        source: str | None = None,
+        search: str | None = None,
+        labeled_only: bool = False,
+        limit: int = Query(50, ge=1, le=500),
+    ) -> dict[str, Any]:
+        rows = _rt().traces.query_traces(
+            failed_only=failed_only,
+            source=source,
+            search=search,
+            labeled_only=labeled_only,
+            limit=limit,
+        )
+        return {"traces": rows, "count": len(rows)}
+
+    @api.get("/store/rollouts")
+    async def query_store_rollouts(
+        decision: str | None = None,
+        model_id: str | None = None,
+        stage: str | None = None,
+        limit: int = Query(50, ge=1, le=500),
+    ) -> dict[str, Any]:
+        rows = _rt().canary.query_rollouts(
+            decision=decision,
+            model_id=model_id,
+            stage=stage,
+            limit=limit,
+        )
+        return {"rollouts": rows, "count": len(rows)}
+
+    @api.get("/store/stats")
+    async def store_stats() -> dict[str, Any]:
+        return _rt().store.stats()
 
     @api.post("/traces/calibration-audit")
     async def traces_calibration_audit(req: CalibrationAuditRequest) -> dict[str, Any]:
@@ -1663,7 +1746,58 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
 
 
 def mount_studio_ui(app: FastAPI, *, runtime: StudioRuntime | None = None) -> None:
-    """Mount the Weight Studio API router and static 3D browser app onto a FastAPI app."""
+    """Mount the Weight Studio API router, ingress security middleware, and 3D browser UI."""
+    ingress_cfg = get_studio_ingress_config()
+    if ingress_cfg["cors_origins"]:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(ingress_cfg["cors_origins"]),
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type", "Mcp-Session-Id"],
+        )
+
+    limiter = SlidingWindowRateLimiter(window_seconds=60.0)
+
+    @app.middleware("http")
+    async def studio_ingress_guard(request: Request, call_next: Any) -> Any:
+        if request.url.path.startswith("/api/weight-studio"):
+            cfg = get_studio_ingress_config()
+            content_len_raw = request.headers.get("content-length")
+            if content_len_raw:
+                try:
+                    if int(content_len_raw) > int(cfg["max_body_bytes"]):
+                        return JSONResponse(
+                            status_code=413,
+                            content={
+                                "detail": (
+                                    f"Request body exceeds limit of {cfg['max_body_bytes']} bytes "
+                                    "(configure STATESET_STUDIO_MAX_BODY_BYTES)."
+                                )
+                            },
+                        )
+                except ValueError:
+                    pass
+
+            rpm = int(cfg["rate_limit_rpm"])
+            if rpm > 0:
+                client_ip = (
+                    request.client.host if request.client is not None else "unknown"
+                )
+                allowed, retry_after = limiter.allow(client_ip, rpm)
+                if not allowed:
+                    return JSONResponse(
+                        status_code=429,
+                        headers={"Retry-After": str(retry_after)},
+                        content={
+                            "detail": (
+                                f"Rate limit exceeded ({rpm} req/min). "
+                                f"Retry after {retry_after}s."
+                            )
+                        },
+                    )
+        return await call_next(request)
+
     app.include_router(build_studio_router(runtime))
 
     if STATIC_DIR.is_dir():

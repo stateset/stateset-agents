@@ -14,7 +14,7 @@ import uuid
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Generic, TypeVar, cast
 
@@ -83,8 +83,12 @@ class BaseEntity:
     """Base class for all persistent entities."""
 
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )
+    updated_at: datetime = field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -228,8 +232,8 @@ class InMemoryRepository(Repository[T]):
     async def create(self, entity: T) -> T:
         """Create a new entity."""
         async with self._lock:
-            entity.created_at = datetime.utcnow()
-            entity.updated_at = datetime.utcnow()
+            entity.created_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            entity.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             self._data[entity.id] = entity
             return entity
 
@@ -242,7 +246,7 @@ class InMemoryRepository(Repository[T]):
         async with self._lock:
             if entity.id not in self._data:
                 raise ValueError(f"Entity {entity.id} not found")
-            entity.updated_at = datetime.utcnow()
+            entity.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             self._data[entity.id] = entity
             return entity
 
@@ -369,8 +373,8 @@ class SQLiteRepository(Repository[T]):
     async def create(self, entity: T) -> T:
         """Create a new entity."""
         await self.connect()
-        entity.created_at = datetime.utcnow()
-        entity.updated_at = datetime.utcnow()
+        entity.created_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        entity.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         self._create_sync(
             entity.id,
             json.dumps(entity.to_dict()),
@@ -418,7 +422,7 @@ class SQLiteRepository(Repository[T]):
     async def update(self, entity: T) -> T:
         """Update an existing entity."""
         await self.connect()
-        entity.updated_at = datetime.utcnow()
+        entity.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         self._update_sync(
             entity.id,
             json.dumps(entity.to_dict()),

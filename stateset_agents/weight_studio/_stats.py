@@ -15,7 +15,11 @@ from __future__ import annotations
 import hmac
 import math
 import os
+import threading
+import time
+from collections import deque
 from pathlib import Path
+from typing import Any
 
 
 def bootstrap_ci_95(
@@ -184,9 +188,66 @@ def spearman_corr(xs: list[float], ys: list[float]) -> float:
     return pearson_corr(_ranks(xs[:n]), _ranks(ys[:n]))
 
 
+def get_studio_ingress_config() -> dict[str, Any]:
+    """Read optional HTTP ingress security limits for Weight Studio endpoints.
+
+    Environment variables:
+    - ``STATESET_STUDIO_MAX_BODY_BYTES``: Maximum request payload size (default 10 MiB).
+    - ``STATESET_STUDIO_RATE_LIMIT_PER_MIN``: Per-client-IP requests/min cap (0 = disabled on localhost).
+    - ``STATESET_STUDIO_CORS_ORIGINS``: Comma-separated CORS allowlist (empty = same-origin only).
+    """
+    try:
+        max_bytes = max(
+            1024,
+            int(
+                os.environ.get("STATESET_STUDIO_MAX_BODY_BYTES", str(10 * 1024 * 1024))
+            ),
+        )
+    except ValueError:
+        max_bytes = 10 * 1024 * 1024
+    try:
+        rpm = max(0, int(os.environ.get("STATESET_STUDIO_RATE_LIMIT_PER_MIN", "0")))
+    except ValueError:
+        rpm = 0
+    raw_origins = os.environ.get("STATESET_STUDIO_CORS_ORIGINS", "").strip()
+    origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
+    return {
+        "max_body_bytes": max_bytes,
+        "rate_limit_rpm": rpm,
+        "cors_origins": origins,
+    }
+
+
+class SlidingWindowRateLimiter:
+    """Thread-safe per-key 60-second sliding-window rate limiter."""
+
+    def __init__(self, window_seconds: float = 60.0) -> None:
+        self.window_seconds = float(window_seconds)
+        self._buckets: dict[str, deque[float]] = {}
+        self._lock = threading.Lock()
+
+    def allow(self, key: str, limit_per_window: int) -> tuple[bool, int]:
+        """Return ``(allowed, retry_after_seconds)``."""
+        if limit_per_window <= 0:
+            return (True, 0)
+        now = time.monotonic()
+        cutoff = now - self.window_seconds
+        with self._lock:
+            q = self._buckets.setdefault(key, deque())
+            while q and q[0] <= cutoff:
+                q.popleft()
+            if len(q) >= limit_per_window:
+                retry_after = max(1, int(math.ceil(q[0] + self.window_seconds - now)))
+                return (False, retry_after)
+            q.append(now)
+            return (True, 0)
+
+
 __all__ = [
+    "SlidingWindowRateLimiter",
     "authorize_mcp_request",
     "bootstrap_ci_95",
+    "get_studio_ingress_config",
     "pearson_corr",
     "percentile",
     "resolve_confined_path",

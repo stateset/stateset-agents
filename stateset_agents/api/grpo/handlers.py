@@ -9,7 +9,7 @@ import json
 import time
 import uuid
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
@@ -433,7 +433,9 @@ class ConversationHandler:
             context=context,
             metadata={
                 "strategy": request.strategy,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc)
+                .replace(tzinfo=None)
+                .isoformat(),
             },
             tokens_used=tokens_used,
             processing_time_ms=processing_time,
@@ -664,7 +666,9 @@ class WebSocketHandler:
         await websocket.send_json(
             {
                 "type": "pong",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc)
+                .replace(tzinfo=None)
+                .isoformat(),
             }
         )
 

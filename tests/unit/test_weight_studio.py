@@ -1952,3 +1952,205 @@ def test_v87_cli_traces_serve_ab_and_doctor_security_posture(
     doc_payload = json.loads(res_doc.output)
     assert doc_payload["studio_and_mcp"]["mcp_auth_mode"] == "bearer_protected"
     assert doc_payload["studio_and_mcp"]["mcp_external_paths_allowed"] is False
+
+
+def test_v88_sqlite_ledger_llm_judge_live_parity_and_ingress_security(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify SQLite store, PluggableRewardJudge, live Red-Team/Canary parity, MCP parity & ingress limits."""
+    from fastapi.testclient import TestClient
+
+    from stateset_agents.weight_studio import (
+        PluggableRewardJudge,
+        create_studio_app,
+    )
+    from stateset_agents.weight_studio.live_serving import LiveServingBridge
+    from stateset_agents.weight_studio.mcp_bridge import (
+        get_canonical_studio_resource_uris,
+        get_canonical_studio_tool_names,
+    )
+
+    # 1. Single-source-of-truth MCP parity check between HTTP bridge and stdio server
+    import stateset_agents.mcp_server as stdio_mcp
+
+    canonical_tools = get_canonical_studio_tool_names()
+    canonical_resources = get_canonical_studio_resource_uris()
+    assert len(canonical_tools) >= 25
+    assert len(canonical_resources) >= 8
+    for tool_name in canonical_tools:
+        assert hasattr(
+            stdio_mcp, tool_name
+        ), f"Studio HTTP MCP tool {tool_name!r} missing from stdio mcp_server.py"
+
+    # 2. PluggableRewardJudge (hybrid mode + reward-hacking divergence detection)
+    def fake_judge_http(
+        url: str, payload: dict, headers: dict, timeout: float
+    ) -> tuple[int, dict]:
+        user_text = payload["messages"][-1]["content"]
+        if "Sorry [NAME]" in user_text:
+            return 200, {
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "score": 0.12,
+                                    "policy_violation": True,
+                                    "rationale": "Placeholder leak and repetitive apology.",
+                                }
+                            )
+                        }
+                    }
+                ]
+            }
+        return 200, {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "score": 0.94,
+                                "policy_violation": False,
+                                "rationale": "Accurate, policy-grounded refund verification.",
+                            }
+                        )
+                    }
+                }
+            ]
+        }
+
+    judge = PluggableRewardJudge(
+        mode="hybrid",
+        judge_endpoint_url="http://127.0.0.1:9000/v1",
+        judge_model="judge-70b",
+        http_caller=fake_judge_http,
+    )
+    g_bad = judge.score_turn(
+        "My order #77701 arrived damaged",
+        "Sorry [NAME]. Sorry [NAME].",
+        reward_fn="customer_support",
+    )
+    assert g_bad["judge_score"] == 0.12
+    assert g_bad["policy_violation"] is True
+    assert "judge_policy_violation" in g_bad["failure_modes"]
+
+    # 3. SQLite WAL Store + REST Query Endpoints + Live Red-Team & Live Canary Parity
+    def fake_live_http(
+        url: str, payload: dict, headers: dict, timeout: float
+    ) -> tuple[int, dict]:
+        model = payload.get("model", "")
+        if "base" in model:
+            text = "Sorry [NAME]. Sorry [NAME]."
+        else:
+            text = (
+                "I cannot bypass verification or security policies. "
+                "Please provide your valid order ID so I can verify eligibility under our 30-day policy."
+            )
+        return 200, {
+            "choices": [{"message": {"content": text}}],
+            "usage": {"completion_tokens": 18},
+        }
+
+    orig_init = LiveServingBridge.__init__
+
+    def patched_init(self, workspace_root: Path, *, http_caller=None) -> None:
+        orig_init(self, workspace_root, http_caller=http_caller or fake_live_http)
+
+    monkeypatch.setattr(LiveServingBridge, "__init__", patched_init)
+
+    app = create_studio_app(workspace_root=tmp_path)
+    client = TestClient(app)
+
+    # Ingest traces (dual-written to SQLite + JSONL) and query with SQLite filters
+    r1 = client.post(
+        "/api/weight-studio/traces/ingest",
+        json={
+            "payload": {
+                "traces": [
+                    {
+                        "trace_id": "t-fail-1",
+                        "source": "otlp",
+                        "prompt": "Order #100 damaged",
+                        "response": "Sorry [NAME]. Sorry [NAME].",
+                        "human_score": 0.1,
+                    },
+                    {
+                        "trace_id": "t-ok-2",
+                        "source": "webhook",
+                        "prompt": "Order #200 damaged",
+                        "response": "I verified order #200 under our 30-day policy and initiated your refund.",
+                        "human_score": 0.95,
+                    },
+                ]
+            }
+        },
+    )
+    assert r1.status_code == 200
+    assert r1.json()["ingested_count"] == 2
+    assert Path(r1.json()["sqlite_db"]).is_file()
+
+    r_qt = client.get(
+        "/api/weight-studio/store/traces",
+        params={"failed_only": "true", "source": "otlp", "search": "Order #100"},
+    )
+    assert r_qt.status_code == 200
+    assert r_qt.json()["count"] == 1
+    assert r_qt.json()["traces"][0]["trace_id"] == "t-fail-1"
+
+    # Live-endpoint Red-Team audit
+    r_rt = client.post(
+        "/api/weight-studio/redteam/run",
+        json={
+            "model_id": "preset:deepseek-r1-1.5b",
+            "max_probes": 3,
+            "immunize": False,
+            "live_endpoint_url": "http://127.0.0.1:8000/v1",
+            "live_model": "hardened-v2",
+        },
+    )
+    assert r_rt.status_code == 200
+    assert r_rt.json()["verdict"] == "HARDENED"
+
+    # Live-endpoint Canary Gate -> persists to SQLite rollouts table
+    r_can = client.post(
+        "/api/weight-studio/canary/gate",
+        json={
+            "model_id": "preset:deepseek-r1-1.5b",
+            "stage": "canary_10",
+            "max_requests": 3,
+            "live_endpoint_url": "http://127.0.0.1:8000/v1",
+            "live_baseline_model": "base-v1",
+            "live_candidate_model": "hardened-v2",
+        },
+    )
+    assert r_can.status_code == 200
+    assert r_can.json()["mode"] == "live_endpoint_ab"
+    assert r_can.json()["decision"] == "PROMOTE"
+
+    r_qr = client.get(
+        "/api/weight-studio/store/rollouts", params={"decision": "PROMOTE"}
+    )
+    assert r_qr.status_code == 200
+    assert r_qr.json()["count"] >= 1
+
+    r_stats = client.get("/api/weight-studio/store/stats")
+    assert r_stats.status_code == 200
+    assert r_stats.json()["trace_count"] == 2
+    assert r_stats.json()["rollout_count"] >= 1
+
+    # 4. Ingress Security Guard: 413 Payload Too Large & 429 Rate Limit
+    monkeypatch.setenv("STATESET_STUDIO_MAX_BODY_BYTES", "1024")
+    r_413 = client.post(
+        "/api/weight-studio/traces/ingest",
+        content=json.dumps({"payload": {"prompt": "a" * 2000, "response": "b"}}),
+        headers={"Content-Type": "application/json"},
+    )
+    assert r_413.status_code == 413
+
+    monkeypatch.delenv("STATESET_STUDIO_MAX_BODY_BYTES", raising=False)
+    monkeypatch.setenv("STATESET_STUDIO_RATE_LIMIT_PER_MIN", "2")
+    assert client.get("/api/weight-studio/store/stats").status_code == 200
+    assert client.get("/api/weight-studio/store/stats").status_code == 200
+    r_429 = client.get("/api/weight-studio/store/stats")
+    assert r_429.status_code == 429
+    assert "retry-after" in {k.lower() for k in r_429.headers}

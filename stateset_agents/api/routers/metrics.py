@@ -6,7 +6,7 @@ API endpoints for system health, metrics, and observability.
 
 import asyncio
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -65,7 +65,8 @@ class DetailedHealthResponse(BaseModel):
 
     status: str = Field(..., description="Overall service status")
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="Response timestamp"
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        description="Response timestamp",
     )
     version: str = Field(..., description="API version")
     uptime_seconds: float = Field(..., description="Service uptime in seconds")
@@ -82,7 +83,8 @@ class RouterHealthResponse(BaseModel):
 
     status: str = Field(..., description="Overall service status")
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="Response timestamp"
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        description="Response timestamp",
     )
     version: str = Field(..., description="API version")
     uptime: float = Field(..., description="Service uptime in seconds")
@@ -96,7 +98,8 @@ class DetailedMetricsResponse(BaseModel):
     """Detailed metrics response."""
 
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="Metrics timestamp"
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        description="Metrics timestamp",
     )
     system_metrics: dict[str, Any] = Field(
         default_factory=dict, description="System metrics"
@@ -154,7 +157,7 @@ async def health_check(request: Request, response: Response) -> RouterHealthResp
         response.status_code = 503
     return RouterHealthResponse(
         status=overall_status,
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
         version=API_VERSION,
         uptime=round(time.monotonic() - _service_start_time, 2),
         components=components,
@@ -245,7 +248,9 @@ async def get_metrics(
     # Try cache first
     cached_response = cache.get(cache_key)
     if cached_response is not None:
-        cached_response["timestamp"] = datetime.utcnow().isoformat()
+        cached_response["timestamp"] = (
+            datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+        )
         return DetailedMetricsResponse(**cached_response)
 
     # Get performance monitor data
@@ -268,7 +273,7 @@ async def get_metrics(
 
     # Build response
     response = DetailedMetricsResponse(
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
         system_metrics={
             "total_operations": summary.get("total_operations", 0),
             "active_operations": len(getattr(perf_monitor, "_active_operations", {})),
@@ -328,7 +333,7 @@ async def get_security_metrics(
     security_monitor = get_api_security_monitor()
 
     return {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         "statistics": security_monitor.get_stats(),
         "recent_events": [
             {
@@ -363,6 +368,6 @@ async def get_cache_metrics(
     cache = get_cache()
 
     return {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         "cache": cache.stats(),
     }

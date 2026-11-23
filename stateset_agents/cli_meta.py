@@ -130,6 +130,15 @@ def doctor(
                 "live_trace_file_exists": (
                     Path("outputs") / "weight_studio_traces" / "live_traces.jsonl"
                 ).is_file(),
+                "sqlite_store_exists": (
+                    Path("outputs") / "weight_studio_store.sqlite3"
+                ).is_file(),
+                "ingress_rate_limit_rpm": int(
+                    os.environ.get("STATESET_STUDIO_RATE_LIMIT_PER_MIN", "0") or "0"
+                ),
+                "ingress_cors_restricted": bool(
+                    os.environ.get("STATESET_STUDIO_CORS_ORIGINS", "").strip()
+                ),
             },
         }
         _echo(json.dumps(payload, sort_keys=True))

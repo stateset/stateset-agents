@@ -11,7 +11,7 @@ import sys
 from collections.abc import Callable, Coroutine
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
@@ -187,7 +187,7 @@ class GracefulShutdownManager:
             return
 
         self.state.is_shutting_down = True
-        self.state.started_at = datetime.utcnow()
+        self.state.started_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
         logger.info("Starting graceful shutdown sequence")
 

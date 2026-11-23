@@ -9,7 +9,7 @@ import threading
 import time
 from collections.abc import ItemsView, KeysView, ValuesView
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Generic, TypeVar, cast, overload
 
 logger = logging.getLogger(__name__)
@@ -225,7 +225,9 @@ class TrainingJob:
     strategy: str
     user_id: str
     request_id: str
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )
     started_at: datetime | None = None
     completed_at: datetime | None = None
     iterations_completed: int = 0
@@ -243,7 +245,9 @@ class ConversationState:
     user_id: str
     agent_id: str | None = None
     strategy: str = "default"
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )
     last_message_at: datetime | None = None
     message_count: int = 0
     total_tokens: int = 0
@@ -325,9 +329,9 @@ class StateManager:
         if status:
             job.status = status
             if status == "running" and not job.started_at:
-                job.started_at = datetime.utcnow()
+                job.started_at = datetime.now(timezone.utc).replace(tzinfo=None)
             elif status in ("completed", "failed", "cancelled"):
-                job.completed_at = datetime.utcnow()
+                job.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
         if iterations is not None:
             job.iterations_completed = iterations
@@ -375,7 +379,7 @@ class StateManager:
         if not conv:
             return None
 
-        conv.last_message_at = datetime.utcnow()
+        conv.last_message_at = datetime.now(timezone.utc).replace(tzinfo=None)
         conv.message_count += 1
         conv.total_tokens += tokens
 

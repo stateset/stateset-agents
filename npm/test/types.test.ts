@@ -26,6 +26,13 @@ void client.chat.completions.create(completion);
 void client.chat.completions.stream(completion);
 void client.models.list();
 void client.health();
+void client.studio.listModels();
+void client.studio.runAutopilot({ model_id: "preset:deepseek-r1-1.5b" });
+void client.studio.queryTraces({ failed_only: true, limit: 20 });
+void client.studio.queryRollouts({ decision: "PROMOTE" });
+void client.mcp.listTools();
+void client.mcp.callTool("studio_list_models", {});
+void client.mcp.readResource("stateset://studio/traces");
 
 const error: StateSetError = new StateSetError("test");
 void error.status;

@@ -24,6 +24,8 @@ from pathlib import Path
 from typing import Any
 
 from ._stats import pearson_corr, spearman_corr
+from .judge import PluggableRewardJudge
+from .ledger_store import StudioSQLiteStore
 from .surgery_loop import _score_transcript_turn
 
 
@@ -165,10 +167,13 @@ def extract_traces_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]
 
 
 class LiveTraceCollector:
-    """Durable production trace collector and reward-calibration auditor."""
+    """Durable production trace collector (SQLite + JSONL) and reward-calibration auditor."""
 
-    def __init__(self, workspace_root: Path) -> None:
+    def __init__(
+        self, workspace_root: Path, *, store: StudioSQLiteStore | None = None
+    ) -> None:
         self.workspace_root = workspace_root.expanduser().resolve()
+        self.store = store or StudioSQLiteStore(self.workspace_root)
 
     @property
     def trace_file(self) -> Path:
@@ -185,8 +190,9 @@ class LiveTraceCollector:
         *,
         reward_fn: str = "customer_support",
         fail_threshold: float = 0.72,
+        judge: PluggableRewardJudge | None = None,
     ) -> dict[str, Any]:
-        """Ingest one webhook/OTLP payload, score every turn, and append to durable JSONL."""
+        """Ingest one webhook/OTLP payload, score every turn, and persist to SQLite + JSONL."""
         rows = extract_traces_from_payload(payload)
         if not rows:
             raise ValueError(
@@ -202,10 +208,27 @@ class LiveTraceCollector:
 
         with path.open("a", encoding="utf-8") as fh:
             for row in rows:
-                proxy_score, modes = _score_transcript_turn(
-                    row["prompt"], row["response"], reward_fn=reward_fn
-                )
-                failed = proxy_score < fail_threshold or bool(modes)
+                judge_score: float | None = None
+                judge_rationale = ""
+                if judge is not None and judge.mode != "heuristic":
+                    graded = judge.score_turn(
+                        row["prompt"], row["response"], reward_fn=reward_fn
+                    )
+                    proxy_score = float(graded["proxy_score"])
+                    judge_score = (
+                        float(graded["judge_score"])
+                        if graded["judge_score"] is not None
+                        else None
+                    )
+                    modes = list(graded["failure_modes"])
+                    effective_score = float(graded["score"])
+                    judge_rationale = str(graded.get("rationale") or "")
+                else:
+                    proxy_score, modes = _score_transcript_turn(
+                        row["prompt"], row["response"], reward_fn=reward_fn
+                    )
+                    effective_score = proxy_score
+                failed = effective_score < fail_threshold or bool(modes)
                 if failed:
                     failing_count += 1
                 record = {
@@ -217,18 +240,45 @@ class LiveTraceCollector:
                     "response": row["response"],
                     "proxy_score": proxy_score,
                     "human_score": row.get("human_score"),
+                    "judge_score": judge_score,
+                    "judge_rationale": judge_rationale,
                     "failure_modes": modes,
                     "failed": failed,
                 }
                 fh.write(json.dumps(record) + "\n")
                 ingested.append(record)
 
+        self.store.record_traces(ingested)
+
         return {
             "ingested_count": len(ingested),
             "failing_count": failing_count,
             "trace_file": str(path),
+            "sqlite_db": str(self.store.db_path),
             "records": ingested,
         }
+
+    def query_traces(
+        self,
+        *,
+        failed_only: bool = False,
+        source: str | None = None,
+        search: str | None = None,
+        labeled_only: bool = False,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Run an indexed SQLite query over stored production traces."""
+        return self.store.query_traces(
+            failed_only=failed_only,
+            source=source,
+            search=search,
+            labeled_only=labeled_only,
+            limit=limit,
+        )
+
+    def prune_traces(self, *, keep_latest: int = 1000) -> int:
+        """Prune older traces from SQLite storage, retaining ``keep_latest`` rows."""
+        return self.store.prune_traces(keep_latest=keep_latest)
 
     def list_traces(
         self, limit: int = 50, *, failing_only: bool = False
@@ -308,11 +358,16 @@ class LiveTraceCollector:
                 )
         else:
             for r in self.list_traces(limit=500):
-                if r.get("human_score") is not None:
+                gt = (
+                    r.get("human_score")
+                    if r.get("human_score") is not None
+                    else r.get("judge_score")
+                )
+                if gt is not None:
                     eval_rows.append(
                         (
                             float(r.get("proxy_score", 0.0)),
-                            float(r["human_score"]),
+                            float(gt),
                             str(r.get("trace_id") or "trace"),
                         )
                     )

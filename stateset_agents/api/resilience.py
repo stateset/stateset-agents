@@ -13,7 +13,7 @@ import random
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, TypeVar, cast
 
@@ -497,7 +497,9 @@ class HealthCheckResult:
     status: HealthStatus
     message: str | None = None
     latency_ms: float = 0.0
-    last_check: datetime = field(default_factory=datetime.utcnow)
+    last_check: datetime = field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )
     details: dict[str, Any] = field(default_factory=dict)
 
 

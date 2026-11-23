@@ -489,6 +489,16 @@ TOOL_READ_ONLY_MAP: dict[str, bool] = {
 }
 
 
+def get_canonical_studio_tool_names() -> tuple[str, ...]:
+    """Single-source-of-truth tuple of canonical Weight Studio MCP tool names."""
+    return tuple(str(t["name"]) for t in STUDIO_MCP_TOOLS)
+
+
+def get_canonical_studio_resource_uris() -> tuple[str, ...]:
+    """Single-source-of-truth tuple of canonical ``stateset://studio/*`` resource URIs."""
+    return tuple(str(r["uri"]) for r in STUDIO_MCP_RESOURCES)
+
+
 def is_tool_read_only(name: str) -> bool:
     """Return True if the named Studio MCP tool is strictly read-only."""
     return bool(TOOL_READ_ONLY_MAP.get(name, False))

@@ -8,7 +8,7 @@ import hmac
 import logging
 import secrets
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import Request
@@ -354,7 +354,9 @@ class RequestContext(BaseModel):
     request_id: str
     user: AuthenticatedUser
     client_ip: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )
 
 
 async def get_request_context(request: Request) -> RequestContext:
