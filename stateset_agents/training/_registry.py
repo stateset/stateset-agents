@@ -73,9 +73,17 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
         f"{_PKG}.chunked_rl_loss",
         "chunked_gather_token_logprobs",
     ),
+    "chunked_model_token_logprobs": (
+        f"{_PKG}.chunked_rl_loss",
+        "chunked_model_token_logprobs",
+    ),
     "chunked_rl_policy_loss": (
         f"{_PKG}.chunked_rl_loss",
         "chunked_rl_policy_loss",
+    ),
+    "extract_lm_head_and_backbone": (
+        f"{_PKG}.chunked_rl_loss",
+        "extract_lm_head_and_backbone",
     ),
     "DisaggregatedRLConfig": (
         f"{_PKG}.disaggregated_rl",

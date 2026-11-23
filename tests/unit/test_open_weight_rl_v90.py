@@ -345,3 +345,121 @@ def test_online_reward_hacking_guard_curriculum_and_rl_blueprint_cli(
     assert plan["vram_estimate"]["peak_logit_vram_saved_pct"] > 90.0
     assert plan["curriculum"]["episode_count"] == 2
     assert plan["warm_start_result"]["warm_started"] is True
+
+
+def test_v91_gpu_torch_caa_warm_start_chunked_model_wrapper_and_code_sandbox() -> None:
+    """Verify real PyTorch hook CAA warm-start + rollback, chunked_model_token_logprobs & CodeVerificationSandbox."""
+    torch = pytest.importorskip("torch")
+    import torch.nn as nn
+    from types import SimpleNamespace
+
+    from stateset_agents.core.mcp_rl_env import (
+        CodeVerificationSandbox,
+        MCPRLEnvironment,
+    )
+    from stateset_agents.core.trajectory import ConversationTurn
+    from stateset_agents.training.chunked_rl_loss import chunked_model_token_logprobs
+    from stateset_agents.training.dapo_config import DAPOConfig
+    from stateset_agents.training.gspo_config import GSPOConfig
+    from stateset_agents.training.rl_losses import gather_token_logprobs
+    from stateset_agents.weight_studio.gpu_surgery import (
+        bake_torch_caa_steering,
+        extract_torch_caa_vector,
+    )
+
+    class _Block(nn.Module):
+        def __init__(self, hidden: int, bias: bool) -> None:
+            super().__init__()
+            self.mlp = nn.Module()
+            self.mlp.up_proj = nn.Linear(hidden, hidden)
+            self.mlp.down_proj = nn.Linear(hidden, hidden, bias=bias)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return x + self.mlp.down_proj(torch.relu(self.mlp.up_proj(x)))
+
+    class _LM(nn.Module):
+        def __init__(self, *, bias: bool) -> None:
+            super().__init__()
+            self.model = nn.Module()
+            self.model.embed = nn.Embedding(64, 16)
+            self.model.layers = nn.ModuleList([_Block(16, bias) for _ in range(3)])
+            self.lm_head = nn.Linear(16, 64, bias=False)
+
+            def _backbone_fwd(input_ids: torch.Tensor) -> SimpleNamespace:
+                h = self.model.embed(input_ids)
+                for layer in self.model.layers:
+                    h = layer(h)
+                return SimpleNamespace(last_hidden_state=h)
+
+            self.model.forward = _backbone_fwd  # type: ignore[method-assign]
+
+        def forward(self, input_ids: torch.Tensor) -> SimpleNamespace:
+            return SimpleNamespace(
+                logits=self.lm_head(self.model(input_ids).last_hidden_state)
+            )
+
+    torch.manual_seed(11)
+    for use_bias, expected_mode in ((True, "bias_shift"), (False, "rank1_weight_bake")):
+        lm = _LM(bias=use_bias)
+        pos_ids = torch.randint(0, 32, (2, 10))
+        neg_ids = torch.randint(32, 64, (2, 10))
+
+        # Verify chunked_model_token_logprobs matches full logits exactly
+        mask = torch.ones(2, 10)
+        mask[:, :3] = 0.0
+        lp_chunk, _ = chunked_model_token_logprobs(lm, pos_ids, mask, chunk_size=5)
+        lp_full, _ = gather_token_logprobs(lm(pos_ids).logits, pos_ids, mask)
+        assert torch.allclose(lp_chunk, lp_full, atol=1e-5)
+
+        # Verify PyTorch hook CAA extraction + bake + exact rollback
+        caa = extract_torch_caa_vector(lm, pos_ids, neg_ids)
+        assert caa["num_layers"] == 3
+        assert caa["peak_separation"] > 0.0
+        before_logits = lm(pos_ids).logits.detach().clone()
+
+        baked = bake_torch_caa_steering(
+            lm, caa["direction_tensor"], layer_index=caa["recommended_layer"], alpha=0.6
+        )
+        assert baked["mode"] == expected_mode
+        assert baked["delta_l2_norm"] > 0.0
+        after_logits = lm(pos_ids).logits.detach().clone()
+        assert not torch.allclose(before_logits, after_logits)
+
+        baked["rollback"]()
+        restored_logits = lm(pos_ids).logits.detach().clone()
+        assert torch.allclose(before_logits, restored_logits, atol=1e-6)
+
+    # Verify CodeVerificationSandbox inside MCPRLEnvironment
+    async def _run_code_env() -> None:
+        sb = CodeVerificationSandbox()
+        env = MCPRLEnvironment(
+            tool_executor=sb.call_tool, state_verifier=sb.verify, max_turns=4
+        )
+        s = await env.reset()
+        s, _, _, _ = await env.step(
+            s,
+            ConversationTurn(
+                role="assistant",
+                content='<tool_call>{"name": "write_solution", "arguments": {"code": "def compute_net_revenue(s, p, r):\\n    return (s - r) * p"}}</tool_call>',
+            ),
+        )
+        s, _, _, info_t = await env.step(
+            s,
+            ConversationTurn(
+                role="assistant",
+                content='<tool_call>{"name": "run_tests", "arguments": {}}</tool_call>',
+            ),
+        )
+        assert info_t["tool_results"][0]["result"]["passed"] is True
+        _, reward, done, info_end = await env.step(
+            s, ConversationTurn(role="assistant", content="All assertions passed.")
+        )
+        assert done and info_end["verification"]["verified"] is True and reward >= 0.9
+
+    asyncio.run(_run_code_env())
+
+    # Verify GSPOConfig & DAPOConfig expose opt-in chunked loss fields cleanly
+    g_cfg = GSPOConfig(chunked_loss_chunk_size=128, use_loss_checkpointing=True)
+    d_cfg = DAPOConfig(chunked_loss_chunk_size=128, use_loss_checkpointing=True)
+    assert g_cfg.chunked_loss_chunk_size == 128
+    assert d_cfg.use_loss_checkpointing is True

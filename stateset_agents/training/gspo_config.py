@@ -59,6 +59,11 @@ class GSPOConfig(TrainingConfig):
     # per-token gap between the two is reported as generation_log_prob_gap.
     rescore_old_log_probs: bool = True
 
+    # Opt-in memory-efficient chunked LM-head log-prob projection (avoids
+    # materializing [B, T, V] logits on long-context RL).
+    chunked_loss_chunk_size: int | None = None
+    use_loss_checkpointing: bool = False
+
     @classmethod
     def from_training_config(cls, config: TrainingConfig, **kwargs) -> GSPOConfig:
         """Create GSPO config from standard training config."""

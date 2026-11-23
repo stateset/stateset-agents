@@ -23,9 +23,13 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import subprocess
+import sys
+import tempfile
 import urllib.request
 import uuid
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from .environment_base import Environment, EnvironmentState, EpisodeStatus
@@ -189,6 +193,81 @@ class CommerceLedgerSandbox:
                 "actual_refunded": refunded,
                 "verified": ok,
             },
+        )
+
+
+class CodeVerificationSandbox:
+    """Timeout-guarded Python coding & unit-test verification sandbox for verifiable SWE RL."""
+
+    def __init__(self, *, timeout_seconds: float = 5.0) -> None:
+        self.timeout_seconds = float(timeout_seconds)
+        self._solution_code: str = ""
+        self._test_suite: str = ""
+        self._last_passed: bool = False
+        self._last_output: str = ""
+        self.reset()
+
+    def reset(self, scenario: dict[str, Any] | None = None) -> None:
+        self._solution_code = ""
+        self._test_suite = str(
+            (scenario or {}).get("test_code")
+            or "assert compute_net_revenue(18, 65, 3) == 975\nassert compute_net_revenue(10, 50, 0) == 500\n"
+        )
+        self._last_passed = False
+        self._last_output = ""
+
+    def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if name == "write_solution":
+            self._solution_code = str(arguments.get("code") or "")
+            return {
+                "isError": False,
+                "bytes_written": len(self._solution_code.encode("utf-8")),
+            }
+
+        if name == "run_tests":
+            if not self._solution_code.strip():
+                return {"isError": True, "error": "No solution written yet."}
+            with tempfile.TemporaryDirectory() as tmpdir:
+                script = Path(tmpdir) / "verify.py"
+                script.write_text(
+                    f"{self._solution_code}\n\n{self._test_suite}\n",
+                    encoding="utf-8",
+                )
+                try:
+                    proc = subprocess.run(
+                        [sys.executable, "-I", str(script)],
+                        capture_output=True,
+                        text=True,
+                        timeout=self.timeout_seconds,
+                        check=False,
+                    )
+                except subprocess.TimeoutExpired:
+                    self._last_passed = False
+                    self._last_output = f"Timed out after {self.timeout_seconds}s"
+                    return {
+                        "isError": True,
+                        "passed": False,
+                        "error": self._last_output,
+                    }
+            self._last_passed = proc.returncode == 0
+            self._last_output = (proc.stdout + proc.stderr).strip()[:400]
+            return {
+                "isError": not self._last_passed,
+                "passed": self._last_passed,
+                "returncode": proc.returncode,
+                "output": self._last_output,
+            }
+
+        return {"isError": True, "error": f"Unknown coding sandbox tool: {name!r}"}
+
+    def verify(
+        self, _state: EnvironmentState, _history: list[dict[str, Any]]
+    ) -> tuple[float, dict[str, Any]]:
+        if self._solution_code.strip() and not self._last_passed:
+            self.call_tool("run_tests", {})
+        return (
+            1.0 if self._last_passed else 0.0,
+            {"verified": self._last_passed, "output": self._last_output},
         )
 
 
@@ -372,6 +451,7 @@ class MCPRLEnvironment(Environment):
 
 
 __all__ = [
+    "CodeVerificationSandbox",
     "CommerceLedgerSandbox",
     "MCPRLEnvironment",
     "make_http_mcp_executor",
