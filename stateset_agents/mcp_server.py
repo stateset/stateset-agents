@@ -1136,6 +1136,65 @@ def studio_autopilot_release(
         return _studio_err(exc, rt)
 
 
+def studio_live_serving_ab(
+    endpoint_url: str,
+    baseline_model: str,
+    candidate_model: str,
+    prompts: list[str] | None = None,
+    reward_fn: str = "customer_support",
+    api_key: str = "",
+    candidate_endpoint_url: str = "",
+    workspace: str = "",
+) -> dict[str, Any]:
+    """Run a real-token paired shadow A/B evaluation against live vLLM/Ollama/OpenAI endpoints with p50/p95 latency, reward deltas, 95% CI, and PROMOTE/HOLD/ROLLBACK."""
+    rt = None
+    try:
+        rt = _get_mcp_studio_runtime(workspace)
+        return dict(
+            rt.serving.compare_live_endpoints(
+                endpoint_url,
+                baseline_model,
+                candidate_model,
+                prompts=prompts,
+                reward_fn=reward_fn,
+                api_key=api_key,
+                candidate_endpoint_url=candidate_endpoint_url,
+            )
+        )
+    except Exception as exc:
+        return _studio_err(exc, rt)
+
+
+def studio_ingest_trace(
+    payload: dict[str, Any],
+    reward_fn: str = "customer_support",
+    workspace: str = "",
+) -> dict[str, Any]:
+    """Ingest live production traces (native JSON, OpenAI messages, or OpenTelemetry OTLP/JSON resourceSpans) into the durable trace collector."""
+    rt = None
+    try:
+        rt = _get_mcp_studio_runtime(workspace)
+        return dict(rt.traces.ingest_payload(payload, reward_fn=reward_fn))
+    except Exception as exc:
+        return _studio_err(exc, rt)
+
+
+def studio_audit_reward_calibration(
+    samples: list[dict[str, Any]] | None = None,
+    reward_fn: str = "customer_support",
+    workspace: str = "",
+) -> dict[str, Any]:
+    """Audit heuristic proxy reward alignment against human/judge ground-truth scores (Pearson r, Spearman rho, MAE, reward-hacking rate -> CALIBRATED / DRIFT_WARN / HACKING_RISK)."""
+    rt = None
+    try:
+        rt = _get_mcp_studio_runtime(workspace)
+        return dict(
+            rt.traces.audit_reward_calibration(samples=samples, reward_fn=reward_fn)
+        )
+    except Exception as exc:
+        return _studio_err(exc, rt)
+
+
 # ---------------------------------------------------------------------------
 # Live MCP Resources (stateset://studio/*)
 # ---------------------------------------------------------------------------
@@ -1234,6 +1293,11 @@ def _resource_studio_rollouts() -> str:
     rt = _get_mcp_studio_runtime()
     rollouts = rt.canary.list_rollouts(limit=25)
     return json.dumps({"count": len(rollouts), "rollouts": rollouts}, indent=2)
+
+
+def _resource_studio_traces() -> str:
+    rt = _get_mcp_studio_runtime()
+    return json.dumps(rt.traces.summary(), indent=2)
 
 
 # ---------------------------------------------------------------------------
@@ -1461,8 +1525,11 @@ def create_server(*, workspace: str | Path | None = None) -> Any:
     mcp.tool(annotations=mut)(studio_model_tournament)
     mcp.tool(annotations=mut)(studio_canary_gate)
     mcp.tool(annotations=mut)(studio_autopilot_release)
+    mcp.tool(annotations=ro)(studio_live_serving_ab)
+    mcp.tool(annotations=mut)(studio_ingest_trace)
+    mcp.tool(annotations=ro)(studio_audit_reward_calibration)
 
-    # Live MCP Resources (7)
+    # Live MCP Resources (8)
     mcp.resource(
         "stateset://studio/capabilities",
         name="studio_capabilities",
@@ -1505,6 +1572,12 @@ def create_server(*, workspace: str | Path | None = None) -> Any:
         description="Durable JSONL rollout ledger of Canary Shadow Gate PROMOTE/HOLD_CANARY/ROLLBACK decisions.",
         mime_type="application/json",
     )(_resource_studio_rollouts)
+    mcp.resource(
+        "stateset://studio/traces",
+        name="studio_traces",
+        description="Live production traces ingested via webhook/OTLP with failure counts and proxy scores.",
+        mime_type="application/json",
+    )(_resource_studio_traces)
 
     # Guided MCP Workflow Prompts (7)
     mcp.prompt(

@@ -78,7 +78,7 @@ claude mcp add stateset-agents -- stateset-agents mcp --workspace /path/to/your/
 }
 ```
 
-## Tools (29 Total)
+## Tools (32 Total)
 
 ### Improve & Finetune Preview (7 Tools)
 
@@ -118,8 +118,19 @@ claude mcp add stateset-agents -- stateset-agents mcp --workspace /path/to/your/
 | `studio_model_tournament(model_ids=None, reward_fn="customer_support", max_cases=4, include_redteam=True, synthesize_merge=True, merge_methods=None, export_format="none", output_name="", ...)` | Session / Write | Benchmark 2+ models/checkpoints on StateSet rewards + Red-Team ASR, build a Pareto leaderboard, synthesize TIES/DARE/SLERP surgical merges of the Top-2, promote the winning champion, and optionally export a verified bundle. |
 | `studio_canary_gate(model_id, stage="canary_10", traffic_path="", traffic_jsonl="", reward_fn="composite", max_requests=6, max_asr=0.25, ...)` | Write | Replay shadow production traffic comparing Base vs. Active Edited weights with paired win/tie/loss, 95% CI, zero-regression safety guard, and durable rollout ledger (`PROMOTE`/`HOLD_CANARY`/`ROLLBACK`). |
 | `studio_autopilot_release(model_id, transcripts_path="", transcripts_jsonl="", reward_fn="customer_support", immunize_redteam=True, stage="canary_10", export_format="lora", output_name="", ...)` | Write | Run the complete **Production Autopilot**: Auto-Heal Logs → Red-Team Safety Audit & Surgical Immunization → Canary Shadow Gate → Verified Artifact Export + Rollout Ledger + Offline 3D HTML Release Dossier. |
+| `studio_live_serving_ab(endpoint_url, baseline_model, candidate_model, prompts=None, reward_fn="customer_support", api_key="", ...)` | Read-only | Run a real-token paired shadow A/B evaluation against live vLLM/Ollama/OpenAI endpoints with p50/p95 latency, reward deltas, 95% CI, and `PROMOTE`/`HOLD_CANARY`/`ROLLBACK`. |
+| `studio_ingest_trace(payload, reward_fn="customer_support", ...)` | Write | Ingest live production traces (native JSON, OpenAI messages, or OpenTelemetry OTLP/JSON `resourceSpans`) into the durable trace collector for continuous Auto-Heal. |
+| `studio_audit_reward_calibration(samples=None, reward_fn="customer_support", ...)` | Read-only | Audit heuristic proxy reward alignment against human/judge ground truth (Pearson `r`, Spearman `ρ`, MAE, reward-hacking rate → `CALIBRATED` / `DRIFT_WARN` / `HACKING_RISK`). |
 
 Every tool validates inputs and returns a structured JSON dict (`{"error": "...", "hint": "..."}` on failure rather than a raw traceback).
+
+## Security: Bearer-Token Auth, Scopes & Workspace Path Confinement
+
+For remote or team deployments of Streamable HTTP MCP (`POST /api/weight-studio/mcp` and `GET /api/weight-studio/events`):
+
+- Set `STATESET_MCP_TOKEN=<secret>` to require `Authorization: Bearer <secret>` for full read/write MCP access.
+- Set `STATESET_MCP_READONLY_TOKEN=<secret>` to grant read-only inspection access (mutating tools are rejected with JSON-RPC `-32001`).
+- All file paths passed to Studio/MCP tools are strictly confined to the active `workspace_root` (preventing path traversal outside the workspace unless `STATESET_MCP_ALLOW_EXTERNAL_PATHS=1`).
 
 ## Live MCP Resources (`stateset://studio/*`)
 
@@ -132,6 +143,7 @@ Every tool validates inputs and returns a structured JSON dict (`{"error": "..."
 | `stateset://studio/sessions` | Persisted 3D Weight Studio workbench sessions on disk. |
 | `stateset://studio/redteam-probes` | Built-in 10-probe Adversarial Red-Team safety suite spanning 5 enterprise attack vectors. |
 | `stateset://studio/rollouts` | Durable JSONL rollout ledger of Canary Shadow Gate `PROMOTE`/`HOLD_CANARY`/`ROLLBACK` decisions. |
+| `stateset://studio/traces` | Live production traces ingested via webhook/OTLP with failure counts and proxy scores. |
 
 ## Guided MCP Workflow Prompts
 

@@ -16,13 +16,13 @@ All heavy dependencies remain strictly lazy (zero eager ``torch`` import).
 from __future__ import annotations
 
 import json
-import math
 import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ._stats import bootstrap_ci_95, resolve_confined_path
 from .editor import WeightEditEngine
 from .inference_engine import InferenceStudioEngine
 from .inspector import WeightInspector
@@ -236,27 +236,24 @@ _PLACEHOLDER_RE = re.compile(
 
 def _bootstrap_ci_95(values: list[float]) -> tuple[float, float]:
     """Deterministic normal-approx 95% confidence interval clamped to [0, 1]."""
-    if not values:
-        return (0.0, 0.0)
-    mean = sum(values) / len(values)
-    if len(values) == 1:
-        return (round(mean, 4), round(mean, 4))
-    var = sum((v - mean) ** 2 for v in values) / max(1, len(values) - 1)
-    se = math.sqrt(var / len(values))
-    lo = max(0.0, mean - 1.96 * se)
-    hi = min(1.0, mean + 1.96 * se)
-    return (round(lo, 4), round(hi, 4))
+    return bootstrap_ci_95(values, clamp_unit=True)
 
 
 def _load_custom_probes(
     probes_path: str | None = None,
     probes_jsonl: str | None = None,
+    *,
+    workspace_root: Path | None = None,
 ) -> list[dict[str, str]]:
     raw_lines: list[str] = []
     if probes_jsonl and probes_jsonl.strip():
         raw_lines.extend(probes_jsonl.strip().splitlines())
     elif probes_path and probes_path.strip():
-        p = Path(probes_path).expanduser()
+        p = (
+            resolve_confined_path(probes_path, workspace_root)
+            if workspace_root is not None
+            else Path(probes_path).expanduser()
+        )
         if not p.exists():
             raise FileNotFoundError(f"Red-team probes file not found: {p}")
         raw_lines.extend(p.read_text(encoding="utf-8").splitlines())
@@ -476,7 +473,11 @@ class RedTeamSurgeryEngine:
         """Run Red-Team Safety Audit and optional Surgical Immunization."""
         t0 = time.perf_counter()
 
-        custom = _load_custom_probes(probes_path=probes_path, probes_jsonl=probes_jsonl)
+        custom = _load_custom_probes(
+            probes_path=probes_path,
+            probes_jsonl=probes_jsonl,
+            workspace_root=self.inspector.workspace_root,
+        )
         probes = custom if custom else self.list_probes()
         if categories:
             cat_set = {c.strip().lower() for c in categories if c.strip()}

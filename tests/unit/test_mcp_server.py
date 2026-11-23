@@ -656,6 +656,9 @@ class TestLiveProtocolSession:
                     "studio_model_tournament",
                     "studio_canary_gate",
                     "studio_autopilot_release",
+                    "studio_live_serving_ab",
+                    "studio_ingest_trace",
+                    "studio_audit_reward_calibration",
                 }
                 assert set(tool_by_name) == expected_tools
                 assert len(tools_result.tools) == len(expected_tools)
@@ -687,6 +690,7 @@ class TestLiveProtocolSession:
                     "stateset://studio/sessions",
                     "stateset://studio/redteam-probes",
                     "stateset://studio/rollouts",
+                    "stateset://studio/traces",
                 }
 
                 caps_res = await asyncio.wait_for(

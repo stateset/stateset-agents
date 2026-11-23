@@ -20,14 +20,17 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from ._stats import authorize_mcp_request
 from .canary_engine import CanaryRolloutEngine
 from .editor import WeightEditEngine
 from .finetune_engine import FinetuneStudioEngine
 from .inference_engine import InferenceStudioEngine
 from .inspector import WeightInspector
+from .live_serving import LiveServingBridge
 from .mcp_bridge import StudioEventBus, handle_mcp_jsonrpc
 from .redteam_engine import RedTeamSurgeryEngine
 from .surgery_loop import AutonomousSurgeryLoop
+from .telemetry_ingest import LiveTraceCollector
 from .tournament_engine import ModelTournamentEngine
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -49,6 +52,8 @@ class StudioRuntime:
         self.canary = CanaryRolloutEngine(
             self.inspector, self.editor, self.inference, self.healer, self.redteam
         )
+        self.serving = LiveServingBridge(self.inspector.workspace_root)
+        self.traces = LiveTraceCollector(self.inspector.workspace_root)
         self.events = StudioEventBus()
 
 
@@ -401,6 +406,68 @@ class AutopilotReleaseRequest(BaseModel):
     output_name: str = ""
     lora_rank: int = Field(16, ge=1, le=128)
     lora_alpha: int = Field(32, ge=1, le=512)
+
+
+class LoadLoraAdapterRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    endpoint_url: str = Field(..., min_length=7, max_length=300)
+    lora_name: str = Field(..., min_length=1, max_length=120)
+    lora_path: str = Field(..., min_length=1, max_length=400)
+    api_key: str = ""
+
+
+class LiveCompareRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    endpoint_url: str = Field(..., min_length=7, max_length=300)
+    baseline_model: str = Field(..., min_length=1, max_length=200)
+    candidate_model: str = Field(..., min_length=1, max_length=200)
+    prompts: list[str] | None = None
+    system_prompt: str = "You are a helpful, policy-grounded StateSet agent."
+    reward_fn: str = Field(
+        "customer_support",
+        pattern="^(composite|customer_support|tool_calling|gsm8k)$",
+    )
+    max_tokens: int = Field(128, ge=8, le=1024)
+    temperature: float = Field(0.2, ge=0.0, le=2.0)
+    api_key: str = ""
+    candidate_endpoint_url: str = ""
+    candidate_api_key: str = ""
+
+
+class TraceIngestRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    payload: dict[str, Any]
+    reward_fn: str = Field(
+        "customer_support",
+        pattern="^(composite|customer_support|tool_calling|gsm8k)$",
+    )
+    fail_threshold: float = Field(0.72, ge=0.0, le=1.0)
+
+
+class CalibrationAuditRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    samples: list[dict[str, Any]] | None = None
+    reward_fn: str = Field(
+        "customer_support",
+        pattern="^(composite|customer_support|tool_calling|gsm8k)$",
+    )
+
+
+class TraceAutoHealRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_id: str
+    checkpoint_id: str | None = None
+    reward_fn: str = Field(
+        "customer_support",
+        pattern="^(composite|customer_support|tool_calling|gsm8k)$",
+    )
+    export_format: str = Field("none", pattern="^(none|lora|safetensors|gguf|hf_card)$")
+    output_name: str = ""
 
 
 class SaeAnalyzeRequest(BaseModel):
@@ -1180,10 +1247,146 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
         except (KeyError, ValueError, FileNotFoundError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # --- Live vLLM/Ollama LoRA Hot-Swap & Real-Endpoint Shadow A/B ---
+
+    @api.post("/serving/load-lora")
+    async def serving_load_lora(req: LoadLoraAdapterRequest) -> dict[str, Any]:
+        rt = _rt()
+        try:
+            res = await asyncio.to_thread(
+                rt.serving.load_lora_adapter,
+                req.endpoint_url,
+                req.lora_name,
+                req.lora_path,
+                api_key=req.api_key,
+            )
+            rt.events.publish(
+                "serving_lora_loaded",
+                source="studio_api",
+                tool="serving_load_lora",
+                summary=f"LoRA '{req.lora_name}' -> {req.endpoint_url} ({res['status_code']})",
+                mutated=False,
+                pulse="forward",
+            )
+            return res
+        except (ValueError, FileNotFoundError, PermissionError, OSError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @api.post("/serving/compare-live")
+    async def serving_compare_live(req: LiveCompareRequest) -> dict[str, Any]:
+        rt = _rt()
+        try:
+            res = await asyncio.to_thread(
+                rt.serving.compare_live_endpoints,
+                req.endpoint_url,
+                req.baseline_model,
+                req.candidate_model,
+                prompts=req.prompts,
+                system_prompt=req.system_prompt,
+                reward_fn=req.reward_fn,
+                max_tokens=req.max_tokens,
+                temperature=req.temperature,
+                api_key=req.api_key,
+                candidate_endpoint_url=req.candidate_endpoint_url,
+                candidate_api_key=req.candidate_api_key,
+            )
+            rt.events.publish(
+                "serving_live_ab",
+                source="studio_api",
+                tool="studio_live_serving_ab",
+                summary=f"Live A/B ({req.baseline_model} vs {req.candidate_model}) → {res['decision']}",
+                mutated=False,
+                pulse="forward",
+            )
+            return res
+        except (ValueError, RuntimeError, OSError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # --- Live Production Trace Collector (OTLP/JSON + Webhook) & Calibration ---
+
+    @api.post("/traces/ingest")
+    async def traces_ingest(req: TraceIngestRequest) -> dict[str, Any]:
+        rt = _rt()
+        try:
+            res = await asyncio.to_thread(
+                rt.traces.ingest_payload,
+                req.payload,
+                reward_fn=req.reward_fn,
+                fail_threshold=req.fail_threshold,
+            )
+            rt.events.publish(
+                "trace_ingested",
+                source="otlp_webhook",
+                tool="studio_ingest_trace",
+                summary=f"Ingested {res['ingested_count']} trace(s) ({res['failing_count']} failing)",
+                mutated=False,
+                pulse="forward",
+            )
+            return res
+        except (ValueError, OSError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @api.get("/traces/summary")
+    async def traces_summary() -> dict[str, Any]:
+        return _rt().traces.summary()
+
+    @api.post("/traces/calibration-audit")
+    async def traces_calibration_audit(req: CalibrationAuditRequest) -> dict[str, Any]:
+        rt = _rt()
+        return await asyncio.to_thread(
+            rt.traces.audit_reward_calibration,
+            samples=req.samples,
+            reward_fn=req.reward_fn,
+        )
+
+    @api.post("/traces/auto-heal")
+    async def traces_auto_heal(req: TraceAutoHealRequest) -> dict[str, Any]:
+        rt = _rt()
+        try:
+            failing = rt.traces.list_traces(limit=100, failing_only=True)
+            jsonl_blob = "\n".join(
+                json.dumps({"prompt": r["prompt"], "response": r["response"]})
+                for r in failing
+            )
+            res = await asyncio.to_thread(
+                rt.healer.run_healing_loop,
+                req.model_id,
+                checkpoint_id=req.checkpoint_id,
+                transcripts_jsonl=jsonl_blob or None,
+                reward_fn=req.reward_fn,
+                export_format=req.export_format,
+                output_name=req.output_name,
+            )
+            rt.events.publish(
+                "trace_auto_heal",
+                source="otlp_webhook",
+                tool="studio_auto_heal",
+                model_id=req.model_id,
+                summary=f"Healed {len(failing)} live traces → {(res.get('eval_gate') or {}).get('verdict', 'GO')}",
+                mutated=True,
+                pulse="backprop",
+            )
+            return res
+        except (KeyError, ValueError, FileNotFoundError, PermissionError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     # --- Live Streamable HTTP MCP Endpoint + Real-Time AI-Agent SSE Bus ---
 
     @api.post("/mcp")
     async def studio_mcp_http(request: Request) -> Response:
+        ok, status_code, granted_scope, err_msg = authorize_mcp_request(
+            request.headers.get("authorization"), required_scope="read"
+        )
+        if not ok:
+            return JSONResponse(
+                status_code=status_code,
+                content={
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": -32001, "message": err_msg},
+                },
+            )
+
         rt = _rt()
         try:
             body = await request.json()
@@ -1201,7 +1404,9 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
             responses = []
             for item in body:
                 if isinstance(item, dict):
-                    resp = await asyncio.to_thread(handle_mcp_jsonrpc, rt, item)
+                    resp = await asyncio.to_thread(
+                        handle_mcp_jsonrpc, rt, item, granted_scope=granted_scope
+                    )
                     if resp is not None:
                         responses.append(resp)
             return JSONResponse(content=responses)
@@ -1216,20 +1421,33 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
                 },
             )
 
-        resp = await asyncio.to_thread(handle_mcp_jsonrpc, rt, body)
+        resp = await asyncio.to_thread(
+            handle_mcp_jsonrpc, rt, body, granted_scope=granted_scope
+        )
         if resp is None:
             return Response(status_code=202)
         return JSONResponse(content=resp)
 
     @api.get("/events/recent")
     async def studio_recent_events(
+        request: Request,
         limit: int = Query(20, ge=1, le=50),
     ) -> dict[str, Any]:
+        ok, status_code, _, err_msg = authorize_mcp_request(
+            request.headers.get("authorization"), required_scope="read"
+        )
+        if not ok:
+            raise HTTPException(status_code=status_code, detail=err_msg)
         items = _rt().events.recent(limit=limit)
         return {"events": items, "count": len(items)}
 
     @api.get("/events")
     async def studio_event_stream(request: Request) -> StreamingResponse:
+        ok, status_code, _, err_msg = authorize_mcp_request(
+            request.headers.get("authorization"), required_scope="read"
+        )
+        if not ok:
+            raise HTTPException(status_code=status_code, detail=err_msg)
         rt = _rt()
         q = rt.events.subscribe()
 

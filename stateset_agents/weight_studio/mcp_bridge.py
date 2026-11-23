@@ -447,7 +447,52 @@ STUDIO_MCP_TOOLS: list[dict[str, Any]] = [
         ["model_id"],
         read_only=False,
     ),
+    _tool_spec(
+        "studio_live_serving_ab",
+        "Run a real-token paired shadow A/B evaluation against a live vLLM/Ollama/OpenAI endpoint comparing baseline_model vs candidate_model (or hot-swapped LoRA), returning p50/p95 latency, reward deltas, 95% CI, and PROMOTE/HOLD/ROLLBACK.",
+        {
+            "endpoint_url": {"type": "string"},
+            "baseline_model": {"type": "string"},
+            "candidate_model": {"type": "string"},
+            "prompts": {"type": "array", "items": {"type": "string"}},
+            "reward_fn": {"type": "string", "default": "customer_support"},
+            "api_key": {"type": "string", "default": ""},
+        },
+        ["endpoint_url", "baseline_model", "candidate_model"],
+        read_only=True,
+    ),
+    _tool_spec(
+        "studio_ingest_trace",
+        "Ingest live production traces (native prompt/response JSON, OpenAI chat messages, or OpenTelemetry OTLP/JSON resourceSpans) into the durable trace collector for continuous Auto-Heal and reward calibration.",
+        {
+            "payload": {"type": "object"},
+            "reward_fn": {"type": "string", "default": "customer_support"},
+        },
+        ["payload"],
+        read_only=False,
+    ),
+    _tool_spec(
+        "studio_audit_reward_calibration",
+        "Audit heuristic proxy reward alignment against human/judge ground-truth scores (Pearson r, Spearman rho, MAE, reward-hacking rate -> CALIBRATED / DRIFT_WARN / HACKING_RISK).",
+        {
+            "samples": {"type": "array", "items": {"type": "object"}},
+            "reward_fn": {"type": "string", "default": "customer_support"},
+        },
+        [],
+        read_only=True,
+    ),
 ]
+
+TOOL_READ_ONLY_MAP: dict[str, bool] = {
+    str(t["name"]): bool((t.get("annotations") or {}).get("readOnlyHint", False))
+    for t in STUDIO_MCP_TOOLS
+}
+
+
+def is_tool_read_only(name: str) -> bool:
+    """Return True if the named Studio MCP tool is strictly read-only."""
+    return bool(TOOL_READ_ONLY_MAP.get(name, False))
+
 
 STUDIO_MCP_RESOURCES: list[dict[str, str]] = [
     {
@@ -490,6 +535,12 @@ STUDIO_MCP_RESOURCES: list[dict[str, str]] = [
         "uri": "stateset://studio/rollouts",
         "name": "studio_rollouts",
         "description": "Durable JSONL rollout ledger of Canary Shadow Gate PROMOTE/HOLD_CANARY/ROLLBACK decisions.",
+        "mimeType": "application/json",
+    },
+    {
+        "uri": "stateset://studio/traces",
+        "name": "studio_traces",
+        "description": "Live production traces ingested via webhook/OTLP with failure counts and proxy scores.",
         "mimeType": "application/json",
     },
 ]
@@ -1057,6 +1108,46 @@ def _dispatch_studio_tool(
             f"Autopilot → {res['decision']} (traffic {res['recommended_traffic_pct']}%)",
         )
 
+    if name == "studio_live_serving_ab":
+        res = rt.serving.compare_live_endpoints(
+            str(args["endpoint_url"]),
+            str(args["baseline_model"]),
+            str(args["candidate_model"]),
+            prompts=args.get("prompts"),
+            reward_fn=str(args.get("reward_fn") or "customer_support"),
+            api_key=str(args.get("api_key") or ""),
+        )
+        return (
+            dict(res),
+            False,
+            "forward",
+            f"Live Serving A/B → {res['decision']} ({res['case_count']} prompts)",
+        )
+
+    if name == "studio_ingest_trace":
+        res = rt.traces.ingest_payload(
+            dict(args.get("payload") or {}),
+            reward_fn=str(args.get("reward_fn") or "customer_support"),
+        )
+        return (
+            dict(res),
+            False,
+            "forward",
+            f"Ingested {res['ingested_count']} trace(s) ({res['failing_count']} failing)",
+        )
+
+    if name == "studio_audit_reward_calibration":
+        res = rt.traces.audit_reward_calibration(
+            samples=args.get("samples"),
+            reward_fn=str(args.get("reward_fn") or "customer_support"),
+        )
+        return (
+            dict(res),
+            False,
+            "forward",
+            f"Reward Calibration → {res['verdict']} (n={res['sample_count']})",
+        )
+
     raise KeyError(f"Unknown MCP tool: {name}")
 
 
@@ -1106,6 +1197,8 @@ def _read_studio_resource(rt: Any, uri: str) -> str:
     if uri == "stateset://studio/rollouts":
         rollouts = rt.canary.list_rollouts(limit=25)
         return json.dumps({"count": len(rollouts), "rollouts": rollouts}, indent=2)
+    if uri == "stateset://studio/traces":
+        return json.dumps(rt.traces.summary(), indent=2)
     raise KeyError(f"Unknown MCP resource URI: {uri}")
 
 
@@ -1195,7 +1288,12 @@ def _get_studio_prompt(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     raise KeyError(f"Unknown MCP prompt: {name}")
 
 
-def handle_mcp_jsonrpc(rt: Any, req: dict[str, Any]) -> dict[str, Any] | None:
+def handle_mcp_jsonrpc(
+    rt: Any,
+    req: dict[str, Any],
+    *,
+    granted_scope: str = "write",
+) -> dict[str, Any] | None:
     """Handle one MCP JSON-RPC 2.0 request against a live ``StudioRuntime``."""
     req_id = req.get("id")
     method = str(req.get("method") or "")
@@ -1253,6 +1351,11 @@ def handle_mcp_jsonrpc(rt: Any, req: dict[str, Any]) -> dict[str, Any] | None:
         if method == "tools/call":
             tool_name = str(params.get("name") or "")
             tool_args = dict(params.get("arguments") or {})
+            if granted_scope != "write" and not is_tool_read_only(tool_name):
+                return _err(
+                    -32001,
+                    f"Unauthorized: read-only MCP token cannot invoke mutating tool '{tool_name}'.",
+                )
             try:
                 result, mutated, pulse, summary = _dispatch_studio_tool(
                     rt, tool_name, tool_args

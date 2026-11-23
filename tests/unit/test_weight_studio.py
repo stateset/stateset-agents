@@ -1261,7 +1261,7 @@ def test_redteam_audit_surgical_immunization_and_live_http_mcp_bridge(
     )
     assert r_tools.status_code == 200
     http_tools = r_tools.json()["result"]["tools"]
-    assert len(http_tools) == 22
+    assert len(http_tools) == 25
     tool_names = {t["name"] for t in http_tools}
     assert {
         "studio_apply_edit",
@@ -1270,6 +1270,9 @@ def test_redteam_audit_surgical_immunization_and_live_http_mcp_bridge(
         "studio_model_tournament",
         "studio_canary_gate",
         "studio_autopilot_release",
+        "studio_live_serving_ab",
+        "studio_ingest_trace",
+        "studio_audit_reward_calibration",
     } <= tool_names
 
     # Call a mutating tool over HTTP MCP and verify it broadcasts onto the live EventBus
@@ -1560,3 +1563,242 @@ def test_canary_shadow_gate_ledger_and_full_autopilot_release(
     )
     assert "error" not in m_auto
     assert m_auto["rollout_id"]
+
+
+def test_v86_live_serving_otlp_traces_calibration_and_mcp_auth_confinement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify live vLLM LoRA hot-swap & A/B, OTLP trace ingest + Auto-Heal, Reward Calibration audit, MCP bearer/RO auth, and path confinement."""
+    from typing import Any
+
+    from fastapi.testclient import TestClient
+
+    from stateset_agents.weight_studio import (
+        LiveServingBridge,
+        resolve_confined_path,
+    )
+
+    ws = _make_sample_workspace(tmp_path)
+
+    # 1. Workspace path confinement rejects traversal outside workspace root
+    with pytest.raises(PermissionError):
+        resolve_confined_path("../../etc/passwd", ws)
+    assert resolve_confined_path("outputs/demo_lora_run", ws).is_dir()
+
+    # 2. Live vLLM LoRA hot-swap & real-token Paired Shadow A/B Comparison (injected mock HTTP transport)
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    def _mock_http(
+        url: str, payload: dict[str, Any], headers: dict[str, str], timeout: float
+    ) -> tuple[int, dict[str, Any]]:
+        calls.append((url, payload))
+        if url.endswith("/load_lora_adapter") or url.endswith("/unload_lora_adapter"):
+            return (200, {"status": "ok"})
+        model_name = payload.get("model", "")
+        if "candidate" in model_name:
+            text = (
+                "I verified order #77701 is within the 30-day return policy and "
+                "initiated your full refund today."
+            )
+        else:
+            text = "Sorry [NAME]. Sorry [NAME]. Contact support."
+        return (
+            200,
+            {
+                "choices": [{"message": {"content": text}}],
+                "usage": {"completion_tokens": len(text.split())},
+            },
+        )
+
+    bridge = LiveServingBridge(ws, http_caller=_mock_http)
+    loaded = bridge.load_lora_adapter(
+        "http://127.0.0.1:8000/v1", "surgical-v1", "outputs/demo_lora_run"
+    )
+    assert loaded["loaded"] is True
+    unloaded = bridge.unload_lora_adapter("http://127.0.0.1:8000/v1", "surgical-v1")
+    assert unloaded["unloaded"] is True
+
+    ab = bridge.compare_live_endpoints(
+        "http://127.0.0.1:8000/v1",
+        "base-model",
+        "candidate-lora",
+        prompts=["My order #77701 arrived damaged.", "Refund order #77701 please."],
+    )
+    assert ab["decision"] == "PROMOTE"
+    assert ab["paired_record"]["wins"] == 2
+    assert ab["paired_record"]["mean_delta"] > 0.2
+    assert ab["latency_ms"]["candidate_p50"] >= 0.0
+
+    # 3. Live OTLP/JSON trace ingestion, summary, live-trace Auto-Heal, and Reward Calibration audit
+    app = create_studio_app(workspace_root=ws)
+    client = TestClient(app)
+    mid = "local:outputs/demo_lora_run"
+
+    otlp_payload = {
+        "resourceSpans": [
+            {
+                "scopeSpans": [
+                    {
+                        "spans": [
+                            {
+                                "traceId": "otlp-trace-1",
+                                "attributes": [
+                                    {
+                                        "key": "gen_ai.prompt",
+                                        "value": {
+                                            "stringValue": "Order #77701 arrived cracked. Refund?"
+                                        },
+                                    },
+                                    {
+                                        "key": "gen_ai.completion",
+                                        "value": {
+                                            "stringValue": "Sorry [NAME]. Sorry [NAME]."
+                                        },
+                                    },
+                                    {
+                                        "key": "stateset.human_score",
+                                        "value": {"doubleValue": 0.1},
+                                    },
+                                ],
+                            },
+                            {
+                                "traceId": "otlp-trace-2",
+                                "attributes": [
+                                    {
+                                        "key": "gen_ai.prompt",
+                                        "value": {
+                                            "stringValue": "Order #77702 damaged within 10 days."
+                                        },
+                                    },
+                                    {
+                                        "key": "gen_ai.completion",
+                                        "value": {
+                                            "stringValue": "I verified order #77702 under our 30-day policy and initiated your refund."
+                                        },
+                                    },
+                                    {
+                                        "key": "stateset.human_score",
+                                        "value": {"doubleValue": 0.95},
+                                    },
+                                ],
+                            },
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+    r_ing = client.post(
+        "/api/weight-studio/traces/ingest",
+        json={"payload": otlp_payload, "reward_fn": "customer_support"},
+    )
+    assert r_ing.status_code == 200
+    assert r_ing.json()["ingested_count"] == 2
+    assert r_ing.json()["failing_count"] >= 1
+
+    r_sum = client.get("/api/weight-studio/traces/summary")
+    assert r_sum.status_code == 200
+    assert r_sum.json()["total_traces"] == 2
+
+    r_cal = client.post(
+        "/api/weight-studio/traces/calibration-audit",
+        json={"reward_fn": "customer_support"},
+    )
+    assert r_cal.status_code == 200
+    assert r_cal.json()["verdict"] in ("CALIBRATED", "DRIFT_WARN", "HACKING_RISK")
+
+    # Verify reward-hacking detection explicitly
+    r_hack = client.post(
+        "/api/weight-studio/traces/calibration-audit",
+        json={
+            "samples": [
+                {"id": "h1", "proxy_score": 0.92, "human_score": 0.15},
+                {"id": "h2", "proxy_score": 0.88, "human_score": 0.20},
+                {"id": "h3", "proxy_score": 0.25, "human_score": 0.90},
+            ]
+        },
+    )
+    assert r_hack.status_code == 200
+    assert r_hack.json()["verdict"] == "HACKING_RISK"
+    assert r_hack.json()["hacking_case_count"] == 2
+
+    # Feed live OTLP failing traces straight into Autonomous Self-Heal
+    r_heal = client.post(
+        "/api/weight-studio/traces/auto-heal",
+        json={
+            "model_id": mid,
+            "reward_fn": "customer_support",
+            "export_format": "none",
+        },
+    )
+    assert r_heal.status_code == 200
+    assert r_heal.json()["eval_gate"]["verdict"] in ("GO", "WARN", "BLOCK")
+
+    # 4. Streamable HTTP MCP Bearer-Token Auth & Read-Only Scope Enforcement
+    monkeypatch.setenv("STATESET_MCP_TOKEN", "rw-secret-token")
+    monkeypatch.setenv("STATESET_MCP_READONLY_TOKEN", "ro-secret-token")
+
+    # Missing token -> 401
+    r_noauth = client.post(
+        "/api/weight-studio/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+    )
+    assert r_noauth.status_code == 401
+
+    # Read-only token -> allowed for read-only tool, rejected (-32001) for mutating tool
+    r_ro_ok = client.post(
+        "/api/weight-studio/mcp",
+        headers={"Authorization": "Bearer ro-secret-token"},
+        json={
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {"name": "studio_list_models", "arguments": {}},
+        },
+    )
+    assert r_ro_ok.status_code == 200
+    assert r_ro_ok.json()["result"]["isError"] is False
+
+    r_ro_deny = client.post(
+        "/api/weight-studio/mcp",
+        headers={"Authorization": "Bearer ro-secret-token"},
+        json={
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "studio_apply_edit",
+                "arguments": {
+                    "model_id": mid,
+                    "op": "scale",
+                    "target": "layer:0",
+                    "params": {"factor": 1.02},
+                },
+            },
+        },
+    )
+    assert r_ro_deny.status_code == 200
+    assert r_ro_deny.json()["error"]["code"] == -32001
+
+    # Read/Write token -> allowed for mutating tool
+    r_rw_ok = client.post(
+        "/api/weight-studio/mcp",
+        headers={"Authorization": "Bearer rw-secret-token"},
+        json={
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {
+                "name": "studio_apply_edit",
+                "arguments": {
+                    "model_id": mid,
+                    "op": "scale",
+                    "target": "layer:0",
+                    "params": {"factor": 1.02},
+                },
+            },
+        },
+    )
+    assert r_rw_ok.status_code == 200
+    assert r_rw_ok.json()["result"]["isError"] is False
