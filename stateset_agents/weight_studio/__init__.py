@@ -10,8 +10,10 @@ if TYPE_CHECKING:
     from .inference_engine import InferenceStudioEngine
     from .inspector import WeightInspector
     from .router import StudioRuntime, create_studio_app, mount_studio_ui
+    from .surgery_loop import AutonomousSurgeryLoop, run_autonomous_heal
 
 __all__ = [
+    "AutonomousSurgeryLoop",
     "FinetuneStudioEngine",
     "InferenceStudioEngine",
     "StudioRuntime",
@@ -19,9 +21,12 @@ __all__ = [
     "WeightInspector",
     "create_studio_app",
     "mount_studio_ui",
+    "run_autonomous_heal",
 ]
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
+    "AutonomousSurgeryLoop": (".surgery_loop", "AutonomousSurgeryLoop"),
+    "run_autonomous_heal": (".surgery_loop", "run_autonomous_heal"),
     "WeightInspector": (".inspector", "WeightInspector"),
     "WeightEditEngine": (".editor", "WeightEditEngine"),
     "FinetuneStudioEngine": (".finetune_engine", "FinetuneStudioEngine"),

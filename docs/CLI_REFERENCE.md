@@ -70,6 +70,34 @@ Original checkpoint files are never modified; verified exports write to
 [Getting Started with 3D Weight Studio](GETTING_STARTED_STUDIO.md) and
 [Weight Studio Reference Manual](WEIGHT_STUDIO.md).
 
+### `stateset-agents heal`
+
+Run the **Autonomous Transcript-to-Surgery Self-Healing Loop**: grade failing
+production transcripts, mine contrastive positive/negative pairs, extract a CAA
+steering vector, benchmark candidate strengths in the Multi-Edit A/B Arena,
+bake the winning surgical edit, verify on the 95% CI Batch Eval Gate (with
+optional Surgical Auto-Repair), and export a verified PEFT LoRA adapter,
+`.safetensors` checkpoint, GGUF v3 package, or Hugging Face Model Card alongside
+an offline HTML PR report and `heal_summary.json`.
+
+```bash
+stateset-agents heal --model local:outputs/my_lora --transcripts logs/failures.jsonl
+stateset-agents heal --model preset:qwen3.5-0.8b --reward customer_support \
+    --export-format lora --output-name healed-support-v1 --json
+stateset-agents heal --model local:outputs/my_lora --export-format gguf
+```
+
+Options:
+
+- `--model`, `-m` (required): Model ID (local checkpoint path/ID or Studio preset twin).
+- `--transcripts`, `-t`: Path to a JSONL file or directory of production transcripts (defaults to built-in failure scenarios when omitted).
+- `--reward`, `-r` (default `customer_support`): Reward scorer (`customer_support`, `tool_calling`, `gsm8k`, `composite`).
+- `--export-format`, `-f` (default `lora`): Export format (`lora`, `safetensors`, `gguf`, `hf_card`, `none`).
+- `--output-name`, `-o`: Export directory name under `outputs/weight_studio_exports/`.
+- `--lora-rank` (default `16`): SVD LoRA rank when `--export-format lora`.
+- `--workspace`, `-w` (default `.`): Workspace root scanned for checkpoints.
+- `--json`: Emit the full machine-readable healing summary JSON.
+
 ### `stateset-agents train`
 
 Run a lightweight training demo by default with `--stub`, or launch the configured training flow.

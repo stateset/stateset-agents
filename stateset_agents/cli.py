@@ -889,6 +889,104 @@ def weight_studio_command(
         raise typer.Exit(code=2) from error
 
 
+@app.command("heal")
+def heal_command(
+    model: str = typer.Option(
+        "preset:deepseek-r1-1.5b",
+        "--model",
+        "-m",
+        help="Model ID (e.g. local:outputs/my_run or preset:deepseek-r1-1.5b).",
+    ),
+    transcripts: Path | None = typer.Option(
+        None,
+        "--transcripts",
+        "-t",
+        help="Path to a JSONL file of production conversation transcripts.",
+    ),
+    reward: str = typer.Option(
+        "customer_support",
+        "--reward",
+        "-r",
+        help="StateSet reward scorer: composite, customer_support, tool_calling, or gsm8k.",
+    ),
+    export_format: str = typer.Option(
+        "lora",
+        "--export-format",
+        "-f",
+        help="Artifact format: lora, safetensors, gguf, hf_card, or none.",
+    ),
+    output_name: str = typer.Option(
+        "",
+        "--output-name",
+        "-o",
+        help="Output bundle directory name under outputs/weight_studio_exports/.",
+    ),
+    lora_rank: int = typer.Option(
+        16,
+        "--lora-rank",
+        min=1,
+        max=128,
+        help="Target LoRA rank r when --export-format lora.",
+    ),
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Workspace root directory.",
+    ),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Print structured JSON summary.",
+    ),
+) -> None:
+    """Autonomously diagnose failing transcripts, bake CAA weight surgery, eval-gate & export."""
+    try:
+        from stateset_agents.weight_studio.surgery_loop import run_autonomous_heal
+
+        report = run_autonomous_heal(
+            model,
+            workspace_root=workspace,
+            transcripts_path=str(transcripts) if transcripts is not None else None,
+            reward_fn=reward,
+            export_format=export_format,
+            output_name=output_name,
+            lora_rank=lora_rank,
+        )
+        if as_json:
+            _echo(json.dumps(report, indent=2))
+            return
+
+        diag = report["diagnosis"]
+        sv = report["steering_vector"]
+        gate = report["eval_gate"]
+        _echo(f"StateSet Autonomous Surgery Heal — {model}")
+        _echo(
+            f"  Diagnosis : {diag['failing_count']}/{diag['total_transcripts']} failing "
+            f"(dominant={diag['dominant_failure_mode']}, mean={diag['mean_score']:.3f})"
+        )
+        _echo(
+            f"  Surgery   : Baked CAA '{sv['name']}' on L{sv['target_layer']:02d} "
+            f"(α={sv['chosen_strength']:+.2f}, sep={sv['peak_separation']})"
+        )
+        _echo(
+            f"  Eval Gate : {gate['verdict']} ({gate['case_count']} cases, "
+            f"Δcomp={gate['deltas']['composite_delta']:+.4f})"
+        )
+        if report["exported"] and report["export_manifest"]:
+            _echo(
+                f"  Exported  : {report['export_format']} -> {report['summary_path']}"
+            )
+            if report["html_report_path"]:
+                _echo(f"  PR Report : {report['html_report_path']}")
+        elif report["export_blocked_reason"]:
+            _echo(f"  Blocked   : {report['export_blocked_reason']}", err=True)
+            raise typer.Exit(code=1)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        _echo(f"Autonomous heal failed: {error}", err=True)
+        raise typer.Exit(code=2) from error
+
+
 def run() -> None:
     # Windows consoles default to a legacy codepage (cp1252) that cannot
     # encode the CLI's unicode output (checkmarks, arrows); force UTF-8.
