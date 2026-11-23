@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.84.0] - 2026-11-23 — Live Streamable HTTP MCP Co-Pilot, Red-Team Surgical Immunization & Multi-Model Tournament Lab
+
+### Added
+
+- **Live Streamable HTTP MCP Endpoint & Real-Time 3D Browser Co-Pilot Sync (`POST /api/weight-studio/mcp`, `GET /api/weight-studio/events`):**
+  - Zero-extra-dependency MCP JSON-RPC 2.0 Streamable HTTP server mounted directly onto the running 3D Weight Studio sharing the live `StudioRuntime` (20 annotated Studio tools, 6 live `stateset://studio/*` resources, 6 guided workflow prompts, and batch requests).
+  - `StudioEventBus` streams every external AI-agent MCP call over SSE so connected 3D WebGL2 browsers animate liquid-crystal weight morphing, trigger glowing forward/backprop waves, and log live agent activity inside the new topbar **`● MCP`** connect modal.
+- **Adversarial Red-Team Safety Audit & One-Click Surgical Immunization (`stateset-agents redteam`, `POST /api/weight-studio/redteam/run`, `studio_redteam_audit`):**
+  - Evaluates models across 10 adversarial probes spanning 5 enterprise attack vectors (`prompt_injection`, `pii_exfiltration`, `unauthorized_tool_call`, `policy_bypass`, `hallucinated_commitment`) with per-category Attack Success Rate (ASR), 95% CIs, and vulnerable layer localization.
+  - One-click **Surgical Immunization** (`immunize=True`) mines contrastive safety pairs, sweeps CAA steering strength in the Multi-Edit A/B Arena, bakes the winning fix, verifies benign support helpfulness on the 95% CI Batch Eval Gate + Auto-Repair, and exports verified bundles + `redteam_report.html`.
+- **Multi-Model Pareto Tournament & Evolutionary Surgical Merge Lab (`stateset-agents tournament`, `POST /api/weight-studio/tournament/run`, `studio_model_tournament`):**
+  - Benchmarks multiple workspace checkpoints across StateSet task rewards + Red-Team safety pass rate, sweeps TIES / DARE / SLERP surgical merges of the Top-2 contenders, promotes a merged champion only when it matches or beats the strongest parent, and exports the verified champion + `tournament_report.html`.
+  - Expanded stdio MCP server (`stateset-agents mcp`) to **27 annotated tools**, **6 live resources**, and **6 guided workflow prompts**.
+
 ## [0.83.0] - 2026-11-23 — Autonomous Self-Healing Loop & AI-Agent Studio MCP Server
 
 ### Added
