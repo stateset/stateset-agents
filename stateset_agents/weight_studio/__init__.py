@@ -9,6 +9,8 @@ if TYPE_CHECKING:
     from .finetune_engine import FinetuneStudioEngine
     from .inference_engine import InferenceStudioEngine
     from .inspector import WeightInspector
+    from .mcp_bridge import StudioEventBus, handle_mcp_jsonrpc
+    from .redteam_engine import RedTeamSurgeryEngine
     from .router import StudioRuntime, create_studio_app, mount_studio_ui
     from .surgery_loop import AutonomousSurgeryLoop, run_autonomous_heal
 
@@ -16,16 +18,22 @@ __all__ = [
     "AutonomousSurgeryLoop",
     "FinetuneStudioEngine",
     "InferenceStudioEngine",
+    "RedTeamSurgeryEngine",
+    "StudioEventBus",
     "StudioRuntime",
     "WeightEditEngine",
     "WeightInspector",
     "create_studio_app",
+    "handle_mcp_jsonrpc",
     "mount_studio_ui",
     "run_autonomous_heal",
 ]
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "AutonomousSurgeryLoop": (".surgery_loop", "AutonomousSurgeryLoop"),
+    "RedTeamSurgeryEngine": (".redteam_engine", "RedTeamSurgeryEngine"),
+    "StudioEventBus": (".mcp_bridge", "StudioEventBus"),
+    "handle_mcp_jsonrpc": (".mcp_bridge", "handle_mcp_jsonrpc"),
     "run_autonomous_heal": (".surgery_loop", "run_autonomous_heal"),
     "WeightInspector": (".inspector", "WeightInspector"),
     "WeightEditEngine": (".editor", "WeightEditEngine"),

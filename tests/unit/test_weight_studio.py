@@ -1191,3 +1191,157 @@ def test_autonomous_transcript_to_surgery_heal_loop_api_cli_and_mcp(
     )
     assert mcp_res["exported"] is True
     assert (ws / mcp_res["export_manifest"]["model_card_file"]).is_file()
+
+
+def test_redteam_audit_surgical_immunization_and_live_http_mcp_bridge(
+    tmp_path: Path,
+) -> None:
+    """Verify Red-Team Safety Audit + Surgical Immunization, CLI `redteam`, and Live Streamable HTTP MCP + EventBus."""
+    from fastapi.testclient import TestClient
+    from typer.testing import CliRunner
+
+    from stateset_agents.cli import app as cli_app
+    from stateset_agents.mcp_server import studio_redteam_audit
+
+    ws = _make_sample_workspace(tmp_path)
+    app = create_studio_app(workspace_root=ws)
+    client = TestClient(app)
+    mid = "local:outputs/demo_lora_run"
+
+    # 1. Baseline Red-Team Safety Audit via REST API
+    r_audit = client.post(
+        "/api/weight-studio/redteam/run",
+        json={"model_id": mid, "max_probes": 6, "immunize": False},
+    )
+    assert r_audit.status_code == 200
+    audit = r_audit.json()
+    assert audit["immunized"] is False
+    assert audit["before"]["total_probes"] == 6
+    assert 0.0 <= audit["attack_success_rate"] <= 1.0
+    assert len(audit["before"]["category_breakdown"]) >= 2
+
+    # 2. Surgical Immunization + LoRA export + HTML report
+    r_imm = client.post(
+        "/api/weight-studio/redteam/run",
+        json={
+            "model_id": mid,
+            "max_probes": 6,
+            "immunize": True,
+            "export_format": "lora",
+            "output_name": "immunized-lora-v1",
+            "lora_rank": 4,
+            "lora_alpha": 8,
+        },
+    )
+    assert r_imm.status_code == 200
+    imm = r_imm.json()
+    assert imm["immunized"] is True
+    assert imm["immunization"]["asr_after"] <= imm["immunization"]["asr_before"]
+    assert imm["immunization"]["safety_score_gain"] >= 0.0
+    assert imm["export_bundle"] is not None
+    assert Path(imm["report_path"]).is_file()
+    assert Path(imm["summary_path"]).is_file()
+
+    # 3. Live Streamable HTTP MCP Endpoint (`POST /api/weight-studio/mcp`)
+    r_init = client.post(
+        "/api/weight-studio/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"clientInfo": {"name": "pytest-agent", "version": "1.0"}},
+        },
+    )
+    assert r_init.status_code == 200
+    assert r_init.json()["result"]["serverInfo"]["name"] == "stateset-weight-studio"
+
+    r_tools = client.post(
+        "/api/weight-studio/mcp",
+        json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+    )
+    assert r_tools.status_code == 200
+    http_tools = r_tools.json()["result"]["tools"]
+    assert len(http_tools) == 19
+    tool_names = {t["name"] for t in http_tools}
+    assert {
+        "studio_apply_edit",
+        "studio_auto_heal",
+        "studio_redteam_audit",
+    } <= tool_names
+
+    # Call a mutating tool over HTTP MCP and verify it broadcasts onto the live EventBus
+    r_call = client.post(
+        "/api/weight-studio/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "studio_apply_edit",
+                "arguments": {
+                    "model_id": mid,
+                    "op": "scale",
+                    "target": "layer:0",
+                    "params": {"factor": 1.03},
+                    "label": "HTTP MCP Live Edit",
+                },
+            },
+        },
+    )
+    assert r_call.status_code == 200
+    call_res = r_call.json()["result"]
+    assert call_res["isError"] is False
+    assert call_res["structuredContent"]["edit"]["op"] == "scale"
+
+    # Verify live EventBus recorded the HTTP MCP agent action
+    r_ev = client.get("/api/weight-studio/events/recent?limit=10")
+    assert r_ev.status_code == 200
+    events = r_ev.json()["events"]
+    assert any(
+        ev["tool"] == "studio_apply_edit" and ev["mutated"] is True for ev in events
+    )
+
+    # Verify HTTP MCP Resources + Prompts
+    r_res = client.post(
+        "/api/weight-studio/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "resources/read",
+            "params": {"uri": "stateset://studio/redteam-probes"},
+        },
+    )
+    assert r_res.status_code == 200
+    probes_payload = json.loads(r_res.json()["result"]["contents"][0]["text"])
+    assert len(probes_payload["probes"]) == 10
+
+    r_prompt = client.post(
+        "/api/weight-studio/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "prompts/get",
+            "params": {
+                "name": "redteam_and_immunize",
+                "arguments": {"model_id": mid, "export_format": "lora"},
+            },
+        },
+    )
+    assert r_prompt.status_code == 200
+    assert (
+        "studio_redteam_audit"
+        in r_prompt.json()["result"]["messages"][0]["content"]["text"]
+    )
+
+    # 4. CLI `stateset-agents redteam --immunize --json` + stdio MCP `studio_redteam_audit`
+    runner = CliRunner()
+    cli_rt = runner.invoke(
+        cli_app,
+        ["redteam", "--model", mid, "--immunize", "--workspace", str(ws), "--json"],
+    )
+    assert cli_rt.exit_code == 0, cli_rt.output
+    assert json.loads(cli_rt.output)["immunized"] is True
+
+    mcp_rt = studio_redteam_audit(mid, max_probes=4, immunize=False, workspace=str(ws))
+    assert "error" not in mcp_rt
+    assert mcp_rt["before"]["total_probes"] == 4

@@ -98,6 +98,31 @@ Options:
 - `--workspace`, `-w` (default `.`): Workspace root scanned for checkpoints.
 - `--json`: Emit the full machine-readable healing summary JSON.
 
+### `stateset-agents redteam`
+
+Run the **Adversarial Red-Team Safety Audit & Surgical Immunization** engine
+across 5 attack vectors (`prompt_injection`, `pii_exfiltration`,
+`unauthorized_tool_call`, `policy_bypass`, `hallucinated_commitment`), measure
+per-category Attack Success Rate (ASR) with 95% CIs, and optionally apply
+one-click CAA Surgical Immunization (`--immunize`) while verifying benign
+helpfulness on the Batch Eval Gate.
+
+```bash
+stateset-agents redteam --model preset:deepseek-r1-1.5b
+stateset-agents redteam --model local:outputs/my_lora --immunize \
+    --export-format lora --output-name immunized-support-v1 --json
+```
+
+Options:
+
+- `--model`, `-m` (required): Model ID (local checkpoint path/ID or Studio preset twin).
+- `--immunize`: Apply CAA Surgical Immunization to vulnerable layers and verify benign helpfulness.
+- `--probes`, `-p`: Optional path to custom JSONL attack probes.
+- `--export-format`, `-f` (default `none`): Artifact format when `--immunize` is set (`none`, `lora`, `safetensors`, `gguf`, `hf_card`).
+- `--output-name`, `-o`: Export directory name under `outputs/weight_studio_exports/`.
+- `--workspace`, `-w` (default `.`): Workspace root scanned for checkpoints.
+- `--json`: Emit structured JSON audit/immunization summary.
+
 ### `stateset-agents train`
 
 Run a lightweight training demo by default with `--stub`, or launch the configured training flow.

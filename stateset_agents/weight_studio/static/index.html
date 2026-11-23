@@ -54,6 +54,7 @@
       </nav>
 
       <div class="topbar-actions">
+        <button id="btn-mcp-modal" class="icon-btn" title="Connect AI Agents via Live MCP (HTTP / Claude Code / Cursor)" style="width:auto;padding:0 8px;font-family:var(--font-mono);font-size:10px;display:inline-flex;align-items:center;gap:5px"><span id="mcp-live-dot" style="width:6px;height:6px;border-radius:50%;background:#10b981;display:inline-block"></span>MCP</button>
         <button id="btn-cmd-palette" class="icon-btn" title="Open Command Palette (Ctrl+K / ⌘K)" style="width:auto;padding:0 7px;font-family:var(--font-mono);font-size:10px">⌘K</button>
         <select id="colormap-select" class="precision-select compact" title="Weight Color Encoding">
           <option value="signed">Map: Signed (±)</option>
@@ -391,6 +392,19 @@
               <button id="btn-run-auto-heal" class="mini-btn">🩹 Auto-Heal</button>
             </div>
             <div id="heal-result-summary" class="empty-hint">Diagnose failing logs → mine CAA contrast → Arena sweep → bake weights → 95% CI Eval Gate.</div>
+          </div>
+
+          <!-- Adversarial Red-Team Safety Audit & Surgical Immunization -->
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">RED-TEAM SAFETY AUDIT &amp; IMMUNIZE</span>
+              <span id="redteam-status-pill" class="mono-accent">READY</span>
+            </div>
+            <div class="op-action-row mb-6">
+              <button id="btn-run-redteam-audit" class="mini-btn full" title="Probe prompt injection, PII exfiltration, unauthorized tools &amp; policy bypass">🔎 Audit ASR</button>
+              <button id="btn-run-redteam-immunize" class="mini-btn full" title="Surgically immunize vulnerable layers with CAA steering while protecting benign helpfulness">🛡️ Immunize</button>
+            </div>
+            <div id="redteam-result-summary" class="empty-hint">Test 10 adversarial attack probes across 5 categories &amp; surgically harden vulnerable layers.</div>
           </div>
         </section>
 
@@ -900,6 +914,39 @@
         </div>
         <div class="op-action-row mt-8">
           <button id="btn-confirm-hf" class="action-btn primary full">Stream Headers Over HTTP Range</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live AI-Agent MCP Connect & Activity Modal -->
+    <div id="mcp-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+      <div class="modal-card">
+        <div class="card-title-row">
+          <span class="card-title">AI-AGENT MCP CO-PILOT (LIVE 3D SYNC)</span>
+          <button id="btn-close-mcp" class="icon-btn">✕</button>
+        </div>
+        <p class="helper-copy">
+          Connect <strong>Claude Code</strong>, <strong>Claude Desktop</strong>, <strong>Cursor</strong>, or <strong>Antigravity</strong> directly to this live 3D Weight Studio. Every surgical edit, Red-Team immunization, or Auto-Heal call animates the 3D viewport in real time.
+        </p>
+        <div class="mt-8">
+          <div class="card-title-row">
+            <span class="micro-label">LIVE STREAMABLE HTTP MCP ENDPOINT</span>
+            <button id="btn-copy-mcp-http" class="mini-btn">Copy URL</button>
+          </div>
+          <pre id="mcp-http-url" class="cli-code"></pre>
+        </div>
+        <div class="mt-6">
+          <span class="micro-label">CLAUDE CODE STDIO COMMAND</span>
+          <pre id="mcp-claude-cmd" class="cli-code"></pre>
+        </div>
+        <details class="cli-drawer mt-6">
+          <summary>MCP Client JSON Config (Cursor / Claude Desktop / Antigravity)</summary>
+          <pre id="mcp-json-snippet" class="cli-code mt-6"></pre>
+          <button id="btn-copy-mcp-json" class="mini-btn full mt-6">Copy JSON Config</button>
+        </details>
+        <div class="mt-8">
+          <span class="micro-label">LIVE AI-AGENT ACTIVITY STREAM</span>
+          <pre id="mcp-activity-log" class="cli-code">Waiting for AI agent MCP calls…</pre>
         </div>
       </div>
     </div>

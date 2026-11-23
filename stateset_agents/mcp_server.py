@@ -996,6 +996,43 @@ def studio_auto_heal(
         return _studio_err(exc, rt)
 
 
+def studio_redteam_audit(
+    model_id: str,
+    categories: list[str] | None = None,
+    probes_path: str = "",
+    probes_jsonl: str = "",
+    max_probes: int = 10,
+    immunize: bool = False,
+    export_format: str = "none",
+    output_name: str = "",
+    lora_rank: int = 16,
+    lora_alpha: int = 32,
+    workspace: str = "",
+    checkpoint_id: str | None = None,
+) -> dict[str, Any]:
+    """Audit a model against adversarial attacks (prompt injection, PII exfiltration, unauthorized tool calls, policy bypass, hallucinated commitments) and optionally apply one-click Surgical Immunization (immunize=True) without hurting benign helpfulness."""
+    rt = None
+    try:
+        rt = _get_mcp_studio_runtime(workspace)
+        return dict(
+            rt.redteam.run_redteam_audit(
+                model_id,
+                checkpoint_id=checkpoint_id,
+                categories=categories,
+                probes_path=probes_path or None,
+                probes_jsonl=probes_jsonl or None,
+                max_probes=max_probes,
+                immunize=immunize,
+                export_format=export_format,
+                output_name=output_name,
+                lora_rank=lora_rank,
+                lora_alpha=lora_alpha,
+            )
+        )
+    except Exception as exc:
+        return _studio_err(exc, rt)
+
+
 # ---------------------------------------------------------------------------
 # Live MCP Resources (stateset://studio/*)
 # ---------------------------------------------------------------------------
@@ -1085,9 +1122,32 @@ def _resource_studio_sessions() -> str:
     return json.dumps(studio_sessions(action="list"), indent=2)
 
 
+def _resource_studio_redteam_probes() -> str:
+    rt = _get_mcp_studio_runtime()
+    return json.dumps({"probes": rt.redteam.list_probes()}, indent=2)
+
+
 # ---------------------------------------------------------------------------
 # Guided MCP Workflow Prompts (agent playbooks)
 # ---------------------------------------------------------------------------
+
+
+def prompt_redteam_and_immunize(
+    model_id: str,
+    export_format: str = "lora",
+) -> str:
+    """Guided playbook for Adversarial Red-Team Safety Audit & Surgical Immunization."""
+    return (
+        f"Run an Adversarial Red-Team Safety Audit and Surgical Immunization on `{model_id}`:\n\n"
+        f"1. Call `studio_redteam_audit(model_id={model_id!r}, immunize=False)` to measure baseline "
+        "Attack Success Rate (ASR) across prompt injection, PII exfiltration, unauthorized tool calls, "
+        "policy bypass, and hallucinated commitments.\n"
+        f"2. Call `studio_redteam_audit(model_id={model_id!r}, immunize=True, export_format={export_format!r})` "
+        "to extract a Safety Immunization CAA vector, sweep strength in the A/B Arena, bake the winning "
+        "surgical edit, verify benign support helpfulness on the 95% CI Batch Eval Gate, and export the "
+        "verified bundle + `redteam_report.html`.\n"
+        "3. Report baseline vs. immunized ASR, safety score gain, benign eval verdict, and exported paths."
+    )
 
 
 def prompt_auto_heal_model(
@@ -1254,8 +1314,9 @@ def create_server(*, workspace: str | Path | None = None) -> Any:
     mcp.tool(annotations=mut)(studio_save_session)
     mcp.tool(annotations=mut)(studio_sessions)
     mcp.tool(annotations=mut)(studio_auto_heal)
+    mcp.tool(annotations=mut)(studio_redteam_audit)
 
-    # Live MCP Resources (5)
+    # Live MCP Resources (6)
     mcp.resource(
         "stateset://studio/capabilities",
         name="studio_capabilities",
@@ -1286,12 +1347,22 @@ def create_server(*, workspace: str | Path | None = None) -> Any:
         description="Persisted 3D Weight Studio workbench sessions on disk.",
         mime_type="application/json",
     )(_resource_studio_sessions)
+    mcp.resource(
+        "stateset://studio/redteam-probes",
+        name="studio_redteam_probes",
+        description="Built-in adversarial Red-Team safety probes (prompt injection, PII exfiltration, unauthorized tool calls, policy bypass, hallucinated commitments).",
+        mime_type="application/json",
+    )(_resource_studio_redteam_probes)
 
-    # Guided MCP Workflow Prompts (4)
+    # Guided MCP Workflow Prompts (5)
     mcp.prompt(
         name="auto_heal_model",
         description="Run the Autonomous Transcript-to-Surgery Self-Healing Loop from failing logs to a verified adapter/bundle.",
     )(prompt_auto_heal_model)
+    mcp.prompt(
+        name="redteam_and_immunize",
+        description="Run Adversarial Red-Team Safety Audit and one-click CAA Surgical Immunization without degrading benign helpfulness.",
+    )(prompt_redteam_and_immunize)
     mcp.prompt(
         name="surgical_behavior_edit",
         description="Extract CAA steering, benchmark in the Multi-Edit A/B Arena, verify residual convergence, and export a PEFT LoRA.",
