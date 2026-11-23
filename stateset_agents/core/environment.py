@@ -17,7 +17,9 @@ from .environment_presets import CONVERSATION_CONFIGS, TASK_CONFIGS
 from .mcp_rl_env import (
     CodeVerificationSandbox,
     CommerceLedgerSandbox,
+    DockerCodeSandbox,
     MCPRLEnvironment,
+    RESTAPISandbox,
     SQLAnalyticsSandbox,
 )
 from .sandbox_pool import MultiDomainSandboxPool, SandboxEpisodeSpec
@@ -44,8 +46,10 @@ __all__ = [
     "ConversationEnvironment",
     "CodeVerificationSandbox",
     "CommerceLedgerSandbox",
+    "DockerCodeSandbox",
     "MCPRLEnvironment",
     "MultiDomainSandboxPool",
+    "RESTAPISandbox",
     "SQLAnalyticsSandbox",
     "SandboxEpisodeSpec",
     "TaskEnvironment",

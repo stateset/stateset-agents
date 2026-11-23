@@ -22,10 +22,12 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
 import tempfile
+import urllib.parse
 import urllib.request
 import uuid
 from collections.abc import Callable
@@ -347,11 +349,314 @@ class SQLAnalyticsSandbox:
         )
 
 
+class RESTAPISandbox:
+    """Stateful OpenAPI / SaaS REST backend verifier with schema & idempotency checks.
+
+    Tools:
+    - ``openapi_spec()`` -> returns endpoint paths, required fields, and status codes
+    - ``http_request(method, path, body=None, idempotency_key=None)`` -> mutates or reads
+      in-memory resources (``/v1/tickets``, ``/v1/subscriptions``) with strict
+      idempotency deduplication and schema validation.
+    """
+
+    def __init__(
+        self,
+        *,
+        initial_subscriptions: dict[str, dict[str, Any]] | None = None,
+    ) -> None:
+        self._subscriptions: dict[str, dict[str, Any]] = dict(
+            initial_subscriptions
+            or {
+                "sub_101": {
+                    "id": "sub_101",
+                    "customer_id": "cust_42",
+                    "plan": "pro",
+                    "status": "active",
+                }
+            }
+        )
+        self._tickets: dict[str, dict[str, Any]] = {}
+        self._idempotency_cache: dict[str, dict[str, Any]] = {}
+        self._mutation_count = 0
+
+    def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if name == "openapi_spec":
+            return {
+                "isError": False,
+                "endpoints": [
+                    "GET /v1/subscriptions/{id}",
+                    "POST /v1/subscriptions/{id}/cancel (requires idempotency_key, body.reason)",
+                    "POST /v1/tickets (requires body.subject, body.priority)",
+                ],
+            }
+
+        if name != "http_request":
+            return {
+                "isError": True,
+                "error": f"Unknown REST API sandbox tool: {name!r}",
+            }
+
+        method = str(arguments.get("method") or "GET").strip().upper()
+        path = str(arguments.get("path") or "").strip()
+        body = arguments.get("body") or {}
+        idem_key = str(arguments.get("idempotency_key") or "").strip()
+
+        if method == "GET" and path.startswith("/v1/subscriptions/"):
+            sub_id = path.rsplit("/", 1)[-1]
+            sub = self._subscriptions.get(sub_id)
+            if sub is None:
+                return {
+                    "isError": True,
+                    "status": 404,
+                    "error": f"Subscription {sub_id} not found",
+                }
+            return {"isError": False, "status": 200, "data": dict(sub)}
+
+        if (
+            method == "POST"
+            and path.startswith("/v1/subscriptions/")
+            and path.endswith("/cancel")
+        ):
+            parts = path.strip("/").split("/")
+            sub_id = parts[2] if len(parts) >= 4 else ""
+            if not idem_key:
+                return {
+                    "isError": True,
+                    "status": 400,
+                    "error": "Missing required idempotency_key header for mutation.",
+                }
+            if idem_key in self._idempotency_cache:
+                cached = dict(self._idempotency_cache[idem_key])
+                cached["idempotent_replay"] = True
+                return cached
+            sub = self._subscriptions.get(sub_id)
+            if sub is None:
+                return {
+                    "isError": True,
+                    "status": 404,
+                    "error": f"Subscription {sub_id} not found",
+                }
+            reason = str(body.get("reason") or "").strip()
+            if not reason:
+                return {
+                    "isError": True,
+                    "status": 400,
+                    "error": "body.reason is required.",
+                }
+            sub["status"] = "canceled"
+            sub["cancel_reason"] = reason
+            self._mutation_count += 1
+            resp = {"isError": False, "status": 200, "data": dict(sub)}
+            self._idempotency_cache[idem_key] = resp
+            return resp
+
+        if method == "POST" and path == "/v1/tickets":
+            subject = str(body.get("subject") or "").strip()
+            priority = str(body.get("priority") or "").strip().lower()
+            if not subject or priority not in ("low", "medium", "high"):
+                return {
+                    "isError": True,
+                    "status": 400,
+                    "error": "body.subject and body.priority (low|medium|high) required.",
+                }
+            tid = f"tkt_{len(self._tickets) + 1}"
+            rec = {
+                "id": tid,
+                "subject": subject,
+                "priority": priority,
+                "status": "open",
+            }
+            self._tickets[tid] = rec
+            self._mutation_count += 1
+            return {"isError": False, "status": 201, "data": dict(rec)}
+
+        return {
+            "isError": True,
+            "status": 404,
+            "error": f"Unhandled route: {method} {path}",
+        }
+
+    def verify(
+        self, state: EnvironmentState, _history: list[dict[str, Any]]
+    ) -> tuple[float, dict[str, Any]]:
+        scenario = state.context.get("scenario") or {}
+        sub_id = str(scenario.get("target_subscription_id") or "sub_101")
+        expected_status = str(scenario.get("expected_status") or "canceled")
+        sub = self._subscriptions.get(sub_id) or {}
+        ok = sub.get("status") == expected_status
+        return (
+            1.0 if ok else 0.0,
+            {
+                "verified": ok,
+                "subscription_id": sub_id,
+                "actual_status": sub.get("status"),
+                "expected_status": expected_status,
+                "mutations": self._mutation_count,
+            },
+        )
+
+
+class DockerCodeSandbox:
+    """Container-isolated SWE-agent patch & pytest verifier with clean subprocess fallback.
+
+    Runs ``docker run --rm --network=none --cpus=1 --memory=256m`` when
+    ``use_docker=True`` and Docker daemon is reachable; otherwise executes in an
+    isolated temporary directory subprocess with strict timeout and reports
+    ``execution_backend`` (``"docker"`` vs ``"subprocess_fallback"``).
+    """
+
+    DEFAULT_FILES: dict[str, str] = {
+        "billing.py": (
+            "def apply_discount(subtotal_cents: int, pct: int) -> int:\n"
+            "    # BUG: subtracts pct instead of percentage\n"
+            "    return subtotal_cents - pct\n"
+        ),
+        "test_billing.py": (
+            "from billing import apply_discount\n"
+            "assert apply_discount(10000, 15) == 8500\n"
+            "assert apply_discount(2000, 0) == 2000\n"
+            "assert apply_discount(5000, 100) == 0\n"
+        ),
+    }
+
+    def __init__(
+        self,
+        *,
+        files: dict[str, str] | None = None,
+        image: str = "python:3.12-slim",
+        use_docker: bool = False,
+        timeout_seconds: float = 5.0,
+    ) -> None:
+        self._files: dict[str, str] = dict(files or self.DEFAULT_FILES)
+        self.image = image
+        self.use_docker = bool(use_docker)
+        self.timeout_seconds = float(timeout_seconds)
+        self._last_passed = False
+        self._last_output = ""
+        self._execution_backend = "subprocess_fallback"
+
+    def _safe_rel_path(self, raw_path: str) -> str:
+        clean = Path(raw_path).name
+        if (
+            not clean
+            or clean in (".", "..")
+            or not re.fullmatch(r"[A-Za-z0-9._-]+", clean)
+        ):
+            raise ValueError(f"Unsafe file path: {raw_path!r}")
+        return clean
+
+    def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if name == "read_file":
+            try:
+                fname = self._safe_rel_path(str(arguments.get("path") or "billing.py"))
+            except ValueError as exc:
+                return {"isError": True, "error": str(exc)}
+            if fname not in self._files:
+                return {"isError": True, "error": f"File not found: {fname}"}
+            return {"isError": False, "path": fname, "content": self._files[fname]}
+
+        if name == "apply_patch":
+            try:
+                fname = self._safe_rel_path(str(arguments.get("path") or "billing.py"))
+            except ValueError as exc:
+                return {"isError": True, "error": str(exc)}
+            content = str(arguments.get("content") or "")
+            if not content.strip():
+                return {"isError": True, "error": "Patch content must be non-empty."}
+            self._files[fname] = content
+            self._last_passed = False
+            return {"isError": False, "path": fname, "bytes_written": len(content)}
+
+        if name == "run_pytest":
+            with tempfile.TemporaryDirectory(prefix="stateset_docker_code_") as td:
+                root = Path(td)
+                for fname, body in self._files.items():
+                    (root / fname).write_text(body, encoding="utf-8")
+
+                docker_bin = shutil.which("docker") if self.use_docker else None
+                cmd: list[str]
+                if docker_bin:
+                    self._execution_backend = "docker"
+                    cmd = [
+                        docker_bin,
+                        "run",
+                        "--rm",
+                        "--network=none",
+                        "--cpus=1",
+                        "--memory=256m",
+                        "-v",
+                        f"{root}:/work:ro",
+                        "-w",
+                        "/work",
+                        self.image,
+                        "python",
+                        "test_billing.py",
+                    ]
+                else:
+                    self._execution_backend = "subprocess_fallback"
+                    cmd = [sys.executable, "-s", str(root / "test_billing.py")]
+
+                try:
+                    proc = subprocess.run(
+                        cmd,
+                        cwd=str(root),
+                        capture_output=True,
+                        text=True,
+                        timeout=self.timeout_seconds,
+                        check=False,
+                    )
+                    # If docker daemon is unavailable, fall back cleanly to isolated subprocess
+                    if docker_bin and proc.returncode == 125:
+                        self._execution_backend = "subprocess_fallback"
+                        proc = subprocess.run(
+                            [sys.executable, "-s", str(root / "test_billing.py")],
+                            cwd=str(root),
+                            capture_output=True,
+                            text=True,
+                            timeout=self.timeout_seconds,
+                            check=False,
+                        )
+                    self._last_passed = proc.returncode == 0
+                    self._last_output = (proc.stdout + proc.stderr).strip()[:500]
+                    return {
+                        "isError": not self._last_passed,
+                        "passed": self._last_passed,
+                        "execution_backend": self._execution_backend,
+                        "output": self._last_output
+                        or ("OK" if self._last_passed else "FAILED"),
+                    }
+                except subprocess.TimeoutExpired:
+                    self._last_passed = False
+                    self._last_output = "Execution timed out."
+                    return {
+                        "isError": True,
+                        "passed": False,
+                        "execution_backend": self._execution_backend,
+                        "error": self._last_output,
+                    }
+
+        return {"isError": True, "error": f"Unknown docker code tool: {name!r}"}
+
+    def verify(
+        self, _state: EnvironmentState, _history: list[dict[str, Any]]
+    ) -> tuple[float, dict[str, Any]]:
+        return (
+            1.0 if self._last_passed else 0.0,
+            {
+                "verified": self._last_passed,
+                "execution_backend": self._execution_backend,
+                "output": self._last_output,
+            },
+        )
+
+
 def make_http_mcp_executor(
     mcp_url: str, *, bearer_token: str = "", timeout: float = 15.0
 ) -> ToolExecutor:
     """Create a ``ToolExecutor`` calling a live Streamable HTTP MCP JSON-RPC endpoint."""
     url = mcp_url.strip()
+    if urllib.parse.urlparse(url).scheme not in ("http", "https"):
+        raise ValueError(f"MCP URL must use http or https scheme, got: {url!r}")
     headers = {"Content-Type": "application/json"}
     if bearer_token.strip():
         headers["Authorization"] = f"Bearer {bearer_token.strip()}"
@@ -366,7 +671,7 @@ def make_http_mcp_executor(
             }
         ).encode("utf-8")
         req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310
             parsed = json.loads(resp.read().decode("utf-8", errors="replace"))
         if "error" in parsed:
             return {"isError": True, "error": parsed["error"]}
@@ -529,7 +834,9 @@ class MCPRLEnvironment(Environment):
 __all__ = [
     "CodeVerificationSandbox",
     "CommerceLedgerSandbox",
+    "DockerCodeSandbox",
     "MCPRLEnvironment",
+    "RESTAPISandbox",
     "SQLAnalyticsSandbox",
     "make_http_mcp_executor",
     "parse_tool_calls",

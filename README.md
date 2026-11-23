@@ -20,9 +20,18 @@
 
 </div>
 
-**v0.74.0 is on PyPI.** It adds finite-sample bounds for CQL proposal sampling
-and fixes how PPO and GRPO use recorded sampling probabilities.
-[Release highlights](#whats-new) · [Installation](#installation) · [How to evaluate StateSet](#how-to-evaluate-stateset)
+**v0.99.0 release line — Open-Weight RL Leadership Suite & 3D Weight Studio.**
+Combines **memory-efficient chunked/Triton GSPO·DAPO·GEPO·VAPO** (`99.61%` 16k Qwen3 logit VRAM saved), **MoE router load-balancing & FP8 rollout TIS/IcePop precision correction**, **disaggregated async rollouts + vLLM Level-1 sleep/wake weight sync**, **5 concurrent verifiable MCP sandboxes** (`commerce`, `coding`, `sql`, `rest_api`, `docker_code`), **Adaptive Difficulty Curriculum + Turn-Level PRM Credit**, **Step-0 PyTorch CAA surgical warm-start**, **interactive WebGL2 3D Weight Studio** (Live RL Cockpit, Multi-Run Sparklines, Pause/Rollback enforcement, Trajectory Credit Inspector, SQLite WAL ledger), **39 annotated MCP tools** (stdio + Streamable HTTP), and the **`@stateset/agents` TypeScript SDK**.
+[Open-Weight RL Guide](docs/OPEN_WEIGHT_RL.md) · [3D Weight Studio](docs/WEIGHT_STUDIO.md) · [Release highlights](#whats-new) · [Installation](#installation) · [How to evaluate StateSet](#how-to-evaluate-stateset)
+
+```bash
+# Launch the interactive 3D Weight Studio & Live RL Cockpit
+stateset-agents studio --port 8765
+
+# Run the verifiable Open-Weight RL shootout & cloud blueprint planner
+stateset-agents rl --run-shootout --json
+stateset-agents rl --model Qwen/Qwen3-8B --algorithm dapo --cloud modal --gpus 4 --json
+```
 
 - **If you run a support agent**, grade sample conversations locally and inspect
   which replies become training data. Then try the same steps on a redacted

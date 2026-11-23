@@ -25,7 +25,9 @@ from typing import Any
 from .mcp_rl_env import (
     CodeVerificationSandbox,
     CommerceLedgerSandbox,
+    DockerCodeSandbox,
     MCPRLEnvironment,
+    RESTAPISandbox,
     SQLAnalyticsSandbox,
 )
 from .trajectory import ConversationTurn
@@ -46,7 +48,7 @@ class SandboxEpisodeSpec:
 class MultiDomainSandboxPool:
     """Concurrent multi-domain MCP sandbox pool with per-domain reward normalization."""
 
-    SUPPORTED_DOMAINS = ("commerce", "coding", "sql")
+    SUPPORTED_DOMAINS = ("commerce", "coding", "sql", "rest_api", "docker_code")
 
     def __init__(self, *, max_concurrency: int = 16) -> None:
         self.max_concurrency = max(1, int(max_concurrency))
@@ -81,6 +83,20 @@ class MultiDomainSandboxPool:
             return MCPRLEnvironment(
                 tool_executor=sq.call_tool,
                 state_verifier=sq.verify,
+                max_turns=max_turns,
+            )
+        if key == "rest_api":
+            ra = RESTAPISandbox()
+            return MCPRLEnvironment(
+                tool_executor=ra.call_tool,
+                state_verifier=ra.verify,
+                max_turns=max_turns,
+            )
+        if key == "docker_code":
+            dc = DockerCodeSandbox(use_docker=False)
+            return MCPRLEnvironment(
+                tool_executor=dc.call_tool,
+                state_verifier=dc.verify,
                 max_turns=max_turns,
             )
         raise ValueError(

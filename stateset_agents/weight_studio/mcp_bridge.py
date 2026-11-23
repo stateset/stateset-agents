@@ -1367,6 +1367,37 @@ def _dispatch_studio_tool(
                             {"expected_value": 25000, "simulate_fail": True},
                         )
                     )
+            elif d == "rest_api":
+                specs.append(
+                    SandboxEpisodeSpec(
+                        "rest_api-ok",
+                        "rest_api",
+                        {
+                            "target_subscription_id": "sub_101",
+                            "expected_status": "canceled",
+                        },
+                    )
+                )
+                if include_failure_pairs:
+                    specs.append(
+                        SandboxEpisodeSpec(
+                            "rest_api-fail",
+                            "rest_api",
+                            {
+                                "target_subscription_id": "sub_101",
+                                "expected_status": "canceled",
+                                "simulate_fail": True,
+                            },
+                        )
+                    )
+            elif d == "docker_code":
+                specs.append(SandboxEpisodeSpec("docker_code-ok", "docker_code", {}))
+                if include_failure_pairs:
+                    specs.append(
+                        SandboxEpisodeSpec(
+                            "docker_code-fail", "docker_code", {"simulate_fail": True}
+                        )
+                    )
             else:
                 raise ValueError(f"Unsupported sandbox domain: {d!r}")
 
@@ -1398,6 +1429,29 @@ def _dispatch_studio_tool(
                     )
                 return ConversationTurn(
                     role="assistant", content="All coding tests passed."
+                )
+            if dom == "rest_api":
+                if turn_idx == 0:
+                    return ConversationTurn(
+                        role="assistant",
+                        content='<tool_call>{"name": "http_request", "arguments": {"method": "POST", "path": "/v1/subscriptions/sub_101/cancel", "idempotency_key": "idem-101", "body": {"reason": "customer_requested"}}}</tool_call>',
+                    )
+                return ConversationTurn(
+                    role="assistant", content="Subscription sub_101 canceled."
+                )
+            if dom == "docker_code":
+                if turn_idx == 0:
+                    return ConversationTurn(
+                        role="assistant",
+                        content='<tool_call>{"name": "apply_patch", "arguments": {"path": "billing.py", "content": "def apply_discount(subtotal_cents: int, pct: int) -> int:\\n    return subtotal_cents - (subtotal_cents * pct) // 100\\n"}}</tool_call>',
+                    )
+                if turn_idx == 1:
+                    return ConversationTurn(
+                        role="assistant",
+                        content='<tool_call>{"name": "run_pytest", "arguments": {}}</tool_call>',
+                    )
+                return ConversationTurn(
+                    role="assistant", content="Patched billing.py and verified pytest."
                 )
             if turn_idx == 0:
                 return ConversationTurn(
