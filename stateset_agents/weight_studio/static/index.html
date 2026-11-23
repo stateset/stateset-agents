@@ -486,8 +486,11 @@
               <span class="card-title">LIVE RL COCKPIT &amp; HACKING GUARD</span>
               <span id="rl-cockpit-pill" class="mono-accent">IDLE</span>
             </div>
+            <canvas id="rl-cockpit-sparkline" width="290" height="58" style="width:100%;height:58px;border-radius:6px;background:rgba(15,23,42,0.55);margin-bottom:6px;display:block;"></canvas>
             <div class="op-action-row mb-6">
-              <button id="btn-rl-cockpit-pulse" class="mini-btn full" title="Send a live StudioTelemetryCallback RL step + Hacking Guard pulse">📡 Emit RL Step Pulse</button>
+              <button id="btn-rl-cockpit-pulse" class="mini-btn full" title="Send a live StudioTelemetryCallback RL step + Hacking Guard pulse">📡 Step Pulse</button>
+              <button id="btn-rl-pause" class="mini-btn" title="Pause or resume active RL training loop">⏸ Pause</button>
+              <button id="btn-rl-rollback" class="mini-btn" title="Issue OnlineRewardHackingGuard rollback command">↩ Rollback</button>
             </div>
             <div id="rl-cockpit-summary" class="empty-hint">Streams live GSPO/DAPO/GEPO/VAPO loss, reward, entropy &amp; OnlineRewardHackingGuard verdicts over SSE.</div>
           </div>

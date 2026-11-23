@@ -335,6 +335,47 @@ export class WeightStudioClient {
   storeStats(options) {
     return this._client.request("/api/weight-studio/store/stats", options);
   }
+
+  getRlTelemetry(params = {}, options) {
+    const qs = new URLSearchParams();
+    if (params.limit !== undefined && params.limit !== null) {
+      qs.set("limit", String(params.limit));
+    }
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return this._client.request(`/api/weight-studio/rl/telemetry${suffix}`, options);
+  }
+
+  postRlTelemetry(body, options) {
+    return this._client.request("/api/weight-studio/rl/telemetry", {
+      method: "POST",
+      body,
+      ...options,
+    });
+  }
+
+  controlRlRun(body, options) {
+    return this._client.request("/api/weight-studio/rl/control", {
+      method: "POST",
+      body,
+      ...options,
+    });
+  }
+
+  planRlRun(body = {}, options) {
+    return this._client.request("/api/weight-studio/rl/plan", {
+      method: "POST",
+      body,
+      ...options,
+    });
+  }
+
+  runSandboxPool(body = {}, options) {
+    return this._client.request("/api/weight-studio/rl/sandbox-pool", {
+      method: "POST",
+      body,
+      ...options,
+    });
+  }
 }
 
 /** Typed JSON-RPC 2.0 client for the Streamable HTTP MCP endpoint. */

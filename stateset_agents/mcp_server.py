@@ -1264,6 +1264,166 @@ def studio_prune_traces(
         return _studio_err(exc, rt)
 
 
+def studio_rl_telemetry(
+    limit: int = 50,
+    workspace: str = "",
+) -> dict[str, Any]:
+    """Inspect recent Live RL Cockpit step telemetry, OnlineRewardHackingGuard verdicts, and Triton kernel availability."""
+    rt = None
+    try:
+        from stateset_agents.training.chunked_rl_loss import (
+            triton_chunked_logprobs_available,
+        )
+
+        rt = _get_mcp_studio_runtime(workspace)
+        rows = rt.rl_telemetry[-max(1, min(200, int(limit))) :]
+        return {
+            "count": len(rows),
+            "latest": rows[-1] if rows else None,
+            "steps": rows,
+            "control": dict(rt.rl_control_state),
+            "triton_available": bool(triton_chunked_logprobs_available()),
+        }
+    except Exception as exc:
+        return _studio_err(exc, rt)
+
+
+def studio_rl_plan(
+    model: str = "Qwen/Qwen3-8B",
+    algorithm: str = "gspo",
+    cloud: str = "local",
+    gpus: int = 1,
+    chunked_loss_chunk_size: int = 256,
+    live_vllm_endpoint: str = "",
+    workspace: str = "",
+) -> dict[str, Any]:
+    """Build a reproducible Open-Weight RL launch plan (chunked VRAM projection, cloud dispatch spec, SHA-256 digest)."""
+    rt = None
+    try:
+        from stateset_agents.training.rl_blueprint import (
+            RLBlueprintConfig,
+            build_cloud_launch_plan,
+        )
+
+        rt = _get_mcp_studio_runtime(workspace)
+        cfg = RLBlueprintConfig(
+            model=model,
+            algorithm=algorithm,
+            cloud=cloud,
+            gpus=int(gpus),
+            chunked_loss_chunk_size=int(chunked_loss_chunk_size),
+            live_vllm_endpoint=live_vllm_endpoint,
+        )
+        return build_cloud_launch_plan(cfg, workspace_root=rt.inspector.workspace_root)
+    except Exception as exc:
+        return _studio_err(exc, rt)
+
+
+def studio_run_sandbox_pool(
+    domains: list[str] | None = None,
+    include_failure_pairs: bool = True,
+    max_concurrency: int = 6,
+    workspace: str = "",
+) -> dict[str, Any]:
+    """Run a concurrent MultiDomainSandboxPool verifiable RL evaluation batch across commerce, coding, and SQL."""
+    rt = None
+    try:
+        import asyncio
+
+        from stateset_agents.core.sandbox_pool import (
+            MultiDomainSandboxPool,
+            SandboxEpisodeSpec,
+        )
+        from stateset_agents.core.trajectory import ConversationTurn
+
+        rt = _get_mcp_studio_runtime(workspace)
+        selected = domains or ["commerce", "coding", "sql"]
+        specs: list[SandboxEpisodeSpec] = []
+        for dom in selected:
+            d = str(dom).strip().lower()
+            if d == "commerce":
+                specs.append(
+                    SandboxEpisodeSpec(
+                        "commerce-ok", "commerce", {"target_order_id": "ORD-77701"}
+                    )
+                )
+                if include_failure_pairs:
+                    specs.append(
+                        SandboxEpisodeSpec(
+                            "commerce-fail",
+                            "commerce",
+                            {"target_order_id": "ORD-77701", "simulate_fail": True},
+                        )
+                    )
+            elif d == "coding":
+                specs.append(SandboxEpisodeSpec("coding-ok", "coding", {}))
+                if include_failure_pairs:
+                    specs.append(
+                        SandboxEpisodeSpec(
+                            "coding-fail", "coding", {"simulate_fail": True}
+                        )
+                    )
+            elif d == "sql":
+                specs.append(
+                    SandboxEpisodeSpec("sql-ok", "sql", {"expected_value": 25000})
+                )
+                if include_failure_pairs:
+                    specs.append(
+                        SandboxEpisodeSpec(
+                            "sql-fail",
+                            "sql",
+                            {"expected_value": 25000, "simulate_fail": True},
+                        )
+                    )
+            else:
+                raise ValueError(f"Unsupported sandbox domain: {d!r}")
+
+        async def _ref_policy(
+            obs: str, meta: dict[str, Any], turn_idx: int
+        ) -> ConversationTurn:
+            if meta["scenario"].get("simulate_fail"):
+                return ConversationTurn(role="assistant", content="Unable to verify.")
+            dom = meta["domain"]
+            if dom == "commerce":
+                if turn_idx == 0:
+                    return ConversationTurn(
+                        role="assistant",
+                        content='<tool_call>{"name": "issue_refund", "arguments": {"order_id": "ORD-77701", "reason": "damaged"}}</tool_call>',
+                    )
+                return ConversationTurn(
+                    role="assistant", content="Refund issued for ORD-77701."
+                )
+            if dom == "coding":
+                if turn_idx == 0:
+                    return ConversationTurn(
+                        role="assistant",
+                        content='<tool_call>{"name": "write_solution", "arguments": {"code": "def compute_net_revenue(s, p, r):\\n    return (s - r) * p"}}</tool_call>',
+                    )
+                if turn_idx == 1:
+                    return ConversationTurn(
+                        role="assistant",
+                        content='<tool_call>{"name": "run_tests", "arguments": {}}</tool_call>',
+                    )
+                return ConversationTurn(
+                    role="assistant", content="All coding tests passed."
+                )
+            if turn_idx == 0:
+                return ConversationTurn(
+                    role="assistant",
+                    content='<tool_call>{"name": "run_sql", "arguments": {"sql": "SELECT SUM(revenue_cents) AS total FROM sales WHERE region = \'west\'"}}</tool_call>',
+                )
+            return ConversationTurn(role="assistant", content="Total revenue is 25000.")
+
+        pool = MultiDomainSandboxPool(
+            max_concurrency=max(1, min(16, int(max_concurrency)))
+        )
+        return asyncio.run(
+            pool.run_batch(specs, _ref_policy, normalize_per_domain=True)
+        )
+    except Exception as exc:
+        return _studio_err(exc, rt)
+
+
 # ---------------------------------------------------------------------------
 # Live MCP Resources (stateset://studio/*)
 # ---------------------------------------------------------------------------
@@ -1599,6 +1759,9 @@ def create_server(*, workspace: str | Path | None = None) -> Any:
     mcp.tool(annotations=ro)(studio_query_traces)
     mcp.tool(annotations=ro)(studio_query_rollouts)
     mcp.tool(annotations=mut)(studio_prune_traces)
+    mcp.tool(annotations=ro)(studio_rl_telemetry)
+    mcp.tool(annotations=ro)(studio_rl_plan)
+    mcp.tool(annotations=ro)(studio_run_sandbox_pool)
 
     # Live MCP Resources (8)
     mcp.resource(

@@ -309,8 +309,86 @@ export function initAutopilotAndMcpPanel({
 
   // 3c. Live vLLM / Ollama Shadow A/B Bridge
   // 3d. Live RL Training Cockpit & Online Reward-Hacking Guard HUD
-  const renderRlTelemetry = (rec) => {
+  const _rlHistory = [];
+  let _rlControlStatus = 'running';
+
+  const drawRlSparkline = () => {
+    const canvas = $('rl-cockpit-sparkline');
+    if (!canvas || !canvas.getContext) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    // Subtle gridline
+    ctx.strokeStyle = 'rgba(148,163,184,0.16)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, h * 0.5);
+    ctx.lineTo(w, h * 0.5);
+    ctx.stroke();
+
+    if (!_rlHistory.length) {
+      ctx.fillStyle = 'rgba(148,163,184,0.55)';
+      ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
+      ctx.fillText('Awaiting RL steps (Reward emerald · Entropy cyan)', 8, h * 0.54);
+      return;
+    }
+
+    const plotSeries = (key, color, fallbackMin, fallbackMax) => {
+      const vals = _rlHistory.map((r) => Number(r[key])).filter((v) => Number.isFinite(v));
+      if (!vals.length) return;
+      const minV = Math.min(fallbackMin, ...vals);
+      const maxV = Math.max(fallbackMax, ...vals);
+      const span = Math.max(1e-4, maxV - minV);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      vals.forEach((v, i) => {
+        const x = vals.length === 1 ? w * 0.5 : 8 + ((w - 16) * i) / (vals.length - 1);
+        const y = h - 8 - ((h - 18) * (v - minV)) / span;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      const last = vals[vals.length - 1];
+      const lx = vals.length === 1 ? w * 0.5 : w - 8;
+      const ly = h - 8 - ((h - 18) * (last - minV)) / span;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(lx, ly, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+    };
+
+    plotSeries('reward', '#10b981', 0.0, 1.0);
+    plotSeries('entropy', '#38bdf8', 0.0, 2.0);
+    ctx.fillStyle = '#10b981';
+    ctx.font = '9px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.fillText('R', 6, 11);
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillText('H', 18, 11);
+  };
+
+  const renderRlControl = (ctrl) => {
+    if (!ctrl) return;
+    _rlControlStatus = ctrl.status || 'running';
+    const pauseBtn = $('btn-rl-pause');
+    if (pauseBtn) {
+      pauseBtn.textContent = _rlControlStatus === 'paused' ? '▶ Resume' : '⏸ Pause';
+    }
+    const pill = $('rl-cockpit-pill');
+    if (pill && (_rlControlStatus === 'paused' || _rlControlStatus === 'rollback_requested')) {
+      pill.textContent = _rlControlStatus === 'paused' ? 'PAUSED' : 'ROLLBACK';
+    }
+  };
+
+  const renderRlTelemetry = (rec, pushHistory = true) => {
     if (!rec) return;
+    if (pushHistory) {
+      _rlHistory.push(rec);
+      if (_rlHistory.length > 40) _rlHistory.shift();
+    }
     const pill = $('rl-cockpit-pill');
     const summary = $('rl-cockpit-summary');
     const guard = rec.guard_action || 'CONTINUE';
@@ -322,14 +400,22 @@ export function initAutopilotAndMcpPanel({
       const parts = [rec.run_name || 'rl-run', rTxt, lTxt, hTxt, `Guard: ${guard}`].filter(Boolean);
       summary.textContent = parts.join(' · ');
     }
+    drawRlSparkline();
   };
 
   (async () => {
     try {
-      const t = await apiGet('/rl/telemetry?limit=1');
-      if (t && t.latest) renderRlTelemetry(t.latest);
+      const t = await apiGet('/rl/telemetry?limit=40');
+      if (t && Array.isArray(t.steps) && t.steps.length) {
+        _rlHistory.length = 0;
+        t.steps.forEach((s) => _rlHistory.push(s));
+        renderRlTelemetry(t.steps[t.steps.length - 1], false);
+      } else {
+        drawRlSparkline();
+      }
+      if (t && t.control) renderRlControl(t.control);
     } catch (_err) {
-      // Optional on initial boot
+      drawRlSparkline();
     }
   })();
 
@@ -351,6 +437,36 @@ export function initAutopilotAndMcpPanel({
       showToast(`📡 RL Step ${_simRlStep} streamed (Guard: CONTINUE)`, 2200);
     } catch (err) {
       showToast(`RL telemetry error: ${err.message}`, 3200);
+    }
+  });
+
+  $('btn-rl-pause')?.addEventListener('click', async () => {
+    const nextAction = _rlControlStatus === 'paused' ? 'resume' : 'pause';
+    try {
+      const res = await apiPost('/rl/control', {
+        action: nextAction,
+        run_name: 'stateset-chunked-gspo',
+        reason: `Operator clicked ${nextAction} in 3D Weight Studio`,
+      });
+      if (res && res.control) renderRlControl(res.control);
+      showToast(`🎛️ RL Cockpit: ${nextAction.toUpperCase()}`, 2400);
+    } catch (err) {
+      showToast(`RL control error: ${err.message}`, 3200);
+    }
+  });
+
+  $('btn-rl-rollback')?.addEventListener('click', async () => {
+    try {
+      const res = await apiPost('/rl/control', {
+        action: 'rollback',
+        run_name: 'stateset-chunked-gspo',
+        reason: 'Manual OnlineRewardHackingGuard checkpoint rollback',
+      });
+      if (res && res.control) renderRlControl(res.control);
+      renderer.triggerPulse('backprop');
+      showToast('↩ RL Checkpoint Rollback requested', 2800);
+    } catch (err) {
+      showToast(`RL rollback error: ${err.message}`, 3200);
     }
   });
   $('btn-run-live-ab')?.addEventListener('click', async () => {
@@ -468,6 +584,9 @@ export function initAutopilotAndMcpPanel({
         }
         if (ev.type === 'rl_step' && ev.payload) {
           renderRlTelemetry(ev.payload);
+        }
+        if (ev.type === 'rl_control' && ev.payload) {
+          renderRlControl(ev.payload);
         }
         if (ev.pulse) renderer.triggerPulse(ev.pulse);
         if (ev.summary) showToast(`🤖 MCP Agent: ${ev.summary}`, 2600);

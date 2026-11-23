@@ -1261,7 +1261,7 @@ def test_redteam_audit_surgical_immunization_and_live_http_mcp_bridge(
     )
     assert r_tools.status_code == 200
     http_tools = r_tools.json()["result"]["tools"]
-    assert len(http_tools) == 28
+    assert len(http_tools) == 31
     tool_names = {t["name"] for t in http_tools}
     assert {
         "studio_apply_edit",

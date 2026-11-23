@@ -72,6 +72,13 @@ class StudioRuntime:
         )
         self.events = StudioEventBus()
         self.rl_telemetry: list[dict[str, Any]] = []
+        self.rl_control_state: dict[str, Any] = {
+            "status": "running",
+            "last_action": "resume",
+            "run_name": "",
+            "reason": "",
+            "updated_at": None,
+        }
 
 
 _DEFAULT_RUNTIME: StudioRuntime | None = None
@@ -1465,6 +1472,8 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
 
     @api.get("/rl/telemetry")
     async def get_rl_telemetry(limit: int = Query(50, ge=1, le=200)) -> dict[str, Any]:
+        from ..training.chunked_rl_loss import triton_chunked_logprobs_available
+
         rt = _rt()
         rows = rt.rl_telemetry[-limit:]
         latest = rows[-1] if rows else None
@@ -1472,7 +1481,200 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
             "count": len(rows),
             "latest": latest,
             "steps": rows,
+            "control": dict(rt.rl_control_state),
+            "triton_available": bool(triton_chunked_logprobs_available()),
         }
+
+    @api.get("/rl/control")
+    async def get_rl_control() -> dict[str, Any]:
+        return {"control": dict(_rt().rl_control_state)}
+
+    @api.post("/rl/control")
+    async def post_rl_control(request: Request) -> dict[str, Any]:
+        from datetime import datetime, timezone
+
+        rt = _rt()
+        try:
+            body = await request.json()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}") from exc
+        if not isinstance(body, dict):
+            raise HTTPException(
+                status_code=400, detail="Payload must be a JSON object."
+            )
+        action = str(body.get("action") or "").strip().lower()
+        if action not in ("pause", "resume", "rollback"):
+            raise HTTPException(
+                status_code=400,
+                detail="action must be one of 'pause', 'resume', or 'rollback'.",
+            )
+        status_map = {
+            "pause": "paused",
+            "resume": "running",
+            "rollback": "rollback_requested",
+        }
+        rt.rl_control_state = {
+            "status": status_map[action],
+            "last_action": action,
+            "run_name": str(
+                body.get("run_name") or rt.rl_control_state.get("run_name") or ""
+            ),
+            "reason": str(body.get("reason") or ""),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        rt.events.publish(
+            "rl_control",
+            source="studio_cockpit",
+            tool="studio_rl_control",
+            summary=f"RL Control → {action.upper()} ({rt.rl_control_state['status']})",
+            mutated=False,
+            pulse="backprop" if action == "rollback" else "",
+            payload=dict(rt.rl_control_state),
+        )
+        return {"ok": True, "control": dict(rt.rl_control_state)}
+
+    @api.post("/rl/plan")
+    async def post_rl_plan(request: Request) -> dict[str, Any]:
+        from ..training.rl_blueprint import RLBlueprintConfig, build_cloud_launch_plan
+
+        rt = _rt()
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if not isinstance(body, dict):
+            raise HTTPException(
+                status_code=400, detail="Payload must be a JSON object."
+            )
+        allowed = {
+            "name",
+            "model",
+            "algorithm",
+            "env",
+            "reward_fn",
+            "cloud",
+            "gpus",
+            "gpu_type",
+            "use_lora",
+            "lora_rank",
+            "lora_alpha",
+            "chunked_loss_chunk_size",
+            "use_checkpointing",
+            "dynamic_sampling",
+            "disaggregated_rollouts",
+            "surgical_warm_start",
+            "online_hacking_guard",
+            "max_steps",
+            "group_size",
+            "kl_coef",
+            "live_vllm_endpoint",
+            "mcp_endpoint",
+        }
+        filtered = {k: v for k, v in body.items() if k in allowed}
+        try:
+            cfg = RLBlueprintConfig(**filtered)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return build_cloud_launch_plan(cfg, workspace_root=rt.inspector.workspace_root)
+
+    @api.post("/rl/sandbox-pool")
+    async def post_rl_sandbox_pool(request: Request) -> dict[str, Any]:
+        from ..core.sandbox_pool import MultiDomainSandboxPool, SandboxEpisodeSpec
+        from ..core.trajectory import ConversationTurn
+
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        domains = body.get("domains") or ["commerce", "coding", "sql"]
+        include_failure_pairs = bool(body.get("include_failure_pairs", True))
+        max_concurrency = max(1, min(16, int(body.get("max_concurrency", 6))))
+
+        specs: list[SandboxEpisodeSpec] = []
+        for dom in domains:
+            d = str(dom).strip().lower()
+            if d == "commerce":
+                specs.append(
+                    SandboxEpisodeSpec(
+                        "commerce-ok", "commerce", {"target_order_id": "ORD-77701"}
+                    )
+                )
+                if include_failure_pairs:
+                    specs.append(
+                        SandboxEpisodeSpec(
+                            "commerce-fail",
+                            "commerce",
+                            {"target_order_id": "ORD-77701", "simulate_fail": True},
+                        )
+                    )
+            elif d == "coding":
+                specs.append(SandboxEpisodeSpec("coding-ok", "coding", {}))
+                if include_failure_pairs:
+                    specs.append(
+                        SandboxEpisodeSpec(
+                            "coding-fail", "coding", {"simulate_fail": True}
+                        )
+                    )
+            elif d == "sql":
+                specs.append(
+                    SandboxEpisodeSpec("sql-ok", "sql", {"expected_value": 25000})
+                )
+                if include_failure_pairs:
+                    specs.append(
+                        SandboxEpisodeSpec(
+                            "sql-fail",
+                            "sql",
+                            {"expected_value": 25000, "simulate_fail": True},
+                        )
+                    )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported sandbox domain {d!r}; expected commerce, coding, or sql.",
+                )
+
+        async def _ref_policy(
+            obs: str, meta: dict[str, Any], turn_idx: int
+        ) -> ConversationTurn:
+            if meta["scenario"].get("simulate_fail"):
+                return ConversationTurn(
+                    role="assistant", content="I cannot verify this request."
+                )
+            dom = meta["domain"]
+            if dom == "commerce":
+                if turn_idx == 0:
+                    return ConversationTurn(
+                        role="assistant",
+                        content='<tool_call>{"name": "issue_refund", "arguments": {"order_id": "ORD-77701", "reason": "damaged"}}</tool_call>',
+                    )
+                return ConversationTurn(
+                    role="assistant", content="Refund issued for ORD-77701."
+                )
+            if dom == "coding":
+                if turn_idx == 0:
+                    return ConversationTurn(
+                        role="assistant",
+                        content='<tool_call>{"name": "write_solution", "arguments": {"code": "def compute_net_revenue(s, p, r):\\n    return (s - r) * p"}}</tool_call>',
+                    )
+                if turn_idx == 1:
+                    return ConversationTurn(
+                        role="assistant",
+                        content='<tool_call>{"name": "run_tests", "arguments": {}}</tool_call>',
+                    )
+                return ConversationTurn(
+                    role="assistant", content="All coding assertions passed."
+                )
+            if turn_idx == 0:
+                return ConversationTurn(
+                    role="assistant",
+                    content='<tool_call>{"name": "run_sql", "arguments": {"sql": "SELECT SUM(revenue_cents) AS total FROM sales WHERE region = \'west\'"}}</tool_call>',
+                )
+            return ConversationTurn(role="assistant", content="Total revenue is 25000.")
+
+        pool = MultiDomainSandboxPool(max_concurrency=max_concurrency)
+        return await pool.run_batch(specs, _ref_policy, normalize_per_domain=True)
 
     @api.post("/traces/calibration-audit")
     async def traces_calibration_audit(req: CalibrationAuditRequest) -> dict[str, Any]:

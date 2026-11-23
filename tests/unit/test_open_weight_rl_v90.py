@@ -872,3 +872,103 @@ def test_v94_multi_domain_sandbox_pool_sleep_wake_sync_rl_cockpit_and_triton_pro
     assert r_get.json()["count"] == 1
     assert r_get.json()["latest"]["run_name"] == "v94-live-cockpit"
     assert r_get.json()["latest"]["guard_action"] == "CONTINUE"
+
+
+def test_v95_rl_mcp_tools_cockpit_controls_and_upgraded_shootout(
+    tmp_path: Path,
+) -> None:
+    """Verify v0.95.0 RL MCP tools (HTTP + stdio parity), RL Cockpit Pause/Rollback controls, Plan/Pool REST APIs & upgraded shootout."""
+    from fastapi.testclient import TestClient
+
+    from stateset_agents.mcp_server import (
+        studio_rl_plan,
+        studio_rl_telemetry,
+        studio_run_sandbox_pool,
+    )
+    from stateset_agents.weight_studio import create_studio_app
+    from stateset_agents.weight_studio.mcp_bridge import (
+        get_canonical_studio_tool_names,
+    )
+
+    # 1. Canonical MCP tool list includes all 3 new Open-Weight RL tools
+    canonical = set(get_canonical_studio_tool_names())
+    assert {
+        "studio_rl_telemetry",
+        "studio_rl_plan",
+        "studio_run_sandbox_pool",
+    }.issubset(canonical)
+
+    # 2. REST API: /rl/control (pause/resume/rollback), /rl/plan, /rl/sandbox-pool
+    app = create_studio_app(workspace_root=tmp_path)
+    client = TestClient(app)
+
+    r_pause = client.post(
+        "/api/weight-studio/rl/control",
+        json={"action": "pause", "run_name": "gspo-v95", "reason": "operator pause"},
+    )
+    assert r_pause.status_code == 200
+    assert r_pause.json()["control"]["status"] == "paused"
+
+    r_tel = client.get("/api/weight-studio/rl/telemetry")
+    assert r_tel.status_code == 200
+    assert r_tel.json()["control"]["status"] == "paused"
+    assert isinstance(r_tel.json()["triton_available"], bool)
+
+    r_rb = client.post(
+        "/api/weight-studio/rl/control",
+        json={"action": "rollback", "run_name": "gspo-v95", "reason": "hacking alert"},
+    )
+    assert r_rb.status_code == 200
+    assert r_rb.json()["control"]["status"] == "rollback_requested"
+
+    r_plan = client.post(
+        "/api/weight-studio/rl/plan",
+        json={
+            "model": "Qwen/Qwen3-8B",
+            "algorithm": "dapo",
+            "cloud": "modal",
+            "gpus": 4,
+        },
+    )
+    assert r_plan.status_code == 200
+    assert r_plan.json()["dispatch"]["provider"] == "modal"
+    assert r_plan.json()["vram_estimate"]["peak_logit_vram_saved_pct"] > 90.0
+
+    r_pool = client.post(
+        "/api/weight-studio/rl/sandbox-pool",
+        json={"domains": ["commerce", "coding", "sql"], "include_failure_pairs": True},
+    )
+    assert r_pool.status_code == 200
+    assert r_pool.json()["episode_count"] == 6
+    assert set(r_pool.json()["domain_stats"]) == {"commerce", "coding", "sql"}
+
+    # 3. Streamable HTTP MCP JSON-RPC calls for all 3 RL tools
+    for tool_name, args in (
+        ("studio_rl_telemetry", {"limit": 10}),
+        ("studio_rl_plan", {"algorithm": "gspo", "cloud": "runpod", "gpus": 2}),
+        ("studio_run_sandbox_pool", {"domains": ["commerce", "sql"]}),
+    ):
+        resp = client.post(
+            "/api/weight-studio/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": tool_name, "arguments": args},
+            },
+        )
+        assert resp.status_code == 200
+        res_obj = resp.json()["result"]
+        assert res_obj["isError"] is False
+
+    # 4. Direct stdio MCP functions parity
+    tel_stdio = studio_rl_telemetry(limit=5, workspace=str(tmp_path))
+    assert "triton_available" in tel_stdio
+    plan_stdio = studio_rl_plan(
+        algorithm="dapo", cloud="modal", workspace=str(tmp_path)
+    )
+    assert plan_stdio["dispatch"]["provider"] == "modal"
+    pool_stdio = studio_run_sandbox_pool(
+        domains=["coding", "sql"], workspace=str(tmp_path)
+    )
+    assert pool_stdio["episode_count"] == 4

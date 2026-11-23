@@ -515,6 +515,44 @@ STUDIO_MCP_TOOLS: list[dict[str, Any]] = [
         [],
         read_only=False,
     ),
+    _tool_spec(
+        "studio_rl_telemetry",
+        "Inspect Live RL Cockpit step telemetry, OnlineRewardHackingGuard verdicts, pause/rollback control state, and Triton fused kernel availability.",
+        {
+            "limit": {"type": "integer", "default": 50},
+        },
+        [],
+        read_only=True,
+    ),
+    _tool_spec(
+        "studio_rl_plan",
+        "Build a reproducible Open-Weight RL launch plan (chunked VRAM projection, cloud dispatch spec, SHA-256 digest).",
+        {
+            "model": {"type": "string", "default": "Qwen/Qwen3-8B"},
+            "algorithm": {"type": "string", "default": "gspo"},
+            "cloud": {"type": "string", "default": "local"},
+            "gpus": {"type": "integer", "default": 1},
+            "chunked_loss_chunk_size": {"type": "integer", "default": 256},
+            "live_vllm_endpoint": {"type": "string", "default": ""},
+        },
+        [],
+        read_only=True,
+    ),
+    _tool_spec(
+        "studio_run_sandbox_pool",
+        "Run a concurrent MultiDomainSandboxPool verifiable RL evaluation batch across commerce, coding, and SQL with per-domain advantage normalization.",
+        {
+            "domains": {
+                "type": "array",
+                "items": {"type": "string"},
+                "default": ["commerce", "coding", "sql"],
+            },
+            "include_failure_pairs": {"type": "boolean", "default": True},
+            "max_concurrency": {"type": "integer", "default": 6},
+        },
+        [],
+        read_only=True,
+    ),
 ]
 
 TOOL_READ_ONLY_MAP: dict[str, bool] = {
@@ -1229,6 +1267,136 @@ def _dispatch_studio_tool(
             False,
             "",
             f"Pruned {deleted} old trace(s) (kept latest {keep})",
+        )
+
+    if name == "studio_rl_telemetry":
+        from ..training.chunked_rl_loss import triton_chunked_logprobs_available
+
+        limit = max(1, min(200, int(args.get("limit", 50))))
+        rows = rt.rl_telemetry[-limit:]
+        latest = rows[-1] if rows else None
+        return (
+            {
+                "count": len(rows),
+                "latest": latest,
+                "steps": rows,
+                "control": dict(rt.rl_control_state),
+                "triton_available": bool(triton_chunked_logprobs_available()),
+            },
+            False,
+            "",
+            f"Read {len(rows)} RL telemetry step(s) (status={rt.rl_control_state.get('status', 'running')})",
+        )
+
+    if name == "studio_rl_plan":
+        from ..training.rl_blueprint import RLBlueprintConfig, build_cloud_launch_plan
+
+        cfg = RLBlueprintConfig(
+            model=str(args.get("model") or "Qwen/Qwen3-8B"),
+            algorithm=str(args.get("algorithm") or "gspo"),
+            cloud=str(args.get("cloud") or "local"),
+            gpus=int(args.get("gpus", 1)),
+            chunked_loss_chunk_size=int(args.get("chunked_loss_chunk_size", 256)),
+            live_vllm_endpoint=str(args.get("live_vllm_endpoint") or ""),
+        )
+        plan = build_cloud_launch_plan(cfg, workspace_root=rt.inspector.workspace_root)
+        return (
+            plan,
+            False,
+            "forward",
+            f"RL Blueprint {cfg.algorithm.upper()} on {cfg.cloud} ({plan['vram_estimate']['peak_logit_vram_saved_pct']}% logit VRAM saved)",
+        )
+
+    if name == "studio_run_sandbox_pool":
+        from ..core.sandbox_pool import MultiDomainSandboxPool, SandboxEpisodeSpec
+        from ..core.trajectory import ConversationTurn
+
+        domains = args.get("domains") or ["commerce", "coding", "sql"]
+        include_failure_pairs = bool(args.get("include_failure_pairs", True))
+        max_concurrency = max(1, min(16, int(args.get("max_concurrency", 6))))
+        specs: list[SandboxEpisodeSpec] = []
+        for dom in domains:
+            d = str(dom).strip().lower()
+            if d == "commerce":
+                specs.append(
+                    SandboxEpisodeSpec(
+                        "commerce-ok", "commerce", {"target_order_id": "ORD-77701"}
+                    )
+                )
+                if include_failure_pairs:
+                    specs.append(
+                        SandboxEpisodeSpec(
+                            "commerce-fail",
+                            "commerce",
+                            {"target_order_id": "ORD-77701", "simulate_fail": True},
+                        )
+                    )
+            elif d == "coding":
+                specs.append(SandboxEpisodeSpec("coding-ok", "coding", {}))
+                if include_failure_pairs:
+                    specs.append(
+                        SandboxEpisodeSpec(
+                            "coding-fail", "coding", {"simulate_fail": True}
+                        )
+                    )
+            elif d == "sql":
+                specs.append(
+                    SandboxEpisodeSpec("sql-ok", "sql", {"expected_value": 25000})
+                )
+                if include_failure_pairs:
+                    specs.append(
+                        SandboxEpisodeSpec(
+                            "sql-fail",
+                            "sql",
+                            {"expected_value": 25000, "simulate_fail": True},
+                        )
+                    )
+            else:
+                raise ValueError(f"Unsupported sandbox domain: {d!r}")
+
+        async def _ref_policy(
+            obs: str, meta: dict[str, Any], turn_idx: int
+        ) -> ConversationTurn:
+            if meta["scenario"].get("simulate_fail"):
+                return ConversationTurn(role="assistant", content="Unable to verify.")
+            dom = meta["domain"]
+            if dom == "commerce":
+                if turn_idx == 0:
+                    return ConversationTurn(
+                        role="assistant",
+                        content='<tool_call>{"name": "issue_refund", "arguments": {"order_id": "ORD-77701", "reason": "damaged"}}</tool_call>',
+                    )
+                return ConversationTurn(
+                    role="assistant", content="Refund issued for ORD-77701."
+                )
+            if dom == "coding":
+                if turn_idx == 0:
+                    return ConversationTurn(
+                        role="assistant",
+                        content='<tool_call>{"name": "write_solution", "arguments": {"code": "def compute_net_revenue(s, p, r):\\n    return (s - r) * p"}}</tool_call>',
+                    )
+                if turn_idx == 1:
+                    return ConversationTurn(
+                        role="assistant",
+                        content='<tool_call>{"name": "run_tests", "arguments": {}}</tool_call>',
+                    )
+                return ConversationTurn(
+                    role="assistant", content="All coding tests passed."
+                )
+            if turn_idx == 0:
+                return ConversationTurn(
+                    role="assistant",
+                    content='<tool_call>{"name": "run_sql", "arguments": {"sql": "SELECT SUM(revenue_cents) AS total FROM sales WHERE region = \'west\'"}}</tool_call>',
+                )
+            return ConversationTurn(role="assistant", content="Total revenue is 25000.")
+
+        pool = MultiDomainSandboxPool(max_concurrency=max_concurrency)
+        res = asyncio.run(pool.run_batch(specs, _ref_policy, normalize_per_domain=True))
+        return (
+            res,
+            False,
+            "forward",
+            f"Sandbox Pool ran {res['episode_count']} episode(s) across {len(res['domain_stats'])} domain(s)",
         )
 
     raise KeyError(f"Unknown MCP tool: {name}")

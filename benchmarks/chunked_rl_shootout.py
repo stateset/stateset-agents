@@ -34,6 +34,7 @@ def run_chunked_loss_shootout(
     from stateset_agents.training.chunked_rl_loss import (
         chunked_gather_token_logprobs,
         chunked_rl_policy_loss,
+        triton_chunked_logprobs_available,
     )
     from stateset_agents.training.rl_blueprint import estimate_chunked_vram_savings
     from stateset_agents.training.rl_losses import gather_token_logprobs
@@ -116,10 +117,80 @@ def run_chunked_loss_shootout(
             "gspo_loss": round(float(gspo["loss"].item()), 6),
             "dapo_loss": round(float(dapo["loss"].item()), 6),
             "mean_entropy": round(float(gspo["entropy"].item()), 4),
+            "kernel_backend": str(gspo.get("kernel_backend", "pytorch_chunked")),
         },
+        "triton_available": bool(triton_chunked_logprobs_available()),
         "vram_projection_16k_qwen3": estimate_chunked_vram_savings(
             batch_size=4, seq_len=16384, vocab_size=152064, chunk_size=256
         ),
+    }
+
+
+async def run_multi_domain_sandbox_shootout() -> dict[str, Any]:
+    """Benchmark concurrent commerce + coding + SQL verifiable RL episodes with per-domain z-score normalization."""
+    from stateset_agents.core.sandbox_pool import (
+        MultiDomainSandboxPool,
+        SandboxEpisodeSpec,
+    )
+    from stateset_agents.core.trajectory import ConversationTurn
+
+    async def _policy(
+        obs: str, meta: dict[str, Any], turn_idx: int
+    ) -> ConversationTurn:
+        dom = meta["domain"]
+        if meta["scenario"].get("simulate_fail"):
+            return ConversationTurn(role="assistant", content="Unable to verify.")
+        if dom == "commerce":
+            if turn_idx == 0:
+                return ConversationTurn(
+                    role="assistant",
+                    content='<tool_call>{"name": "issue_refund", "arguments": {"order_id": "ORD-77701", "reason": "damaged"}}</tool_call>',
+                )
+            return ConversationTurn(
+                role="assistant", content="Refund issued for ORD-77701."
+            )
+        if dom == "coding":
+            if turn_idx == 0:
+                return ConversationTurn(
+                    role="assistant",
+                    content='<tool_call>{"name": "write_solution", "arguments": {"code": "def compute_net_revenue(s, p, r):\\n    return (s - r) * p"}}</tool_call>',
+                )
+            if turn_idx == 1:
+                return ConversationTurn(
+                    role="assistant",
+                    content='<tool_call>{"name": "run_tests", "arguments": {}}</tool_call>',
+                )
+            return ConversationTurn(role="assistant", content="All tests passed.")
+        if turn_idx == 0:
+            return ConversationTurn(
+                role="assistant",
+                content='<tool_call>{"name": "run_sql", "arguments": {"sql": "SELECT SUM(revenue_cents) AS total FROM sales WHERE region = \'west\'"}}</tool_call>',
+            )
+        return ConversationTurn(role="assistant", content="Total revenue is 25000.")
+
+    pool = MultiDomainSandboxPool(max_concurrency=6)
+    specs = [
+        SandboxEpisodeSpec("c-ok", "commerce", {"target_order_id": "ORD-77701"}),
+        SandboxEpisodeSpec(
+            "c-bad", "commerce", {"target_order_id": "ORD-77701", "simulate_fail": True}
+        ),
+        SandboxEpisodeSpec("k-ok", "coding", {}),
+        SandboxEpisodeSpec("k-bad", "coding", {"simulate_fail": True}),
+        SandboxEpisodeSpec("s-ok", "sql", {"expected_value": 25000}),
+        SandboxEpisodeSpec(
+            "s-bad", "sql", {"expected_value": 25000, "simulate_fail": True}
+        ),
+    ]
+    t0 = time.perf_counter()
+    res = await pool.run_batch(specs, _policy, normalize_per_domain=True)
+    elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+    return {
+        "episode_count": res["episode_count"],
+        "elapsed_ms": elapsed_ms,
+        "episodes_per_sec": round(
+            res["episode_count"] / max(1e-4, elapsed_ms / 1000.0), 2
+        ),
+        "domain_stats": res["domain_stats"],
     }
 
 
@@ -179,7 +250,12 @@ def main() -> None:
 
     loss_rep = run_chunked_loss_shootout()
     async_rep = asyncio.run(run_disaggregated_async_shootout())
-    report = {"chunked_rl_loss": loss_rep, "disaggregated_async_rl": async_rep}
+    sandbox_rep = asyncio.run(run_multi_domain_sandbox_shootout())
+    report = {
+        "chunked_rl_loss": loss_rep,
+        "disaggregated_async_rl": async_rep,
+        "multi_domain_sandbox_pool": sandbox_rep,
+    }
 
     if args.json:
         print(json.dumps(report, indent=2))
@@ -190,7 +266,8 @@ def main() -> None:
     print("StateSet Open-Weight RL Shootout")
     print(
         f"  Chunked Loss Equivalence : exact={eq['exact_match']} "
-        f"(max Δlp={eq['max_logprob_abs_diff']}, max Δgrad={eq['max_hidden_grad_abs_diff']})"
+        f"(max Δlp={eq['max_logprob_abs_diff']}, max Δgrad={eq['max_hidden_grad_abs_diff']}, "
+        f"backend={loss_rep['loss_values']['kernel_backend']}, triton={loss_rep['triton_available']})"
     )
     print(
         f"  16k Qwen3 Logit VRAM     : {vp['full_logits_gb']} GB -> {vp['chunked_logits_gb']} GB "
@@ -200,6 +277,11 @@ def main() -> None:
         f"  Disaggregated Async RL   : {async_rep['rollouts_per_sec']} rollouts/s, "
         f"{async_rep['tokens_per_sec']} tok/s, "
         f"dropped_zero_var={async_rep['groups_dropped_zero_variance']}"
+    )
+    print(
+        f"  Multi-Domain Sandbox Pool: {sandbox_rep['episode_count']} eps in "
+        f"{sandbox_rep['elapsed_ms']}ms ({sandbox_rep['episodes_per_sec']} eps/s, "
+        f"domains={','.join(sorted(sandbox_rep['domain_stats']))})"
     )
 
 

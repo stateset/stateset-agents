@@ -662,6 +662,9 @@ class TestLiveProtocolSession:
                     "studio_query_traces",
                     "studio_query_rollouts",
                     "studio_prune_traces",
+                    "studio_rl_telemetry",
+                    "studio_rl_plan",
+                    "studio_run_sandbox_pool",
                 }
                 assert set(tool_by_name) == expected_tools
                 assert len(tools_result.tools) == len(expected_tools)

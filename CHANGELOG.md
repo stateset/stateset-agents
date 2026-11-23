@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.95.0] - 2026-11-23 — RL MCP Tool Parity, TypeScript SDK RL Methods, Interactive Sparkline Cockpit & Pause/Rollback Controls
+
+### Added
+
+- **Open-Weight RL MCP Tools (HTTP + stdio Parity)** (`stateset_agents/weight_studio/mcp_bridge.py`, `stateset_agents/mcp_server.py`): added `studio_rl_telemetry`, `studio_rl_plan`, and `studio_run_sandbox_pool` across both Streamable HTTP MCP and stdio MCP (38 stdio / 31 HTTP canonical Studio tools).
+- **Live RL Cockpit Sparklines & Guard Controls** (`stateset_agents/weight_studio/router.py`, `index.html`, `autopilot_panel.js`): added `GET/POST /api/weight-studio/rl/control` (`pause`, `resume`, `rollback` with `rl_control` SSE broadcast), `POST /api/weight-studio/rl/plan`, `POST /api/weight-studio/rl/sandbox-pool`, dual-series Reward/Entropy HTML5 canvas sparkline, and one-click Pause/Resume & Rollback buttons in 3D Weight Studio.
+- **TypeScript SDK Open-Weight RL Parity** (`npm/src/index.js`, `npm/src/index.d.ts`, `npm/test/`): added `getRlTelemetry`, `postRlTelemetry`, `controlRlRun`, `planRlRun`, and `runSandboxPool` on `client.studio` with full TypeScript definitions and unit tests.
+- **Upgraded RL Shootout Benchmark & Published Architecture Guide** (`benchmarks/chunked_rl_shootout.py`, `docs/OPEN_WEIGHT_RL.md`): added `triton_available` / `kernel_backend` telemetry and `run_multi_domain_sandbox_shootout()` measuring concurrent commerce + coding + SQL verifiable RL throughput.
+
 ## [0.94.0] - 2026-11-23 — Triton Fused CUDA Chunked Log-Softmax Kernel, Multi-Domain Verifiable Sandbox Pool, vLLM Sleep/Wake Weight Sync & Live 3D RL Cockpit HUD
 
 ### Added
