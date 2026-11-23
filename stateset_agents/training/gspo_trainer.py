@@ -737,6 +737,30 @@ class GSPOTrainer(TrainingRuntime):
                     for k, v in inputs.items()
                 }
 
+        chunk_size = getattr(self.config, "chunked_loss_chunk_size", None)
+        if chunk_size is not None and int(chunk_size) > 0:
+            from .chunked_rl_loss import chunked_model_token_logprobs
+
+            attn = inputs["attention_mask"]
+            full_response_mask = torch.zeros_like(attn)
+            if response_start_idx + 1 < full_response_mask.shape[1]:
+                full_response_mask[:, response_start_idx + 1 :] = attn[
+                    :, response_start_idx + 1 :
+                ]
+            masked_log_probs, shifted_mask = chunked_model_token_logprobs(
+                self.model,
+                inputs["input_ids"],
+                full_response_mask,
+                attention_mask=attn,
+                chunk_size=int(chunk_size),
+                use_checkpointing=bool(
+                    getattr(self.config, "use_loss_checkpointing", False)
+                ),
+            )
+            sequence_log_probs = masked_log_probs.sum(dim=-1)
+            response_lengths = shifted_mask.sum(dim=-1).to(dtype=torch.float32)
+            return sequence_log_probs, response_lengths
+
         outputs = self.model(**inputs)
         logits = outputs.logits
 

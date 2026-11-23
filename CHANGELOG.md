@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.92.0] - 2026-11-23 — Live Chunked Logprob Wiring in `GSPOTrainer` & `DAPOTrainer`, Turn-Level Process Reward Credit Assignment & Open-Weight RL Architecture Guide
+
+### Added
+
+- **Live Chunked Forward Wiring in `GSPOTrainer` & `DAPOTrainer`** (`stateset_agents/training/gspo_trainer.py`, `stateset_agents/training/dapo_trainer.py`): setting `chunked_loss_chunk_size` on `GSPOConfig` or `DAPOConfig` now routes `compute_token_log_probs` and `_compute_group_sequence_log_probs` directly through `chunked_model_token_logprobs`, bypassing full `[B, T, V]` logit materialization with bit-exact parity.
+- **Turn-Level Process Reward Credit Assignment** (`stateset_agents/training/turn_credit.py`): `compute_discounted_turn_returns`, `compute_turn_level_advantages`, and `expand_turn_advantages_to_tokens` blend per-turn PRM scores with discounted terminal verifiable rewards so multi-turn agentic RL credits exact tool-calling turns.
+- **Open-Weight RL Architecture Guide** (`docs/OPEN_WEIGHT_RL.md`): end-to-end guide for Chunked GSPO/DAPO, Step-0 PyTorch CAA warm-start, MCP-native verifiable sandboxes, Turn-Level PRM credit assignment, and 1-command `stateset-agents rl` blueprints.
+
 ## [0.91.0] - 2026-11-23 — Real PyTorch Forward-Hook CAA Step-0 RL Warm-Start, Backbone-Level Chunked Model Logprobs, Verifiable Code-Exec RL Sandbox & End-to-End CI Example
 
 ### Added

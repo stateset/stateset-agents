@@ -118,6 +118,22 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
         f"{_PKG}.rl_blueprint",
         "build_cloud_launch_plan",
     ),
+    "TurnCreditResult": (
+        f"{_PKG}.turn_credit",
+        "TurnCreditResult",
+    ),
+    "compute_discounted_turn_returns": (
+        f"{_PKG}.turn_credit",
+        "compute_discounted_turn_returns",
+    ),
+    "compute_turn_level_advantages": (
+        f"{_PKG}.turn_credit",
+        "compute_turn_level_advantages",
+    ),
+    "expand_turn_advantages_to_tokens": (
+        f"{_PKG}.turn_credit",
+        "expand_turn_advantages_to_tokens",
+    ),
     "AsyncRolloutTimeout": (
         f"{_PKG}.async_rollouts",
         "AsyncRolloutTimeout",
