@@ -23,6 +23,7 @@ from .editor import WeightEditEngine
 from .finetune_engine import FinetuneStudioEngine
 from .inference_engine import InferenceStudioEngine
 from .inspector import WeightInspector
+from .surgery_loop import AutonomousSurgeryLoop
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -35,6 +36,7 @@ class StudioRuntime:
         self.editor = WeightEditEngine(self.inspector)
         self.finetuner = FinetuneStudioEngine(self.inspector, self.editor)
         self.inference = InferenceStudioEngine(self.inspector, self.editor)
+        self.healer = AutonomousSurgeryLoop(self.inspector, self.editor, self.inference)
 
 
 _DEFAULT_RUNTIME: StudioRuntime | None = None
@@ -298,6 +300,24 @@ class LoadSessionRequest(BaseModel):
     model_config = {"protected_namespaces": ()}
 
     session_name: str = Field(..., min_length=1, max_length=120)
+
+
+class HealRunRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_id: str
+    checkpoint_id: str | None = None
+    transcripts_path: str | None = None
+    transcripts_jsonl: str | None = None
+    reward_fn: str = Field(
+        "customer_support",
+        pattern="^(composite|customer_support|tool_calling|gsm8k)$",
+    )
+    export_format: str = Field("none", pattern="^(none|lora|safetensors|gguf|hf_card)$")
+    output_name: str = ""
+    lora_rank: int = Field(16, ge=1, le=128)
+    lora_alpha: int = Field(32, ge=1, le=512)
+    require_go: bool = True
 
 
 class SaeAnalyzeRequest(BaseModel):
@@ -905,6 +925,24 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
             return _rt().editor.load_session(req.session_name)
         except (KeyError, ValueError, FileNotFoundError) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @api.post("/heal/run")
+    async def run_autonomous_heal_endpoint(req: HealRunRequest) -> dict[str, Any]:
+        try:
+            return _rt().healer.run_healing_loop(
+                req.model_id,
+                checkpoint_id=req.checkpoint_id,
+                transcripts_path=req.transcripts_path,
+                transcripts_jsonl=req.transcripts_jsonl,
+                reward_fn=req.reward_fn,
+                export_format=req.export_format,
+                output_name=req.output_name,
+                lora_rank=req.lora_rank,
+                lora_alpha=req.lora_alpha,
+                require_go=req.require_go,
+            )
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @api.post("/sae/analyze")
     async def sae_analyze(req: SaeAnalyzeRequest) -> dict[str, Any]:

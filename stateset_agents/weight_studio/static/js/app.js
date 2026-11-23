@@ -2586,6 +2586,42 @@ function bindSplitCurtain() {
   // Studio v6: Multi-Edit A/B Arena
   $('btn-run-arena')?.addEventListener('click', runArenaComparison);
 
+  // Autonomous Transcript-to-Surgery Self-Heal Loop
+  $('btn-run-auto-heal')?.addEventListener('click', async () => {
+    if (!state.modelId) return;
+    const btn = $('btn-run-auto-heal');
+    const pill = $('heal-status-pill');
+    const summary = $('heal-result-summary');
+    btn.disabled = true;
+    btn.textContent = 'Healing…';
+    if (pill) pill.textContent = 'MINING';
+    try {
+      const res = await apiPost('/heal/run', {
+        model_id: state.modelId,
+        checkpoint_id: state.checkpointId,
+        transcripts_jsonl: ($('heal-transcripts-input')?.value || '').trim() || null,
+        transcripts_path: ($('heal-transcripts-input')?.value || '').trim() ? null : (state.ftDatasetPath || null),
+        reward_fn: $('heal-reward-select')?.value || 'customer_support',
+        export_format: 'none',
+      });
+      const diag = res.diagnosis || {};
+      const sv = res.steering_vector || {};
+      const gate = res.eval_gate || {};
+      if (pill) pill.textContent = `${gate.verdict || 'GO'} · L${String(sv.target_layer ?? 0).padStart(2, '0')}`;
+      if (summary) {
+        summary.innerHTML = `<span style="color:#6ee7b7;font-weight:700">${gate.verdict}</span> · Diagnosed <b>${diag.dominant_failure_mode}</b> (${diag.failing_count}/${diag.total_transcripts} failing) → Baked <b>α=${Number(sv.chosen_strength || 0).toFixed(2)}</b> on L${String(sv.target_layer ?? 0).padStart(2, '0')} (${res.latency_ms} ms)`;
+      }
+      renderer.triggerPulse('backprop');
+      await reloadAfterEdit(`Auto-Healed ${diag.dominant_failure_mode} on L${sv.target_layer} (Eval Gate: ${gate.verdict})`);
+    } catch (err) {
+      if (pill) pill.textContent = 'ERR';
+      showToast(`Auto-Heal failed: ${err.message}`, 3400);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🩹 Auto-Heal';
+    }
+  });
+
   // Studio v6: Command Palette (Ctrl+K / ⌘K)
   bindCommandPalette();
 }

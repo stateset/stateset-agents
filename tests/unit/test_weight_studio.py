@@ -1074,3 +1074,120 @@ def test_v7_residual_stream_auto_repair_hf_card_sessions_and_mcp(
         workspace=str(ws),
     )
     assert mcp_sess["session_name"] == "mcp-session-v7"
+
+
+def test_autonomous_transcript_to_surgery_heal_loop_api_cli_and_mcp(
+    tmp_path: Path,
+) -> None:
+    """Verify Autonomous Transcript-to-Surgery Self-Healing Loop via Python, FastAPI, CLI & MCP."""
+    from fastapi.testclient import TestClient
+    from typer.testing import CliRunner
+
+    from stateset_agents.cli import app as cli_app
+    from stateset_agents.mcp_server import studio_auto_heal
+    from stateset_agents.weight_studio import run_autonomous_heal
+
+    ws = _make_sample_workspace(tmp_path)
+    mid = "local:outputs/demo_lora_run"
+
+    # Write failing + healthy production transcripts with placeholders & repetition loops
+    transcripts_file = ws / "outputs" / "prod_failures.jsonl"
+    transcripts_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "prompt": "Customer says: My order #77701 arrived damaged after 9 days and I was billed twice.",
+                        "response": "Sorry [CUSTOMER_NAME]. Sorry [CUSTOMER_NAME]. Contact support later.",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "prompt": "Customer says: Can I get a refund on damaged order #77702?",
+                        "response": "I verified order #77702 is eligible under our 30-day damaged-item refund policy and issued a full refund.",
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # 1. Direct Python SDK entrypoint -> PEFT LoRA + HTML PR report + heal_summary.json
+    res = run_autonomous_heal(
+        mid,
+        workspace_root=ws,
+        transcripts_path="outputs/prod_failures.jsonl",
+        reward_fn="customer_support",
+        export_format="lora",
+        output_name="healed-sdk-lora",
+        lora_rank=4,
+        lora_alpha=8,
+    )
+    assert res["diagnosis"]["failing_count"] == 1
+    assert res["diagnosis"]["healthy_count"] == 1
+    assert "unfilled_placeholder" in res["diagnosis"]["failure_counts"]
+    assert res["eval_gate"]["verdict"] == "GO"
+    assert res["exported"] is True
+    assert res["export_manifest"]["reload_verified"] is True
+    assert res["html_report_path"] and (ws / res["html_report_path"]).is_file()
+    assert res["summary_path"] and (ws / res["summary_path"]).is_file()
+
+    # 2. FastAPI endpoint POST /api/weight-studio/heal/run
+    app = create_studio_app(workspace_root=ws)
+    client = TestClient(app)
+    r_api = client.post(
+        "/api/weight-studio/heal/run",
+        json={
+            "model_id": mid,
+            "transcripts_path": "outputs/prod_failures.jsonl",
+            "reward_fn": "customer_support",
+            "export_format": "gguf",
+            "output_name": "healed-api-gguf",
+        },
+    )
+    assert r_api.status_code == 200
+    body = r_api.json()
+    assert body["eval_gate"]["verdict"] == "GO"
+    assert body["exported"] is True
+    assert body["export_manifest"]["header_verified"] is True
+
+    # 3. CLI command `stateset-agents heal --json`
+    runner = CliRunner()
+    cli_res = runner.invoke(
+        cli_app,
+        [
+            "heal",
+            "--model",
+            mid,
+            "--transcripts",
+            str(transcripts_file),
+            "--reward",
+            "customer_support",
+            "--export-format",
+            "lora",
+            "--output-name",
+            "healed-cli-lora",
+            "--lora-rank",
+            "4",
+            "--workspace",
+            str(ws),
+            "--json",
+        ],
+    )
+    assert cli_res.exit_code == 0, cli_res.output
+    cli_payload = json.loads(cli_res.output)
+    assert cli_payload["exported"] is True
+    assert cli_payload["eval_gate"]["verdict"] == "GO"
+
+    # 4. MCP tool `studio_auto_heal`
+    mcp_res = studio_auto_heal(
+        mid,
+        transcripts_path="outputs/prod_failures.jsonl",
+        reward_fn="customer_support",
+        export_format="hf_card",
+        output_name="healed-mcp-card",
+        workspace=str(ws),
+    )
+    assert mcp_res["exported"] is True
+    assert (ws / mcp_res["export_manifest"]["model_card_file"]).is_file()

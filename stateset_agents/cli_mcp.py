@@ -12,6 +12,8 @@ this module imports the shared ``app`` and attaches its command via
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 
 from stateset_agents import cli as _cli
@@ -27,16 +29,25 @@ def mcp(
         "--transport",
         help="MCP transport to serve over (default: stdio).",
     ),
+    workspace: Path | None = typer.Option(
+        None,
+        "--workspace",
+        "-w",
+        help="Default workspace directory for 3D Weight Studio MCP tools and resources.",
+    ),
 ) -> None:
     """Run the StateSet Agents MCP server (stdio transport by default).
 
-    Exposes the grade -> curate -> retrain "improve" loop as MCP tools so
-    any MCP client (Claude Code/Desktop, other agents) can drive it. See
-    docs/MCP_SERVER.md for registration instructions, e.g.::
+    Exposes the grade -> curate -> retrain "improve" loop and the full
+    3D Weight Studio (inspection, surgical editing, CAA steering, circuits,
+    residual stream, SAE features, A/B Arena, Auto-Repair, 95% CI Eval Gate,
+    LoRA/GGUF/HF Card/HTML PR report export, and Autonomous Self-Heal) as
+    annotated MCP tools, live ``stateset://studio/*`` resources, and guided
+    workflow prompts. See docs/MCP_SERVER.md for registration instructions, e.g.::
 
-        claude mcp add stateset-agents -- stateset-agents mcp
+        claude mcp add stateset-agents -- stateset-agents mcp --workspace .
 
-    v1 scope: no tool starts real GPU training (dry-run only).
+    No tool starts real remote GPU training (dry-run only).
     """
     if transport != "stdio":
         _echo(
@@ -51,5 +62,5 @@ def mcp(
         _echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
-    server = create_server()
+    server = create_server(workspace=workspace)
     server.run(transport="stdio")

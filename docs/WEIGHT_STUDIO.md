@@ -180,10 +180,11 @@ All endpoints are mounted under `/api/weight-studio` (both in standalone mode an
 | `GET` | `/api/weight-studio/finetune/telemetry-sources` | Discover local `trainer_state.json`, `metrics.jsonl`, and `wandb-history.jsonl` training telemetry logs. |
 | `POST` | `/api/weight-studio/finetune/sync-telemetry` | Sync external trainer/W&B metrics directly into the Finetune chart and refresh discovered checkpoints. |
 | `POST` | `/api/weight-studio/report/html` | Export a shareable, offline single-file interactive 3D HTML PR report (orbitable heightfield, Eval Gate scorecard, sensitivity table, and portable edit recipe). |
+| `POST` | `/api/weight-studio/heal/run` | Run the **Autonomous Transcript-to-Surgery Self-Healing Loop**: grade failing transcripts, mine contrastive CAA pairs, run Multi-Edit A/B Arena, bake steering, verify on the 95% CI Batch Eval Gate + Auto-Repair, and optionally export a verified `lora`/`safetensors`/`gguf`/`hf_card` artifact + HTML PR report. |
 
 ### MCP Server Integration
 
-Six thin MCP tools are exposed via `stateset-agents mcp` (`stateset_agents/mcp_server.py`) so AI agents can inspect weights, apply non-destructive edits, extract steering vectors, discover causal circuits, and run eval-gated `.safetensors` exports autonomously: `studio_list_models`, `studio_inspect_model`, `studio_apply_edit`, `studio_extract_steering`, `studio_discover_circuit`, and `studio_eval_and_export`. See [`docs/MCP_SERVER.md`](MCP_SERVER.md).
+Eighteen annotated 3D Weight Studio MCP tools (25 tools total alongside the improve/finetune loop), 5 live `stateset://studio/*` MCP resources, and 4 guided MCP workflow prompts are exposed via `stateset-agents mcp --workspace .` (`stateset_agents/mcp_server.py`) so AI agents (Claude Code, Claude Desktop, Cursor, Antigravity, LangGraph) can inspect weights, profile Wanda/SVD sensitivity, run live inference & Logit Lens, trace residual streams, analyze/clamp SAE features, apply/undo/replay surgical edits, compare A/B Arena candidates, run Surgical Auto-Repair, execute Autonomous Transcript-to-Surgery Self-Healing (`studio_auto_heal`), and export verified PEFT LoRA / `.safetensors` / GGUF v3 / HF Model Card / offline 3D HTML PR reports. See [`docs/MCP_SERVER.md`](MCP_SERVER.md).
 
 ---
 

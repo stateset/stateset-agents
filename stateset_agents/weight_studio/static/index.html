@@ -370,6 +370,28 @@
               <div class="empty-hint">No surgical edits yet. Try Scale, Wanda Prune, Head Surgery, ROME Rank-1, or TIES/DARE Merge above.</div>
             </div>
           </div>
+
+          <!-- Autonomous Transcript-to-Surgery Self-Healing Loop -->
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">AUTONOMOUS SELF-HEAL (LOGS → SURGERY)</span>
+              <span id="heal-status-pill" class="mono-accent">READY</span>
+            </div>
+            <details class="cli-drawer mb-6">
+              <summary>Paste Failing Production Transcripts (Optional JSONL)</summary>
+              <textarea id="heal-transcripts-input" class="precision-textarea mt-6" rows="3" placeholder='{"prompt": "My order #77701 arrived damaged", "response": "Sorry [NAME]. Sorry [NAME]."}'></textarea>
+            </details>
+            <div class="patch-builder mb-6" style="grid-template-columns:1fr auto">
+              <select id="heal-reward-select" class="precision-select compact">
+                <option value="customer_support">Reward: SupportConversation v2</option>
+                <option value="tool_calling">Reward: Tool Schema</option>
+                <option value="gsm8k">Reward: RLVR / GSM8K</option>
+                <option value="composite">Reward: StateSet Composite</option>
+              </select>
+              <button id="btn-run-auto-heal" class="mini-btn">🩹 Auto-Heal</button>
+            </div>
+            <div id="heal-result-summary" class="empty-hint">Diagnose failing logs → mine CAA contrast → Arena sweep → bake weights → 95% CI Eval Gate.</div>
+          </div>
         </section>
 
         <!-- TAB 2: FINETUNING WORKBENCH & LIVE PYTORCH TRAINER -->
