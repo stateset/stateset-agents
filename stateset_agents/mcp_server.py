@@ -1200,6 +1200,70 @@ def studio_audit_reward_calibration(
         return _studio_err(exc, rt)
 
 
+def studio_query_traces(
+    failed_only: bool = False,
+    source: str = "",
+    search: str = "",
+    labeled_only: bool = False,
+    limit: int = 50,
+    workspace: str = "",
+) -> dict[str, Any]:
+    """Query stored production traces from the WAL-mode SQLite trace store with indexed filters."""
+    rt = None
+    try:
+        rt = _get_mcp_studio_runtime(workspace)
+        rows = rt.traces.query_traces(
+            failed_only=failed_only,
+            source=source or None,
+            search=search or None,
+            labeled_only=labeled_only,
+            limit=limit,
+        )
+        return {"count": len(rows), "traces": rows, "stats": rt.store.stats()}
+    except Exception as exc:
+        return _studio_err(exc, rt)
+
+
+def studio_query_rollouts(
+    decision: str = "",
+    model_id: str = "",
+    stage: str = "",
+    limit: int = 50,
+    workspace: str = "",
+) -> dict[str, Any]:
+    """Query durable Canary Shadow Gate and Autopilot rollout decisions from the WAL-mode SQLite ledger."""
+    rt = None
+    try:
+        rt = _get_mcp_studio_runtime(workspace)
+        rows = rt.canary.query_rollouts(
+            decision=decision or None,
+            model_id=model_id or None,
+            stage=stage or None,
+            limit=limit,
+        )
+        return {"count": len(rows), "rollouts": rows, "stats": rt.store.stats()}
+    except Exception as exc:
+        return _studio_err(exc, rt)
+
+
+def studio_prune_traces(
+    keep_latest: int = 1000,
+    workspace: str = "",
+) -> dict[str, Any]:
+    """Enforce a retention cap on the SQLite production trace store by keeping only the latest traces."""
+    rt = None
+    try:
+        rt = _get_mcp_studio_runtime(workspace)
+        deleted = rt.traces.prune_traces(keep_latest=keep_latest)
+        return {
+            "deleted": deleted,
+            "keep_latest": keep_latest,
+            "stats": rt.store.stats(),
+        }
+    except Exception as exc:
+        return _studio_err(exc, rt)
+
+
 # ---------------------------------------------------------------------------
 # Live MCP Resources (stateset://studio/*)
 # ---------------------------------------------------------------------------
@@ -1532,6 +1596,9 @@ def create_server(*, workspace: str | Path | None = None) -> Any:
     mcp.tool(annotations=ro)(studio_live_serving_ab)
     mcp.tool(annotations=mut)(studio_ingest_trace)
     mcp.tool(annotations=ro)(studio_audit_reward_calibration)
+    mcp.tool(annotations=ro)(studio_query_traces)
+    mcp.tool(annotations=ro)(studio_query_rollouts)
+    mcp.tool(annotations=mut)(studio_prune_traces)
 
     # Live MCP Resources (8)
     mcp.resource(

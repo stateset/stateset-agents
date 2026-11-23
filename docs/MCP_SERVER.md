@@ -92,7 +92,7 @@ claude mcp add stateset-agents -- stateset-agents mcp --workspace /path/to/your/
 | `list_model_presets()` | Read-only | List model preset names and key hyperparameter fields. |
 | `dry_run_finetune(model_preset)` | Read-only | Preview the resolved GSPO/agent/reward config without downloading weights or training. |
 
-### 3D Weight Studio & Autonomous Surgery (18 Tools)
+### 3D Weight Studio & Autonomous Surgery (28 Tools)
 
 | Tool | Access | Purpose |
 | :--- | :---: | :--- |
@@ -121,6 +121,9 @@ claude mcp add stateset-agents -- stateset-agents mcp --workspace /path/to/your/
 | `studio_live_serving_ab(endpoint_url, baseline_model, candidate_model, prompts=None, reward_fn="customer_support", api_key="", ...)` | Read-only | Run a real-token paired shadow A/B evaluation against live vLLM/Ollama/OpenAI endpoints with p50/p95 latency, reward deltas, 95% CI, and `PROMOTE`/`HOLD_CANARY`/`ROLLBACK`. |
 | `studio_ingest_trace(payload, reward_fn="customer_support", ...)` | Write | Ingest live production traces (native JSON, OpenAI messages, or OpenTelemetry OTLP/JSON `resourceSpans`) into the durable trace collector for continuous Auto-Heal. |
 | `studio_audit_reward_calibration(samples=None, reward_fn="customer_support", ...)` | Read-only | Audit heuristic proxy reward alignment against human/judge ground truth (Pearson `r`, Spearman `ρ`, MAE, reward-hacking rate → `CALIBRATED` / `DRIFT_WARN` / `HACKING_RISK`). |
+| `studio_query_traces(failed_only=False, source="", search="", labeled_only=False, limit=50, ...)` | Read-only | Query stored production traces from the WAL-mode SQLite trace store with indexed filters. |
+| `studio_query_rollouts(decision="", model_id="", stage="", limit=50, ...)` | Read-only | Query durable Canary Shadow Gate and Autopilot rollout decisions from the WAL-mode SQLite ledger. |
+| `studio_prune_traces(keep_latest=1000, ...)` | Write | Enforce a retention cap on the SQLite production trace store by keeping only the latest `keep_latest` traces. |
 
 Every tool validates inputs and returns a structured JSON dict (`{"error": "...", "hint": "..."}` on failure rather than a raw traceback).
 

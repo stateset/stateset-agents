@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.89.0] - 2026-11-23 — Consolidated 3D Weight Studio, Autonomous Self-Healing, Red-Team, Tournament, Canary Autopilot, Live vLLM A/B, OTLP Calibration, SQLite Store, MCP Security & TS SDK Release Train (`v0.81.0`–`v0.89.0`)
+
+### Added
+
+- **Autonomous Transcript-to-Surgery Self-Healing Loop** (`stateset_agents/weight_studio/surgery_loop.py`, `stateset-agents heal`): diagnoses failing production transcripts, mines contrastive CAA steering vectors, sweeps Multi-Edit A/B Arena candidates, bakes winning edits non-destructively, verifies with 95% CI Batch Eval Gate, and exports Diff-as-LoRA / safetensors / GGUF / HF cards + standalone 3D HTML PR reports.
+- **Adversarial Red-Team Safety Audit & Surgical Immunization** (`stateset_agents/weight_studio/redteam_engine.py`, `stateset-agents redteam`): 10-probe enterprise attack suite (prompt injection, PII exfiltration, unauthorized tool calls, policy bypass, hallucinated commitments) with one-click CAA immunization + optional `--live-endpoint` real-model probing.
+- **Multi-Model Pareto Tournament & Evolutionary Merge Lab** (`stateset_agents/weight_studio/tournament_engine.py`, `stateset-agents tournament`): benchmarks workspace checkpoints across StateSet task rewards + Red-Team ASR and synthesizes Pareto-optimal TIES/DARE/SLERP surgical merges.
+- **Production Canary Shadow-Rollout Gate & One-Call Full Autopilot** (`stateset_agents/weight_studio/canary_engine.py`, `stateset-agents canary`, `stateset-agents autopilot`): paired shadow-traffic replay (`PROMOTE` / `HOLD_CANARY` / `ROLLBACK`), optional `--live-endpoint` real-token canary gating, durable JSONL + WAL-mode SQLite rollout ledger, and end-to-end Heal → Immunize → Canary → Verified Export autopilot.
+- **Live vLLM / Ollama Dynamic LoRA Hot-Swap & Real-Endpoint Shadow A/B** (`stateset_agents/weight_studio/live_serving.py`, `stateset-agents serve-ab`): dynamic `/v1/load_lora_adapter` / `/v1/unload_lora_adapter` hot-swap and real-token paired shadow A/B evaluation with p50/p95 latency and 95% CI.
+- **Live Production Trace Collector (OTLP/JSON + Webhook) & Pluggable LLM-as-a-Judge Reward Calibration** (`stateset_agents/weight_studio/telemetry_ingest.py`, `stateset_agents/weight_studio/judge.py`, `stateset-agents traces`): ingests OpenTelemetry OTLP/JSON `resourceSpans`, OpenAI chat payloads, and webhooks; grades with `heuristic` / `llm_judge` / `hybrid` modes; audits proxy-vs-human/judge alignment (`Pearson r`, `Spearman ρ`, `MAE`, reward-hacking rate → `CALIBRATED` / `DRIFT_WARN` / `HACKING_RISK`); and triggers one-click live-trace Auto-Heal.
+- **Queryable WAL-Mode SQLite Ledger Store** (`stateset_agents/weight_studio/ledger_store.py`): zero-dependency SQLite store (`outputs/weight_studio_store.sqlite3`) with indexed trace & rollout queries (`/store/traces`, `/store/rollouts`, `/store/stats`), retention pruning (`--prune`), and matching MCP tools (`studio_query_traces`, `studio_query_rollouts`, `studio_prune_traces`).
+- **Live Streamable HTTP MCP Endpoint, Real-Time 3D SSE Sync & Security Hardening** (`stateset_agents/weight_studio/mcp_bridge.py`, `stateset_agents/mcp_server.py`, `stateset_agents/weight_studio/_stats.py`): 35 stdio MCP tools / 28 HTTP MCP tools with single-source canonical parity, 8 live `stateset://studio/*` resources, 7 workflow prompts, real-time 3D browser SSE animation sync, fail-closed Bearer & Read-Only token auth (`STATESET_MCP_TOKEN` / `STATESET_MCP_READONLY_TOKEN`), strict workspace path confinement, and HTTP ingress body-size / sliding-window rate-limit / CORS allowlist guards.
+- **TypeScript / Node SDK Parity (`npm/`)**: added typed `WeightStudioClient` (`client.studio.*`) and `McpHttpClient` (`client.mcp.*`) to `@stateset/agents` with full unit & `tsc` coverage.
+
+### Changed & Fixed
+
+- Extracted Weight Studio CLI commands into `stateset_agents/cli_studio.py` (reducing `cli.py` from 1,601 → 921 lines) and modularized `app.js` into zero-bundler ES modules `static/js/autopilot_panel.js` and `static/js/command_palette.js`.
+- Offloaded heavy FastAPI studio handlers to `asyncio.to_thread(...)`, made `StudioEventBus` thread-safe via `loop.call_soon_threadsafe(...)`, added monotonic model/tensor switch race guards in `app.js`, and enriched `stateset-agents doctor --json` with MCP/ingress/store diagnostics.
+- Modernized all 63 remaining `datetime.utcnow()` calls across `stateset_agents/api/` and tests to zero-warning Python 3.12+ UTC timestamps; achieved 0 errors across all 537 source files under `scripts/check_types.py --all`.
+
 ## [0.80.0] - 2026-11-22 — 3D Weight Studio v5 with HF HTTP-Range loader, Quantize 3D Lab, Auto-Sensitivity, MRI cutaway, GPU particles, SSE streaming, telemetry sync & HTML PR reports
 
 ### Added
