@@ -113,7 +113,7 @@ export class WeightStudioClient {
   queryTraces<T = Record<string, unknown>>(params?: TraceQueryParams, options?: RequestOptions): Promise<T>;
   queryRollouts<T = Record<string, unknown>>(params?: RolloutQueryParams, options?: RequestOptions): Promise<T>;
   storeStats<T = Record<string, unknown>>(options?: RequestOptions): Promise<T>;
-  getRlTelemetry<T = Record<string, unknown>>(params?: { limit?: number }, options?: RequestOptions): Promise<T>;
+  getRlTelemetry<T = Record<string, unknown>>(params?: { limit?: number; run_name?: string }, options?: RequestOptions): Promise<T>;
   postRlTelemetry<T = Record<string, unknown>>(body: Record<string, unknown>, options?: RequestOptions): Promise<T>;
   controlRlRun<T = Record<string, unknown>>(body: RlControlRequest, options?: RequestOptions): Promise<T>;
   planRlRun<T = Record<string, unknown>>(body?: RlPlanRequest, options?: RequestOptions): Promise<T>;

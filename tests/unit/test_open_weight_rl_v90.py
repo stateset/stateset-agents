@@ -972,3 +972,103 @@ def test_v95_rl_mcp_tools_cockpit_controls_and_upgraded_shootout(
         domains=["coding", "sql"], workspace=str(tmp_path)
     )
     assert pool_stdio["episode_count"] == 4
+
+
+def test_v96_bidirectional_rl_control_sqlite_rl_ledger_and_multi_run_filtering(
+    tmp_path: Path,
+) -> None:
+    """Verify persisted SQLite RL run ledger across restarts + bi-directional Pause/Rollback directives into StudioTelemetryCallback."""
+    from fastapi.testclient import TestClient
+
+    from stateset_agents.training.studio_callback import StudioTelemetryCallback
+    from stateset_agents.weight_studio import create_studio_app
+
+    # 1. Stream two distinct RL runs into App #1 and verify SQLite WAL persistence
+    app1 = create_studio_app(workspace_root=tmp_path)
+    c1 = TestClient(app1)
+    signals: list[tuple[str, dict]] = []
+
+    def _post_adapter(
+        url: str, payload: dict, headers: dict, timeout: float
+    ) -> tuple[int, dict]:
+        resp = c1.post(
+            url.replace("http://studio.local", ""), json=payload, headers=headers
+        )
+        return resp.status_code, resp.json()
+
+    def _get_adapter(url: str, headers: dict, timeout: float) -> tuple[int, dict]:
+        resp = c1.get(url.replace("http://studio.local", ""), headers=headers)
+        return resp.status_code, resp.json()
+
+    cb_a = StudioTelemetryCallback(
+        run_name="run-alpha-gspo",
+        workspace_root=tmp_path,
+        studio_url="http://studio.local",
+        http_caller=_post_adapter,
+        http_get_caller=_get_adapter,
+        on_control_signal=lambda act, ctrl: signals.append((act, ctrl)),
+    )
+    cb_b = StudioTelemetryCallback(
+        run_name="run-beta-dapo",
+        workspace_root=tmp_path,
+        studio_url="http://studio.local",
+        http_caller=_post_adapter,
+        http_get_caller=_get_adapter,
+    )
+
+    s1 = cb_a.on_step(1, {"reward": 0.72, "loss": -0.15, "entropy": 1.35})
+    assert s1["telemetry_pushed"] is True
+    assert s1["should_pause"] is False
+    assert s1["should_rollback"] is False
+
+    cb_b.on_step(1, {"reward": 0.85, "loss": -0.22, "entropy": 1.18})
+
+    # 2. Operator clicks PAUSE in 3D Weight Studio -> next trainer step receives should_pause=True & triggers signal callback
+    r_pause = c1.post(
+        "/api/weight-studio/rl/control",
+        json={
+            "action": "pause",
+            "run_name": "run-alpha-gspo",
+            "reason": "Inspect reward spike",
+        },
+    )
+    assert r_pause.status_code == 200
+    s2 = cb_a.on_step(2, {"reward": 0.99, "loss": -0.40, "entropy": 0.42})
+    assert s2["should_pause"] is True
+    assert s2["should_rollback"] is False
+    assert len(signals) == 1 and signals[0][0] == "pause"
+
+    # Operator requests ROLLBACK -> poll_control() sees rollback_requested immediately
+    c1.post(
+        "/api/weight-studio/rl/control",
+        json={
+            "action": "rollback",
+            "run_name": "run-alpha-gspo",
+            "reason": "Hacking guard",
+        },
+    )
+    polled = cb_a.poll_control()
+    assert polled["status"] == "rollback_requested"
+    s3 = cb_a.on_step(3, {"reward": 0.98, "loss": -0.45, "entropy": 0.35})
+    assert s3["should_rollback"] is True
+
+    # 3. Fresh Studio App #2 (simulating server restart) reloads persisted SQLite RL runs & filters by run_name
+    app2 = create_studio_app(workspace_root=tmp_path)
+    c2 = TestClient(app2)
+
+    r_stats = c2.get("/api/weight-studio/store/stats")
+    assert r_stats.status_code == 200
+    assert r_stats.json()["rl_step_count"] == 4
+
+    r_all = c2.get("/api/weight-studio/rl/telemetry?limit=50")
+    assert r_all.status_code == 200
+    body_all = r_all.json()
+    assert body_all["count"] == 4
+    run_names = {r["run_name"] for r in body_all["runs"]}
+    assert run_names == {"run-alpha-gspo", "run-beta-dapo"}
+
+    r_beta = c2.get("/api/weight-studio/rl/telemetry?run_name=run-beta-dapo")
+    assert r_beta.status_code == 200
+    assert r_beta.json()["count"] == 1
+    assert r_beta.json()["latest"]["run_name"] == "run-beta-dapo"
+    assert r_beta.json()["latest"]["reward"] == 0.85

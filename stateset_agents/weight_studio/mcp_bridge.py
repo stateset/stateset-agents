@@ -520,6 +520,7 @@ STUDIO_MCP_TOOLS: list[dict[str, Any]] = [
         "Inspect Live RL Cockpit step telemetry, OnlineRewardHackingGuard verdicts, pause/rollback control state, and Triton fused kernel availability.",
         {
             "limit": {"type": "integer", "default": 50},
+            "run_name": {"type": "string", "default": ""},
         },
         [],
         read_only=True,
@@ -1273,13 +1274,16 @@ def _dispatch_studio_tool(
         from ..training.chunked_rl_loss import triton_chunked_logprobs_available
 
         limit = max(1, min(200, int(args.get("limit", 50))))
-        rows = rt.rl_telemetry[-limit:]
+        run_name = str(args.get("run_name") or "").strip() or None
+        persisted = rt.store.query_rl_steps(run_name=run_name, limit=limit)
+        rows = persisted if persisted else rt.rl_telemetry[-limit:]
         latest = rows[-1] if rows else None
         return (
             {
                 "count": len(rows),
                 "latest": latest,
                 "steps": rows,
+                "runs": rt.store.list_rl_runs(),
                 "control": dict(rt.rl_control_state),
                 "triton_available": bool(triton_chunked_logprobs_available()),
             },

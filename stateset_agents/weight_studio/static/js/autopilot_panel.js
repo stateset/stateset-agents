@@ -403,28 +403,53 @@ export function initAutopilotAndMcpPanel({
     drawRlSparkline();
   };
 
-  (async () => {
+  const syncRlRunsDropdown = (runs, activeRun = '') => {
+    const sel = $('rl-run-select');
+    if (!sel || !Array.isArray(runs)) return;
+    const prev = activeRun || sel.value || '';
+    sel.innerHTML = '<option value="">All Persisted RL Runs</option>';
+    runs.forEach((r) => {
+      const opt = document.createElement('option');
+      opt.value = r.run_name;
+      const rVal = r.latest_reward !== null && r.latest_reward !== undefined ? ` · R=${Number(r.latest_reward).toFixed(2)}` : '';
+      opt.textContent = `${r.run_name} (${r.step_count} steps${rVal})`;
+      if (r.run_name === prev) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  };
+
+  const loadRlTelemetry = async (runName = '') => {
     try {
-      const t = await apiGet('/rl/telemetry?limit=40');
+      const qs = runName ? `&run_name=${encodeURIComponent(runName)}` : '';
+      const t = await apiGet(`/rl/telemetry?limit=40${qs}`);
+      if (t && Array.isArray(t.runs)) syncRlRunsDropdown(t.runs, runName);
       if (t && Array.isArray(t.steps) && t.steps.length) {
         _rlHistory.length = 0;
         t.steps.forEach((s) => _rlHistory.push(s));
         renderRlTelemetry(t.steps[t.steps.length - 1], false);
       } else {
+        _rlHistory.length = 0;
         drawRlSparkline();
       }
       if (t && t.control) renderRlControl(t.control);
     } catch (_err) {
       drawRlSparkline();
     }
-  })();
+  };
+
+  loadRlTelemetry();
+
+  $('rl-run-select')?.addEventListener('change', (e) => {
+    loadRlTelemetry(e.target.value || '');
+  });
 
   let _simRlStep = 0;
   $('btn-rl-cockpit-pulse')?.addEventListener('click', async () => {
     _simRlStep += 1;
     try {
+      const activeRun = $('rl-run-select')?.value || 'stateset-chunked-gspo';
       const payload = {
-        run_name: 'stateset-chunked-gspo',
+        run_name: activeRun,
         step: _simRlStep,
         reward: Number((0.68 + Math.min(0.28, _simRlStep * 0.04)).toFixed(3)),
         loss: Number((-0.12 - _simRlStep * 0.03).toFixed(4)),
@@ -437,6 +462,59 @@ export function initAutopilotAndMcpPanel({
       showToast(`📡 RL Step ${_simRlStep} streamed (Guard: CONTINUE)`, 2200);
     } catch (err) {
       showToast(`RL telemetry error: ${err.message}`, 3200);
+    }
+  });
+
+  $('btn-rl-sandbox-pool')?.addEventListener('click', async () => {
+    const pill = $('rl-cockpit-pill');
+    const summary = $('rl-cockpit-summary');
+    if (pill) pill.textContent = 'SANDBOX…';
+    try {
+      const res = await apiPost('/rl/sandbox-pool', {
+        domains: ['commerce', 'coding', 'sql'],
+        include_failure_pairs: true,
+        max_concurrency: 6,
+      });
+      const ds = res.domain_stats || {};
+      const parts = ['commerce', 'coding', 'sql']
+        .filter((d) => ds[d])
+        .map((d) => `${d}:${Math.round(Number(ds[d].verified_pass_rate || 0) * 100)}%`);
+      if (pill) pill.textContent = `POOL · ${res.episode_count} EPS`;
+      if (summary) {
+        summary.textContent = `3-Domain Pool (${res.episode_count} eps) · ${parts.join(' · ')} · z-norm active`;
+      }
+      renderer.triggerPulse('forward');
+      showToast(`🧪 Multi-Domain Sandbox Pool: ${res.episode_count} verified episodes`, 2800);
+    } catch (err) {
+      if (pill) pill.textContent = 'ERR';
+      if (summary) summary.textContent = err.message;
+      showToast(`Sandbox pool error: ${err.message}`, 3200);
+    }
+  });
+
+  $('btn-rl-blueprint')?.addEventListener('click', async () => {
+    const pill = $('rl-cockpit-pill');
+    const summary = $('rl-cockpit-summary');
+    try {
+      const plan = await apiPost('/rl/plan', {
+        model: 'Qwen/Qwen3-8B',
+        algorithm: 'dapo',
+        cloud: 'modal',
+        gpus: 4,
+        chunked_loss_chunk_size: 256,
+      });
+      const bp = plan.blueprint || {};
+      const vram = plan.vram_estimate || {};
+      const disp = plan.dispatch || {};
+      if (pill) pill.textContent = `PLAN · ${String(disp.provider || 'modal').toUpperCase()}`;
+      if (summary) {
+        summary.textContent =
+          `${bp.model || 'Qwen/Qwen3-8B'} (${String(bp.algorithm || 'dapo').toUpperCase()}) · ` +
+          `${vram.peak_logit_vram_saved_pct ?? 99.6}% VRAM saved · sha:${plan.plan_sha256_prefix || ''}`;
+      }
+      showToast(`☁️ RL Cloud Blueprint ready (${vram.peak_logit_vram_saved_pct ?? 99.6}% VRAM saved)`, 2800);
+    } catch (err) {
+      showToast(`RL plan error: ${err.message}`, 3200);
     }
   });
 

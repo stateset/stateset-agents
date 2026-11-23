@@ -1266,6 +1266,7 @@ def studio_prune_traces(
 
 def studio_rl_telemetry(
     limit: int = 50,
+    run_name: str = "",
     workspace: str = "",
 ) -> dict[str, Any]:
     """Inspect recent Live RL Cockpit step telemetry, OnlineRewardHackingGuard verdicts, and Triton kernel availability."""
@@ -1276,11 +1277,15 @@ def studio_rl_telemetry(
         )
 
         rt = _get_mcp_studio_runtime(workspace)
-        rows = rt.rl_telemetry[-max(1, min(200, int(limit))) :]
+        lim = max(1, min(200, int(limit)))
+        rn = run_name.strip() or None
+        persisted = rt.store.query_rl_steps(run_name=rn, limit=lim)
+        rows = persisted if persisted else rt.rl_telemetry[-lim:]
         return {
             "count": len(rows),
             "latest": rows[-1] if rows else None,
             "steps": rows,
+            "runs": rt.store.list_rl_runs(),
             "control": dict(rt.rl_control_state),
             "triton_available": bool(triton_chunked_logprobs_available()),
         }
