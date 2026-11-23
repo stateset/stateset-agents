@@ -83,6 +83,14 @@ def doctor(
     if default_checkpoint:
         checkpoint_exists = Path(default_checkpoint).exists()
 
+    # Weight Studio & MCP readiness (lightweight spec check — zero eager heavy imports)
+    import importlib.util
+
+    studio_ready = all(
+        importlib.util.find_spec(m) is not None for m in ("fastapi", "uvicorn")
+    )
+    mcp_ready = importlib.util.find_spec("mcp") is not None
+
     if json_output:
         payload = {
             "name": "stateset-agents",
@@ -99,6 +107,11 @@ def doctor(
                 "STATESET_DEFAULT_CHECKPOINT": default_checkpoint,
                 "STATESET_DEFAULT_BASE_MODEL": default_base_model,
                 "path_exists": checkpoint_exists,
+            },
+            "studio_and_mcp": {
+                "weight_studio_ready": studio_ready,
+                "mcp_stdio_ready": mcp_ready,
+                "mcp_http_ready": studio_ready,
             },
         }
         _echo(json.dumps(payload, sort_keys=True))

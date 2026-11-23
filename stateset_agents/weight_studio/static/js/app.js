@@ -226,7 +226,11 @@ async function loadModels(refresh = false) {
   }
 }
 
+let _modelLoadGen = 0;
+let _tensorLoadGen = 0;
+
 async function loadModelStructure(modelId, checkpointId = null) {
+  const gen = ++_modelLoadGen;
   state.modelId = modelId;
   state.checkpointId = checkpointId;
   state.trajectory = null;
@@ -237,6 +241,7 @@ async function loadModelStructure(modelId, checkpointId = null) {
   const qs = new URLSearchParams({ model_id: modelId });
   if (checkpointId) qs.set('checkpoint_id', checkpointId);
   const struct = await apiGet(`/models/structure?${qs.toString()}`);
+  if (gen !== _modelLoadGen) return;
   state.structure = struct;
   state.checkpointId = struct.checkpoint_id;
   state.editHistory = struct.edit_history;
@@ -390,6 +395,8 @@ async function fetchBinaryGrid(tensorName, res) {
 
 async function selectTensor(tensorName, { focusCamera = true } = {}) {
   if (!tensorName || !state.modelId) return;
+  const reqModelId = state.modelId;
+  const reqGen = ++_tensorLoadGen;
   state.selectedTensorName = tensorName;
 
   document.querySelectorAll('.tensor-row').forEach((el) => {
@@ -401,7 +408,7 @@ async function selectTensor(tensorName, { focusCamera = true } = {}) {
   const useBinary = res >= 96 || renderer.colorMode === 'conflict' || Boolean(sec.secondary_model_id);
 
   const qs = new URLSearchParams({
-    model_id: state.modelId,
+    model_id: reqModelId,
     tensor_name: tensorName,
     resolution: String(Math.min(res, 64)),
     include_svd: 'true',
@@ -416,10 +423,18 @@ async function selectTensor(tensorName, { focusCamera = true } = {}) {
     qs.set('c1', String(state.activeCrop[3]));
   }
 
-  const [detail, binGrid] = await Promise.all([
-    apiGet(`/models/tensor?${qs.toString()}`),
-    useBinary ? fetchBinaryGrid(tensorName, res) : Promise.resolve(null),
-  ]);
+  let detail;
+  let binGrid;
+  try {
+    [detail, binGrid] = await Promise.all([
+      apiGet(`/models/tensor?${qs.toString()}`),
+      useBinary ? fetchBinaryGrid(tensorName, res) : Promise.resolve(null),
+    ]);
+  } catch (err) {
+    if (reqGen !== _tensorLoadGen || reqModelId !== state.modelId) return;
+    throw err;
+  }
+  if (reqGen !== _tensorLoadGen || reqModelId !== state.modelId) return;
   state.tensorDetail = detail;
   state.binaryGrid = binGrid;
 
@@ -2766,6 +2781,13 @@ function bindCommandPalette() {
     { label: 'Toggle 3D MRI Cutaway Plane (SLICE)', kbd: 'MRI', run: () => $('btn-slice-toggle')?.click() },
     { label: 'Toggle Cinema Zen Mode', kbd: 'H', run: () => toggleZenMode() },
     { label: 'Run Multi-Edit A/B Arena', kbd: 'ARENA', run: () => { document.querySelector('.wb-tab[data-tab="infer"]')?.click(); runArenaComparison(); } },
+    { label: 'Autonomous Self-Heal (Logs → CAA Surgery)', kbd: 'HEAL', run: () => { document.querySelector('.wb-tab[data-tab="edit"]')?.click(); $('btn-run-auto-heal')?.click(); } },
+    { label: 'Red-Team Safety Audit (10 Attack Probes)', kbd: 'RED', run: () => { document.querySelector('.wb-tab[data-tab="edit"]')?.click(); $('btn-run-redteam-audit')?.click(); } },
+    { label: 'Red-Team Surgical Immunization', kbd: 'SHIELD', run: () => { document.querySelector('.wb-tab[data-tab="edit"]')?.click(); $('btn-run-redteam-immunize')?.click(); } },
+    { label: 'Multi-Model Pareto Tournament & Merge', kbd: 'MERGE', run: () => { document.querySelector('.wb-tab[data-tab="edit"]')?.click(); $('btn-run-tournament')?.click(); } },
+    { label: 'Canary Shadow-Rollout Promotion Gate', kbd: 'CANARY', run: () => { document.querySelector('.wb-tab[data-tab="edit"]')?.click(); $('btn-run-canary')?.click(); } },
+    { label: 'Full Production Autopilot Release', kbd: 'AUTO', run: () => { document.querySelector('.wb-tab[data-tab="edit"]')?.click(); $('btn-run-autopilot')?.click(); } },
+    { label: 'Connect AI Agent (Live HTTP / Stdio MCP)', kbd: 'MCP', run: () => $('btn-mcp-modal')?.click() },
     { label: 'Analyze SAE Monosemantic Features', kbd: 'SAE', run: () => { document.querySelector('.wb-tab[data-tab="infer"]')?.click(); analyzeSaeFeatures(); } },
     { label: 'Profile Auto-Sensitivity (Wanda/Fisher)', kbd: 'SENS', run: () => { document.querySelector('.wb-tab[data-tab="analyze"]')?.click(); $('btn-run-sensitivity')?.click(); } },
     { label: 'Auto-Repair Destructive Edits to GO', kbd: 'FIX', run: () => { $('btn-export-modal')?.click(); $('btn-auto-repair')?.click(); } },
