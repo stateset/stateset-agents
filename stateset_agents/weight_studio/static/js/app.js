@@ -146,6 +146,7 @@ async function init() {
   bindExportModal();
   bindSplitCurtain();
   bindKeyboardShortcuts();
+  bindRedTeamAndMcpBridge();
 
   await Promise.all([
     loadFinetuneCatalog(),
@@ -2866,6 +2867,150 @@ function bindKeyboardShortcuts() {
       $('btn-orbit-toggle').classList.toggle('active', renderer.autoOrbit);
     }
   });
+}
+
+// ---------------------------------------------------------------------------
+// Red-Team Safety Audit & Live AI-Agent MCP Bridge (SSE + Connect Modal)
+// ---------------------------------------------------------------------------
+
+function bindRedTeamAndMcpBridge() {
+  const runRedTeam = async (immunize) => {
+    if (!state.modelId) return;
+    const pill = $('redteam-status-pill');
+    const summary = $('redteam-result-summary');
+    const btnAudit = $('btn-run-redteam-audit');
+    const btnImm = $('btn-run-redteam-immunize');
+    if (pill) pill.textContent = immunize ? 'IMMUNIZING…' : 'AUDITING…';
+    if (btnAudit) btnAudit.disabled = true;
+    if (btnImm) btnImm.disabled = true;
+    try {
+      const res = await apiPost('/redteam/run', {
+        model_id: state.modelId,
+        checkpoint_id: state.checkpointId,
+        immunize,
+        export_format: 'none',
+      });
+      const asrPct = (Number(res.attack_success_rate || 0) * 100).toFixed(0);
+      const passPct = (Number(res.safety_pass_rate || 0) * 100).toFixed(0);
+      if (pill) pill.textContent = `${res.verdict} · ASR ${asrPct}%`;
+      if (summary) {
+        if (res.immunization) {
+          const imm = res.immunization;
+          summary.textContent =
+            `Immunized L${String(imm.target_layer).padStart(2, '0')} (α=${Number(imm.chosen_strength).toFixed(2)}) · ` +
+            `ASR ${(imm.asr_before * 100).toFixed(0)}% → ${(imm.asr_after * 100).toFixed(0)}% · ` +
+            `Benign Gate: ${imm.benign_eval_verdict}`;
+        } else {
+          summary.textContent =
+            `Pass ${passPct}% (${res.after.total_probes - res.after.attacks_succeeded}/${res.after.total_probes} probes) · ` +
+            `Mean safety ${Number(res.after.mean_safety_score).toFixed(3)}`;
+        }
+      }
+      renderer.triggerPulse(immunize ? 'backprop' : 'forward');
+      if (immunize) {
+        await loadModelStructure(state.modelId, state.checkpointId);
+      }
+      showToast(
+        immunize
+          ? `🛡️ Immunized (${res.verdict}, ASR ${asrPct}%)`
+          : `🔎 Red-Team Audit: ${res.verdict} (ASR ${asrPct}%)`,
+        3200
+      );
+    } catch (err) {
+      if (pill) pill.textContent = 'ERR';
+      if (summary) summary.textContent = err.message;
+      showToast(`Red-Team error: ${err.message}`, 4000);
+    } finally {
+      if (btnAudit) btnAudit.disabled = false;
+      if (btnImm) btnImm.disabled = false;
+    }
+  };
+
+  $('btn-run-redteam-audit')?.addEventListener('click', () => runRedTeam(false));
+  $('btn-run-redteam-immunize')?.addEventListener('click', () => runRedTeam(true));
+
+  // MCP Connect Modal & Live AI-Agent Activity Feed
+  const mcpModal = $('mcp-modal');
+  const openMcpModal = () => {
+    if (!mcpModal) return;
+    const baseUrl = window.location.origin;
+    const httpUrl = `${baseUrl}/api/weight-studio/mcp`;
+    const httpPre = $('mcp-http-url');
+    const cliPre = $('mcp-claude-cmd');
+    const jsonPre = $('mcp-json-snippet');
+    if (httpPre) httpPre.textContent = httpUrl;
+    if (cliPre) cliPre.textContent = `claude mcp add stateset-agents -- stateset-agents mcp --workspace .`;
+    if (jsonPre) {
+      jsonPre.textContent = JSON.stringify(
+        {
+          mcpServers: {
+            'stateset-weight-studio': {
+              url: httpUrl,
+              transport: 'streamable-http',
+            },
+            'stateset-agents': {
+              command: 'stateset-agents',
+              args: ['mcp', '--workspace', '.'],
+            },
+          },
+        },
+        null,
+        2
+      );
+    }
+    mcpModal.classList.remove('hidden');
+  };
+
+  $('btn-mcp-modal')?.addEventListener('click', openMcpModal);
+  $('btn-close-mcp')?.addEventListener('click', () => mcpModal?.classList.add('hidden'));
+  mcpModal?.addEventListener('click', (e) => {
+    if (e.target === mcpModal) mcpModal.classList.add('hidden');
+  });
+  $('btn-copy-mcp-http')?.addEventListener('click', () => {
+    const txt = $('mcp-http-url')?.textContent || '';
+    navigator.clipboard?.writeText(txt).catch(() => {});
+    showToast('Copied Live HTTP MCP endpoint URL', 1800);
+  });
+  $('btn-copy-mcp-json')?.addEventListener('click', () => {
+    const txt = $('mcp-json-snippet')?.textContent || '';
+    navigator.clipboard?.writeText(txt).catch(() => {});
+    showToast('Copied MCP client JSON config', 1800);
+  });
+
+  // Subscribe to live AI-Agent SSE stream so external MCP calls morph the 3D scene live
+  const appendActivity = (ev) => {
+    const log = $('mcp-activity-log');
+    if (!log) return;
+    const line = `[${(ev.timestamp || '').slice(11, 19)}] ${ev.tool || ev.type}: ${ev.summary || ''}`;
+    const existing = log.textContent === 'Waiting for AI agent MCP calls…' ? [] : log.textContent.split('\n');
+    existing.unshift(line);
+    log.textContent = existing.slice(0, 12).join('\n');
+  };
+
+  try {
+    const es = new EventSource(`${API}/events`);
+    es.onmessage = async (msg) => {
+      try {
+        const ev = JSON.parse(msg.data);
+        if (!ev || ev.type === 'heartbeat') return;
+        appendActivity(ev);
+        const dot = $('mcp-live-dot');
+        if (dot) {
+          dot.style.boxShadow = '0 0 10px #10b981';
+          setTimeout(() => { dot.style.boxShadow = 'none'; }, 1200);
+        }
+        if (ev.pulse) renderer.triggerPulse(ev.pulse);
+        if (ev.summary) showToast(`🤖 MCP Agent: ${ev.summary}`, 2600);
+        if (ev.mutated && (!ev.model_id || ev.model_id === state.modelId) && state.modelId) {
+          await loadModelStructure(state.modelId, state.checkpointId);
+        }
+      } catch (_err) {
+        // Ignore malformed SSE frames
+      }
+    };
+  } catch (_err) {
+    // EventSource unavailable in non-browser environment
+  }
 }
 
 init().catch((err) => {

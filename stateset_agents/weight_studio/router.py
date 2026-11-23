@@ -12,10 +12,11 @@ from fastapi import (
     FastAPI,
     HTTPException,
     Query,
+    Request,
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -23,6 +24,8 @@ from .editor import WeightEditEngine
 from .finetune_engine import FinetuneStudioEngine
 from .inference_engine import InferenceStudioEngine
 from .inspector import WeightInspector
+from .mcp_bridge import StudioEventBus, handle_mcp_jsonrpc
+from .redteam_engine import RedTeamSurgeryEngine
 from .surgery_loop import AutonomousSurgeryLoop
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -37,6 +40,8 @@ class StudioRuntime:
         self.finetuner = FinetuneStudioEngine(self.inspector, self.editor)
         self.inference = InferenceStudioEngine(self.inspector, self.editor)
         self.healer = AutonomousSurgeryLoop(self.inspector, self.editor, self.inference)
+        self.redteam = RedTeamSurgeryEngine(self.inspector, self.editor, self.inference)
+        self.events = StudioEventBus()
 
 
 _DEFAULT_RUNTIME: StudioRuntime | None = None
@@ -318,6 +323,22 @@ class HealRunRequest(BaseModel):
     lora_rank: int = Field(16, ge=1, le=128)
     lora_alpha: int = Field(32, ge=1, le=512)
     require_go: bool = True
+
+
+class RedTeamRunRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_id: str
+    checkpoint_id: str | None = None
+    categories: list[str] | None = None
+    probes_path: str | None = None
+    probes_jsonl: str | None = None
+    max_probes: int = Field(10, ge=1, le=50)
+    immunize: bool = False
+    export_format: str = Field("none", pattern="^(none|lora|safetensors|gguf|hf_card)$")
+    output_name: str = ""
+    lora_rank: int = Field(16, ge=1, le=128)
+    lora_alpha: int = Field(32, ge=1, le=512)
 
 
 class SaeAnalyzeRequest(BaseModel):
@@ -928,8 +949,9 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
 
     @api.post("/heal/run")
     async def run_autonomous_heal_endpoint(req: HealRunRequest) -> dict[str, Any]:
+        rt = _rt()
         try:
-            return _rt().healer.run_healing_loop(
+            res = rt.healer.run_healing_loop(
                 req.model_id,
                 checkpoint_id=req.checkpoint_id,
                 transcripts_path=req.transcripts_path,
@@ -941,8 +963,120 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
                 lora_alpha=req.lora_alpha,
                 require_go=req.require_go,
             )
+            rt.events.publish(
+                "studio_heal",
+                source="studio_api",
+                tool="studio_auto_heal",
+                model_id=req.model_id,
+                summary=f"Auto-Heal → {(res.get('eval_gate') or {}).get('verdict', 'GO')}",
+                mutated=True,
+                pulse="backprop",
+            )
+            return res
         except (KeyError, ValueError, FileNotFoundError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @api.post("/redteam/run")
+    async def run_redteam_audit_endpoint(req: RedTeamRunRequest) -> dict[str, Any]:
+        rt = _rt()
+        try:
+            res = rt.redteam.run_redteam_audit(
+                req.model_id,
+                checkpoint_id=req.checkpoint_id,
+                categories=req.categories,
+                probes_path=req.probes_path,
+                probes_jsonl=req.probes_jsonl,
+                max_probes=req.max_probes,
+                immunize=req.immunize,
+                export_format=req.export_format,
+                output_name=req.output_name,
+                lora_rank=req.lora_rank,
+                lora_alpha=req.lora_alpha,
+            )
+            rt.events.publish(
+                "studio_redteam",
+                source="studio_api",
+                tool="studio_redteam_audit",
+                model_id=req.model_id,
+                summary=(
+                    f"{'Immunized' if req.immunize else 'Red-Team Audit'} → "
+                    f"{res['verdict']} (ASR {res['attack_success_rate'] * 100:.0f}%)"
+                ),
+                mutated=req.immunize,
+                pulse="backprop" if req.immunize else "forward",
+            )
+            return res
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # --- Live Streamable HTTP MCP Endpoint + Real-Time AI-Agent SSE Bus ---
+
+    @api.post("/mcp")
+    async def studio_mcp_http(request: Request) -> Response:
+        rt = _rt()
+        try:
+            body = await request.json()
+        except Exception as exc:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": -32700, "message": f"Parse error: {exc}"},
+                },
+            )
+
+        if isinstance(body, list):
+            responses = []
+            for item in body:
+                if isinstance(item, dict):
+                    resp = handle_mcp_jsonrpc(rt, item)
+                    if resp is not None:
+                        responses.append(resp)
+            return JSONResponse(content=responses)
+
+        if not isinstance(body, dict):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": -32600, "message": "Invalid JSON-RPC request"},
+                },
+            )
+
+        resp = handle_mcp_jsonrpc(rt, body)
+        if resp is None:
+            return Response(status_code=202)
+        return JSONResponse(content=resp)
+
+    @api.get("/events/recent")
+    async def studio_recent_events(
+        limit: int = Query(20, ge=1, le=50),
+    ) -> dict[str, Any]:
+        items = _rt().events.recent(limit=limit)
+        return {"events": items, "count": len(items)}
+
+    @api.get("/events")
+    async def studio_event_stream(request: Request) -> StreamingResponse:
+        rt = _rt()
+        q = rt.events.subscribe()
+
+        async def _stream():
+            try:
+                yield f"data: {json.dumps({'type': 'connected', 'workspace': str(rt.inspector.workspace_root)})}\n\n"
+                while True:
+                    if await request.is_disconnected():
+                        break
+                    try:
+                        event = await asyncio.wait_for(q.get(), timeout=15.0)
+                        yield f"data: {json.dumps(event)}\n\n"
+                    except asyncio.TimeoutError:
+                        yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+            finally:
+                rt.events.unsubscribe(q)
+
+        return StreamingResponse(_stream(), media_type="text/event-stream")
 
     @api.post("/sae/analyze")
     async def sae_analyze(req: SaeAnalyzeRequest) -> dict[str, Any]:

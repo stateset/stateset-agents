@@ -47,6 +47,14 @@ environment variable so agents don't need to pass `workspace` on every call.
 
 ## Register With AI Clients
 
+### Live Streamable HTTP MCP (Real-Time 3D Studio Browser Sync!)
+
+Launch 3D Weight Studio (`stateset-agents studio --port 8765`) and point any HTTP
+MCP client directly at `http://127.0.0.1:8765/api/weight-studio/mcp`. Every
+surgical edit, CAA steering bake, Auto-Heal, or Red-Team immunization executed
+by an AI agent streams over `GET /api/weight-studio/events` (SSE) and animates
+connected 3D WebGL2 browser viewports live!
+
 ### Claude Code
 
 ```bash
@@ -58,6 +66,10 @@ claude mcp add stateset-agents -- stateset-agents mcp --workspace /path/to/your/
 ```json
 {
   "mcpServers": {
+    "stateset-weight-studio": {
+      "url": "http://127.0.0.1:8765/api/weight-studio/mcp",
+      "transport": "streamable-http"
+    },
     "stateset-agents": {
       "command": "stateset-agents",
       "args": ["mcp", "--workspace", "/path/to/your/workspace"]
@@ -66,7 +78,7 @@ claude mcp add stateset-agents -- stateset-agents mcp --workspace /path/to/your/
 }
 ```
 
-## Tools (25 Total)
+## Tools (26 Total)
 
 ### Improve & Finetune Preview (7 Tools)
 
@@ -102,6 +114,7 @@ claude mcp add stateset-agents -- stateset-agents mcp --workspace /path/to/your/
 | `studio_save_session(session_name, model_id, metadata=None, ...)` | Write | Persist a named 3D Weight Studio workbench session (edit recipe + steering/eval metadata) to disk. |
 | `studio_sessions(action="list", session_name="", ...)` | Session | List saved workbench sessions (`action="list"`) or restore a saved session (`action="load"`). |
 | `studio_auto_heal(model_id, transcripts_path="", transcripts_jsonl="", reward_fn="customer_support", export_format="lora", output_name="", lora_rank=16, lora_alpha=32, require_go=True, ...)` | Write | Run the end-to-end **Autonomous Transcript-to-Surgery Self-Healing Loop**: diagnose failing transcripts → mine contrastive pairs → CAA steering → Multi-Edit A/B Arena → bake → 95% CI Eval Gate + Auto-Repair → export verified artifact + HTML PR report. |
+| `studio_redteam_audit(model_id, categories=None, probes_path="", probes_jsonl="", max_probes=10, immunize=False, export_format="none", output_name="", ...)` | Session / Write | Run the **Adversarial Red-Team Safety Audit** (prompt injection, PII exfiltration, unauthorized tool calls, policy bypass, hallucinated commitments) and optionally apply one-click **Surgical Immunization** (`immunize=True`) while verifying benign helpfulness. |
 
 Every tool validates inputs and returns a structured JSON dict (`{"error": "...", "hint": "..."}` on failure rather than a raw traceback).
 
@@ -114,12 +127,14 @@ Every tool validates inputs and returns a structured JSON dict (`{"error": "..."
 | `stateset://studio/steering-presets` | Built-in StateSet contrastive behavioral steering pairs ready for CAA extraction. |
 | `stateset://studio/scenarios` | Built-in StateSet evaluation & interpretability test scenarios. |
 | `stateset://studio/sessions` | Persisted 3D Weight Studio workbench sessions on disk. |
+| `stateset://studio/redteam-probes` | Built-in 10-probe Adversarial Red-Team safety suite spanning 5 enterprise attack vectors. |
 
 ## Guided MCP Workflow Prompts
 
 | Prompt | Arguments | Workflow |
 | :--- | :--- | :--- |
 | `auto_heal_model` | `model_id`, `transcripts_path=""`, `reward="customer_support"`, `export_format="lora"` | Diagnose failing production logs → Autonomous Self-Heal → inspect 95% CI Eval Gate & HTML PR report. |
+| `redteam_and_immunize` | `model_id`, `export_format="lora"` | Run Adversarial Red-Team Safety Audit → surgically immunize vulnerable layers without hurting benign helpfulness → export verified bundle. |
 | `surgical_behavior_edit` | `model_id`, `behavior_goal`, `reward="composite"` | Extract CAA steering → Multi-Edit A/B Arena → bake → verify Residual Stream & Eval Gate → export PEFT LoRA + HTML report. |
 | `interpretability_audit` | `model_id`, `prompt` | Full mechanistic audit across Circuit 3D, Residual Stream Logit Lens, SAE feature clamping, and Wanda/SVD sensitivity. |
 | `compress_and_export_model` | `model_id`, `target_compression=0.35`, `export_format="gguf"` | Profile Wanda/SVD sensitivity → replay adaptive compression recipe → Eval Gate + Auto-Repair → export verified GGUF/LoRA. |

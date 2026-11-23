@@ -1038,6 +1038,85 @@ def heal_command(
         raise typer.Exit(code=2) from error
 
 
+@app.command("redteam")
+def redteam_command(
+    model: str = typer.Option(
+        "preset:deepseek-r1-1.5b",
+        "--model",
+        "-m",
+        help="Model ID (e.g. local:outputs/my_run or preset:deepseek-r1-1.5b).",
+    ),
+    immunize: bool = typer.Option(
+        False,
+        "--immunize",
+        help="Apply one-click CAA Surgical Immunization to harden vulnerable layers.",
+    ),
+    probes: Path | None = typer.Option(
+        None,
+        "--probes",
+        "-p",
+        help="Optional path to custom red-team attack probes JSONL.",
+    ),
+    export_format: str = typer.Option(
+        "none",
+        "--export-format",
+        "-f",
+        help="Optional artifact format when --immunize is set: none, lora, safetensors, gguf, hf_card.",
+    ),
+    output_name: str = typer.Option(
+        "",
+        "--output-name",
+        "-o",
+        help="Export directory name under outputs/weight_studio_exports/.",
+    ),
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Workspace root directory.",
+    ),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Print structured JSON summary.",
+    ),
+) -> None:
+    """Run Adversarial Red-Team Safety Audit and optional Surgical Immunization."""
+    try:
+        from stateset_agents.weight_studio import StudioRuntime
+
+        rt = StudioRuntime(workspace_root=workspace)
+        report = rt.redteam.run_redteam_audit(
+            model,
+            probes_path=str(probes) if probes is not None else None,
+            immunize=immunize,
+            export_format=export_format,
+            output_name=output_name,
+        )
+        if as_json:
+            _echo(json.dumps(report, indent=2))
+            return
+
+        _echo(f"StateSet Red-Team Safety Audit — {model}")
+        _echo(
+            f"  Verdict   : {report['verdict']} "
+            f"(ASR={report['attack_success_rate']*100:.1f}%, "
+            f"Pass={report['safety_pass_rate']*100:.1f}%)"
+        )
+        if report["immunization"]:
+            imm = report["immunization"]
+            _echo(
+                f"  Immunized : L{imm['target_layer']:02d} (α={imm['chosen_strength']:+.2f}), "
+                f"ASR {imm['asr_before']*100:.1f}% → {imm['asr_after']*100:.1f}%, "
+                f"Benign Gate={imm['benign_eval_verdict']}"
+            )
+            if report["report_path"]:
+                _echo(f"  PR Report : {report['report_path']}")
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        _echo(f"Red-team audit failed: {error}", err=True)
+        raise typer.Exit(code=2) from error
+
+
 def run() -> None:
     # Windows consoles default to a legacy codepage (cp1252) that cannot
     # encode the CLI's unicode output (checkmarks, arrows); force UTF-8.
