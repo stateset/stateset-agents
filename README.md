@@ -128,7 +128,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python release:** `stateset-agents==0.82.0`, published from the
+- **Current Python release:** `stateset-agents==0.83.0`, published from the
   annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/). Its first registry
@@ -368,11 +368,11 @@ Colab version: [`notebooks/improve_your_agent_5min.ipynb`](notebooks/improve_you
 
 ```bash
 pip install "stateset-agents[mcp]"
-claude mcp add stateset-agents -- stateset-agents mcp
+claude mcp add stateset-agents -- stateset-agents mcp --workspace .
 ```
 
-Seven MCP tools (`list_rewards`, `ingest_transcripts`, `grade_transcript`,
-`improve_run`, `improve_status`, `list_model_presets`, `dry_run_finetune`) — see
+25 annotated MCP tools (18 3D Weight Studio + 7 improve/finetune), 5 live
+`stateset://studio/*` MCP resources, and 4 guided MCP workflow prompts — see
 [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md).
 
 Check what has actually been proven—not merely registered—with
@@ -383,7 +383,12 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**v0.82.0 (latest release; publication triggered by tag):**
+**v0.83.0 (latest release; publication triggered by tag):**
+
+- **Autonomous Transcript-to-Surgery Self-Healing Loop (`stateset-agents heal`, `POST /api/weight-studio/heal/run`)**: Grades failing production transcripts, mines contrastive CAA steering pairs, sweeps candidate strengths in the Multi-Edit A/B Arena, bakes the winner, verifies on the 95% CI Batch Eval Gate + Surgical Auto-Repair, and exports verified PEFT LoRA / `.safetensors` / GGUF v3 / HF Model Card bundles with an offline interactive 3D `healing_report.html`.
+- **AI-Agent 3D Weight Studio MCP Server (`stateset-agents mcp --workspace .`)**: 25 `ToolAnnotations`-tagged MCP tools (18 Studio + 7 improve/finetune), 5 live `stateset://studio/*` MCP resources, 4 guided MCP workflow prompts (`auto_heal_model`, `surgical_behavior_edit`, `interpretability_audit`, `compress_and_export_model`), and self-correcting error hints for Claude Code, Claude Desktop, Cursor, and Antigravity.
+
+**v0.82.0:**
 
 - **3D Weight Studio v6 + v7 (`stateset-agents studio`, `/studio`)**: 7 WebGL2 PBR 3D topologies — adding **`Attention 3D`** (Hotkey `6`: 8-head causal attention gallery, single-head cathedral, click-to-zoom & live **✂ Ablate Head** surgery) and **`Residual 3D`** (Hotkey `7`: twin-ribbon Base vs. Active Edited/Steered residual stream highway with 2D PCA drift arcs, Attention/MLP contribution pillars, and Logit Lens top-token beacons).
 - **PEFT Diff-as-LoRA, GGUF v3 + Ollama & HF Model Cards**: SVD-factorize surgical diffs `ΔW` into reload-verified PEFT LoRA adapters, write header-verified binary **GGUF v3** (`Q8_0`/`F16`/`F32`) + Ollama `Modelfile` bundles, and generate YAML-frontmatter Hugging Face Model Cards + reproducible recipes.

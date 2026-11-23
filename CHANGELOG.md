@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.83.0] - 2026-11-23 — Autonomous Self-Healing Loop & AI-Agent Studio MCP Server
+
+### Added
+
+- **Autonomous Transcript-to-Surgery Self-Healing Loop (`stateset-agents heal`, `POST /api/weight-studio/heal/run`, `AutonomousSurgeryLoop`, live Studio UI Auto-Heal card):**
+  - End-to-end production self-healing pipeline: grades failing conversation transcripts (`unfilled_placeholder`, `repetition_loop`, `policy_gap`, `tool_schema_error`, `terse_or_unresponsive`), mines contrastive positive/negative pairs, extracts a Contrastive Activation Steering (CAA) vector, benchmarks candidate strengths in the Multi-Edit A/B Arena, permanently bakes the winning surgical edit, verifies on the 95% CI Batch Eval Gate (with automatic Surgical Auto-Repair), and exports verified PEFT LoRA / `.safetensors` / GGUF v3 / Hugging Face Model Card bundles alongside an offline interactive 3D `healing_report.html` and `heal_summary.json`.
+- **World-Class 3D Weight Studio MCP Server (`stateset-agents mcp --workspace <dir>`):**
+  - Expanded to **25 annotated MCP tools** (18 Studio + 7 Improve/Finetune) with explicit MCP `ToolAnnotations` (`readOnlyHint`, `destructiveHint=False`, `idempotentHint`) for safe client auto-approval in Claude Code, Claude Desktop, Cursor, and Antigravity.
+  - Added `studio_profile_sensitivity`, `studio_run_inference`, `studio_sae_analyze`, `studio_manage_edits` (`history`/`undo`/`redo`/`reset`/`export_recipe`/`apply_recipe`), `studio_auto_repair`, `studio_export_artifact` (`gguf`/`hf_card`/`html_report`), `studio_sessions` (`list`/`load`), and `studio_auto_heal`, plus self-correcting `available_models` hints on unknown `model_id` errors.
+  - Added **5 live MCP Resources** (`stateset://studio/capabilities`, `stateset://studio/models`, `stateset://studio/steering-presets`, `stateset://studio/scenarios`, `stateset://studio/sessions`) and **4 guided MCP Workflow Prompts** (`auto_heal_model`, `surgical_behavior_edit`, `interpretability_audit`, `compress_and_export_model`).
+
 ## [0.82.0] - 2026-11-23 — 3D Weight Studio v7
 
 ### Added
