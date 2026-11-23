@@ -1,4 +1,4 @@
-name: Weight Studio WebGL2 Smoke
+name: Weight Studio WebGL2 & MCP Smoke
 
 permissions:
   contents: read
@@ -9,16 +9,22 @@ on:
     paths:
       - "stateset_agents/weight_studio/**"
       - "stateset_agents/mcp_server.py"
+      - "stateset_agents/cli_mcp.py"
       - "tests/unit/test_weight_studio.py"
+      - "tests/unit/test_mcp_server.py"
       - "examples/weight_studio_quickstart.py"
+      - "examples/autonomous_surgery_autopilot.py"
       - ".github/workflows/weight-studio-smoke.yml"
   pull_request:
     branches: [ main, master, develop ]
     paths:
       - "stateset_agents/weight_studio/**"
       - "stateset_agents/mcp_server.py"
+      - "stateset_agents/cli_mcp.py"
       - "tests/unit/test_weight_studio.py"
+      - "tests/unit/test_mcp_server.py"
       - "examples/weight_studio_quickstart.py"
+      - "examples/autonomous_surgery_autopilot.py"
       - ".github/workflows/weight-studio-smoke.yml"
   workflow_dispatch:
 
@@ -33,23 +39,25 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Weight Studio & dev dependencies
+      - name: Install Weight Studio, MCP & dev dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,api]"
+          pip install -e ".[dev,api,mcp]"
           pip install playwright
           python -m playwright install --with-deps chromium
 
-      - name: Lint, type-check & unit tests
+      - name: Lint, type-check, examples & unit/MCP protocol tests
         run: |
-          ruff check stateset_agents/weight_studio tests/unit/test_weight_studio.py examples/weight_studio_quickstart.py
-          mypy --config-file mypy.ini --no-incremental --cache-dir=/dev/null stateset_agents/weight_studio
-          pytest -q tests/unit/test_weight_studio.py tests/unit/test_torch_import_policy.py
+          ruff check stateset_agents/weight_studio stateset_agents/mcp_server.py stateset_agents/cli_mcp.py tests/unit/test_weight_studio.py tests/unit/test_mcp_server.py examples/weight_studio_quickstart.py examples/autonomous_surgery_autopilot.py
+          mypy --config-file mypy.ini --no-incremental --cache-dir=/dev/null stateset_agents/weight_studio stateset_agents/mcp_server.py stateset_agents/cli_mcp.py
+          pytest -q -m "" tests/unit/test_weight_studio.py tests/unit/test_mcp_server.py tests/unit/test_torch_import_policy.py
           python examples/weight_studio_quickstart.py
+          python examples/autonomous_surgery_autopilot.py
 
-      - name: Headless Chromium WebGL2 Studio E2E Smoke
+      - name: Headless Chromium WebGL2 Studio & Live HTTP MCP SSE Smoke
         run: |
           python - <<'PY'
+          import json
           import subprocess
           import sys
           import time
@@ -83,17 +91,48 @@ jobs:
                   page.goto("http://127.0.0.1:8765/studio", wait_until="networkidle")
                   page.wait_for_timeout(800)
 
-                  page.click('.mode-pill[data-mode="circuit"]')
-                  page.wait_for_timeout(600)
-                  page.click('.wb-tab[data-tab="infer"]')
-                  page.click("#btn-extract-steer")
-                  page.wait_for_timeout(500)
-                  page.click("#btn-analyze-sae")
-                  page.wait_for_timeout(500)
-                  page.click('.mode-pill[data-mode="microscope"]')
-                  page.wait_for_timeout(600)
+                  for mode in ("circuit", "attention", "residual", "microscope"):
+                      page.click(f'.mode-pill[data-mode="{mode}"]')
+                      page.wait_for_timeout(450)
                   page.click("#btn-toggle-split")
-                  page.wait_for_timeout(400)
+                  page.wait_for_timeout(300)
+
+                  # Verify v8 Autonomous Self-Heal, Red-Team Audit & Canary Gate cards
+                  page.click('.wb-tab[data-tab="edit"]')
+                  page.click("#btn-run-auto-heal")
+                  page.wait_for_function("() => !['READY', 'HEALING…'].includes(document.querySelector('#heal-status-pill')?.textContent || '')", timeout=15000)
+                  page.click("#btn-run-redteam-audit")
+                  page.wait_for_function("() => !['READY', 'AUDITING…'].includes(document.querySelector('#redteam-status-pill')?.textContent || '')", timeout=15000)
+                  page.click("#btn-run-canary")
+                  page.wait_for_function("() => !['READY', 'GATING…'].includes(document.querySelector('#canary-status-pill')?.textContent || '')", timeout=15000)
+
+                  # Verify Live Streamable HTTP MCP -> real-time browser SSE activity stream
+                  page.click("#btn-mcp-modal")
+                  page.wait_for_timeout(200)
+                  req = urllib.request.Request(
+                      "http://127.0.0.1:8765/api/weight-studio/mcp",
+                      data=json.dumps({
+                          "jsonrpc": "2.0",
+                          "id": 1,
+                          "method": "tools/call",
+                          "params": {
+                              "name": "studio_apply_edit",
+                              "arguments": {
+                                  "model_id": "preset:deepseek-r1-1.5b",
+                                  "op": "scale",
+                                  "target": "layer:0",
+                                  "params": {"factor": 1.02},
+                                  "label": "CI HTTP MCP Live Edit",
+                              },
+                          },
+                      }).encode("utf-8"),
+                      headers={"Content-Type": "application/json"},
+                  )
+                  with urllib.request.urlopen(req, timeout=10) as r:
+                      assert r.status == 200
+                  page.wait_for_function("() => (document.querySelector('#mcp-activity-log')?.textContent || '').includes('studio_apply_edit')", timeout=8000)
+                  page.click("#btn-close-mcp")
+
                   page.click("#btn-export-modal")
                   page.click("#btn-run-eval-gate")
                   page.wait_for_timeout(800)
@@ -102,7 +141,7 @@ jobs:
                   assert verdict in {"GO", "WARN", "BLOCK"}, f"Unexpected eval verdict: {verdict}"
                   assert len(console_errors) == 0, f"Console errors: {console_errors}"
                   assert len(page_errors) == 0, f"Page errors: {page_errors}"
-                  print("Weight Studio WebGL2 E2E Smoke PASSED (verdict=", verdict, ")")
+                  print("Weight Studio WebGL2 & Live HTTP MCP E2E Smoke PASSED (verdict=", verdict, ")")
                   browser.close()
           finally:
               server.terminate()

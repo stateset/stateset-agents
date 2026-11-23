@@ -29,12 +29,25 @@ MCP_PROTOCOL_VERSION = "2025-03-26"
 
 
 class StudioEventBus:
-    """In-process pub/sub event bus broadcasting live AI-agent & Studio events over SSE."""
+    """Thread-safe in-process pub/sub event bus broadcasting live AI-agent & Studio events over SSE."""
 
     def __init__(self, max_history: int = 40) -> None:
-        self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
+        self._subscribers: set[
+            tuple[asyncio.AbstractEventLoop | None, asyncio.Queue[dict[str, Any]]]
+        ] = set()
         self._history: deque[dict[str, Any]] = deque(maxlen=max_history)
         self._seq = 0
+
+    @staticmethod
+    def _enqueue(q: asyncio.Queue[dict[str, Any]], event: dict[str, Any]) -> None:
+        try:
+            q.put_nowait(event)
+        except asyncio.QueueFull:
+            try:
+                q.get_nowait()
+                q.put_nowait(event)
+            except Exception:
+                pass
 
     def publish(
         self,
@@ -62,29 +75,35 @@ class StudioEventBus:
             "payload": payload or {},
         }
         self._history.append(event)
-        stale: list[asyncio.Queue[dict[str, Any]]] = []
-        for q in list(self._subscribers):
+        stale: list[
+            tuple[asyncio.AbstractEventLoop | None, asyncio.Queue[dict[str, Any]]]
+        ] = []
+        for entry in list(self._subscribers):
+            loop, q = entry
             try:
-                q.put_nowait(event)
-            except asyncio.QueueFull:
-                try:
-                    q.get_nowait()
-                    q.put_nowait(event)
-                except Exception:
-                    stale.append(q)
+                if loop is not None and loop.is_running():
+                    loop.call_soon_threadsafe(self._enqueue, q, event)
+                else:
+                    self._enqueue(q, event)
             except Exception:
-                stale.append(q)
-        for q in stale:
-            self._subscribers.discard(q)
+                stale.append(entry)
+        for entry in stale:
+            self._subscribers.discard(entry)
         return event
 
     def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
+        try:
+            loop: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
         q: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=64)
-        self._subscribers.add(q)
+        self._subscribers.add((loop, q))
         return q
 
     def unsubscribe(self, q: asyncio.Queue[dict[str, Any]]) -> None:
-        self._subscribers.discard(q)
+        for entry in list(self._subscribers):
+            if entry[1] is q:
+                self._subscribers.discard(entry)
 
     def recent(self, limit: int = 20) -> list[dict[str, Any]]:
         items = list(self._history)
@@ -1197,6 +1216,8 @@ def handle_mcp_jsonrpc(rt: Any, req: dict[str, Any]) -> dict[str, Any] | None:
 
     try:
         if method == "initialize":
+            from stateset_agents import __version__ as pkg_version
+
             rt.events.publish(
                 "agent_connected",
                 source="mcp_http",
@@ -1213,7 +1234,7 @@ def handle_mcp_jsonrpc(rt: Any, req: dict[str, Any]) -> dict[str, Any] | None:
                     },
                     "serverInfo": {
                         "name": "stateset-weight-studio",
-                        "version": "0.84.0",
+                        "version": pkg_version,
                     },
                     "instructions": (
                         "Live 3D Weight Studio MCP server. Every tool call runs directly "

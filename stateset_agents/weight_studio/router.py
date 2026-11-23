@@ -438,11 +438,16 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
 
     @api.get("/health")
     async def studio_health() -> dict[str, Any]:
+        from stateset_agents import __version__ as pkg_version
+
         rt = _rt()
         return {
             "status": "ok",
+            "version": pkg_version,
             "workspace": str(rt.inspector.workspace_root),
             "static_ready": (STATIC_DIR / "index.html").is_file(),
+            "mcp_http_endpoint": "/api/weight-studio/mcp",
+            "events_sse_endpoint": "/api/weight-studio/events",
         }
 
     @api.get("/models")
@@ -1013,7 +1018,8 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
     async def run_autonomous_heal_endpoint(req: HealRunRequest) -> dict[str, Any]:
         rt = _rt()
         try:
-            res = rt.healer.run_healing_loop(
+            res = await asyncio.to_thread(
+                rt.healer.run_healing_loop,
                 req.model_id,
                 checkpoint_id=req.checkpoint_id,
                 transcripts_path=req.transcripts_path,
@@ -1042,7 +1048,8 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
     async def run_redteam_audit_endpoint(req: RedTeamRunRequest) -> dict[str, Any]:
         rt = _rt()
         try:
-            res = rt.redteam.run_redteam_audit(
+            res = await asyncio.to_thread(
+                rt.redteam.run_redteam_audit,
                 req.model_id,
                 checkpoint_id=req.checkpoint_id,
                 categories=req.categories,
@@ -1075,7 +1082,8 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
     async def run_tournament_endpoint(req: TournamentRunRequest) -> dict[str, Any]:
         rt = _rt()
         try:
-            res = rt.tournament.run_tournament(
+            res = await asyncio.to_thread(
+                rt.tournament.run_tournament,
                 model_ids=req.model_ids,
                 reward_fn=req.reward_fn,
                 max_cases=req.max_cases,
@@ -1109,7 +1117,8 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
     async def run_canary_gate_endpoint(req: CanaryGateRequest) -> dict[str, Any]:
         rt = _rt()
         try:
-            res = rt.canary.run_canary_gate(
+            res = await asyncio.to_thread(
+                rt.canary.run_canary_gate,
                 req.model_id,
                 checkpoint_id=req.checkpoint_id,
                 stage=req.stage,
@@ -1144,7 +1153,8 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
     async def run_autopilot_endpoint(req: AutopilotReleaseRequest) -> dict[str, Any]:
         rt = _rt()
         try:
-            res = rt.canary.run_autopilot_release(
+            res = await asyncio.to_thread(
+                rt.canary.run_autopilot_release,
                 req.model_id,
                 checkpoint_id=req.checkpoint_id,
                 transcripts_path=req.transcripts_path,
@@ -1191,7 +1201,7 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
             responses = []
             for item in body:
                 if isinstance(item, dict):
-                    resp = handle_mcp_jsonrpc(rt, item)
+                    resp = await asyncio.to_thread(handle_mcp_jsonrpc, rt, item)
                     if resp is not None:
                         responses.append(resp)
             return JSONResponse(content=responses)
@@ -1206,7 +1216,7 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
                 },
             )
 
-        resp = handle_mcp_jsonrpc(rt, body)
+        resp = await asyncio.to_thread(handle_mcp_jsonrpc, rt, body)
         if resp is None:
             return Response(status_code=202)
         return JSONResponse(content=resp)
