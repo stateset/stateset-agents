@@ -574,10 +574,28 @@ class VAPOTrainer(TrainingRuntime):
         anyway, so the losses are identical — passing the real mask just
         avoids carrying scores that are guaranteed to be discarded.
         """
-        with deterministic_scoring(self.model):
-            outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
         if response_mask is None:
             response_mask = torch.ones_like(input_ids)
+        chunk_size = getattr(self.config, "chunked_loss_chunk_size", None)
+        if chunk_size is not None and int(chunk_size) > 0:
+            from .chunked_rl_loss import chunked_model_token_logprobs
+
+            with deterministic_scoring(self.model):
+                token_log_probs, _ = chunked_model_token_logprobs(
+                    self.model,
+                    input_ids,
+                    response_mask,
+                    attention_mask=attention_mask,
+                    chunk_size=int(chunk_size),
+                    dtype=self._logprob_dtype,
+                    use_checkpointing=bool(
+                        getattr(self.config, "use_loss_checkpointing", False)
+                    ),
+                )
+            return token_log_probs
+
+        with deterministic_scoring(self.model):
+            outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
         token_log_probs, _ = rl_losses.gather_token_logprobs(
             outputs.logits, input_ids, response_mask, dtype=self._logprob_dtype
         )

@@ -166,6 +166,11 @@ class GEPOConfig(TrainingConfig):
     # inner update; global_step counts train_steps, not inner updates.
     num_gradient_updates: int = 1
 
+    # Opt-in memory-efficient chunked LM-head log-prob projection (avoids
+    # materializing [B, T, V] logits on long-context RL).
+    chunked_loss_chunk_size: int | None = None
+    use_loss_checkpointing: bool = False
+
     @classmethod
     def from_training_config(
         cls, config: TrainingConfig, **kwargs: Any
@@ -313,6 +318,31 @@ class GEPOTrainer(TrainingRuntime):
             sequence_log_probs: Sum of log probs per sequence [batch]
         """
         response_mask = self.build_response_mask(attention_mask, response_start_idx)
+        chunk_size = getattr(self.config, "chunked_loss_chunk_size", None)
+        if chunk_size is not None and int(chunk_size) > 0:
+            from .chunked_rl_loss import chunked_model_token_logprobs
+
+            full_resp_mask = torch.zeros_like(attention_mask)
+            full_resp_mask[:, 1:] = response_mask.to(dtype=attention_mask.dtype)
+            with deterministic_scoring(self.model):
+                masked_log_probs, _ = chunked_model_token_logprobs(
+                    self.model,
+                    input_ids,
+                    full_resp_mask,
+                    attention_mask=attention_mask,
+                    chunk_size=int(chunk_size),
+                    use_checkpointing=bool(
+                        getattr(self.config, "use_loss_checkpointing", False)
+                    ),
+                )
+            score_tokens = (
+                masked_log_probs.cpu()
+                if masked_log_probs.device.type == "mps"
+                else masked_log_probs
+            )
+            sequence_log_probs = score_tokens.sum(dim=-1, dtype=torch.float64)
+            return masked_log_probs, sequence_log_probs
+
         log_probs = self._log_distribution(
             self.model, input_ids, attention_mask, response_mask
         )

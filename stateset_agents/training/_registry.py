@@ -134,6 +134,10 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
         f"{_PKG}.turn_credit",
         "expand_turn_advantages_to_tokens",
     ),
+    "StudioTelemetryCallback": (
+        f"{_PKG}.studio_callback",
+        "StudioTelemetryCallback",
+    ),
     "AsyncRolloutTimeout": (
         f"{_PKG}.async_rollouts",
         "AsyncRolloutTimeout",

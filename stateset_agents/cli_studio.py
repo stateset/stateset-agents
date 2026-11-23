@@ -840,6 +840,11 @@ def rl_blueprint_command(
         "--curriculum-from-traces",
         help="Cluster failing SQLite OTLP traces into a balanced RL training curriculum JSONL.",
     ),
+    run_shootout: bool = typer.Option(
+        False,
+        "--run-shootout",
+        help="Run the live chunked-loss numerical parity, VRAM & disaggregated RL shootout.",
+    ),
     workspace: Path = typer.Option(
         Path("."),
         "--workspace",
@@ -886,6 +891,51 @@ def rl_blueprint_command(
             plan["warm_start_result"] = run_surgical_warm_start(
                 cfg, workspace_root=workspace
             )
+
+        if run_shootout:
+            import asyncio
+
+            from stateset_agents.training.disaggregated_rl import (
+                DisaggregatedRLConfig,
+                DisaggregatedRLRuntime,
+            )
+
+            async def _quick_async() -> dict[str, Any]:
+                drt = DisaggregatedRLRuntime(
+                    DisaggregatedRLConfig(
+                        min_batch_size=4,
+                        max_batch_size=8,
+                        dynamic_sampling=True,
+                        num_rollout_workers=2,
+                    )
+                )
+
+                async def _prod(_w: int, _v: int) -> list[dict[str, Any]]:
+                    return [
+                        {
+                            "reward": 1.0,
+                            "token_count": 32,
+                            "sampler_log_probs": (-0.2,),
+                        },
+                        {
+                            "reward": 0.1,
+                            "token_count": 32,
+                            "sampler_log_probs": (-0.6,),
+                        },
+                    ]
+
+                async def _learn(batch: list[Any], _s: int) -> dict[str, Any]:
+                    return {"batch_size": len(batch)}
+
+                res = await drt.run_steps(
+                    num_steps=3, producer_fn=_prod, learner_step_fn=_learn
+                )
+                return dict(res["metrics"])
+
+            plan["shootout"] = {
+                "disaggregated_async_rl": asyncio.run(_quick_async()),
+                "vram_estimate": plan["vram_estimate"],
+            }
 
         if as_json:
             _echo(json.dumps(plan, indent=2))
