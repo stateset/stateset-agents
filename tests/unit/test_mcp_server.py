@@ -659,6 +659,9 @@ class TestLiveProtocolSession:
                     "studio_live_serving_ab",
                     "studio_ingest_trace",
                     "studio_audit_reward_calibration",
+                    "studio_query_traces",
+                    "studio_query_rollouts",
+                    "studio_prune_traces",
                 }
                 assert set(tool_by_name) == expected_tools
                 assert len(tools_result.tools) == len(expected_tools)

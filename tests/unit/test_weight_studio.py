@@ -1261,7 +1261,7 @@ def test_redteam_audit_surgical_immunization_and_live_http_mcp_bridge(
     )
     assert r_tools.status_code == 200
     http_tools = r_tools.json()["result"]["tools"]
-    assert len(http_tools) == 25
+    assert len(http_tools) == 28
     tool_names = {t["name"] for t in http_tools}
     assert {
         "studio_apply_edit",
@@ -2154,3 +2154,66 @@ def test_v88_sqlite_ledger_llm_judge_live_parity_and_ingress_security(
     r_429 = client.get("/api/weight-studio/store/stats")
     assert r_429.status_code == 429
     assert "retry-after" in {k.lower() for k in r_429.headers}
+
+    # 5. SQLite Store MCP Tools (studio_query_traces, studio_query_rollouts, studio_prune_traces) & CLI --query/--prune
+    monkeypatch.delenv("STATESET_STUDIO_RATE_LIMIT_PER_MIN", raising=False)
+    r_mcp_qt = client.post(
+        "/api/weight-studio/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 10,
+            "method": "tools/call",
+            "params": {
+                "name": "studio_query_traces",
+                "arguments": {"failed_only": True, "source": "otlp"},
+            },
+        },
+    )
+    assert r_mcp_qt.status_code == 200
+    assert r_mcp_qt.json()["result"]["structuredContent"]["count"] == 1
+
+    r_mcp_qr = client.post(
+        "/api/weight-studio/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 11,
+            "method": "tools/call",
+            "params": {
+                "name": "studio_query_rollouts",
+                "arguments": {"decision": "PROMOTE"},
+            },
+        },
+    )
+    assert r_mcp_qr.status_code == 200
+    assert r_mcp_qr.json()["result"]["structuredContent"]["count"] >= 1
+
+    r_mcp_prune = client.post(
+        "/api/weight-studio/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 12,
+            "method": "tools/call",
+            "params": {
+                "name": "studio_prune_traces",
+                "arguments": {"keep_latest": 1},
+            },
+        },
+    )
+    assert r_mcp_prune.status_code == 200
+    assert r_mcp_prune.json()["result"]["structuredContent"]["deleted"] == 1
+    assert (
+        r_mcp_prune.json()["result"]["structuredContent"]["stats"]["trace_count"] == 1
+    )
+
+    from typer.testing import CliRunner
+
+    from stateset_agents.cli import app as cli_app
+
+    cli_res = CliRunner().invoke(
+        cli_app,
+        ["traces", "--query", "--prune", "1", "--workspace", str(tmp_path), "--json"],
+    )
+    assert cli_res.exit_code == 0, cli_res.output
+    cli_data = json.loads(cli_res.output)
+    assert cli_data["query"]["count"] == 1
+    assert cli_data["prune"]["keep_latest"] == 1

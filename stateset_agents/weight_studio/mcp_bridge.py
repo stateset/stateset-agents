@@ -481,6 +481,40 @@ STUDIO_MCP_TOOLS: list[dict[str, Any]] = [
         [],
         read_only=True,
     ),
+    _tool_spec(
+        "studio_query_traces",
+        "Query stored production traces from the WAL-mode SQLite trace store with indexed filters (failed_only, source, search, labeled_only, limit).",
+        {
+            "failed_only": {"type": "boolean", "default": False},
+            "source": {"type": "string", "default": ""},
+            "search": {"type": "string", "default": ""},
+            "labeled_only": {"type": "boolean", "default": False},
+            "limit": {"type": "integer", "default": 50},
+        },
+        [],
+        read_only=True,
+    ),
+    _tool_spec(
+        "studio_query_rollouts",
+        "Query durable Canary Shadow Gate and Autopilot rollout decisions from the WAL-mode SQLite ledger (decision, model_id, stage, limit).",
+        {
+            "decision": {"type": "string", "default": ""},
+            "model_id": {"type": "string", "default": ""},
+            "stage": {"type": "string", "default": ""},
+            "limit": {"type": "integer", "default": 50},
+        },
+        [],
+        read_only=True,
+    ),
+    _tool_spec(
+        "studio_prune_traces",
+        "Enforce a retention cap on the SQLite production trace store by keeping only the most recent keep_latest traces.",
+        {
+            "keep_latest": {"type": "integer", "default": 1000},
+        },
+        [],
+        read_only=False,
+    ),
 ]
 
 TOOL_READ_ONLY_MAP: dict[str, bool] = {
@@ -1156,6 +1190,45 @@ def _dispatch_studio_tool(
             False,
             "forward",
             f"Reward Calibration → {res['verdict']} (n={res['sample_count']})",
+        )
+
+    if name == "studio_query_traces":
+        rows = rt.traces.query_traces(
+            failed_only=bool(args.get("failed_only", False)),
+            source=str(args.get("source") or "") or None,
+            search=str(args.get("search") or "") or None,
+            labeled_only=bool(args.get("labeled_only", False)),
+            limit=int(args.get("limit", 50)),
+        )
+        return (
+            {"count": len(rows), "traces": rows, "stats": rt.store.stats()},
+            False,
+            "",
+            f"Queried {len(rows)} SQLite trace(s)",
+        )
+
+    if name == "studio_query_rollouts":
+        rows = rt.canary.query_rollouts(
+            decision=str(args.get("decision") or "") or None,
+            model_id=str(args.get("model_id") or "") or None,
+            stage=str(args.get("stage") or "") or None,
+            limit=int(args.get("limit", 50)),
+        )
+        return (
+            {"count": len(rows), "rollouts": rows, "stats": rt.store.stats()},
+            False,
+            "",
+            f"Queried {len(rows)} SQLite rollout(s)",
+        )
+
+    if name == "studio_prune_traces":
+        keep = int(args.get("keep_latest", 1000))
+        deleted = rt.traces.prune_traces(keep_latest=keep)
+        return (
+            {"deleted": deleted, "keep_latest": keep, "stats": rt.store.stats()},
+            False,
+            "",
+            f"Pruned {deleted} old trace(s) (kept latest {keep})",
         )
 
     raise KeyError(f"Unknown MCP tool: {name}")

@@ -525,6 +525,47 @@ def traces_command(
         "-r",
         help="Reward scorer: customer_support, tool_calling, gsm8k, or composite.",
     ),
+    query: bool = typer.Option(
+        False,
+        "--query",
+        help="Query indexed SQLite trace storage using --failed-only / --source / --search.",
+    ),
+    failed_only: bool = typer.Option(
+        False,
+        "--failed-only",
+        help="Filter SQLite trace queries to failing traces only.",
+    ),
+    source: str = typer.Option(
+        "",
+        "--source",
+        help="Filter SQLite trace queries by source (e.g. otlp, webhook, openai_chat).",
+    ),
+    search: str = typer.Option(
+        "",
+        "--search",
+        help="Substring search over prompt, response, or trace_id in SQLite storage.",
+    ),
+    prune: int | None = typer.Option(
+        None,
+        "--prune",
+        min=0,
+        help="Prune SQLite trace store to keep only the latest N traces.",
+    ),
+    judge_mode: str = typer.Option(
+        "heuristic",
+        "--judge-mode",
+        help="Ingest scoring mode: heuristic, llm_judge, or hybrid.",
+    ),
+    judge_endpoint: str = typer.Option(
+        "",
+        "--judge-endpoint",
+        help="OpenAI-compatible LLM-as-a-Judge endpoint URL when --judge-mode is llm_judge/hybrid.",
+    ),
+    judge_model: str = typer.Option(
+        "",
+        "--judge-model",
+        help="Judge model name when --judge-mode is llm_judge/hybrid.",
+    ),
     workspace: Path = typer.Option(
         Path("."),
         "--workspace",
@@ -537,9 +578,9 @@ def traces_command(
         help="Print structured JSON output.",
     ),
 ) -> None:
-    """Ingest live OTLP/webhook traces, audit reward calibration, or auto-heal failing traces."""
+    """Ingest live OTLP/webhook traces, query/prune SQLite store, audit calibration, or auto-heal."""
     try:
-        from stateset_agents.weight_studio import StudioRuntime
+        from stateset_agents.weight_studio import PluggableRewardJudge, StudioRuntime
 
         rt = StudioRuntime(workspace_root=workspace)
         out: dict[str, Any] = {}
@@ -558,7 +599,31 @@ def traces_command(
                     json.loads(line) for line in raw_text.splitlines() if line.strip()
                 ]
                 payload = {"traces": rows}
-            out["ingest"] = rt.traces.ingest_payload(payload, reward_fn=reward)
+            judge = (
+                PluggableRewardJudge(
+                    mode=judge_mode,
+                    judge_endpoint_url=judge_endpoint,
+                    judge_model=judge_model,
+                )
+                if judge_mode != "heuristic"
+                else None
+            )
+            out["ingest"] = rt.traces.ingest_payload(
+                payload, reward_fn=reward, judge=judge
+            )
+
+        if prune is not None:
+            deleted = rt.traces.prune_traces(keep_latest=prune)
+            out["prune"] = {"deleted": deleted, "keep_latest": prune}
+
+        if query or failed_only or source or search:
+            matched = rt.traces.query_traces(
+                failed_only=failed_only,
+                source=source or None,
+                search=search or None,
+                limit=50,
+            )
+            out["query"] = {"count": len(matched), "traces": matched}
 
         if audit:
             out["calibration"] = rt.traces.audit_reward_calibration(reward_fn=reward)

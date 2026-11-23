@@ -10,6 +10,8 @@ on:
       - "stateset_agents/weight_studio/**"
       - "stateset_agents/mcp_server.py"
       - "stateset_agents/cli_mcp.py"
+      - "stateset_agents/cli_studio.py"
+      - "npm/**"
       - "tests/unit/test_weight_studio.py"
       - "tests/unit/test_mcp_server.py"
       - "examples/weight_studio_quickstart.py"
@@ -21,6 +23,8 @@ on:
       - "stateset_agents/weight_studio/**"
       - "stateset_agents/mcp_server.py"
       - "stateset_agents/cli_mcp.py"
+      - "stateset_agents/cli_studio.py"
+      - "npm/**"
       - "tests/unit/test_weight_studio.py"
       - "tests/unit/test_mcp_server.py"
       - "examples/weight_studio_quickstart.py"
@@ -39,6 +43,10 @@ jobs:
         with:
           python-version: "3.11"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Install Weight Studio, MCP & dev dependencies
         run: |
           python -m pip install --upgrade pip
@@ -46,10 +54,15 @@ jobs:
           pip install playwright
           python -m playwright install --with-deps chromium
 
+      - name: TypeScript / Node SDK tests & typecheck
+        run: |
+          npm --prefix npm ci
+          npm --prefix npm test
+
       - name: Lint, type-check, examples & unit/MCP protocol tests
         run: |
-          ruff check stateset_agents/weight_studio stateset_agents/mcp_server.py stateset_agents/cli_mcp.py tests/unit/test_weight_studio.py tests/unit/test_mcp_server.py examples/weight_studio_quickstart.py examples/autonomous_surgery_autopilot.py
-          mypy --config-file mypy.ini --no-incremental --cache-dir=/dev/null stateset_agents/weight_studio stateset_agents/mcp_server.py stateset_agents/cli_mcp.py
+          ruff check stateset_agents/weight_studio stateset_agents/mcp_server.py stateset_agents/cli_mcp.py stateset_agents/cli_studio.py tests/unit/test_weight_studio.py tests/unit/test_mcp_server.py examples/weight_studio_quickstart.py examples/autonomous_surgery_autopilot.py
+          mypy --config-file mypy.ini --no-incremental --cache-dir=/dev/null stateset_agents/weight_studio stateset_agents/mcp_server.py stateset_agents/cli_mcp.py stateset_agents/cli_studio.py
           pytest -q -m "" tests/unit/test_weight_studio.py tests/unit/test_mcp_server.py tests/unit/test_torch_import_policy.py
           python examples/weight_studio_quickstart.py
           python examples/autonomous_surgery_autopilot.py
@@ -105,6 +118,16 @@ jobs:
                   page.wait_for_function("() => !['READY', 'AUDITING…'].includes(document.querySelector('#redteam-status-pill')?.textContent || '')", timeout=15000)
                   page.click("#btn-run-canary")
                   page.wait_for_function("() => !['READY', 'GATING…'].includes(document.querySelector('#canary-status-pill')?.textContent || '')", timeout=15000)
+
+                  # Verify Live OTLP Trace Ingestion, Reward Calibration & Modular ⌘K Command Palette
+                  page.click("#btn-ingest-trace")
+                  page.wait_for_function("() => (document.querySelector('#traces-result-summary')?.textContent || '').includes('Ingested')", timeout=15000)
+                  page.click("#btn-audit-calibration")
+                  page.wait_for_function("() => (document.querySelector('#traces-result-summary')?.textContent || '').includes('Verdict:')", timeout=15000)
+                  page.click("#btn-cmd-palette")
+                  page.fill("#cmd-palette-input", "calibration")
+                  assert "Audit Reward Calibration" in (page.text_content("#cmd-palette-list") or "")
+                  page.keyboard.press("Escape")
 
                   # Verify Live Streamable HTTP MCP -> real-time browser SSE activity stream
                   page.click("#btn-mcp-modal")
