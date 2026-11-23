@@ -1583,6 +1583,8 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
             "kl_coef",
             "live_vllm_endpoint",
             "mcp_endpoint",
+            "fp8_rollout_tis_clip",
+            "moe_aux_loss_coef",
         }
         filtered = {k: v for k, v in body.items() if k in allowed}
         try:
@@ -1688,7 +1690,92 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
             return ConversationTurn(role="assistant", content="Total revenue is 25000.")
 
         pool = MultiDomainSandboxPool(max_concurrency=max_concurrency)
-        return await pool.run_batch(specs, _ref_policy, normalize_per_domain=True)
+        res = await pool.run_batch(specs, _ref_policy, normalize_per_domain=True)
+        rt = _rt()
+        for ep in res.get("episodes") or []:
+            turns_raw = ep.get("turn_rewards") or [ep.get("reward", 0.0)]
+            turns = [
+                {
+                    "turn": idx + 1,
+                    "process_reward": round(float(tr), 4),
+                    "credit": round(float(ep.get("normalized_advantage", 0.0)), 4),
+                }
+                for idx, tr in enumerate(turns_raw)
+            ]
+            rt.store.record_rl_trajectory(
+                {
+                    "trajectory_id": str(ep.get("episode_id") or ""),
+                    "run_name": "sandbox-pool",
+                    "domain": str(ep.get("domain") or "general"),
+                    "verified": bool(ep.get("verified")),
+                    "terminal_reward": float(ep.get("reward", 0.0)),
+                    "normalized_advantage": float(ep.get("normalized_advantage", 0.0)),
+                    "turns": turns,
+                }
+            )
+        return res
+
+    @api.post("/rl/trajectories")
+    async def post_rl_trajectory(request: Request) -> dict[str, Any]:
+        from ..training.turn_credit import compute_turn_level_advantages
+
+        rt = _rt()
+        try:
+            body = await request.json()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}") from exc
+        if not isinstance(body, dict):
+            raise HTTPException(
+                status_code=400, detail="Payload must be a JSON object."
+            )
+        record = dict(body)
+        turns = list(record.get("turns") or [])
+        if turns and not any("credit" in t for t in turns if isinstance(t, dict)):
+            prms = [
+                float(t.get("process_reward", 0.0))
+                for t in turns
+                if isinstance(t, dict)
+            ]
+            term_r = float(record.get("terminal_reward", record.get("reward", 0.0)))
+            credits = compute_turn_level_advantages(
+                [{"turn_process_rewards": prms, "terminal_reward": term_r}]
+            )
+            if credits:
+                for t, adv in zip(turns, credits[0].turn_advantages, strict=False):
+                    if isinstance(t, dict):
+                        t["credit"] = round(float(adv), 4)
+            record["turns"] = turns
+
+        rt.store.record_rl_trajectory(record)
+        rt.events.publish(
+            "rl_trajectory",
+            source="rl_trainer",
+            tool="studio_query_rl_trajectories",
+            summary=(
+                f"Trajectory {record.get('trajectory_id', 'traj')} "
+                f"({record.get('domain', 'general')}, verified={bool(record.get('verified'))})"
+            ),
+            mutated=False,
+            pulse="forward",
+            payload=record,
+        )
+        return {"accepted": True, "trajectory": record}
+
+    @api.get("/rl/trajectories")
+    async def get_rl_trajectories(
+        run_name: str | None = Query(None),
+        domain: str | None = Query(None),
+        failed_only: bool = Query(False),
+        limit: int = Query(30, ge=1, le=200),
+    ) -> dict[str, Any]:
+        rt = _rt()
+        rows = rt.store.query_rl_trajectories(
+            run_name=run_name,
+            domain=domain,
+            failed_only=failed_only,
+            limit=limit,
+        )
+        return {"count": len(rows), "trajectories": rows}
 
     @api.post("/traces/calibration-audit")
     async def traces_calibration_audit(req: CalibrationAuditRequest) -> dict[str, Any]:

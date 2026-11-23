@@ -494,7 +494,76 @@ export function initAutopilotAndMcpPanel({
     }
   };
 
+  const renderRlTrajectories = (items) => {
+    const cnt = $('rl-traj-count');
+    const list = $('rl-trajectory-list');
+    if (cnt) cnt.textContent = String(items.length);
+    if (!list) return;
+    if (!items.length) {
+      list.textContent = 'Run 3-Domain Pool or stream RL trajectories to inspect per-turn PRM credit.';
+      return;
+    }
+    list.innerHTML = '';
+    items.slice(0, 8).forEach((tr) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'padding:5px 6px;border-radius:5px;background:rgba(15,23,42,0.45);margin-bottom:4px;font-size:11px;';
+      const badge = tr.verified ? '✅ PASS' : '❌ FAIL';
+      const turns = Array.isArray(tr.turns) ? tr.turns : [];
+      const turnBadges = turns
+        .map((t, i) => {
+          const c = Number(t.credit ?? t.process_reward ?? 0);
+          const sign = c >= 0 ? '+' : '';
+          return `T${t.turn || i + 1}:${sign}${c.toFixed(2)}`;
+        })
+        .join(' ');
+      const header = document.createElement('div');
+      header.className = 'mono';
+      header.textContent = `${badge} [${tr.domain || 'gen'}] ${tr.trajectory_id || 'traj'} · R=${Number(tr.terminal_reward ?? 0).toFixed(2)}`;
+      row.appendChild(header);
+      if (turnBadges) {
+        const sub = document.createElement('div');
+        sub.className = 'mono';
+        sub.style.cssText = 'opacity:0.8;font-size:10px;margin-top:2px;';
+        sub.textContent = turnBadges;
+        row.appendChild(sub);
+      }
+      if (!tr.verified) {
+        const btn = document.createElement('button');
+        btn.className = 'mini-btn mt-6';
+        btn.style.fontSize = '10px';
+        btn.textContent = '⛏ Mine Fail → Traces';
+        btn.addEventListener('click', async () => {
+          try {
+            await apiPost('/traces/ingest', {
+              payload: {
+                prompt: tr.prompt || `[${tr.domain || 'rl'}] Failed episode ${tr.trajectory_id || ''}`,
+                response: tr.response || 'Unverified RL trajectory failure',
+                human_score: 0.1,
+              },
+              reward_fn: 'customer_support',
+            });
+            showToast(`⛏ Promoted ${tr.trajectory_id || 'trajectory'} into Live Traces curriculum`, 2600);
+          } catch (err) {
+            showToast(`Mine error: ${err.message}`, 3000);
+          }
+        });
+        row.appendChild(btn);
+      }
+      list.appendChild(row);
+    });
+  };
+
+  const loadRlTrajectories = async () => {
+    try {
+      const res = await apiGet('/rl/trajectories?limit=12');
+      if (res && Array.isArray(res.trajectories)) renderRlTrajectories(res.trajectories);
+    } catch (_err) {
+      // Optional on boot
+    }
+  };
+
   loadRlTelemetry();
+  loadRlTrajectories();
 
   $('rl-run-select')?.addEventListener('change', (e) => {
     loadRlTelemetry(e.target.value || '');
@@ -541,6 +610,7 @@ export function initAutopilotAndMcpPanel({
         summary.textContent = `3-Domain Pool (${res.episode_count} eps) · ${parts.join(' · ')} · z-norm active`;
       }
       renderer.triggerPulse('forward');
+      loadRlTrajectories();
       showToast(`🧪 Multi-Domain Sandbox Pool: ${res.episode_count} verified episodes`, 2800);
     } catch (err) {
       if (pill) pill.textContent = 'ERR';
@@ -722,6 +792,9 @@ export function initAutopilotAndMcpPanel({
         }
         if (ev.type === 'rl_control' && ev.payload) {
           renderRlControl(ev.payload);
+        }
+        if (ev.type === 'rl_trajectory') {
+          loadRlTrajectories();
         }
         if (ev.pulse) renderer.triggerPulse(ev.pulse);
         if (ev.summary) showToast(`🤖 MCP Agent: ${ev.summary}`, 2600);

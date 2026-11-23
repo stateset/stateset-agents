@@ -98,6 +98,22 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
         f"{_PKG}.chunked_rl_loss",
         "triton_chunked_logprobs_available",
     ),
+    "moe_router_aux_loss": (
+        f"{_PKG}.chunked_rl_loss",
+        "moe_router_aux_loss",
+    ),
+    "AdaptiveDifficultyCurriculum": (
+        f"{_PKG}.adaptive_curriculum",
+        "AdaptiveDifficultyCurriculum",
+    ),
+    "CurriculumTask": (
+        f"{_PKG}.adaptive_curriculum",
+        "CurriculumTask",
+    ),
+    "StudioControlMixin": (
+        f"{_PKG}.studio_callback",
+        "StudioControlMixin",
+    ),
     "DisaggregatedRLConfig": (
         f"{_PKG}.disaggregated_rl",
         "DisaggregatedRLConfig",

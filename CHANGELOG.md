@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.98.0] - 2026-11-23 — MoE + FP8 Precision-Mismatch TIS/IcePop, Adaptive Difficulty Curriculum & Verifiable Trajectory Credit Inspector
+
+### Added
+
+- **MoE Router Load-Balancing & FP8 Rollout-vs-Learner Precision Bridge** (`stateset_agents/training/chunked_rl_loss.py`, `rl_blueprint.py`): added `moe_router_aux_loss(...)` and opt-in Truncated Importance Sampling (`tis_clip_max`), double-sided `icepop_bounds` outlier masking, and `rollout_logprobs` divergence telemetry (`tis_mean_ratio`, `tis_clipped_fraction`, `icepop_masked_fraction`, `rollout_learner_kl`) directly inside `chunked_rl_policy_loss`.
+- **Adaptive Difficulty Curriculum & Self-Play Scheduler** (`stateset_agents/training/adaptive_curriculum.py`): added `AdaptiveDifficultyCurriculum` & `CurriculumTask` to focus rollouts on the `20%–80%` frontier solve-rate band, promote failing OTLP production traces directly into the active RL replay queue, and synthesize harder multi-constraint self-play variants from mastered tasks.
+- **Verifiable Trajectory Credit Inspector (SQLite + REST + MCP + TS SDK + 3D Weight Studio)** (`ledger_store.py`, `router.py`, `mcp_bridge.py`, `mcp_server.py`, `index.html`, `autopilot_panel.js`, `npm/`): persisted multi-turn RL trajectories with automatic turn-level PRM credit (`POST/GET /api/weight-studio/rl/trajectories`), added `studio_query_rl_trajectories` across HTTP & stdio MCP (39 stdio / 32 HTTP canonical Studio tools), TypeScript SDK `recordRlTrajectory`/`queryRlTrajectories`, and an interactive **Trajectory Credit Inspector** drawer with 1-click **"⛏ Mine Fail → Traces"** in 3D Weight Studio.
+
 ## [0.97.0] - 2026-11-23 — Automatic 4-Trainer Pause/Rollback Enforcement, Multi-Run Sparkline Overlay & CI Chrome RL Cockpit E2E
 
 ### Added

@@ -379,6 +379,23 @@ export class WeightStudioClient {
       ...options,
     });
   }
+
+  recordRlTrajectory(body, options) {
+    return this._client.request("/api/weight-studio/rl/trajectories", {
+      method: "POST",
+      body,
+      ...options,
+    });
+  }
+
+  queryRlTrajectories(params = {}, options) {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
+    }
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return this._client.request(`/api/weight-studio/rl/trajectories${suffix}`, options);
+  }
 }
 
 /** Typed JSON-RPC 2.0 client for the Streamable HTTP MCP endpoint. */

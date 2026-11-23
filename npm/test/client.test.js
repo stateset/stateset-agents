@@ -212,8 +212,10 @@ test("studio client calls Open-Weight RL Cockpit, Plan & Sandbox Pool endpoints"
   await client.studio.controlRlRun({ action: "pause", reason: "guard" });
   await client.studio.planRlRun({ model: "Qwen/Qwen3-8B", algorithm: "dapo", cloud: "modal" });
   await client.studio.runSandboxPool({ domains: ["commerce", "coding", "sql"] });
+  await client.studio.recordRlTrajectory({ trajectory_id: "t-1", domain: "commerce", verified: true });
+  await client.studio.queryRlTrajectories({ domain: "commerce", failed_only: true, limit: 10 });
 
-  assert.equal(calls.length, 5);
+  assert.equal(calls.length, 7);
   assert.equal(
     calls[0].url,
     "http://127.0.0.1:8765/api/weight-studio/rl/telemetry?limit=25&run_name=gspo-1",
@@ -223,4 +225,9 @@ test("studio client calls Open-Weight RL Cockpit, Plan & Sandbox Pool endpoints"
   assert.equal(calls[2].body.action, "pause");
   assert.equal(calls[3].url, "http://127.0.0.1:8765/api/weight-studio/rl/plan");
   assert.equal(calls[4].url, "http://127.0.0.1:8765/api/weight-studio/rl/sandbox-pool");
+  assert.equal(calls[5].url, "http://127.0.0.1:8765/api/weight-studio/rl/trajectories");
+  assert.equal(
+    calls[6].url,
+    "http://127.0.0.1:8765/api/weight-studio/rl/trajectories?domain=commerce&failed_only=true&limit=10",
+  );
 });

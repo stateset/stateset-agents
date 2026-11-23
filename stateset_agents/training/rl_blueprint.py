@@ -53,6 +53,9 @@ class RLBlueprintConfig:
     clip_high: float = 0.28
     live_vllm_endpoint: str = ""
     mcp_endpoint: str = ""
+    fp8_rollout_tis_clip: float | None = 2.0
+    moe_aux_loss_coef: float = 0.0
+    moe_expert_lora_targets: tuple[str, ...] = ()
     extra: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
