@@ -128,7 +128,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python release:** `stateset-agents==0.85.0`, published from the
+- **Current Python release:** `stateset-agents==0.85.1`, published from the
   annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/). Its first registry
@@ -384,7 +384,11 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**v0.85.0 (latest release; publication triggered by tag):**
+**v0.85.1 (latest release; publication triggered by tag):**
+
+- **Production Hardening & Live Co-Pilot Polish**: Non-blocking threadpool execution for Auto-Heal/Red-Team/Tournament/Canary/Autopilot/HTTP MCP endpoints, thread-safe SSE broadcast (`call_soon_threadsafe`), race-free rapid model switching in 3D Weight Studio, `⌘K` Command Palette v8 shortcuts, `stateset-agents doctor --json` Studio/MCP diagnostics, zero-GPU `examples/autonomous_surgery_autopilot.py`, and upgraded Chromium WebGL2 + HTTP MCP CI E2E smoke.
+
+**v0.85.0:**
 
 - **Production Canary Shadow Gate & Durable Rollout Ledger (`stateset-agents canary`, `studio_canary_gate`)**: Paired Base-vs-Edited shadow traffic replay with win/tie/loss counts, 95% CIs, zero-regression safety guard, and auditable `PROMOTE`/`HOLD_CANARY`/`ROLLBACK` decisions logged to `rollout_ledger.jsonl` (`stateset://studio/rollouts`).
 - **One-Call Full Production Autopilot (`stateset-agents autopilot`, `studio_autopilot_release`)**: Chains Auto-Heal Logs → Red-Team Safety Immunization → Canary Shadow Gate → Verified LoRA/GGUF/safetensors Export + Offline 3D HTML Release Dossier (`autopilot_dossier.html`) across REST, CLI, Studio UI, and **29 annotated MCP tools**.

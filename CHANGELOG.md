@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.85.1] - 2026-11-23 — Production Hardening, Thread-Safe Live MCP SSE, Race-Free 3D UI & Full CI Smoke
+
+### Fixed & Improved
+
+- **Non-Blocking Threadpool API & Thread-Safe SSE Event Bus (`stateset_agents/weight_studio/router.py`, `mcp_bridge.py`):** Offloaded heavy Auto-Heal, Red-Team, Tournament, Canary, Autopilot, and Streamable HTTP MCP calls via `asyncio.to_thread(...)` and upgraded `StudioEventBus` to dispatch via `loop.call_soon_threadsafe(...)` so live 3D browser SSE streams never stall under load.
+- **Race-Free Model Switching & Zero-Error Browser Console (`app.js`, `index.html`):** Added monotonic generation guards (`_modelLoadGen`, `_tensorLoadGen`) preventing stale tensor fetches on rapid model switching, added inline SVG favicon eliminating `/favicon.ico` 404s, added all 7 v8 workflows to the `⌘K` Command Palette, and exposed live `version` / `mcp_http_endpoint` / `events_sse_endpoint` on `/api/weight-studio/health`.
+- **Developer Experience & CI Hardening:** Added `studio_and_mcp` readiness checks to `stateset-agents doctor --json`, added zero-GPU `examples/autonomous_surgery_autopilot.py`, aligned `tests/unit/test_readme_cli_snippets.py` with the updated README CLI snippet count, and upgraded `.github/workflows/weight-studio-smoke.yml` to run full MCP protocol tests + Headless Chromium WebGL2 + live HTTP MCP SSE E2E smoke.
+
 ## [0.85.0] - 2026-11-23 — Production Canary Shadow Gate, Durable Rollout Ledger & Full Production Autopilot
 
 ### Added
