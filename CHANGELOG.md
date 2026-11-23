@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.82.0] - 2026-11-23 — 3D Weight Studio v7
+
 ### Added
 
 - **3D Weight Studio v6 + v7 (`Attention 3D`, `Residual 3D`, Diff-as-LoRA, GGUF v3, Auto-Repair, Arena, SAE Atlas, HF Model Card & Sessions):**

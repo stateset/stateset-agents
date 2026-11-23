@@ -128,7 +128,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python release:** `stateset-agents==0.81.0`, published from the
+- **Current Python release:** `stateset-agents==0.82.0`, published from the
   annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/). Its first registry
@@ -383,7 +383,13 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**v0.81.0 (latest release; publication triggered by tag):**
+**v0.82.0 (latest release; publication triggered by tag):**
+
+- **3D Weight Studio v6 + v7 (`stateset-agents studio`, `/studio`)**: 7 WebGL2 PBR 3D topologies — adding **`Attention 3D`** (Hotkey `6`: 8-head causal attention gallery, single-head cathedral, click-to-zoom & live **✂ Ablate Head** surgery) and **`Residual 3D`** (Hotkey `7`: twin-ribbon Base vs. Active Edited/Steered residual stream highway with 2D PCA drift arcs, Attention/MLP contribution pillars, and Logit Lens top-token beacons).
+- **PEFT Diff-as-LoRA, GGUF v3 + Ollama & HF Model Cards**: SVD-factorize surgical diffs `ΔW` into reload-verified PEFT LoRA adapters, write header-verified binary **GGUF v3** (`Q8_0`/`F16`/`F32`) + Ollama `Modelfile` bundles, and generate YAML-frontmatter Hugging Face Model Cards + reproducible recipes.
+- **Custom JSONL Eval Gate, Multi-Edit A/B Arena, Auto-Repair, SAE Atlas & 10 MCP Tools**: Selectable StateSet reward scorers (`composite`, `customer_support`, `tool_calling`, `gsm8k`) with 95% bootstrap CIs, non-destructive side-by-side candidate benchmarking, one-click **🔧 Auto-Repair** back to `GO`, Gemma/Llama/Qwen Scope + local `.safetensors` SAE loader, persistent workbench sessions, `⌘K` Command Palette, and 10 Studio MCP tools.
+
+**v0.81.0:**
 
 - **Interactive 3D WebGL2 Weight Studio (`stateset-agents studio`, `/studio`)**: 5 PBR WebGL2 topologies (`Architecture 3D`, `Microscope 128²`, `SVD Spectral`, `Trajectory 4D`, `Circuit 3D`), non-destructive surgical weight editing (scale, prune, clamp, SVD truncate, Wanda/Fisher, head surgery, ROME Rank-1, TIES/DARE/SLERP, Quantize 3D Lab), Contrastive Activation Steering (CAA/RepE + `steer_bake`), SAE Feature Explorer, causal activation patching, 6-case Pre-Export Batch Eval Gate (`GO`/`WARN`/`BLOCK`), SHA-256 reload-verified `.safetensors` export, portable `.studio-recipe.json`, standalone HTML PR reports, 360° WebM turntable capture, 6 MCP tools, quickstart (`examples/weight_studio_quickstart.py`), and docs (`docs/GETTING_STARTED_STUDIO.md`, `docs/WEIGHT_STUDIO.md`).
 - **Reward-hacking-resistant support reward v2 & judge rubric v4**: `SupportConversationReward` with repetition, placeholder, responsiveness, and `must_avoid` penalties, deterministic rubric v4 detectors, and `benchmarks/flagship_rejudge.py`.
@@ -1419,8 +1425,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install "stateset-agents==0.81.0" # current stable release
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.81.0"
+pip install "stateset-agents==0.82.0" # current stable release
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.82.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -2271,7 +2277,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.81.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.82.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 
