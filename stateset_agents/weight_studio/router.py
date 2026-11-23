@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from .canary_engine import CanaryRolloutEngine
 from .editor import WeightEditEngine
 from .finetune_engine import FinetuneStudioEngine
 from .inference_engine import InferenceStudioEngine
@@ -44,6 +45,9 @@ class StudioRuntime:
         self.redteam = RedTeamSurgeryEngine(self.inspector, self.editor, self.inference)
         self.tournament = ModelTournamentEngine(
             self.inspector, self.editor, self.inference, self.redteam
+        )
+        self.canary = CanaryRolloutEngine(
+            self.inspector, self.editor, self.inference, self.healer, self.redteam
         )
         self.events = StudioEventBus()
 
@@ -358,6 +362,42 @@ class TournamentRunRequest(BaseModel):
     synthesize_merge: bool = True
     merge_methods: list[str] | None = None
     export_format: str = Field("none", pattern="^(none|lora|safetensors|gguf|hf_card)$")
+    output_name: str = ""
+    lora_rank: int = Field(16, ge=1, le=128)
+    lora_alpha: int = Field(32, ge=1, le=512)
+
+
+class CanaryGateRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_id: str
+    checkpoint_id: str | None = None
+    stage: str = Field("canary_10", pattern="^(shadow|canary_10|canary_50|production)$")
+    traffic_path: str | None = None
+    traffic_jsonl: str | None = None
+    reward_fn: str = Field(
+        "composite",
+        pattern="^(composite|customer_support|tool_calling|gsm8k)$",
+    )
+    max_requests: int = Field(6, ge=1, le=20)
+    max_asr: float = Field(0.25, ge=0.0, le=1.0)
+    record_ledger: bool = True
+
+
+class AutopilotReleaseRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_id: str
+    checkpoint_id: str | None = None
+    transcripts_path: str | None = None
+    transcripts_jsonl: str | None = None
+    reward_fn: str = Field(
+        "customer_support",
+        pattern="^(composite|customer_support|tool_calling|gsm8k)$",
+    )
+    immunize_redteam: bool = True
+    stage: str = Field("canary_10", pattern="^(shadow|canary_10|canary_50|production)$")
+    export_format: str = Field("lora", pattern="^(none|lora|safetensors|gguf|hf_card)$")
     output_name: str = ""
     lora_rank: int = Field(16, ge=1, le=128)
     lora_alpha: int = Field(32, ge=1, le=512)
@@ -1060,6 +1100,71 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
                 ),
                 mutated=mutated,
                 pulse="backprop" if mutated else "forward",
+            )
+            return res
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @api.post("/canary/gate")
+    async def run_canary_gate_endpoint(req: CanaryGateRequest) -> dict[str, Any]:
+        rt = _rt()
+        try:
+            res = rt.canary.run_canary_gate(
+                req.model_id,
+                checkpoint_id=req.checkpoint_id,
+                stage=req.stage,
+                traffic_path=req.traffic_path,
+                traffic_jsonl=req.traffic_jsonl,
+                reward_fn=req.reward_fn,
+                max_requests=req.max_requests,
+                max_asr=req.max_asr,
+                record_ledger=req.record_ledger,
+            )
+            rt.events.publish(
+                "studio_canary",
+                source="studio_api",
+                tool="studio_canary_gate",
+                model_id=req.model_id,
+                summary=f"Canary Gate [{req.stage}] → {res['decision']} ({res['recommended_traffic_pct']}%)",
+                mutated=False,
+                pulse="forward",
+            )
+            return res
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @api.get("/canary/ledger")
+    async def list_canary_ledger(
+        limit: int = Query(25, ge=1, le=100),
+    ) -> dict[str, Any]:
+        rollouts = _rt().canary.list_rollouts(limit=limit)
+        return {"rollouts": rollouts, "count": len(rollouts)}
+
+    @api.post("/autopilot/run")
+    async def run_autopilot_endpoint(req: AutopilotReleaseRequest) -> dict[str, Any]:
+        rt = _rt()
+        try:
+            res = rt.canary.run_autopilot_release(
+                req.model_id,
+                checkpoint_id=req.checkpoint_id,
+                transcripts_path=req.transcripts_path,
+                transcripts_jsonl=req.transcripts_jsonl,
+                reward_fn=req.reward_fn,
+                immunize_redteam=req.immunize_redteam,
+                stage=req.stage,
+                export_format=req.export_format,
+                output_name=req.output_name,
+                lora_rank=req.lora_rank,
+                lora_alpha=req.lora_alpha,
+            )
+            rt.events.publish(
+                "studio_autopilot",
+                source="studio_api",
+                tool="studio_autopilot_release",
+                model_id=req.model_id,
+                summary=f"Autopilot → {res['decision']} (traffic {res['recommended_traffic_pct']}%)",
+                mutated=True,
+                pulse="backprop",
             )
             return res
         except (KeyError, ValueError, FileNotFoundError) as exc:

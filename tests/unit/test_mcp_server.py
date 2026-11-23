@@ -654,6 +654,8 @@ class TestLiveProtocolSession:
                     "studio_auto_heal",
                     "studio_redteam_audit",
                     "studio_model_tournament",
+                    "studio_canary_gate",
+                    "studio_autopilot_release",
                 }
                 assert set(tool_by_name) == expected_tools
                 assert len(tools_result.tools) == len(expected_tools)
@@ -684,6 +686,7 @@ class TestLiveProtocolSession:
                     "stateset://studio/scenarios",
                     "stateset://studio/sessions",
                     "stateset://studio/redteam-probes",
+                    "stateset://studio/rollouts",
                 }
 
                 caps_res = await asyncio.wait_for(
@@ -699,6 +702,7 @@ class TestLiveProtocolSession:
                 )
                 prompt_names = {p.name for p in prompts_result.prompts}
                 assert prompt_names == {
+                    "production_autopilot_release",
                     "auto_heal_model",
                     "redteam_and_immunize",
                     "model_tournament_and_merge",

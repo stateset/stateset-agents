@@ -393,6 +393,41 @@ STUDIO_MCP_TOOLS: list[dict[str, Any]] = [
         [],
         read_only=False,
     ),
+    _tool_spec(
+        "studio_canary_gate",
+        "Replay shadow production traffic comparing Base vs. Active Edited weights with paired win/tie/loss, 95% CI, severe regression check, and Red-Team ASR guard, issuing PROMOTE/HOLD_CANARY/ROLLBACK and writing to the durable rollout ledger.",
+        {
+            "model_id": {"type": "string"},
+            "stage": {"type": "string", "default": "canary_10"},
+            "traffic_path": {"type": "string", "default": ""},
+            "traffic_jsonl": {"type": "string", "default": ""},
+            "reward_fn": {"type": "string", "default": "composite"},
+            "max_requests": {"type": "integer", "default": 6},
+            "max_asr": {"type": "number", "default": 0.25},
+            "checkpoint_id": {"type": "string"},
+        },
+        ["model_id"],
+        read_only=False,
+    ),
+    _tool_spec(
+        "studio_autopilot_release",
+        "Run the complete end-to-end Production Autopilot: Auto-Heal Logs -> Red-Team Safety Audit & Immunization -> Canary Shadow-Rollout Promotion Gate -> Verified Artifact Export (LoRA/safetensors/GGUF/HF Card) + Rollout Ledger + Offline 3D HTML Release Dossier.",
+        {
+            "model_id": {"type": "string"},
+            "transcripts_path": {"type": "string", "default": ""},
+            "transcripts_jsonl": {"type": "string", "default": ""},
+            "reward_fn": {"type": "string", "default": "customer_support"},
+            "immunize_redteam": {"type": "boolean", "default": True},
+            "stage": {"type": "string", "default": "canary_10"},
+            "export_format": {"type": "string", "default": "lora"},
+            "output_name": {"type": "string", "default": ""},
+            "lora_rank": {"type": "integer", "default": 16},
+            "lora_alpha": {"type": "integer", "default": 32},
+            "checkpoint_id": {"type": "string"},
+        },
+        ["model_id"],
+        read_only=False,
+    ),
 ]
 
 STUDIO_MCP_RESOURCES: list[dict[str, str]] = [
@@ -432,9 +467,24 @@ STUDIO_MCP_RESOURCES: list[dict[str, str]] = [
         "description": "Built-in adversarial Red-Team safety probes (prompt injection, PII exfiltration, unauthorized tool calls, policy bypass, hallucinated commitments).",
         "mimeType": "application/json",
     },
+    {
+        "uri": "stateset://studio/rollouts",
+        "name": "studio_rollouts",
+        "description": "Durable JSONL rollout ledger of Canary Shadow Gate PROMOTE/HOLD_CANARY/ROLLBACK decisions.",
+        "mimeType": "application/json",
+    },
 ]
 
 STUDIO_MCP_PROMPTS: list[dict[str, Any]] = [
+    {
+        "name": "production_autopilot_release",
+        "description": "End-to-end Production Autopilot: Auto-Heal failing logs -> Red-Team Safety Audit & Surgical Immunization -> Canary Shadow Promotion Gate -> Verified Export + Release Dossier.",
+        "arguments": [
+            {"name": "model_id", "required": True},
+            {"name": "transcripts_path", "required": False},
+            {"name": "export_format", "required": False},
+        ],
+    },
     {
         "name": "auto_heal_model",
         "description": "Run the Autonomous Transcript-to-Surgery Self-Healing Loop from failing logs to a verified adapter.",
@@ -949,6 +999,45 @@ def _dispatch_studio_tool(
             f"Tournament Champion: {champ.get('label', '?')} (fit {champ.get('fitness', 0):.3f})",
         )
 
+    if name == "studio_canary_gate":
+        res = rt.canary.run_canary_gate(
+            model_id,
+            checkpoint_id=checkpoint_id,
+            stage=str(args.get("stage") or "canary_10"),
+            traffic_path=str(args.get("traffic_path") or "") or None,
+            traffic_jsonl=str(args.get("traffic_jsonl") or "") or None,
+            reward_fn=str(args.get("reward_fn") or "composite"),
+            max_requests=int(args.get("max_requests", 6)),
+            max_asr=float(args.get("max_asr", 0.25)),
+        )
+        return (
+            dict(res),
+            False,
+            "forward",
+            f"Canary Gate [{res['stage']}] → {res['decision']} ({res['recommended_traffic_pct']}%)",
+        )
+
+    if name == "studio_autopilot_release":
+        res = rt.canary.run_autopilot_release(
+            model_id,
+            checkpoint_id=checkpoint_id,
+            transcripts_path=str(args.get("transcripts_path") or "") or None,
+            transcripts_jsonl=str(args.get("transcripts_jsonl") or "") or None,
+            reward_fn=str(args.get("reward_fn") or "customer_support"),
+            immunize_redteam=bool(args.get("immunize_redteam", True)),
+            stage=str(args.get("stage") or "canary_10"),
+            export_format=str(args.get("export_format") or "lora"),
+            output_name=str(args.get("output_name") or ""),
+            lora_rank=int(args.get("lora_rank", 16)),
+            lora_alpha=int(args.get("lora_alpha", 32)),
+        )
+        return (
+            dict(res),
+            True,
+            "backprop",
+            f"Autopilot → {res['decision']} (traffic {res['recommended_traffic_pct']}%)",
+        )
+
     raise KeyError(f"Unknown MCP tool: {name}")
 
 
@@ -995,11 +1084,27 @@ def _read_studio_resource(rt: Any, uri: str) -> str:
         return json.dumps({"count": len(sessions), "sessions": sessions}, indent=2)
     if uri == "stateset://studio/redteam-probes":
         return json.dumps({"probes": rt.redteam.list_probes()}, indent=2)
+    if uri == "stateset://studio/rollouts":
+        rollouts = rt.canary.list_rollouts(limit=25)
+        return json.dumps({"count": len(rollouts), "rollouts": rollouts}, indent=2)
     raise KeyError(f"Unknown MCP resource URI: {uri}")
 
 
 def _get_studio_prompt(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     model_id = str(arguments.get("model_id") or "preset:deepseek-r1-1.5b")
+    if name == "production_autopilot_release":
+        fmt = str(arguments.get("export_format") or "lora")
+        tp = str(arguments.get("transcripts_path") or "")
+        text = (
+            f"Run `studio_autopilot_release(model_id={model_id!r}, transcripts_path={tp!r}, "
+            f"immunize_redteam=True, export_format={fmt!r})` to heal failing logs, immunize against "
+            "adversarial attacks, run the Paired Shadow Canary Gate, record the rollout ledger, and "
+            "export a verified bundle + `autopilot_dossier.html`."
+        )
+        return {
+            "description": "Full Production Autopilot release playbook.",
+            "messages": [{"role": "user", "content": {"type": "text", "text": text}}],
+        }
     if name == "redteam_and_immunize":
         fmt = str(arguments.get("export_format") or "lora")
         text = (

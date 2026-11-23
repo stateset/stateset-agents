@@ -1068,6 +1068,74 @@ def studio_model_tournament(
         return _studio_err(exc, rt)
 
 
+def studio_canary_gate(
+    model_id: str,
+    stage: str = "canary_10",
+    traffic_path: str = "",
+    traffic_jsonl: str = "",
+    reward_fn: str = "composite",
+    max_requests: int = 6,
+    max_asr: float = 0.25,
+    workspace: str = "",
+    checkpoint_id: str | None = None,
+) -> dict[str, Any]:
+    """Replay shadow production traffic comparing Base vs. Active Edited weights with paired win/tie/loss, 95% CI, severe regression check, and Red-Team ASR guard, issuing PROMOTE/HOLD_CANARY/ROLLBACK and writing to the durable rollout ledger."""
+    rt = None
+    try:
+        rt = _get_mcp_studio_runtime(workspace)
+        return dict(
+            rt.canary.run_canary_gate(
+                model_id,
+                checkpoint_id=checkpoint_id,
+                stage=stage,
+                traffic_path=traffic_path or None,
+                traffic_jsonl=traffic_jsonl or None,
+                reward_fn=reward_fn,
+                max_requests=max_requests,
+                max_asr=max_asr,
+            )
+        )
+    except Exception as exc:
+        return _studio_err(exc, rt)
+
+
+def studio_autopilot_release(
+    model_id: str,
+    transcripts_path: str = "",
+    transcripts_jsonl: str = "",
+    reward_fn: str = "customer_support",
+    immunize_redteam: bool = True,
+    stage: str = "canary_10",
+    export_format: str = "lora",
+    output_name: str = "",
+    lora_rank: int = 16,
+    lora_alpha: int = 32,
+    workspace: str = "",
+    checkpoint_id: str | None = None,
+) -> dict[str, Any]:
+    """Run the full Production Autopilot: Auto-Heal Logs -> Red-Team Safety Audit & Surgical Immunization -> Canary Shadow-Rollout Promotion Gate -> Verified Export + Rollout Ledger + Offline 3D HTML Release Dossier."""
+    rt = None
+    try:
+        rt = _get_mcp_studio_runtime(workspace)
+        return dict(
+            rt.canary.run_autopilot_release(
+                model_id,
+                checkpoint_id=checkpoint_id,
+                transcripts_path=transcripts_path or None,
+                transcripts_jsonl=transcripts_jsonl or None,
+                reward_fn=reward_fn,
+                immunize_redteam=immunize_redteam,
+                stage=stage,
+                export_format=export_format,
+                output_name=output_name,
+                lora_rank=lora_rank,
+                lora_alpha=lora_alpha,
+            )
+        )
+    except Exception as exc:
+        return _studio_err(exc, rt)
+
+
 # ---------------------------------------------------------------------------
 # Live MCP Resources (stateset://studio/*)
 # ---------------------------------------------------------------------------
@@ -1162,9 +1230,33 @@ def _resource_studio_redteam_probes() -> str:
     return json.dumps({"probes": rt.redteam.list_probes()}, indent=2)
 
 
+def _resource_studio_rollouts() -> str:
+    rt = _get_mcp_studio_runtime()
+    rollouts = rt.canary.list_rollouts(limit=25)
+    return json.dumps({"count": len(rollouts), "rollouts": rollouts}, indent=2)
+
+
 # ---------------------------------------------------------------------------
 # Guided MCP Workflow Prompts (agent playbooks)
 # ---------------------------------------------------------------------------
+
+
+def prompt_production_autopilot_release(
+    model_id: str,
+    transcripts_path: str = "",
+    export_format: str = "lora",
+) -> str:
+    """Guided playbook for full Production Autopilot (Heal -> Immunize -> Canary Gate -> Export)."""
+    return (
+        f"Execute the full StateSet Production Autopilot release pipeline for `{model_id}`:\n\n"
+        f"1. Call `studio_autopilot_release(model_id={model_id!r}, transcripts_path={transcripts_path!r}, "
+        f"immunize_redteam=True, export_format={export_format!r})` to run Auto-Heal, Adversarial Red-Team "
+        "Immunization, and the Paired Shadow Canary Gate in one auditable pipeline.\n"
+        "2. Inspect `decision` (`PROMOTE` / `HOLD_CANARY` / `ROLLBACK`), paired win/tie/loss record, "
+        "Red-Team ASR reduction, and the durable rollout ledger (`stateset://studio/rollouts`).\n"
+        "3. If `PROMOTE`, present the verified export bundle and `autopilot_dossier.html` PR report; "
+        "if `ROLLBACK`, call `studio_auto_repair` or `studio_manage_edits(action='undo')`."
+    )
 
 
 def prompt_redteam_and_immunize(
@@ -1367,8 +1459,10 @@ def create_server(*, workspace: str | Path | None = None) -> Any:
     mcp.tool(annotations=mut)(studio_auto_heal)
     mcp.tool(annotations=mut)(studio_redteam_audit)
     mcp.tool(annotations=mut)(studio_model_tournament)
+    mcp.tool(annotations=mut)(studio_canary_gate)
+    mcp.tool(annotations=mut)(studio_autopilot_release)
 
-    # Live MCP Resources (6)
+    # Live MCP Resources (7)
     mcp.resource(
         "stateset://studio/capabilities",
         name="studio_capabilities",
@@ -1405,8 +1499,18 @@ def create_server(*, workspace: str | Path | None = None) -> Any:
         description="Built-in adversarial Red-Team safety probes (prompt injection, PII exfiltration, unauthorized tool calls, policy bypass, hallucinated commitments).",
         mime_type="application/json",
     )(_resource_studio_redteam_probes)
+    mcp.resource(
+        "stateset://studio/rollouts",
+        name="studio_rollouts",
+        description="Durable JSONL rollout ledger of Canary Shadow Gate PROMOTE/HOLD_CANARY/ROLLBACK decisions.",
+        mime_type="application/json",
+    )(_resource_studio_rollouts)
 
-    # Guided MCP Workflow Prompts (5)
+    # Guided MCP Workflow Prompts (7)
+    mcp.prompt(
+        name="production_autopilot_release",
+        description="End-to-end Production Autopilot: Auto-Heal Logs -> Red-Team Immunization -> Canary Shadow Gate -> Verified Export + 3D HTML Dossier.",
+    )(prompt_production_autopilot_release)
     mcp.prompt(
         name="auto_heal_model",
         description="Run the Autonomous Transcript-to-Surgery Self-Healing Loop from failing logs to a verified adapter/bundle.",

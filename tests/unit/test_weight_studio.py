@@ -1261,13 +1261,15 @@ def test_redteam_audit_surgical_immunization_and_live_http_mcp_bridge(
     )
     assert r_tools.status_code == 200
     http_tools = r_tools.json()["result"]["tools"]
-    assert len(http_tools) == 20
+    assert len(http_tools) == 22
     tool_names = {t["name"] for t in http_tools}
     assert {
         "studio_apply_edit",
         "studio_auto_heal",
         "studio_redteam_audit",
         "studio_model_tournament",
+        "studio_canary_gate",
+        "studio_autopilot_release",
     } <= tool_names
 
     # Call a mutating tool over HTTP MCP and verify it broadcasts onto the live EventBus
@@ -1437,3 +1439,124 @@ def test_multi_model_tournament_and_evolutionary_merge_api_cli_mcp(
     )
     assert "error" not in mcp_res
     assert mcp_res["champion"]["rank"] == 1
+
+
+def test_canary_shadow_gate_ledger_and_full_autopilot_release(
+    tmp_path: Path,
+) -> None:
+    """Verify Production Canary Shadow Gate, Rollout Ledger, Full Autopilot Release, CLI, HTTP MCP & stdio MCP."""
+    from fastapi.testclient import TestClient
+    from typer.testing import CliRunner
+
+    from stateset_agents.cli import app as cli_app
+    from stateset_agents.mcp_server import studio_autopilot_release, studio_canary_gate
+
+    ws = _make_sample_workspace(tmp_path)
+    app = create_studio_app(workspace_root=ws)
+    client = TestClient(app)
+    mid = "local:outputs/demo_lora_run"
+
+    # 1. REST Canary Shadow Gate + Durable Rollout Ledger
+    r_gate = client.post(
+        "/api/weight-studio/canary/gate",
+        json={
+            "model_id": mid,
+            "stage": "canary_10",
+            "reward_fn": "composite",
+            "max_requests": 4,
+        },
+    )
+    assert r_gate.status_code == 200
+    gate = r_gate.json()
+    assert gate["decision"] in ("PROMOTE", "HOLD_CANARY", "ROLLBACK")
+    assert Path(gate["ledger_path"]).is_file()
+
+    r_ledger = client.get("/api/weight-studio/canary/ledger?limit=10")
+    assert r_ledger.status_code == 200
+    assert r_ledger.json()["count"] >= 1
+
+    # 2. REST Full Production Autopilot (Heal -> Immunize -> Canary Gate -> LoRA + 3D HTML Dossier)
+    r_auto = client.post(
+        "/api/weight-studio/autopilot/run",
+        json={
+            "model_id": mid,
+            "reward_fn": "customer_support",
+            "immunize_redteam": True,
+            "export_format": "lora",
+            "output_name": "autopilot-v1",
+            "lora_rank": 4,
+            "lora_alpha": 8,
+        },
+    )
+    assert r_auto.status_code == 200
+    auto = r_auto.json()
+    assert auto["decision"] in ("PROMOTE", "HOLD_CANARY", "ROLLBACK")
+    assert auto["rollout_id"]
+    if auto["exported"]:
+        assert Path(auto["dossier_path"]).is_file()
+        assert Path(auto["summary_path"]).is_file()
+
+    # 3. Live HTTP MCP `studio_canary_gate` + `stateset://studio/rollouts` + `production_autopilot_release`
+    r_mcp_gate = client.post(
+        "/api/weight-studio/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 20,
+            "method": "tools/call",
+            "params": {
+                "name": "studio_canary_gate",
+                "arguments": {"model_id": mid, "stage": "canary_50", "max_requests": 3},
+            },
+        },
+    )
+    assert r_mcp_gate.status_code == 200
+    assert r_mcp_gate.json()["result"]["isError"] is False
+
+    r_rollouts = client.post(
+        "/api/weight-studio/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 21,
+            "method": "resources/read",
+            "params": {"uri": "stateset://studio/rollouts"},
+        },
+    )
+    assert r_rollouts.status_code == 200
+    rollouts_data = json.loads(r_rollouts.json()["result"]["contents"][0]["text"])
+    assert rollouts_data["count"] >= 2
+
+    # 4. CLI `stateset-agents canary --json` & `stateset-agents autopilot --json` + stdio MCP
+    runner = CliRunner()
+    c_can = runner.invoke(
+        cli_app, ["canary", "--model", mid, "--workspace", str(ws), "--json"]
+    )
+    assert c_can.exit_code == 0, c_can.output
+    assert json.loads(c_can.output)["decision"] in (
+        "PROMOTE",
+        "HOLD_CANARY",
+        "ROLLBACK",
+    )
+
+    c_auto = runner.invoke(
+        cli_app,
+        [
+            "autopilot",
+            "--model",
+            mid,
+            "--export-format",
+            "none",
+            "--workspace",
+            str(ws),
+            "--json",
+        ],
+    )
+    assert c_auto.exit_code == 0, c_auto.output
+    assert json.loads(c_auto.output)["rollout_id"]
+
+    m_can = studio_canary_gate(mid, max_requests=3, workspace=str(ws))
+    assert "error" not in m_can
+    m_auto = studio_autopilot_release(
+        mid, export_format="none", immunize_redteam=False, workspace=str(ws)
+    )
+    assert "error" not in m_auto
+    assert m_auto["rollout_id"]
