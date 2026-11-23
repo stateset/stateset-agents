@@ -78,7 +78,7 @@ claude mcp add stateset-agents -- stateset-agents mcp --workspace /path/to/your/
 }
 ```
 
-## Tools (26 Total)
+## Tools (27 Total)
 
 ### Improve & Finetune Preview (7 Tools)
 
@@ -115,6 +115,7 @@ claude mcp add stateset-agents -- stateset-agents mcp --workspace /path/to/your/
 | `studio_sessions(action="list", session_name="", ...)` | Session | List saved workbench sessions (`action="list"`) or restore a saved session (`action="load"`). |
 | `studio_auto_heal(model_id, transcripts_path="", transcripts_jsonl="", reward_fn="customer_support", export_format="lora", output_name="", lora_rank=16, lora_alpha=32, require_go=True, ...)` | Write | Run the end-to-end **Autonomous Transcript-to-Surgery Self-Healing Loop**: diagnose failing transcripts → mine contrastive pairs → CAA steering → Multi-Edit A/B Arena → bake → 95% CI Eval Gate + Auto-Repair → export verified artifact + HTML PR report. |
 | `studio_redteam_audit(model_id, categories=None, probes_path="", probes_jsonl="", max_probes=10, immunize=False, export_format="none", output_name="", ...)` | Session / Write | Run the **Adversarial Red-Team Safety Audit** (prompt injection, PII exfiltration, unauthorized tool calls, policy bypass, hallucinated commitments) and optionally apply one-click **Surgical Immunization** (`immunize=True`) while verifying benign helpfulness. |
+| `studio_model_tournament(model_ids=None, reward_fn="customer_support", max_cases=4, include_redteam=True, synthesize_merge=True, merge_methods=None, export_format="none", output_name="", ...)` | Session / Write | Benchmark 2+ models/checkpoints on StateSet rewards + Red-Team ASR, build a Pareto leaderboard, synthesize TIES/DARE/SLERP surgical merges of the Top-2, promote the winning champion, and optionally export a verified bundle. |
 
 Every tool validates inputs and returns a structured JSON dict (`{"error": "...", "hint": "..."}` on failure rather than a raw traceback).
 
@@ -135,6 +136,7 @@ Every tool validates inputs and returns a structured JSON dict (`{"error": "..."
 | :--- | :--- | :--- |
 | `auto_heal_model` | `model_id`, `transcripts_path=""`, `reward="customer_support"`, `export_format="lora"` | Diagnose failing production logs → Autonomous Self-Heal → inspect 95% CI Eval Gate & HTML PR report. |
 | `redteam_and_immunize` | `model_id`, `export_format="lora"` | Run Adversarial Red-Team Safety Audit → surgically immunize vulnerable layers without hurting benign helpfulness → export verified bundle. |
+| `model_tournament_and_merge` | `reward="customer_support"`, `export_format="lora"` | Benchmark multiple checkpoints on reward + safety → sweep TIES/DARE/SLERP surgical merges → promote & export Pareto champion. |
 | `surgical_behavior_edit` | `model_id`, `behavior_goal`, `reward="composite"` | Extract CAA steering → Multi-Edit A/B Arena → bake → verify Residual Stream & Eval Gate → export PEFT LoRA + HTML report. |
 | `interpretability_audit` | `model_id`, `prompt` | Full mechanistic audit across Circuit 3D, Residual Stream Logit Lens, SAE feature clamping, and Wanda/SVD sensitivity. |
 | `compress_and_export_model` | `model_id`, `target_compression=0.35`, `export_format="gguf"` | Profile Wanda/SVD sensitivity → replay adaptive compression recipe → Eval Gate + Auto-Repair → export verified GGUF/LoRA. |

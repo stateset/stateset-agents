@@ -1261,12 +1261,13 @@ def test_redteam_audit_surgical_immunization_and_live_http_mcp_bridge(
     )
     assert r_tools.status_code == 200
     http_tools = r_tools.json()["result"]["tools"]
-    assert len(http_tools) == 19
+    assert len(http_tools) == 20
     tool_names = {t["name"] for t in http_tools}
     assert {
         "studio_apply_edit",
         "studio_auto_heal",
         "studio_redteam_audit",
+        "studio_model_tournament",
     } <= tool_names
 
     # Call a mutating tool over HTTP MCP and verify it broadcasts onto the live EventBus
@@ -1345,3 +1346,94 @@ def test_redteam_audit_surgical_immunization_and_live_http_mcp_bridge(
     mcp_rt = studio_redteam_audit(mid, max_probes=4, immunize=False, workspace=str(ws))
     assert "error" not in mcp_rt
     assert mcp_rt["before"]["total_probes"] == 4
+
+
+def test_multi_model_tournament_and_evolutionary_merge_api_cli_mcp(
+    tmp_path: Path,
+) -> None:
+    """Verify Multi-Model Pareto Tournament & Evolutionary TIES/DARE/SLERP Merge via REST, CLI, HTTP MCP, and stdio MCP."""
+    from fastapi.testclient import TestClient
+    from typer.testing import CliRunner
+
+    from stateset_agents.cli import app as cli_app
+    from stateset_agents.mcp_server import studio_model_tournament
+
+    ws = _make_sample_workspace(tmp_path)
+    app = create_studio_app(workspace_root=ws)
+    client = TestClient(app)
+
+    # 1. REST API Tournament + TIES/DARE/SLERP Merge + LoRA Export + HTML Report
+    r_tour = client.post(
+        "/api/weight-studio/tournament/run",
+        json={
+            "reward_fn": "customer_support",
+            "max_cases": 2,
+            "include_redteam": True,
+            "synthesize_merge": True,
+            "merge_methods": ["ties", "slerp"],
+            "export_format": "lora",
+            "output_name": "tour-champ-v1",
+            "lora_rank": 4,
+            "lora_alpha": 8,
+        },
+    )
+    assert r_tour.status_code == 200
+    tour = r_tour.json()
+    assert tour["contender_count"] >= 2
+    assert tour["merge_candidates_evaluated"] == 2
+    assert len(tour["leaderboard"]) >= 2
+    assert tour["leaderboard"][0]["rank"] == 1
+    assert tour["champion"]["fitness"] >= 0.0
+    assert Path(tour["report_path"]).is_file()
+    assert Path(tour["summary_path"]).is_file()
+
+    # 2. Live HTTP MCP `studio_model_tournament`
+    r_mcp = client.post(
+        "/api/weight-studio/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 10,
+            "method": "tools/call",
+            "params": {
+                "name": "studio_model_tournament",
+                "arguments": {
+                    "reward_fn": "composite",
+                    "max_cases": 2,
+                    "include_redteam": False,
+                    "synthesize_merge": True,
+                    "merge_methods": ["slerp"],
+                },
+            },
+        },
+    )
+    assert r_mcp.status_code == 200
+    assert r_mcp.json()["result"]["isError"] is False
+    assert r_mcp.json()["result"]["structuredContent"]["contender_count"] >= 2
+
+    # 3. CLI `stateset-agents tournament --json` + stdio MCP `studio_model_tournament`
+    runner = CliRunner()
+    cli_res = runner.invoke(
+        cli_app,
+        [
+            "tournament",
+            "--reward",
+            "composite",
+            "--no-redteam",
+            "--no-synthesize-merge",
+            "--workspace",
+            str(ws),
+            "--json",
+        ],
+    )
+    assert cli_res.exit_code == 0, cli_res.output
+    assert json.loads(cli_res.output)["contender_count"] >= 2
+
+    mcp_res = studio_model_tournament(
+        reward_fn="composite",
+        max_cases=2,
+        include_redteam=False,
+        synthesize_merge=False,
+        workspace=str(ws),
+    )
+    assert "error" not in mcp_res
+    assert mcp_res["champion"]["rank"] == 1

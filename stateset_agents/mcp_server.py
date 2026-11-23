@@ -1033,6 +1033,41 @@ def studio_redteam_audit(
         return _studio_err(exc, rt)
 
 
+def studio_model_tournament(
+    model_ids: list[str] | None = None,
+    reward_fn: str = "customer_support",
+    max_cases: int = 4,
+    include_redteam: bool = True,
+    synthesize_merge: bool = True,
+    merge_methods: list[str] | None = None,
+    export_format: str = "none",
+    output_name: str = "",
+    lora_rank: int = 16,
+    lora_alpha: int = 32,
+    workspace: str = "",
+) -> dict[str, Any]:
+    """Benchmark 2+ models/checkpoints across StateSet rewards + Red-Team ASR, build a Pareto leaderboard, synthesize TIES/DARE/SLERP surgical merges of the Top-2 contenders, promote the winning champion, and optionally export a verified bundle."""
+    rt = None
+    try:
+        rt = _get_mcp_studio_runtime(workspace)
+        return dict(
+            rt.tournament.run_tournament(
+                model_ids=model_ids,
+                reward_fn=reward_fn,
+                max_cases=max_cases,
+                include_redteam=include_redteam,
+                synthesize_merge=synthesize_merge,
+                merge_methods=merge_methods,
+                export_format=export_format,
+                output_name=output_name,
+                lora_rank=lora_rank,
+                lora_alpha=lora_alpha,
+            )
+        )
+    except Exception as exc:
+        return _studio_err(exc, rt)
+
+
 # ---------------------------------------------------------------------------
 # Live MCP Resources (stateset://studio/*)
 # ---------------------------------------------------------------------------
@@ -1147,6 +1182,22 @@ def prompt_redteam_and_immunize(
         "surgical edit, verify benign support helpfulness on the 95% CI Batch Eval Gate, and export the "
         "verified bundle + `redteam_report.html`.\n"
         "3. Report baseline vs. immunized ASR, safety score gain, benign eval verdict, and exported paths."
+    )
+
+
+def prompt_model_tournament_and_merge(
+    reward: str = "customer_support",
+    export_format: str = "lora",
+) -> str:
+    """Guided playbook for Multi-Model Pareto Tournament & Evolutionary TIES/DARE/SLERP Merge."""
+    return (
+        "Run a Multi-Model Pareto Tournament & Evolutionary Surgical Merge:\n\n"
+        "1. Call `studio_list_models()` to identify the top candidate checkpoints/adapters in the workspace.\n"
+        f"2. Call `studio_model_tournament(reward_fn={reward!r}, include_redteam=True, "
+        f"synthesize_merge=True, export_format={export_format!r})` to benchmark every contender on task "
+        "reward + Red-Team safety pass rate and sweep TIES, DARE, and SLERP merges of the Top-2.\n"
+        "3. Report the ranked leaderboard, whether a synthesized merge beat the best individual parent "
+        "(with conflict rate and fitness delta), and the exported Champion bundle + `tournament_report.html`."
     )
 
 
@@ -1315,6 +1366,7 @@ def create_server(*, workspace: str | Path | None = None) -> Any:
     mcp.tool(annotations=mut)(studio_sessions)
     mcp.tool(annotations=mut)(studio_auto_heal)
     mcp.tool(annotations=mut)(studio_redteam_audit)
+    mcp.tool(annotations=mut)(studio_model_tournament)
 
     # Live MCP Resources (6)
     mcp.resource(
@@ -1363,6 +1415,10 @@ def create_server(*, workspace: str | Path | None = None) -> Any:
         name="redteam_and_immunize",
         description="Run Adversarial Red-Team Safety Audit and one-click CAA Surgical Immunization without degrading benign helpfulness.",
     )(prompt_redteam_and_immunize)
+    mcp.prompt(
+        name="model_tournament_and_merge",
+        description="Benchmark multiple checkpoints across task reward + Red-Team ASR, synthesize TIES/DARE/SLERP surgical merges, and export the Pareto champion.",
+    )(prompt_model_tournament_and_merge)
     mcp.prompt(
         name="surgical_behavior_edit",
         description="Extract CAA steering, benchmark in the Multi-Edit A/B Arena, verify residual convergence, and export a PEFT LoRA.",

@@ -27,6 +27,7 @@ from .inspector import WeightInspector
 from .mcp_bridge import StudioEventBus, handle_mcp_jsonrpc
 from .redteam_engine import RedTeamSurgeryEngine
 from .surgery_loop import AutonomousSurgeryLoop
+from .tournament_engine import ModelTournamentEngine
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -41,6 +42,9 @@ class StudioRuntime:
         self.inference = InferenceStudioEngine(self.inspector, self.editor)
         self.healer = AutonomousSurgeryLoop(self.inspector, self.editor, self.inference)
         self.redteam = RedTeamSurgeryEngine(self.inspector, self.editor, self.inference)
+        self.tournament = ModelTournamentEngine(
+            self.inspector, self.editor, self.inference, self.redteam
+        )
         self.events = StudioEventBus()
 
 
@@ -335,6 +339,24 @@ class RedTeamRunRequest(BaseModel):
     probes_jsonl: str | None = None
     max_probes: int = Field(10, ge=1, le=50)
     immunize: bool = False
+    export_format: str = Field("none", pattern="^(none|lora|safetensors|gguf|hf_card)$")
+    output_name: str = ""
+    lora_rank: int = Field(16, ge=1, le=128)
+    lora_alpha: int = Field(32, ge=1, le=512)
+
+
+class TournamentRunRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_ids: list[str] | None = None
+    reward_fn: str = Field(
+        "customer_support",
+        pattern="^(composite|customer_support|tool_calling|gsm8k)$",
+    )
+    max_cases: int = Field(4, ge=1, le=12)
+    include_redteam: bool = True
+    synthesize_merge: bool = True
+    merge_methods: list[str] | None = None
     export_format: str = Field("none", pattern="^(none|lora|safetensors|gguf|hf_card)$")
     output_name: str = ""
     lora_rank: int = Field(16, ge=1, le=128)
@@ -1004,6 +1026,40 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
                 ),
                 mutated=req.immunize,
                 pulse="backprop" if req.immunize else "forward",
+            )
+            return res
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @api.post("/tournament/run")
+    async def run_tournament_endpoint(req: TournamentRunRequest) -> dict[str, Any]:
+        rt = _rt()
+        try:
+            res = rt.tournament.run_tournament(
+                model_ids=req.model_ids,
+                reward_fn=req.reward_fn,
+                max_cases=req.max_cases,
+                include_redteam=req.include_redteam,
+                synthesize_merge=req.synthesize_merge,
+                merge_methods=req.merge_methods,
+                export_format=req.export_format,
+                output_name=req.output_name,
+                lora_rank=req.lora_rank,
+                lora_alpha=req.lora_alpha,
+            )
+            champ = res.get("champion") or {}
+            mutated = bool(res.get("promoted_merge"))
+            rt.events.publish(
+                "studio_tournament",
+                source="studio_api",
+                tool="studio_model_tournament",
+                model_id=str(champ.get("model_id") or ""),
+                summary=(
+                    f"Tournament Champion: {champ.get('label', '?')} "
+                    f"(fit {champ.get('fitness', 0):.3f})"
+                ),
+                mutated=mutated,
+                pulse="backprop" if mutated else "forward",
             )
             return res
         except (KeyError, ValueError, FileNotFoundError) as exc:

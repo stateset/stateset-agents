@@ -13,11 +13,13 @@ if TYPE_CHECKING:
     from .redteam_engine import RedTeamSurgeryEngine
     from .router import StudioRuntime, create_studio_app, mount_studio_ui
     from .surgery_loop import AutonomousSurgeryLoop, run_autonomous_heal
+    from .tournament_engine import ModelTournamentEngine
 
 __all__ = [
     "AutonomousSurgeryLoop",
     "FinetuneStudioEngine",
     "InferenceStudioEngine",
+    "ModelTournamentEngine",
     "RedTeamSurgeryEngine",
     "StudioEventBus",
     "StudioRuntime",
@@ -31,6 +33,7 @@ __all__ = [
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "AutonomousSurgeryLoop": (".surgery_loop", "AutonomousSurgeryLoop"),
+    "ModelTournamentEngine": (".tournament_engine", "ModelTournamentEngine"),
     "RedTeamSurgeryEngine": (".redteam_engine", "RedTeamSurgeryEngine"),
     "StudioEventBus": (".mcp_bridge", "StudioEventBus"),
     "handle_mcp_jsonrpc": (".mcp_bridge", "handle_mcp_jsonrpc"),

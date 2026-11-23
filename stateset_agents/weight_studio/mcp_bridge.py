@@ -377,6 +377,22 @@ STUDIO_MCP_TOOLS: list[dict[str, Any]] = [
         ["model_id"],
         read_only=False,
     ),
+    _tool_spec(
+        "studio_model_tournament",
+        "Benchmark 2+ models/checkpoints across StateSet rewards + Red-Team ASR, rank a Pareto leaderboard, synthesize TIES/DARE/SLERP surgical merges of the Top-2 contenders, promote a winning champion, and optionally export a verified bundle.",
+        {
+            "model_ids": {"type": "array", "items": {"type": "string"}},
+            "reward_fn": {"type": "string", "default": "customer_support"},
+            "max_cases": {"type": "integer", "default": 4},
+            "include_redteam": {"type": "boolean", "default": True},
+            "synthesize_merge": {"type": "boolean", "default": True},
+            "merge_methods": {"type": "array", "items": {"type": "string"}},
+            "export_format": {"type": "string", "default": "none"},
+            "output_name": {"type": "string", "default": ""},
+        },
+        [],
+        read_only=False,
+    ),
 ]
 
 STUDIO_MCP_RESOURCES: list[dict[str, str]] = [
@@ -434,6 +450,14 @@ STUDIO_MCP_PROMPTS: list[dict[str, Any]] = [
         "description": "Audit a model against adversarial prompt injection, PII exfiltration, and unauthorized tool attacks, then surgically immunize vulnerable layers without hurting benign helpfulness.",
         "arguments": [
             {"name": "model_id", "required": True},
+            {"name": "export_format", "required": False},
+        ],
+    },
+    {
+        "name": "model_tournament_and_merge",
+        "description": "Benchmark multiple checkpoints on task reward + Red-Team safety, sweep TIES/DARE/SLERP surgical merges of the Top-2, and export the Pareto-optimal champion.",
+        "arguments": [
+            {"name": "reward", "required": False},
             {"name": "export_format", "required": False},
         ],
     },
@@ -905,6 +929,26 @@ def _dispatch_studio_tool(
             f"{action_label} → {res['verdict']} (ASR {res['attack_success_rate']*100:.0f}%)",
         )
 
+    if name == "studio_model_tournament":
+        res = rt.tournament.run_tournament(
+            model_ids=args.get("model_ids"),
+            reward_fn=str(args.get("reward_fn") or "customer_support"),
+            max_cases=int(args.get("max_cases", 4)),
+            include_redteam=bool(args.get("include_redteam", True)),
+            synthesize_merge=bool(args.get("synthesize_merge", True)),
+            merge_methods=args.get("merge_methods"),
+            export_format=str(args.get("export_format") or "none"),
+            output_name=str(args.get("output_name") or ""),
+        )
+        champ = res.get("champion") or {}
+        mutated = bool(res.get("promoted_merge"))
+        return (
+            dict(res),
+            mutated,
+            "backprop" if mutated else "forward",
+            f"Tournament Champion: {champ.get('label', '?')} (fit {champ.get('fitness', 0):.3f})",
+        )
+
     raise KeyError(f"Unknown MCP tool: {name}")
 
 
@@ -967,6 +1011,18 @@ def _get_studio_prompt(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         )
         return {
             "description": "Red-team safety audit and surgical immunization playbook.",
+            "messages": [{"role": "user", "content": {"type": "text", "text": text}}],
+        }
+    if name == "model_tournament_and_merge":
+        reward = str(arguments.get("reward") or "customer_support")
+        fmt = str(arguments.get("export_format") or "lora")
+        text = (
+            f"Call `studio_model_tournament(reward_fn={reward!r}, include_redteam=True, "
+            f"synthesize_merge=True, export_format={fmt!r})` to benchmark top workspace checkpoints "
+            "and synthesize a Pareto-optimal TIES/DARE/SLERP champion."
+        )
+        return {
+            "description": "Multi-model Pareto tournament and surgical merge playbook.",
             "messages": [{"role": "user", "content": {"type": "text", "text": text}}],
         }
     if name == "auto_heal_model":

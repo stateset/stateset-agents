@@ -1066,6 +1066,94 @@ def redteam_command(
         raise typer.Exit(code=2) from error
 
 
+@app.command("tournament")
+def tournament_command(
+    models: str = typer.Option(
+        "",
+        "--models",
+        "-m",
+        help="Comma-separated model IDs (defaults to top discovered models).",
+    ),
+    reward: str = typer.Option(
+        "customer_support",
+        "--reward",
+        "-r",
+        help="Reward scorer: customer_support, tool_calling, gsm8k, or composite.",
+    ),
+    include_redteam: bool = typer.Option(
+        True,
+        "--redteam/--no-redteam",
+        help="Include adversarial Red-Team safety pass rate in Pareto fitness.",
+    ),
+    synthesize_merge: bool = typer.Option(
+        True,
+        "--synthesize-merge/--no-synthesize-merge",
+        help="Synthesize & benchmark TIES/DARE/SLERP surgical merges of Top-2 contenders.",
+    ),
+    export_format: str = typer.Option(
+        "none",
+        "--export-format",
+        "-f",
+        help="Optional champion artifact format: none, lora, safetensors, gguf, hf_card.",
+    ),
+    output_name: str = typer.Option(
+        "",
+        "--output-name",
+        "-o",
+        help="Export directory name under outputs/weight_studio_exports/.",
+    ),
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Workspace root directory.",
+    ),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Print structured JSON leaderboard and champion summary.",
+    ),
+) -> None:
+    """Run Multi-Model Pareto Tournament & Evolutionary TIES/DARE/SLERP Merge Lab."""
+    try:
+        from stateset_agents.weight_studio import StudioRuntime
+
+        rt = StudioRuntime(workspace_root=workspace)
+        model_list = [m.strip() for m in models.split(",") if m.strip()] or None
+        report = rt.tournament.run_tournament(
+            model_ids=model_list,
+            reward_fn=reward,
+            include_redteam=include_redteam,
+            synthesize_merge=synthesize_merge,
+            export_format=export_format,
+            output_name=output_name,
+        )
+        if as_json:
+            _echo(json.dumps(report, indent=2))
+            return
+
+        champ = report["champion"]
+        _echo(
+            f"StateSet Multi-Model Tournament ({report['contender_count']} contenders)"
+        )
+        _echo(
+            f"  Champion  : {champ['label']} "
+            f"(fitness={champ['fitness']:.4f}, reward={champ['reward_score']:.4f}, "
+            f"safety={champ['safety_pass_rate']*100:.1f}%)"
+        )
+        if report["promoted_merge"]:
+            pm = report["promoted_merge"]
+            _echo(
+                f"  Merge Win : {pm['merge_method'].upper()} "
+                f"(Δfitness={pm['delta_vs_best_parent']:+.4f})"
+            )
+        if report["report_path"]:
+            _echo(f"  PR Report : {report['report_path']}")
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        _echo(f"Tournament failed: {error}", err=True)
+        raise typer.Exit(code=2) from error
+
+
 def run() -> None:
     # Windows consoles default to a legacy codepage (cp1252) that cannot
     # encode the CLI's unicode output (checkmarks, arrows); force UTF-8.

@@ -653,6 +653,7 @@ class TestLiveProtocolSession:
                     "studio_sessions",
                     "studio_auto_heal",
                     "studio_redteam_audit",
+                    "studio_model_tournament",
                 }
                 assert set(tool_by_name) == expected_tools
                 assert len(tools_result.tools) == len(expected_tools)
@@ -700,6 +701,7 @@ class TestLiveProtocolSession:
                 assert prompt_names == {
                     "auto_heal_model",
                     "redteam_and_immunize",
+                    "model_tournament_and_merge",
                     "surgical_behavior_edit",
                     "interpretability_audit",
                     "compress_and_export_model",
