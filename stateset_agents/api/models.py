@@ -5,7 +5,7 @@ Unified Pydantic models for all API services with comprehensive validation.
 """
 
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
@@ -65,7 +65,8 @@ class APIResponse(BaseModel):
 
     request_id: str | None = Field(None, description="Request tracking ID")
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="Response timestamp"
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        description="Response timestamp",
     )
 
     @field_serializer("timestamp")

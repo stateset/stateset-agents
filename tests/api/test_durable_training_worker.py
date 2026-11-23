@@ -3,7 +3,7 @@
 import asyncio
 import importlib
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -81,7 +81,9 @@ async def test_idempotent_http_retry_reports_existing_terminal_status(tmp_path):
     job_id = await api.start_training(request, "owner", idempotency_key="one")
     claimed, token, snapshot = api.queue.claim()
     assert claimed == job_id
-    snapshot.update(status="completed", completed_at=datetime.utcnow())
+    snapshot.update(
+        status="completed", completed_at=datetime.now(timezone.utc).replace(tzinfo=None)
+    )
     api.queue.finish(job_id, token, snapshot)
     response = await start_training(
         request, svc=api, user=SimpleNamespace(user_id="owner"), idempotency_key="one"

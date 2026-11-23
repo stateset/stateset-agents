@@ -7,7 +7,7 @@ import asyncio
 import copy
 import logging
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from stateset_agents.utils.async_calls import run_sync_owned
@@ -83,13 +83,20 @@ async def work_once(queue: TrainingQueue, *, lease_seconds: float = 60) -> bool:
             raise asyncio.CancelledError
         snapshot["metrics"]["artifact_directory"] = overrides["output_dir"]
     except asyncio.CancelledError:
-        snapshot.update(status="cancelled", completed_at=datetime.utcnow())
+        snapshot.update(
+            status="cancelled",
+            completed_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        )
         raise
     except TrainingLeaseLostError as exc:
         lost_lease.append(exc)
         cancel.set()
     except Exception as exc:
-        snapshot.update(status="failed", error=str(exc), completed_at=datetime.utcnow())
+        snapshot.update(
+            status="failed",
+            error=str(exc),
+            completed_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        )
     finally:
         stop.set()
         try:

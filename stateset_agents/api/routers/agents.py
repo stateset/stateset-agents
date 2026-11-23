@@ -7,7 +7,7 @@ API endpoints for agent management and conversations.
 import copy
 import os
 from dataclasses import asdict, is_dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -77,7 +77,8 @@ class AgentCreatedResponse(BaseModel):
 
     agent_id: str = Field(..., description="Unique identifier for the created agent")
     created_at: datetime = Field(
-        default_factory=datetime.utcnow, description="Creation timestamp"
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        description="Creation timestamp",
     )
     config: AgentConfigRequest = Field(..., description="Agent configuration")
     message: str = Field("Agent created successfully", description="Status message")
@@ -185,7 +186,7 @@ async def create_agent(
 
         return AgentCreatedResponse(
             agent_id=agent_id,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc).replace(tzinfo=None),
             config=config,
             message="Agent created successfully",
         )
@@ -249,7 +250,9 @@ async def list_agents(
         AgentDetailResponse(
             agent_id=agent_id,
             model_name=getattr(agent, "model_name", "unknown"),
-            created_at=getattr(agent, "created_at", datetime.utcnow()),
+            created_at=getattr(
+                agent, "created_at", datetime.now(timezone.utc).replace(tzinfo=None)
+            ),
             conversation_count=len(svc.conversations.get(agent_id, [])),
             total_tokens_used=getattr(agent, "total_tokens", 0),
             config=_agent_config_to_dict(getattr(agent, "config", {})),
@@ -305,7 +308,9 @@ async def get_agent(
     return AgentDetailResponse(
         agent_id=agent_id,
         model_name=getattr(agent, "model_name", "unknown"),
-        created_at=getattr(agent, "created_at", datetime.utcnow()),
+        created_at=getattr(
+            agent, "created_at", datetime.now(timezone.utc).replace(tzinfo=None)
+        ),
         conversation_count=len(svc.conversations.get(agent_id, [])),
         total_tokens_used=getattr(agent, "total_tokens", 0),
         config=_agent_config_to_dict(getattr(agent, "config", {})),
@@ -523,7 +528,10 @@ async def list_conversations(
                         conversation_id=conv.get("id", "unknown"),
                         agent_id=aid,
                         message_count=len(conv.get("messages", [])),
-                        created_at=conv.get("created_at", datetime.utcnow()),
+                        created_at=conv.get(
+                            "created_at",
+                            datetime.now(timezone.utc).replace(tzinfo=None),
+                        ),
                         last_message_at=conv.get("last_message_at"),
                         total_tokens=conv.get("total_tokens", 0),
                     )

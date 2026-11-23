@@ -3,7 +3,7 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -69,7 +69,9 @@ def test_cancellation_and_expired_worker_writes_are_fenced(queue):
     assert queue.get(job_id)["status"] == "failed"
     with pytest.raises(RuntimeError, match="lease"):
         queue.heartbeat(job_id, token)
-    snapshot.update(status="completed", completed_at=datetime.utcnow())
+    snapshot.update(
+        status="completed", completed_at=datetime.now(timezone.utc).replace(tzinfo=None)
+    )
     with pytest.raises(RuntimeError, match="lease"):
         queue.finish(job_id, token, snapshot)
 
@@ -78,7 +80,9 @@ def test_late_cancellation_cannot_be_overwritten_by_success(queue):
     submit(queue)
     job_id, token, snapshot = queue.claim()
     queue.cancel(job_id)
-    snapshot.update(status="completed", completed_at=datetime.utcnow())
+    snapshot.update(
+        status="completed", completed_at=datetime.now(timezone.utc).replace(tzinfo=None)
+    )
     queue.finish(job_id, token, snapshot)
     assert queue.get(job_id)["status"] == "cancelled"
 
@@ -158,7 +162,9 @@ def test_lease_is_expired_at_its_deadline(tmp_path, monkeypatch):
     clock[0] = 1060.0
     with pytest.raises(RuntimeError, match="lease"):
         value.heartbeat(job_id, token)
-    snapshot.update(status="completed", completed_at=datetime.utcnow())
+    snapshot.update(
+        status="completed", completed_at=datetime.now(timezone.utc).replace(tzinfo=None)
+    )
     with pytest.raises(RuntimeError, match="lease"):
         value.finish(job_id, token, snapshot)
     assert value.claim() is None
@@ -178,7 +184,9 @@ def test_postgres_uses_database_clock_instead_of_worker_host_clock(queue, monkey
     claimed, token, snapshot = queue.claim()
     assert claimed == job_id
     assert not queue.heartbeat(job_id, token)
-    snapshot.update(status="completed", completed_at=datetime.utcnow())
+    snapshot.update(
+        status="completed", completed_at=datetime.now(timezone.utc).replace(tzinfo=None)
+    )
     queue.finish(job_id, token, snapshot)
     assert queue.get(job_id)["status"] == "completed"
 

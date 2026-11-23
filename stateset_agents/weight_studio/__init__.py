@@ -5,12 +5,19 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from ._stats import authorize_mcp_request, resolve_confined_path
+    from ._stats import (
+        SlidingWindowRateLimiter,
+        authorize_mcp_request,
+        get_studio_ingress_config,
+        resolve_confined_path,
+    )
     from .canary_engine import CanaryRolloutEngine
     from .editor import WeightEditEngine
     from .finetune_engine import FinetuneStudioEngine
     from .inference_engine import InferenceStudioEngine
     from .inspector import WeightInspector
+    from .judge import PluggableRewardJudge
+    from .ledger_store import StudioSQLiteStore
     from .live_serving import LiveServingBridge
     from .mcp_bridge import StudioEventBus, handle_mcp_jsonrpc
     from .redteam_engine import RedTeamSurgeryEngine
@@ -27,13 +34,17 @@ __all__ = [
     "LiveServingBridge",
     "LiveTraceCollector",
     "ModelTournamentEngine",
+    "PluggableRewardJudge",
     "RedTeamSurgeryEngine",
+    "SlidingWindowRateLimiter",
     "StudioEventBus",
     "StudioRuntime",
+    "StudioSQLiteStore",
     "WeightEditEngine",
     "WeightInspector",
     "authorize_mcp_request",
     "create_studio_app",
+    "get_studio_ingress_config",
     "handle_mcp_jsonrpc",
     "mount_studio_ui",
     "resolve_confined_path",
@@ -46,9 +57,13 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "LiveServingBridge": (".live_serving", "LiveServingBridge"),
     "LiveTraceCollector": (".telemetry_ingest", "LiveTraceCollector"),
     "ModelTournamentEngine": (".tournament_engine", "ModelTournamentEngine"),
+    "PluggableRewardJudge": (".judge", "PluggableRewardJudge"),
     "RedTeamSurgeryEngine": (".redteam_engine", "RedTeamSurgeryEngine"),
+    "SlidingWindowRateLimiter": ("._stats", "SlidingWindowRateLimiter"),
     "StudioEventBus": (".mcp_bridge", "StudioEventBus"),
+    "StudioSQLiteStore": (".ledger_store", "StudioSQLiteStore"),
     "authorize_mcp_request": ("._stats", "authorize_mcp_request"),
+    "get_studio_ingress_config": ("._stats", "get_studio_ingress_config"),
     "handle_mcp_jsonrpc": (".mcp_bridge", "handle_mcp_jsonrpc"),
     "resolve_confined_path": ("._stats", "resolve_confined_path"),
     "run_autonomous_heal": (".surgery_loop", "run_autonomous_heal"),

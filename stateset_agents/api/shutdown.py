@@ -12,7 +12,7 @@ import sys
 from collections.abc import Callable, Coroutine
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from time import monotonic
 from typing import Any
@@ -197,7 +197,7 @@ class GracefulShutdownManager:
         """Join one shutdown sequence, retaining cleanup through caller cancellation."""
         if self._shutdown_task is None:
             self.state.is_shutting_down = True
-            self.state.started_at = datetime.utcnow()
+            self.state.started_at = datetime.now(timezone.utc).replace(tzinfo=None)
             self._deadline = monotonic() + self.total_timeout
             self._shutdown_event.set()
             self._shutdown_task = asyncio.create_task(self._execute_shutdown())

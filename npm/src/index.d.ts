@@ -59,6 +59,50 @@ export class StateSetError extends Error {
   cause?: unknown;
 }
 
+export interface TraceQueryParams {
+  failed_only?: boolean;
+  source?: string;
+  search?: string;
+  labeled_only?: boolean;
+  limit?: number;
+}
+
+export interface RolloutQueryParams {
+  decision?: "PROMOTE" | "HOLD_CANARY" | "ROLLBACK" | string;
+  model_id?: string;
+  stage?: string;
+  limit?: number;
+}
+
+export class WeightStudioClient {
+  constructor(client: StateSet);
+  listModels<T = Record<string, unknown>>(options?: RequestOptions): Promise<T>;
+  autoHeal<T = Record<string, unknown>>(body: Record<string, unknown>, options?: RequestOptions): Promise<T>;
+  runRedTeam<T = Record<string, unknown>>(body: Record<string, unknown>, options?: RequestOptions): Promise<T>;
+  runTournament<T = Record<string, unknown>>(body: Record<string, unknown>, options?: RequestOptions): Promise<T>;
+  runCanaryGate<T = Record<string, unknown>>(body: Record<string, unknown>, options?: RequestOptions): Promise<T>;
+  runAutopilot<T = Record<string, unknown>>(body: Record<string, unknown>, options?: RequestOptions): Promise<T>;
+  loadLoraAdapter<T = Record<string, unknown>>(body: Record<string, unknown>, options?: RequestOptions): Promise<T>;
+  compareLiveEndpoints<T = Record<string, unknown>>(body: Record<string, unknown>, options?: RequestOptions): Promise<T>;
+  ingestTrace<T = Record<string, unknown>>(body: Record<string, unknown>, options?: RequestOptions): Promise<T>;
+  tracesSummary<T = Record<string, unknown>>(options?: RequestOptions): Promise<T>;
+  auditRewardCalibration<T = Record<string, unknown>>(body?: Record<string, unknown>, options?: RequestOptions): Promise<T>;
+  healFromLiveTraces<T = Record<string, unknown>>(body: Record<string, unknown>, options?: RequestOptions): Promise<T>;
+  queryTraces<T = Record<string, unknown>>(params?: TraceQueryParams, options?: RequestOptions): Promise<T>;
+  queryRollouts<T = Record<string, unknown>>(params?: RolloutQueryParams, options?: RequestOptions): Promise<T>;
+  storeStats<T = Record<string, unknown>>(options?: RequestOptions): Promise<T>;
+}
+
+export class McpHttpClient {
+  constructor(client: StateSet, path?: string);
+  rpc<T = Record<string, unknown>>(method: string, params?: Record<string, unknown>, options?: RequestOptions): Promise<T>;
+  initialize<T = Record<string, unknown>>(options?: RequestOptions): Promise<T>;
+  listTools<T = Record<string, unknown>>(options?: RequestOptions): Promise<T>;
+  callTool<T = Record<string, unknown>>(name: string, args?: Record<string, unknown>, options?: RequestOptions): Promise<T>;
+  listResources<T = Record<string, unknown>>(options?: RequestOptions): Promise<T>;
+  readResource<T = Record<string, unknown>>(uri: string, options?: RequestOptions): Promise<T>;
+}
+
 export class StateSet {
   constructor(options?: StateSetOptions);
   readonly baseURL: string;
@@ -78,6 +122,8 @@ export class StateSet {
   readonly models: {
     list<T = Record<string, unknown>>(options?: RequestOptions): Promise<T>;
   };
+  readonly studio: WeightStudioClient;
+  readonly mcp: McpHttpClient;
 
   request<T = unknown>(path: string, options?: RequestOptions & { method?: string; body?: unknown }): Promise<T>;
   stream<T = Record<string, unknown>>(path: string, options?: RequestOptions & { body?: unknown }): AsyncGenerator<T>;

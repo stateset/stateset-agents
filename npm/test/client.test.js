@@ -133,3 +133,65 @@ test("request timeout produces a structured timeout error", async () => {
       error.message === "StateSet API request timed out after 5ms",
   );
 });
+
+test("studio client calls Weight Studio & SQLite store endpoints", async () => {
+  const calls = [];
+  const client = new StateSet({
+    baseURL: "http://127.0.0.1:8765",
+    apiKey: "studio-rw-token",
+    fetch: async (url, init) => {
+      calls.push({ url, method: init.method, auth: init.headers.get("authorization") });
+      return jsonResponse({ ok: true });
+    },
+  });
+
+  await client.studio.listModels();
+  await client.studio.runAutopilot({ model_id: "preset:deepseek-r1-1.5b" });
+  await client.studio.ingestTrace({ payload: { prompt: "hi", response: "hello" } });
+  await client.studio.queryTraces({ failed_only: true, source: "otlp", limit: 10 });
+  await client.studio.queryRollouts({ decision: "PROMOTE", limit: 5 });
+
+  assert.equal(calls.length, 5);
+  assert.equal(calls[0].url, "http://127.0.0.1:8765/api/weight-studio/models");
+  assert.equal(calls[1].url, "http://127.0.0.1:8765/api/weight-studio/autopilot/run");
+  assert.equal(calls[2].url, "http://127.0.0.1:8765/api/weight-studio/traces/ingest");
+  assert.equal(
+    calls[3].url,
+    "http://127.0.0.1:8765/api/weight-studio/store/traces?failed_only=true&source=otlp&limit=10",
+  );
+  assert.equal(
+    calls[4].url,
+    "http://127.0.0.1:8765/api/weight-studio/store/rollouts?decision=PROMOTE&limit=5",
+  );
+  assert.equal(calls[0].auth, "Bearer studio-rw-token");
+});
+
+test("mcp HTTP client invokes JSON-RPC tools and surfaces JSON-RPC errors", async () => {
+  const client = new StateSet({
+    baseURL: "http://127.0.0.1:8765",
+    apiKey: "ro-token",
+    fetch: async (_url, init) => {
+      const req = JSON.parse(init.body);
+      if (req.method === "tools/call" && req.params.name === "studio_apply_edit") {
+        return jsonResponse({
+          jsonrpc: "2.0",
+          id: req.id,
+          error: { code: -32001, message: "Read-only token" },
+        });
+      }
+      return jsonResponse({
+        jsonrpc: "2.0",
+        id: req.id,
+        result: { tools: [{ name: "studio_list_models" }] },
+      });
+    },
+  });
+
+  const list = await client.mcp.listTools();
+  assert.equal(list.tools[0].name, "studio_list_models");
+
+  await assert.rejects(
+    () => client.mcp.callTool("studio_apply_edit", { model_id: "m" }),
+    (err) => err instanceof StateSetError && err.status === -32001,
+  );
+});

@@ -5,7 +5,7 @@ Unified error handling with consistent response format across all API services.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
@@ -130,7 +130,8 @@ class APIError(Exception):
                 "message": self.message,
             },
             "request_id": request_id,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+            + "Z",
             "path": path,
         }
 
@@ -367,7 +368,7 @@ def build_error_response(
             "message": message,
         },
         "request_id": request_id,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
         "path": str(request.url.path),
     }
 

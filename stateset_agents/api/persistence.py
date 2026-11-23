@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from threading import get_ident
 from typing import Any, Generic, TypeVar, cast, get_args, get_type_hints
@@ -86,8 +86,12 @@ class BaseEntity:
     """Base class for all persistent entities."""
 
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )
+    updated_at: datetime = field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -238,7 +242,9 @@ class InMemoryRepository(Repository[T]):
             if entity.id in self._data:
                 raise ValueError(f"Entity {entity.id} already exists")
             stored = copy.deepcopy(entity)
-            stored.created_at = stored.updated_at = datetime.utcnow()
+            stored.created_at = stored.updated_at = datetime.now(timezone.utc).replace(
+                tzinfo=None
+            )
             result = copy.deepcopy(stored)
             self._data[stored.id] = stored
             entity.created_at, entity.updated_at = stored.created_at, stored.updated_at
@@ -255,7 +261,7 @@ class InMemoryRepository(Repository[T]):
             if entity.id not in self._data:
                 raise ValueError(f"Entity {entity.id} not found")
             stored = copy.deepcopy(entity)
-            stored.updated_at = datetime.utcnow()
+            stored.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             result = copy.deepcopy(stored)
             self._data[stored.id] = stored
             entity.updated_at = stored.updated_at
@@ -382,7 +388,9 @@ class SQLiteRepository(Repository[T]):
         await self.connect()
         with self._owner.operation():
             candidate = copy.deepcopy(entity)
-            candidate.created_at = candidate.updated_at = datetime.utcnow()
+            candidate.created_at = candidate.updated_at = datetime.now(
+                timezone.utc
+            ).replace(tzinfo=None)
             data = json.dumps(candidate.to_dict(), allow_nan=False)
             result = copy.deepcopy(candidate)
             self._store.connect().execute(
@@ -419,7 +427,7 @@ class SQLiteRepository(Repository[T]):
         await self.connect()
         with self._owner.operation():
             candidate = copy.deepcopy(entity)
-            candidate.updated_at = datetime.utcnow()
+            candidate.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             data = json.dumps(candidate.to_dict(), allow_nan=False)
             result = copy.deepcopy(candidate)
             cursor = self._store.connect().execute(

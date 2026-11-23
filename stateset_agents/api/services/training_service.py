@@ -3,7 +3,7 @@ import copy
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -243,7 +243,7 @@ class TrainingService:
         request = request.model_copy(deep=True)
         accepted_config = copy.deepcopy(request.model_dump())
         training_id = str(uuid.uuid4())
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
 
         # Create training configuration
         agent_config = AgentConfig(
@@ -292,7 +292,7 @@ class TrainingService:
         if job["status"] not in TERMINAL_TRAINING_STATUSES:
             job.update(
                 status="cancelled" if task.cancelled() else "failed",
-                completed_at=datetime.utcnow(),
+                completed_at=datetime.now(timezone.utc).replace(tzinfo=None),
                 error=(
                     None
                     if task.cancelled()
@@ -341,7 +341,7 @@ class TrainingService:
                 {
                     "status": "completed",
                     "completion_scope": progress_cb.completion_scope,
-                    "completed_at": datetime.utcnow(),
+                    "completed_at": datetime.now(timezone.utc).replace(tzinfo=None),
                 }
             )
 
@@ -350,7 +350,7 @@ class TrainingService:
             self.training_jobs[training_id].update(
                 {
                     "status": "cancelled",
-                    "completed_at": datetime.utcnow(),
+                    "completed_at": datetime.now(timezone.utc).replace(tzinfo=None),
                 }
             )
 
@@ -362,7 +362,7 @@ class TrainingService:
                 {
                     "status": "failed",
                     "error": str(e),
-                    "completed_at": datetime.utcnow(),
+                    "completed_at": datetime.now(timezone.utc).replace(tzinfo=None),
                 }
             )
 

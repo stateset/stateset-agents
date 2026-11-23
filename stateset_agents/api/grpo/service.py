@@ -11,7 +11,7 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 try:
@@ -88,7 +88,7 @@ def _build_error_response(
         "error": {"message": message, "status_code": status_code},
         "request_id": request_id,
         "path": str(request.url.path),
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
     }
     if details is not None:
         payload["error"]["details"] = details

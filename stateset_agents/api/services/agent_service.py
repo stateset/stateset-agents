@@ -4,7 +4,7 @@ import os
 import time
 import uuid
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException
@@ -68,7 +68,7 @@ class AgentService:
         conversation = {
             "id": conversation_id,
             "messages": [],
-            "created_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
             "last_message_at": None,
             "total_tokens": 0,
             "metadata": {},
@@ -392,7 +392,9 @@ class AgentService:
                         {
                             "messages": messages
                             + [{"role": "assistant", "content": response_text}],
-                            "last_message_at": datetime.utcnow(),
+                            "last_message_at": datetime.now(timezone.utc).replace(
+                                tzinfo=None
+                            ),
                             "metadata": metadata,
                             "total_tokens": int(conversation.get("total_tokens", 0))
                             + int(tokens_used),

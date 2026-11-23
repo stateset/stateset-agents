@@ -16,7 +16,7 @@ import time
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -229,7 +229,7 @@ class TrainingQueue:
             else "idem_"
             + hashlib.sha256(self._encode([owner, key]).encode()).hexdigest()
         )
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         snapshot = {
             "status": "queued",
             "user_id": owner,
@@ -391,7 +391,7 @@ class TrainingQueue:
                 snapshot = self._decode(row["snapshot"])
                 snapshot.update(
                     status="failed",
-                    completed_at=datetime.utcnow(),
+                    completed_at=datetime.now(timezone.utc).replace(tzinfo=None),
                     error="Worker lease expired; resume explicitly from a verified checkpoint",
                 )
                 connection.execute(
@@ -410,7 +410,10 @@ class TrainingQueue:
                 return None
             token = uuid.uuid4().hex
             snapshot = self._decode(row["snapshot"])
-            snapshot.update(status="running", started_at=datetime.utcnow())
+            snapshot.update(
+                status="running",
+                started_at=datetime.now(timezone.utc).replace(tzinfo=None),
+            )
             connection.execute(
                 "UPDATE stateset_training_jobs SET status='running',snapshot=?,lease_token=?,lease_until=? WHERE id=?",
                 (self._encode(snapshot), token, now + lease_seconds, row["id"]),
@@ -500,7 +503,9 @@ class TrainingQueue:
                 "cancelled" if row["status"] == "queued" else "cancelling"
             )
             if snapshot["status"] == "cancelled":
-                snapshot["completed_at"] = datetime.utcnow()
+                snapshot["completed_at"] = datetime.now(timezone.utc).replace(
+                    tzinfo=None
+                )
             connection.execute(
                 "UPDATE stateset_training_jobs SET cancel=1,status=?,snapshot=? WHERE id=?",
                 (snapshot["status"], self._encode(snapshot), job_id),

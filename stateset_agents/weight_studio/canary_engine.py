@@ -28,6 +28,8 @@ from ._stats import bootstrap_ci_95, resolve_confined_path
 from .editor import WeightEditEngine
 from .inference_engine import InferenceStudioEngine
 from .inspector import WeightInspector
+from .ledger_store import StudioSQLiteStore
+from .live_serving import LiveServingBridge
 from .redteam_engine import RedTeamSurgeryEngine
 from .surgery_loop import AutonomousSurgeryLoop
 
@@ -123,12 +125,17 @@ class CanaryRolloutEngine:
         inference: InferenceStudioEngine,
         healer: AutonomousSurgeryLoop,
         redteam: RedTeamSurgeryEngine,
+        *,
+        store: StudioSQLiteStore | None = None,
+        serving: LiveServingBridge | None = None,
     ) -> None:
         self.inspector = inspector
         self.editor = editor
         self.inference = inference
         self.healer = healer
         self.redteam = redteam
+        self.store = store or StudioSQLiteStore(self.inspector.workspace_root)
+        self.serving = serving or LiveServingBridge(self.inspector.workspace_root)
 
     @property
     def ledger_path(self) -> Path:
@@ -144,7 +151,24 @@ class CanaryRolloutEngine:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, default=str) + "\n")
+        self.store.record_rollout(record)
         return str(path)
+
+    def query_rollouts(
+        self,
+        *,
+        decision: str | None = None,
+        model_id: str | None = None,
+        stage: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Query durable rollout ledger records via indexed SQLite storage."""
+        return self.store.query_rollouts(
+            decision=decision,
+            model_id=model_id,
+            stage=stage,
+            limit=limit,
+        )
 
     def list_rollouts(self, limit: int = 25) -> list[dict[str, Any]]:
         path = self.ledger_path
@@ -176,8 +200,12 @@ class CanaryRolloutEngine:
         max_asr: float = 0.25,
         max_severe_regressions: int = 0,
         record_ledger: bool = True,
+        live_endpoint_url: str = "",
+        live_baseline_model: str = "",
+        live_candidate_model: str = "",
+        live_api_key: str = "",
     ) -> dict[str, Any]:
-        """Replay shadow traffic comparing Base vs. Active Edited weights and issue PROMOTE/HOLD/ROLLBACK."""
+        """Replay shadow traffic comparing Base vs. Active Edited/Live weights and issue PROMOTE/HOLD/ROLLBACK."""
         t0 = time.perf_counter()
 
         custom = _load_shadow_traffic(
@@ -188,6 +216,67 @@ class CanaryRolloutEngine:
         traffic = (custom if custom else list(DEFAULT_SHADOW_TRAFFIC))[
             : max(1, min(20, int(max_requests)))
         ]
+
+        # Optional Live vLLM/Ollama Real-Token Shadow A/B Mode
+        if live_endpoint_url.strip():
+            base_name = live_baseline_model.strip() or model_id
+            cand_name = live_candidate_model.strip() or base_name
+            live_ab = self.serving.compare_live_endpoints(
+                live_endpoint_url.strip(),
+                base_name,
+                cand_name,
+                prompts=[row["prompt"] for row in traffic],
+                reward_fn=(
+                    reward_fn if reward_fn != "composite" else "customer_support"
+                ),
+                api_key=live_api_key,
+            )
+            pr = live_ab["paired_record"]
+            decision = str(live_ab["decision"])
+            recommended_traffic_pct = (
+                0
+                if decision == "ROLLBACK"
+                else (
+                    10
+                    if decision == "HOLD_CANARY"
+                    else (
+                        50
+                        if stage == "canary_10"
+                        else (100 if stage == "canary_50" else 10)
+                    )
+                )
+            )
+            record_live: dict[str, Any] = {
+                "rollout_id": f"rollout-live-{int(time.time())}",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "mode": "live_endpoint_ab",
+                "model_id": model_id,
+                "checkpoint_id": checkpoint_id,
+                "stage": stage,
+                "decision": decision,
+                "recommended_traffic_pct": recommended_traffic_pct,
+                "rationale": (
+                    f"Live endpoint A/B ({base_name} vs {cand_name}): "
+                    f"Δ={pr['mean_delta']:+.4f}, W/T/L={pr['wins']}/{pr['ties']}/{pr['losses']}."
+                ),
+                "shadow_requests": len(traffic),
+                "paired_record": pr,
+                "live_serving": live_ab,
+                "safety": {
+                    "verdict": "LIVE_ENDPOINT",
+                    "attack_success_rate": 0.0,
+                    "safety_pass_rate": 1.0,
+                },
+                "latency_ms": round((time.perf_counter() - t0) * 1000.0, 2),
+            }
+            ledger_file_live = (
+                self._append_ledger(record_live) if record_ledger else None
+            )
+            return {
+                "schema_version": 1,
+                **record_live,
+                "ledger_path": ledger_file_live,
+            }
 
         # Run paired shadow evaluation using the Batch Eval Gate on the traffic suite
         shadow_jsonl = "\n".join(

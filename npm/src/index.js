@@ -122,6 +122,8 @@ export class StateSet {
       },
     };
     this.models = { list: (options) => this.request("/v1/models", options) };
+    this.studio = new WeightStudioClient(this);
+    this.mcp = new McpHttpClient(this);
   }
 
   async request(
@@ -215,6 +217,168 @@ export class StateSet {
 
   health(options) {
     return this.request("/health", options);
+  }
+}
+
+/** Typed client for StateSet 3D Weight Studio REST endpoints. */
+export class WeightStudioClient {
+  constructor(client) {
+    this._client = client;
+  }
+
+  listModels(options) {
+    return this._client.request("/api/weight-studio/models", options);
+  }
+
+  autoHeal(body, options) {
+    return this._client.request("/api/weight-studio/heal/run", {
+      method: "POST",
+      body,
+      ...options,
+    });
+  }
+
+  runRedTeam(body, options) {
+    return this._client.request("/api/weight-studio/redteam/run", {
+      method: "POST",
+      body,
+      ...options,
+    });
+  }
+
+  runTournament(body, options) {
+    return this._client.request("/api/weight-studio/tournament/run", {
+      method: "POST",
+      body,
+      ...options,
+    });
+  }
+
+  runCanaryGate(body, options) {
+    return this._client.request("/api/weight-studio/canary/gate", {
+      method: "POST",
+      body,
+      ...options,
+    });
+  }
+
+  runAutopilot(body, options) {
+    return this._client.request("/api/weight-studio/autopilot/run", {
+      method: "POST",
+      body,
+      ...options,
+    });
+  }
+
+  loadLoraAdapter(body, options) {
+    return this._client.request("/api/weight-studio/serving/load-lora", {
+      method: "POST",
+      body,
+      ...options,
+    });
+  }
+
+  compareLiveEndpoints(body, options) {
+    return this._client.request("/api/weight-studio/serving/compare-live", {
+      method: "POST",
+      body,
+      ...options,
+    });
+  }
+
+  ingestTrace(body, options) {
+    return this._client.request("/api/weight-studio/traces/ingest", {
+      method: "POST",
+      body,
+      ...options,
+    });
+  }
+
+  tracesSummary(options) {
+    return this._client.request("/api/weight-studio/traces/summary", options);
+  }
+
+  auditRewardCalibration(body = {}, options) {
+    return this._client.request("/api/weight-studio/traces/calibration-audit", {
+      method: "POST",
+      body,
+      ...options,
+    });
+  }
+
+  healFromLiveTraces(body, options) {
+    return this._client.request("/api/weight-studio/traces/auto-heal", {
+      method: "POST",
+      body,
+      ...options,
+    });
+  }
+
+  queryTraces(params = {}, options) {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
+    }
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return this._client.request(`/api/weight-studio/store/traces${suffix}`, options);
+  }
+
+  queryRollouts(params = {}, options) {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
+    }
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return this._client.request(`/api/weight-studio/store/rollouts${suffix}`, options);
+  }
+
+  storeStats(options) {
+    return this._client.request("/api/weight-studio/store/stats", options);
+  }
+}
+
+/** Typed JSON-RPC 2.0 client for the Streamable HTTP MCP endpoint. */
+export class McpHttpClient {
+  constructor(client, path = "/api/weight-studio/mcp") {
+    this._client = client;
+    this._path = path;
+    this._nextId = 1;
+  }
+
+  async rpc(method, params = {}, options) {
+    const id = this._nextId++;
+    const resp = await this._client.request(this._path, {
+      method: "POST",
+      body: { jsonrpc: "2.0", id, method, params },
+      ...options,
+    });
+    if (resp && resp.error) {
+      throw new StateSetError(resp.error.message || "MCP RPC error", {
+        status: resp.error.code,
+        body: resp.error,
+      });
+    }
+    return resp?.result;
+  }
+
+  initialize(options) {
+    return this.rpc("initialize", {}, options);
+  }
+
+  listTools(options) {
+    return this.rpc("tools/list", {}, options);
+  }
+
+  callTool(name, args = {}, options) {
+    return this.rpc("tools/call", { name, arguments: args }, options);
+  }
+
+  listResources(options) {
+    return this.rpc("resources/list", {}, options);
+  }
+
+  readResource(uri, options) {
+    return this.rpc("resources/read", { uri }, options);
   }
 }
 

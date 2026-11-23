@@ -13,7 +13,7 @@ import uuid
 from collections import defaultdict, deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI
@@ -636,7 +636,7 @@ class APIMetrics:
                     round(sorted_latencies[p99_index], 2) if sorted_latencies else 0
                 ),
             },
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         }
 
 

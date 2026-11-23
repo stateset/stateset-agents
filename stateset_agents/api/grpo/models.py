@@ -6,7 +6,7 @@ Pydantic models for the GRPO service API with input sanitization.
 
 import html
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -369,7 +369,7 @@ class GRPOHealthResponse(BaseModel):
 
     status: str = Field(..., description="Service status")
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
         description="Response timestamp",
     )
     version: str = Field("2.0.0", description="API version")

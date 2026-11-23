@@ -12,7 +12,7 @@ import time
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from threading import RLock
 from typing import Any, Literal
 
@@ -334,7 +334,7 @@ async def health_v1(request: Request) -> dict[str, Any]:
         "version": config.api_version,
         "uptime_seconds": uptime_seconds,
         "components": components,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
     }
 
 
@@ -416,7 +416,7 @@ async def start_training_v1(
     jobs[job_id] = {
         "job_id": job_id,
         "status": "running",
-        "created_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
         "user_id": ctx.user.user_id,
         "strategy": payload.strategy,
         "num_iterations": payload.num_iterations,
