@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.90.0] - 2026-11-23 — Open-Weight RL Leadership Suite: Chunked Fused GRPO/GSPO/DAPO Loss, Disaggregated Async Rollout Runtime, MCP-Native Verifiable RL Env, Online Reward-Hacking Guard & 1-Command RL Blueprints
+
+### Added
+
+- **Memory-Efficient Chunked Fused GRPO / GSPO / DAPO Loss Kernel** (`stateset_agents/training/chunked_rl_loss.py`): projects `[B, T, H]` hidden states through `lm_head` in token chunks with optional activation checkpointing — eliminating full `[B, T, V]` logit materialization (up to 99.6% peak logit VRAM saved on 16k Qwen3 sequences) with bit-exact forward and backward gradient parity (`max Δlp=0.0`, `max Δgrad=0.0`).
+- **Disaggregated Asynchronous Rollout ↔ Learner RL Runtime** (`stateset_agents/training/disaggregated_rl.py`): decouples async rollout workers from learner updates over `AsyncRolloutCoordinator` with DAPO zero-variance dynamic sampling, off-policy truncated importance weighting, and zero-stall live vLLM LoRA weight sync.
+- **MCP-Native Verifiable Multi-Turn RL Environment & Deterministic Commerce Sandbox** (`stateset_agents/core/mcp_rl_env.py`): turns any MCP server (in-process callable or live Streamable HTTP MCP URL) into a multi-turn verifiable RL environment with step-level process rewards (PRM) + terminal state verification, shipping with a zero-dependency in-memory SQLite `CommerceLedgerSandbox`.
+- **Online Reward-Hacking Circuit-Breaker & Production-to-RL Curriculum Flywheel** (`stateset_agents/training/rl_flywheel_guard.py`): detects reward hacking (`HALT_AND_ROLLBACK`), calibration drift (`REWEIGHT_JUDGE`), policy entropy collapse, and length explosion (`INCREASE_KL`) in flight, and clusters failing SQLite OTLP traces into balanced difficulty-graded RL curricula.
+- **Declarative 1-Command Open-Weight RL Blueprints & Shootout Benchmark** (`stateset_agents/training/rl_blueprint.py`, `stateset-agents rl`, `benchmarks/chunked_rl_shootout.py`): unified launch plans for `local` / `runpod` / `modal` / `k8s` combining Step-0 Surgical Warm-Start → Chunked GSPO/DAPO → Online Guard → Canary Gate + reproducible VRAM/throughput verification.
+
 ## [0.89.0] - 2026-11-23 — Consolidated 3D Weight Studio, Autonomous Self-Healing, Red-Team, Tournament, Canary Autopilot, Live vLLM A/B, OTLP Calibration, SQLite Store, MCP Security & TS SDK Release Train (`v0.81.0`–`v0.89.0`)
 
 ### Added

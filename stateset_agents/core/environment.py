@@ -14,6 +14,7 @@ from .environment_base import (
     EpisodeStatus,
 )
 from .environment_presets import CONVERSATION_CONFIGS, TASK_CONFIGS
+from .mcp_rl_env import CommerceLedgerSandbox, MCPRLEnvironment
 from .task_environment import TaskEnvironment
 from .trajectory import ConversationTurn
 
@@ -24,6 +25,8 @@ def create_environment(env_type: str, config: dict[str, Any]) -> Environment:
         return ConversationEnvironment(**config)
     if env_type == "task":
         return cast(Environment, TaskEnvironment(**config))
+    if env_type == "mcp":
+        return MCPRLEnvironment(**config)
     raise ValueError(f"Unknown environment type: {env_type}")
 
 
@@ -33,6 +36,8 @@ __all__ = [
     "EnvironmentState",
     "Environment",
     "ConversationEnvironment",
+    "CommerceLedgerSandbox",
+    "MCPRLEnvironment",
     "TaskEnvironment",
     "ConversationTurn",
     "create_environment",

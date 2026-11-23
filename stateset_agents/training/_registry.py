@@ -68,6 +68,39 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
         f"{_PKG}.async_rollouts",
         "AsyncRolloutStats",
     ),
+    # v0.90 Open-Weight RL Leadership Suite (lazy, torch-free imports)
+    "chunked_gather_token_logprobs": (
+        f"{_PKG}.chunked_rl_loss",
+        "chunked_gather_token_logprobs",
+    ),
+    "chunked_rl_policy_loss": (
+        f"{_PKG}.chunked_rl_loss",
+        "chunked_rl_policy_loss",
+    ),
+    "DisaggregatedRLConfig": (
+        f"{_PKG}.disaggregated_rl",
+        "DisaggregatedRLConfig",
+    ),
+    "DisaggregatedRLRuntime": (
+        f"{_PKG}.disaggregated_rl",
+        "DisaggregatedRLRuntime",
+    ),
+    "OnlineRewardHackingGuard": (
+        f"{_PKG}.rl_flywheel_guard",
+        "OnlineRewardHackingGuard",
+    ),
+    "ProductionTraceCurriculumBuilder": (
+        f"{_PKG}.rl_flywheel_guard",
+        "ProductionTraceCurriculumBuilder",
+    ),
+    "RLBlueprintConfig": (
+        f"{_PKG}.rl_blueprint",
+        "RLBlueprintConfig",
+    ),
+    "build_cloud_launch_plan": (
+        f"{_PKG}.rl_blueprint",
+        "build_cloud_launch_plan",
+    ),
     "AsyncRolloutTimeout": (
         f"{_PKG}.async_rollouts",
         "AsyncRolloutTimeout",
