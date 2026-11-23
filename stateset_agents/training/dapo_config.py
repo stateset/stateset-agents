@@ -74,6 +74,11 @@ class DAPOConfig(TrainingConfig):
 
     eval_repeats: int = 32
 
+    # Opt-in memory-efficient chunked LM-head log-prob projection (avoids
+    # materializing [B, T, V] logits on long-context RL).
+    chunked_loss_chunk_size: int | None = None
+    use_loss_checkpointing: bool = False
+
     @classmethod
     def from_training_config(cls, config: TrainingConfig, **kwargs) -> DAPOConfig:
         """Create a DAPO config from a standard training config."""

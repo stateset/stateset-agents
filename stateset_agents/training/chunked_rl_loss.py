@@ -265,7 +265,86 @@ def chunked_rl_policy_loss(
     }
 
 
+def extract_lm_head_and_backbone(model: Any) -> tuple[Any, Any, Any | None] | None:
+    """Resolve ``(backbone, lm_head_weight, lm_head_bias)`` if the model supports chunked projection."""
+    target = model
+    if hasattr(target, "base_model") and hasattr(target.base_model, "model"):
+        target = target.base_model.model
+
+    lm_head = getattr(target, "lm_head", None)
+    if lm_head is None and hasattr(target, "get_output_embeddings"):
+        lm_head = target.get_output_embeddings()
+    if lm_head is None or not hasattr(lm_head, "weight"):
+        return None
+
+    backbone = (
+        getattr(target, "model", None)
+        or getattr(target, "transformer", None)
+        or getattr(target, "backbone", None)
+    )
+    if backbone is None:
+        return None
+
+    return (backbone, lm_head.weight, getattr(lm_head, "bias", None))
+
+
+def chunked_model_token_logprobs(
+    model: Any,
+    input_ids: Any,
+    response_mask: Any,
+    *,
+    attention_mask: Any | None = None,
+    chunk_size: int = 256,
+    dtype: Any = None,
+    use_checkpointing: bool = False,
+    return_entropy: bool = False,
+) -> tuple[Any, ...]:
+    """Run model backbone + chunked LM-head projection without materializing ``[B, T, V]`` logits.
+
+    Automatically falls back to full-logit ``gather_token_logprobs`` if ``model``
+    does not expose a separate transformer backbone and ``lm_head``.
+    """
+    from .rl_losses import gather_token_logprobs
+
+    parts = extract_lm_head_and_backbone(model)
+    if parts is not None:
+        backbone, lm_weight, lm_bias = parts
+        kwargs: dict[str, Any] = {}
+        if attention_mask is not None:
+            kwargs["attention_mask"] = attention_mask
+        out = backbone(input_ids, **kwargs)
+        hidden = (
+            out.last_hidden_state
+            if hasattr(out, "last_hidden_state")
+            else (out[0] if isinstance(out, tuple) else out)
+        )
+        return chunked_gather_token_logprobs(
+            hidden,
+            lm_weight,
+            input_ids,
+            response_mask,
+            lm_head_bias=lm_bias,
+            chunk_size=chunk_size,
+            dtype=dtype,
+            use_checkpointing=use_checkpointing,
+            return_entropy=return_entropy,
+        )
+
+    # Seamless fallback when model doesn't split backbone / lm_head
+    kwargs_fb: dict[str, Any] = {}
+    if attention_mask is not None:
+        kwargs_fb["attention_mask"] = attention_mask
+    out_fb = model(input_ids, **kwargs_fb)
+    logits = out_fb.logits if hasattr(out_fb, "logits") else out_fb
+    lp, mask = gather_token_logprobs(logits, input_ids, response_mask, dtype=dtype)
+    if return_entropy:
+        return lp, mask, lp.new_zeros(lp.shape)
+    return lp, mask
+
+
 __all__ = [
     "chunked_gather_token_logprobs",
+    "chunked_model_token_logprobs",
     "chunked_rl_policy_loss",
+    "extract_lm_head_and_backbone",
 ]

@@ -14,7 +14,7 @@ from .environment_base import (
     EpisodeStatus,
 )
 from .environment_presets import CONVERSATION_CONFIGS, TASK_CONFIGS
-from .mcp_rl_env import CommerceLedgerSandbox, MCPRLEnvironment
+from .mcp_rl_env import CodeVerificationSandbox, CommerceLedgerSandbox, MCPRLEnvironment
 from .task_environment import TaskEnvironment
 from .trajectory import ConversationTurn
 
@@ -36,6 +36,7 @@ __all__ = [
     "EnvironmentState",
     "Environment",
     "ConversationEnvironment",
+    "CodeVerificationSandbox",
     "CommerceLedgerSandbox",
     "MCPRLEnvironment",
     "TaskEnvironment",

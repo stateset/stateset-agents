@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.91.0] - 2026-11-23 — Real PyTorch Forward-Hook CAA Step-0 RL Warm-Start, Backbone-Level Chunked Model Logprobs, Verifiable Code-Exec RL Sandbox & End-to-End CI Example
+
+### Added
+
+- **Real PyTorch Forward-Hook CAA Surgical Warm-Start** (`stateset_agents/weight_studio/gpu_surgery.py`): `find_transformer_layers`, `extract_torch_caa_vector`, and `bake_torch_caa_steering` (supporting both `bias_shift` and bias-free `rank1_weight_bake` with exact `rollback()`) bridge 3D Weight Studio surgery directly onto real PyTorch/HF/PEFT causal LMs as Step 0 of RL training.
+- **Model-Level Chunked Forward Wrapper & Config Fields** (`stateset_agents/training/chunked_rl_loss.py`, `gspo_config.py`, `dapo_config.py`): added `extract_lm_head_and_backbone` + `chunked_model_token_logprobs` (skipping full `[B, T, V]` logit projection with seamless fallback) and opt-in `chunked_loss_chunk_size` / `use_loss_checkpointing` on `GSPOConfig` and `DAPOConfig`.
+- **Timeout-Guarded Coding Verification Sandbox** (`stateset_agents/core/mcp_rl_env.py`): added `CodeVerificationSandbox` (`write_solution`, `run_tests`, verifiable assertion pass rate) alongside `CommerceLedgerSandbox` in `MCPRLEnvironment`.
+- **Runnable End-to-End Open-Weight RL Example & CI Integration** (`examples/open_weight_rl_end_to_end.py`, `.github/workflows/weight-studio-smoke.yml`): exercises Step-0 PyTorch CAA warm-start, Commerce + Coding MCP sandboxes, Disaggregated Async RL, Chunked GSPO optimizer steps, and Online Reward-Hacking Guard on every PR.
+
 ## [0.90.0] - 2026-11-23 — Open-Weight RL Leadership Suite: Chunked Fused GRPO/GSPO/DAPO Loss, Disaggregated Async Rollout Runtime, MCP-Native Verifiable RL Env, Online Reward-Hacking Guard & 1-Command RL Blueprints
 
 ### Added

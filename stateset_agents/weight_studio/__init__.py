@@ -14,6 +14,11 @@ if TYPE_CHECKING:
     from .canary_engine import CanaryRolloutEngine
     from .editor import WeightEditEngine
     from .finetune_engine import FinetuneStudioEngine
+    from .gpu_surgery import (
+        bake_torch_caa_steering,
+        extract_torch_caa_vector,
+        find_transformer_layers,
+    )
     from .inference_engine import InferenceStudioEngine
     from .inspector import WeightInspector
     from .judge import PluggableRewardJudge
@@ -43,7 +48,10 @@ __all__ = [
     "WeightEditEngine",
     "WeightInspector",
     "authorize_mcp_request",
+    "bake_torch_caa_steering",
     "create_studio_app",
+    "extract_torch_caa_vector",
+    "find_transformer_layers",
     "get_studio_ingress_config",
     "handle_mcp_jsonrpc",
     "mount_studio_ui",
@@ -63,6 +71,9 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "StudioEventBus": (".mcp_bridge", "StudioEventBus"),
     "StudioSQLiteStore": (".ledger_store", "StudioSQLiteStore"),
     "authorize_mcp_request": ("._stats", "authorize_mcp_request"),
+    "bake_torch_caa_steering": (".gpu_surgery", "bake_torch_caa_steering"),
+    "extract_torch_caa_vector": (".gpu_surgery", "extract_torch_caa_vector"),
+    "find_transformer_layers": (".gpu_surgery", "find_transformer_layers"),
     "get_studio_ingress_config": ("._stats", "get_studio_ingress_config"),
     "handle_mcp_jsonrpc": (".mcp_bridge", "handle_mcp_jsonrpc"),
     "resolve_confined_path": ("._stats", "resolve_confined_path"),
