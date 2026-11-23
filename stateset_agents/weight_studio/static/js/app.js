@@ -2969,6 +2969,61 @@ function bindRedTeamAndMcpBridge() {
     }
   });
 
+  const runCanaryOrAutopilot = async (autopilot) => {
+    if (!state.modelId) return;
+    const pill = $('canary-status-pill');
+    const summary = $('canary-result-summary');
+    const btnC = $('btn-run-canary');
+    const btnA = $('btn-run-autopilot');
+    if (pill) pill.textContent = autopilot ? 'AUTOPILOT…' : 'GATING…';
+    if (btnC) btnC.disabled = true;
+    if (btnA) btnA.disabled = true;
+    try {
+      const res = autopilot
+        ? await apiPost('/autopilot/run', {
+            model_id: state.modelId,
+            checkpoint_id: state.checkpointId,
+            reward_fn: $('heal-reward-select')?.value || 'customer_support',
+            immunize_redteam: true,
+            export_format: 'lora',
+          })
+        : await apiPost('/canary/gate', {
+            model_id: state.modelId,
+            checkpoint_id: state.checkpointId,
+            stage: 'canary_10',
+            reward_fn: $('heal-reward-select')?.value || 'composite',
+          });
+      if (pill) pill.textContent = `${res.decision} · ${res.recommended_traffic_pct}%`;
+      const pr = res.paired_record || (res.canary_gate && res.canary_gate.paired_record) || {};
+      if (summary) {
+        summary.textContent =
+          `${res.decision} (${res.rollout_id}) · W/T/L ${pr.wins || 0}/${pr.ties || 0}/${pr.losses || 0} · ` +
+          `Δ=${Number(pr.mean_delta || 0) >= 0 ? '+' : ''}${Number(pr.mean_delta || 0).toFixed(4)}` +
+          (res.exported ? ' · Verified LoRA + Dossier exported' : '');
+      }
+      renderer.triggerPulse(autopilot ? 'backprop' : 'forward');
+      if (autopilot) {
+        await loadModelStructure(state.modelId, state.checkpointId);
+      }
+      showToast(
+        autopilot
+          ? `🚀 Autopilot: ${res.decision} (traffic ${res.recommended_traffic_pct}%)`
+          : `🧪 Canary Gate: ${res.decision} (traffic ${res.recommended_traffic_pct}%)`,
+        3200
+      );
+    } catch (err) {
+      if (pill) pill.textContent = 'ERR';
+      if (summary) summary.textContent = err.message;
+      showToast(`Canary/Autopilot error: ${err.message}`, 4000);
+    } finally {
+      if (btnC) btnC.disabled = false;
+      if (btnA) btnA.disabled = false;
+    }
+  };
+
+  $('btn-run-canary')?.addEventListener('click', () => runCanaryOrAutopilot(false));
+  $('btn-run-autopilot')?.addEventListener('click', () => runCanaryOrAutopilot(true));
+
   // MCP Connect Modal & Live AI-Agent Activity Feed
   const mcpModal = $('mcp-modal');
   const openMcpModal = () => {

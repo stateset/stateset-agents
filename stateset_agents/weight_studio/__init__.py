@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from .canary_engine import CanaryRolloutEngine
     from .editor import WeightEditEngine
     from .finetune_engine import FinetuneStudioEngine
     from .inference_engine import InferenceStudioEngine
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "AutonomousSurgeryLoop",
+    "CanaryRolloutEngine",
     "FinetuneStudioEngine",
     "InferenceStudioEngine",
     "ModelTournamentEngine",
@@ -33,6 +35,7 @@ __all__ = [
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "AutonomousSurgeryLoop": (".surgery_loop", "AutonomousSurgeryLoop"),
+    "CanaryRolloutEngine": (".canary_engine", "CanaryRolloutEngine"),
     "ModelTournamentEngine": (".tournament_engine", "ModelTournamentEngine"),
     "RedTeamSurgeryEngine": (".redteam_engine", "RedTeamSurgeryEngine"),
     "StudioEventBus": (".mcp_bridge", "StudioEventBus"),

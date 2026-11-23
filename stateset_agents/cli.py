@@ -1205,6 +1205,149 @@ def tournament_command(
         raise typer.Exit(code=2) from error
 
 
+@app.command("canary")
+def canary_command(
+    model: str = typer.Option(
+        "preset:deepseek-r1-1.5b",
+        "--model",
+        "-m",
+        help="Model ID to evaluate on shadow production traffic.",
+    ),
+    stage: str = typer.Option(
+        "canary_10",
+        "--stage",
+        "-s",
+        help="Rollout stage: shadow, canary_10, or canary_50.",
+    ),
+    traffic: Path | None = typer.Option(
+        None,
+        "--traffic",
+        "-t",
+        help="Optional shadow traffic JSONL file.",
+    ),
+    reward: str = typer.Option(
+        "composite",
+        "--reward",
+        "-r",
+        help="Reward scorer: composite, customer_support, tool_calling, or gsm8k.",
+    ),
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Workspace root directory.",
+    ),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Print structured JSON rollout decision and ledger entry.",
+    ),
+) -> None:
+    """Run Shadow-Replay Canary Promotion Gate (PROMOTE / HOLD_CANARY / ROLLBACK)."""
+    try:
+        from stateset_agents.weight_studio import StudioRuntime
+
+        rt = StudioRuntime(workspace_root=workspace)
+        report = rt.canary.run_canary_gate(
+            model,
+            stage=stage,
+            traffic_path=str(traffic) if traffic is not None else None,
+            reward_fn=reward,
+        )
+        if as_json:
+            _echo(json.dumps(report, indent=2))
+            return
+
+        pr = report["paired_record"]
+        _echo(f"StateSet Canary Shadow Gate — {model} [{stage}]")
+        _echo(
+            f"  Decision  : {report['decision']} "
+            f"(traffic={report['recommended_traffic_pct']}%, "
+            f"W/T/L={pr['wins']}/{pr['ties']}/{pr['losses']}, Δ={pr['mean_delta']:+.4f})"
+        )
+        _echo(f"  Rationale : {report['rationale']}")
+        _echo(f"  Ledger    : {report['ledger_path']}")
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        _echo(f"Canary gate failed: {error}", err=True)
+        raise typer.Exit(code=2) from error
+
+
+@app.command("autopilot")
+def autopilot_command(
+    model: str = typer.Option(
+        "preset:deepseek-r1-1.5b",
+        "--model",
+        "-m",
+        help="Model ID to heal, immunize, canary-gate, and export.",
+    ),
+    transcripts: Path | None = typer.Option(
+        None,
+        "--transcripts",
+        "-t",
+        help="Optional failing production transcripts JSONL.",
+    ),
+    reward: str = typer.Option(
+        "customer_support",
+        "--reward",
+        "-r",
+        help="Reward scorer: customer_support, tool_calling, gsm8k, or composite.",
+    ),
+    export_format: str = typer.Option(
+        "lora",
+        "--export-format",
+        "-f",
+        help="Verified export format: lora, safetensors, gguf, hf_card, or none.",
+    ),
+    output_name: str = typer.Option(
+        "",
+        "--output-name",
+        "-o",
+        help="Export bundle name under outputs/weight_studio_exports/.",
+    ),
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Workspace root directory.",
+    ),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Print structured JSON autopilot release dossier summary.",
+    ),
+) -> None:
+    """Run Full Production Autopilot: Auto-Heal -> Red-Team Immunize -> Canary Gate -> Export."""
+    try:
+        from stateset_agents.weight_studio import StudioRuntime
+
+        rt = StudioRuntime(workspace_root=workspace)
+        report = rt.canary.run_autopilot_release(
+            model,
+            transcripts_path=str(transcripts) if transcripts is not None else None,
+            reward_fn=reward,
+            export_format=export_format,
+            output_name=output_name,
+        )
+        if as_json:
+            _echo(json.dumps(report, indent=2))
+            return
+
+        _echo(f"StateSet Production Autopilot — {model}")
+        _echo(
+            f"  Decision  : {report['decision']} "
+            f"(rollout={report['rollout_id']}, traffic={report['recommended_traffic_pct']}%)"
+        )
+        _echo(
+            f"  Safety    : {report['redteam']['verdict']} "
+            f"(ASR={report['redteam']['attack_success_rate']*100:.1f}%)"
+        )
+        if report["exported"] and report["dossier_path"]:
+            _echo(f"  Dossier   : {report['dossier_path']}")
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        _echo(f"Autopilot release failed: {error}", err=True)
+        raise typer.Exit(code=2) from error
+
+
 def run() -> None:
     # Windows consoles default to a legacy codepage (cp1252) that cannot
     # encode the CLI's unicode output (checkmarks, arrows); force UTF-8.

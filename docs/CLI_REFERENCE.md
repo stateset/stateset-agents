@@ -180,6 +180,28 @@ Options:
 - `--workspace`, `-w` (default `.`): Workspace root scanned for checkpoints.
 - `--json`: Emit structured JSON leaderboard and champion summary.
 
+### `stateset-agents canary`
+
+Run the **Shadow-Replay Canary Promotion Gate**: replay production traffic
+against Baseline vs. Active Edited weights with paired win/tie/loss counts,
+95% CI, severe regression check, and Red-Team ASR parity, issuing
+`PROMOTE` / `HOLD_CANARY` / `ROLLBACK` and appending an immutable record to
+`outputs/weight_studio_rollouts/rollout_ledger.jsonl`.
+
+```bash
+stateset-agents canary --model local:outputs/my_lora --stage canary_10 --json
+```
+
+### `stateset-agents autopilot`
+
+Run the complete **Production Autopilot** pipeline in one command:
+**Auto-Heal Logs → Adversarial Red-Team Immunization → Canary Shadow Gate → Verified Artifact Export + Offline 3D HTML Release Dossier**.
+
+```bash
+stateset-agents autopilot --model local:outputs/my_lora \
+    --transcripts logs/failures.jsonl --export-format lora --json
+```
+
 ### `stateset-agents finetune`
 
 Use the same studio workspace from AI agents through a versioned JSON CLI.
