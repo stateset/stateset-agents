@@ -92,7 +92,7 @@ def extract_traces_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]
                                 "response": response,
                                 "human_score": (
                                     float(human_raw)
-                                    if human_raw not in (None, "")
+                                    if human_raw is not None and human_raw != ""
                                     else None
                                 ),
                             }

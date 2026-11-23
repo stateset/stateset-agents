@@ -1348,6 +1348,239 @@ def autopilot_command(
         raise typer.Exit(code=2) from error
 
 
+@app.command("traces")
+def traces_command(
+    ingest: Path | None = typer.Option(
+        None,
+        "--ingest",
+        "-i",
+        help="Ingest a JSON or JSONL file (OTLP resourceSpans, OpenAI chat, or prompt/response rows).",
+    ),
+    audit: bool = typer.Option(
+        False,
+        "--audit",
+        help="Run Reward Calibration & Reward-Hacking audit against human-labeled traces.",
+    ),
+    auto_heal: bool = typer.Option(
+        False,
+        "--auto-heal",
+        help="Trigger Autonomous Self-Heal directly from collected failing live traces.",
+    ),
+    model: str = typer.Option(
+        "preset:deepseek-r1-1.5b",
+        "--model",
+        "-m",
+        help="Model ID to heal when --auto-heal is set.",
+    ),
+    reward: str = typer.Option(
+        "customer_support",
+        "--reward",
+        "-r",
+        help="Reward scorer: customer_support, tool_calling, gsm8k, or composite.",
+    ),
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Workspace root directory.",
+    ),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Print structured JSON output.",
+    ),
+) -> None:
+    """Ingest live OTLP/webhook traces, audit reward calibration, or auto-heal failing traces."""
+    try:
+        from stateset_agents.weight_studio import StudioRuntime
+
+        rt = StudioRuntime(workspace_root=workspace)
+        out: dict[str, Any] = {}
+
+        if ingest is not None:
+            raw_text = ingest.read_text(encoding="utf-8").strip()
+            if not raw_text:
+                raise ValueError(f"Trace file is empty: {ingest}")
+            try:
+                parsed = json.loads(raw_text)
+                payload: dict[str, Any] = (
+                    parsed if isinstance(parsed, dict) else {"traces": parsed}
+                )
+            except json.JSONDecodeError:
+                rows = [
+                    json.loads(line) for line in raw_text.splitlines() if line.strip()
+                ]
+                payload = {"traces": rows}
+            out["ingest"] = rt.traces.ingest_payload(payload, reward_fn=reward)
+
+        if audit:
+            out["calibration"] = rt.traces.audit_reward_calibration(reward_fn=reward)
+
+        if auto_heal:
+            failing = rt.traces.list_traces(limit=100, failing_only=True)
+            jsonl_blob = "\n".join(
+                json.dumps({"prompt": r["prompt"], "response": r["response"]})
+                for r in failing
+            )
+            out["auto_heal"] = rt.healer.run_healing_loop(
+                model,
+                transcripts_jsonl=jsonl_blob or None,
+                reward_fn=reward,
+                export_format="none",
+            )
+
+        out["summary"] = rt.traces.summary()
+
+        if as_json:
+            _echo(json.dumps(out, indent=2))
+            return
+
+        summary = out["summary"]
+        _echo(
+            f"StateSet Live Traces — {summary['total_traces']} total, "
+            f"{summary['failing_traces']} failing, {summary['human_labeled_traces']} human-labeled "
+            f"(mean proxy={summary['mean_proxy_score']:.3f})"
+        )
+        if "ingest" in out:
+            ing = out["ingest"]
+            _echo(
+                f"  Ingested    : {ing['ingested_count']} trace(s) ({ing['failing_count']} failing)"
+            )
+        if "calibration" in out:
+            cal = out["calibration"]
+            _echo(
+                f"  Calibration : {cal['verdict']} "
+                f"(n={cal.get('sample_count', 0)}, "
+                f"ρ={cal.get('spearman_rho', 'n/a')}, "
+                f"MAE={cal.get('mae', 'n/a')}, "
+                f"hacking={cal.get('hacking_rate', 0.0) * 100:.1f}%)"
+            )
+        if "auto_heal" in out:
+            heal = out["auto_heal"]
+            sv = heal.get("steering_vector") or {}
+            gate = heal.get("eval_gate") or {}
+            _echo(
+                f"  Auto-Heal   : {gate.get('verdict', 'GO')} "
+                f"(L{int(sv.get('target_layer', 0)):02d}, "
+                f"α={float(sv.get('chosen_strength', 0.0)):+.2f})"
+            )
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
+        _echo(f"Live traces command failed: {error}", err=True)
+        raise typer.Exit(code=2) from error
+
+
+@app.command("serve-ab")
+def serve_ab_command(
+    endpoint: str = typer.Option(
+        "http://127.0.0.1:8000/v1",
+        "--endpoint",
+        "-e",
+        help="OpenAI-compatible vLLM/Ollama/SGLang base URL.",
+    ),
+    baseline: str = typer.Option(
+        ...,
+        "--baseline",
+        "-b",
+        help="Baseline model name served by the endpoint.",
+    ),
+    candidate: str = typer.Option(
+        ...,
+        "--candidate",
+        "-c",
+        help="Candidate model or hot-loaded LoRA adapter name.",
+    ),
+    candidate_endpoint: str = typer.Option(
+        "",
+        "--candidate-endpoint",
+        help="Optional separate endpoint URL for the candidate model.",
+    ),
+    load_lora_name: str = typer.Option(
+        "",
+        "--load-lora-name",
+        help="Optional vLLM LoRA adapter name to hot-load before running A/B.",
+    ),
+    load_lora_path: str = typer.Option(
+        "",
+        "--load-lora-path",
+        help="Workspace-confined path to Diff-as-LoRA adapter directory to hot-load.",
+    ),
+    reward: str = typer.Option(
+        "customer_support",
+        "--reward",
+        "-r",
+        help="StateSet reward scorer: customer_support, tool_calling, gsm8k, or composite.",
+    ),
+    api_key: str = typer.Option(
+        "",
+        "--api-key",
+        help="Optional Bearer API key for the inference endpoint.",
+    ),
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Workspace root directory.",
+    ),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Print structured JSON shadow A/B report.",
+    ),
+) -> None:
+    """Hot-load a LoRA adapter on live vLLM and run real-token paired shadow A/B comparison."""
+    try:
+        from stateset_agents.weight_studio import StudioRuntime
+
+        rt = StudioRuntime(workspace_root=workspace)
+        lora_result: dict[str, Any] | None = None
+        if load_lora_name and load_lora_path:
+            lora_result = rt.serving.load_lora_adapter(
+                candidate_endpoint or endpoint,
+                load_lora_name,
+                load_lora_path,
+                api_key=api_key,
+            )
+
+        report = rt.serving.compare_live_endpoints(
+            endpoint,
+            baseline,
+            candidate,
+            reward_fn=reward,
+            api_key=api_key,
+            candidate_endpoint_url=candidate_endpoint,
+        )
+        if lora_result is not None:
+            report["lora_hot_load"] = lora_result
+
+        if as_json:
+            _echo(json.dumps(report, indent=2))
+            return
+
+        pr = report.get("paired_record") or {}
+        lat = report.get("latency_ms") or {}
+        _echo(f"StateSet Live Serving Shadow A/B — {baseline} vs {candidate}")
+        _echo(
+            f"  Decision  : {report['decision']} "
+            f"(Δreward={float(pr.get('mean_delta', 0.0)):+.4f}, "
+            f"W/T/L={pr.get('wins', 0)}/{pr.get('ties', 0)}/{pr.get('losses', 0)})"
+        )
+        _echo(
+            f"  Latency   : base p50={lat.get('baseline_p50', 0)}ms / "
+            f"cand p50={lat.get('candidate_p50', 0)}ms "
+            f"(p95={lat.get('candidate_p95', 0)}ms)"
+        )
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        RuntimeError,
+        PermissionError,
+    ) as error:
+        _echo(f"Live serving A/B failed: {error}", err=True)
+        raise typer.Exit(code=2) from error
+
+
 def run() -> None:
     # Windows consoles default to a legacy codepage (cp1252) that cannot
     # encode the CLI's unicode output (checkmarks, arrows); force UTF-8.
