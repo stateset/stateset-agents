@@ -128,7 +128,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python release:** `stateset-agents==0.85.1`, published from the
+- **Current Python release:** `stateset-agents==0.86.0`, published from the
   annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/). Its first registry
@@ -371,9 +371,9 @@ pip install "stateset-agents[mcp]"
 claude mcp add stateset-agents -- stateset-agents mcp --workspace .
 ```
 
-29 annotated MCP tools (22 3D Weight Studio + 7 improve/finetune), live
-Streamable HTTP MCP (`POST /api/weight-studio/mcp`) with real-time 3D browser
-sync, 7 live `stateset://studio/*` MCP resources, and 7 guided workflow prompts — see
+32 annotated MCP tools (25 3D Weight Studio + 7 improve/finetune), live
+Streamable HTTP MCP (`POST /api/weight-studio/mcp`) with bearer/read-only auth
+and real-time 3D browser sync, 8 live `stateset://studio/*` MCP resources, and 7 guided workflow prompts — see
 [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md).
 
 Check what has actually been proven—not merely registered—with
@@ -384,7 +384,13 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**v0.85.1 (latest release; publication triggered by tag):**
+**v0.86.0 (latest release; publication triggered by tag):**
+
+- **Live vLLM LoRA Hot-Swap & Real-Token A/B Shadow Bridge (`POST /serving/load-lora`, `POST /serving/compare-live`, `studio_live_serving_ab`)**: Hot-load exported Diff-as-LoRA adapters into live vLLM servers and run real-endpoint paired A/B comparisons with p50/p95 latency, reward deltas, and 95% CIs.
+- **Live OTLP/Webhook Trace Collector & Reward Calibration Guard (`POST /traces/ingest`, `POST /traces/calibration-audit`, `POST /traces/auto-heal`, `stateset://studio/traces`)**: Stream OpenTelemetry OTLP/JSON `resourceSpans` directly into Auto-Heal and detect reward hacking (`CALIBRATED` / `DRIFT_WARN` / `HACKING_RISK`).
+- **Remote MCP Security & Modular Studio**: Bearer-token & read-only MCP scopes (`STATESET_MCP_TOKEN`, `STATESET_MCP_READONLY_TOKEN`), strict workspace path confinement, shared `_stats.py`, modularized `autopilot_panel.js`, and **32 stdio / 25 HTTP MCP tools**.
+
+**v0.85.1:**
 
 - **Production Hardening & Live Co-Pilot Polish**: Non-blocking threadpool execution for Auto-Heal/Red-Team/Tournament/Canary/Autopilot/HTTP MCP endpoints, thread-safe SSE broadcast (`call_soon_threadsafe`), race-free rapid model switching in 3D Weight Studio, `⌘K` Command Palette v8 shortcuts, `stateset-agents doctor --json` Studio/MCP diagnostics, zero-GPU `examples/autonomous_surgery_autopilot.py`, and upgraded Chromium WebGL2 + HTTP MCP CI E2E smoke.
 

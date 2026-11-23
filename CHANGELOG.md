@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.86.0] - 2026-11-23 — Live vLLM LoRA Hot-Swap & A/B Bridge, OTLP Trace Collector & Reward Calibration Audit, MCP Bearer/RO Auth & Modularized Frontend
+
+### Added
+
+- **Live vLLM / Ollama Dynamic LoRA Hot-Swap & Real-Endpoint Shadow A/B (`live_serving.py`, `POST /serving/load-lora`, `POST /serving/compare-live`, `studio_live_serving_ab`):**
+  - Hot-load and unload surgical PEFT LoRA adapters directly into live vLLM servers (`/v1/load_lora_adapter`, `/v1/unload_lora_adapter`) without restarts, and run real-token paired shadow A/B comparisons measuring p50/p95 latency, StateSet reward deltas, 95% CIs, and `PROMOTE`/`HOLD_CANARY`/`ROLLBACK` verdicts.
+- **Live Production Trace Collector (OTLP/JSON + Webhook) & Reward Calibration Guard (`telemetry_ingest.py`, `POST /traces/ingest`, `GET /traces/summary`, `POST /traces/calibration-audit`, `POST /traces/auto-heal`):**
+  - Accepts native JSON turns, OpenAI chat payloads, and OpenTelemetry OTLP/JSON `resourceSpans` (`gen_ai.prompt` / `gen_ai.completion`), persists durable traces to `live_traces.jsonl`, exposes `stateset://studio/traces`, feeds failing live traces straight into `AutonomousSurgeryLoop`, and audits proxy-vs-human reward alignment (`Pearson r`, `Spearman ρ`, `MAE`, reward-hacking rate → `CALIBRATED` / `DRIFT_WARN` / `HACKING_RISK`).
+- **Remote MCP Security, Read-Only Scopes & Modularized Studio Architecture (`_stats.py`, `autopilot_panel.js`):**
+  - Added fail-closed bearer-token auth (`STATESET_MCP_TOKEN` + `STATESET_MCP_READONLY_TOKEN` blocking mutating tools with JSON-RPC `-32001`) on `POST /api/weight-studio/mcp` and `GET /api/weight-studio/events`, strict workspace path confinement (`resolve_confined_path`), shared stats/confinement helpers (`_stats.py`), modularized frontend ES module (`static/js/autopilot_panel.js`), and expanded MCP servers to **32 stdio tools / 25 HTTP tools / 8 live resources / 7 prompts**.
+
 ## [0.85.1] - 2026-11-23 — Production Hardening, Thread-Safe Live MCP SSE, Race-Free 3D UI & Full CI Smoke
 
 ### Fixed & Improved
