@@ -554,6 +554,18 @@ STUDIO_MCP_TOOLS: list[dict[str, Any]] = [
         [],
         read_only=True,
     ),
+    _tool_spec(
+        "studio_query_rl_trajectories",
+        "Query persisted verifiable multi-turn RL trajectories with turn-level PRM credit from the SQLite store (filter by run_name, domain, failed_only, limit).",
+        {
+            "run_name": {"type": "string", "default": ""},
+            "domain": {"type": "string", "default": ""},
+            "failed_only": {"type": "boolean", "default": False},
+            "limit": {"type": "integer", "default": 30},
+        },
+        [],
+        read_only=True,
+    ),
 ]
 
 TOOL_READ_ONLY_MAP: dict[str, bool] = {
@@ -1401,6 +1413,20 @@ def _dispatch_studio_tool(
             False,
             "forward",
             f"Sandbox Pool ran {res['episode_count']} episode(s) across {len(res['domain_stats'])} domain(s)",
+        )
+
+    if name == "studio_query_rl_trajectories":
+        rows = rt.store.query_rl_trajectories(
+            run_name=str(args.get("run_name") or "").strip() or None,
+            domain=str(args.get("domain") or "").strip() or None,
+            failed_only=bool(args.get("failed_only", False)),
+            limit=max(1, min(200, int(args.get("limit", 30)))),
+        )
+        return (
+            {"count": len(rows), "trajectories": rows, "stats": rt.store.stats()},
+            False,
+            "",
+            f"Queried {len(rows)} verifiable RL trajectory(ies)",
         )
 
     raise KeyError(f"Unknown MCP tool: {name}")

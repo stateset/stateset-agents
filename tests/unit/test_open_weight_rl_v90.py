@@ -1168,3 +1168,137 @@ def test_v97_training_runtime_auto_pause_and_weight_rollback_enforcement(
     for cls in (GSPOTrainer, DAPOTrainer, GEPOTrainer, VAPOTrainer):
         assert hasattr(cls, "attach_studio_callback")
         assert hasattr(cls, "enforce_studio_step")
+
+
+def test_v98_moe_fp8_tis_adaptive_curriculum_and_trajectory_credit_inspector(
+    tmp_path: Path,
+) -> None:
+    """Verify FP8 rollout TIS/IcePop + MoE router aux loss, AdaptiveDifficultyCurriculum & SQLite Trajectory Credit Inspector."""
+    torch = pytest.importorskip("torch")
+    from fastapi.testclient import TestClient
+
+    from stateset_agents.mcp_server import studio_query_rl_trajectories
+    from stateset_agents.training.adaptive_curriculum import (
+        AdaptiveDifficultyCurriculum,
+        CurriculumTask,
+    )
+    from stateset_agents.training.chunked_rl_loss import (
+        chunked_rl_policy_loss,
+        moe_router_aux_loss,
+    )
+    from stateset_agents.weight_studio import create_studio_app
+
+    # 1. MoE router load-balancing aux loss + FP8 rollout TIS / IcePop mismatch correction
+    torch.manual_seed(99)
+    h = torch.randn(2, 12, 16, requires_grad=True)
+    w = torch.randn(64, 16, requires_grad=True)
+    ids = torch.randint(0, 64, (2, 12))
+    mask = torch.ones(2, 12)
+    mask[:, :3] = 0.0
+    old_lp = torch.full((2, 11), -2.5)
+    # Simulate FP8 rollout logprobs with one extreme outlier token
+    rollout_lp = old_lp.clone()
+    rollout_lp[0, 5] = -8.0
+    adv = torch.tensor([1.0, -1.0])
+    router_logits = torch.randn(2, 12, 8, requires_grad=True)
+
+    aux_only = moe_router_aux_loss(router_logits, top_k=2, aux_coef=0.02)
+    assert float(aux_only.item()) > 0.0
+
+    loss_out = chunked_rl_policy_loss(
+        h,
+        w,
+        ids,
+        mask,
+        old_lp,
+        adv,
+        algorithm="dapo",
+        chunk_size=6,
+        rollout_logprobs=rollout_lp,
+        tis_clip_max=2.0,
+        icepop_bounds=(0.2, 5.0),
+        router_logits=router_logits,
+        moe_aux_coef=0.02,
+    )
+    loss_out["loss"].backward()
+    assert router_logits.grad is not None and float(router_logits.grad.abs().sum()) > 0
+    assert loss_out["icepop_masked_fraction"] > 0.0
+    assert loss_out["tis_clipped_fraction"] > 0.0
+    assert loss_out["rollout_learner_kl"] > 0.0
+    assert float(loss_out["moe_aux_loss"].item()) > 0.0
+
+    # 2. AdaptiveDifficultyCurriculum: frontier focus, production trace promotion & self-play synthesis
+    cur = AdaptiveDifficultyCurriculum(
+        [
+            CurriculumTask("easy-1", "commerce", "Check order status"),
+            CurriculumTask("front-1", "commerce", "Handle partial refund"),
+            CurriculumTask("hard-1", "coding", "Fix race condition"),
+        ]
+    )
+    for _ in range(3):
+        cur.record_outcome("easy-1", passed=True, reward=0.95)
+    cur.record_outcome("front-1", passed=True, reward=0.9)
+    cur.record_outcome("front-1", passed=False, reward=0.1)
+    for _ in range(3):
+        cur.record_outcome("hard-1", passed=False, reward=0.05)
+
+    assert cur.stats()["bands"]["frontier"] == 1
+    assert cur.stats()["bands"]["too_easy"] == 1
+    batch = cur.sample_batch(1, frontier_ratio=1.0, unseen_ratio=0.0)
+    assert batch[0].task_id == "front-1"
+
+    promoted = cur.promote_production_traces(
+        [
+            {
+                "trace_id": "tr-1",
+                "prompt": "Fix duplicate charge #991",
+                "proxy_score": 0.1,
+            }
+        ]
+    )
+    assert len(promoted) == 1 and promoted[0].source == "production_trace"
+
+    sp = cur.synthesize_harder_variants(max_new=3)
+    assert len(sp) == 1 and sp[0].parent_task_id == "easy-1" and sp[0].difficulty == 2
+
+    # 3. Verifiable Trajectory Credit Inspector (SQLite + REST + MCP parity)
+    app = create_studio_app(workspace_root=tmp_path)
+    client = TestClient(app)
+
+    r_post = client.post(
+        "/api/weight-studio/rl/trajectories",
+        json={
+            "trajectory_id": "traj-98-1",
+            "run_name": "gspo-v98",
+            "domain": "commerce",
+            "verified": False,
+            "terminal_reward": 0.15,
+            "prompt": "Refund ORD-991",
+            "response": "Could not locate order.",
+            "turns": [
+                {"turn": 1, "tool": "lookup_order", "process_reward": 0.9},
+                {"turn": 2, "tool": "issue_refund", "process_reward": 0.0},
+            ],
+        },
+    )
+    assert r_post.status_code == 200
+    saved_turns = r_post.json()["trajectory"]["turns"]
+    assert "credit" in saved_turns[0] and "credit" in saved_turns[1]
+
+    # Sandbox pool also records its episodes into persisted rl_trajectories
+    r_pool = client.post(
+        "/api/weight-studio/rl/sandbox-pool",
+        json={"domains": ["commerce", "sql"], "include_failure_pairs": True},
+    )
+    assert r_pool.status_code == 200
+
+    r_get = client.get("/api/weight-studio/rl/trajectories?failed_only=true")
+    assert r_get.status_code == 200
+    assert r_get.json()["count"] >= 3
+
+    # MCP stdio & HTTP parity for studio_query_rl_trajectories
+    stdio_res = studio_query_rl_trajectories(
+        domain="commerce", failed_only=True, workspace=str(tmp_path)
+    )
+    assert stdio_res["count"] >= 2
+    assert stdio_res["stats"]["rl_trajectory_count"] >= 5

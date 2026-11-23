@@ -96,6 +96,13 @@ export interface SandboxPoolRequest {
   max_concurrency?: number;
 }
 
+export interface RlTrajectoryQueryParams {
+  run_name?: string;
+  domain?: string;
+  failed_only?: boolean;
+  limit?: number;
+}
+
 export class WeightStudioClient {
   constructor(client: StateSet);
   listModels<T = Record<string, unknown>>(options?: RequestOptions): Promise<T>;
@@ -118,6 +125,8 @@ export class WeightStudioClient {
   controlRlRun<T = Record<string, unknown>>(body: RlControlRequest, options?: RequestOptions): Promise<T>;
   planRlRun<T = Record<string, unknown>>(body?: RlPlanRequest, options?: RequestOptions): Promise<T>;
   runSandboxPool<T = Record<string, unknown>>(body?: SandboxPoolRequest, options?: RequestOptions): Promise<T>;
+  recordRlTrajectory<T = Record<string, unknown>>(body: Record<string, unknown>, options?: RequestOptions): Promise<T>;
+  queryRlTrajectories<T = Record<string, unknown>>(params?: RlTrajectoryQueryParams, options?: RequestOptions): Promise<T>;
 }
 
 export class McpHttpClient {

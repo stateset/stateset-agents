@@ -100,6 +100,22 @@ class StudioSQLiteStore:
                     );
                     CREATE INDEX IF NOT EXISTS idx_rl_steps_run_id
                         ON rl_steps(run_name, id DESC);
+
+                    CREATE TABLE IF NOT EXISTS rl_trajectories (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp TEXT NOT NULL,
+                        trajectory_id TEXT NOT NULL,
+                        run_name TEXT NOT NULL,
+                        domain TEXT NOT NULL,
+                        verified INTEGER NOT NULL,
+                        terminal_reward REAL NOT NULL,
+                        turn_count INTEGER NOT NULL,
+                        payload_json TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_rl_traj_run_id
+                        ON rl_trajectories(run_name, id DESC);
+                    CREATE INDEX IF NOT EXISTS idx_rl_traj_domain_ver
+                        ON rl_trajectories(domain, verified, id DESC);
                     """)
             self._initialized = True
 
@@ -372,6 +388,70 @@ class StudioSQLiteStore:
                 for row in cur.fetchall()
             ]
 
+    def record_rl_trajectory(self, record: dict[str, Any]) -> None:
+        """Persist a multi-turn verifiable RL trajectory with turn-level PRM credit to SQLite."""
+        self._ensure_schema()
+        now = datetime.now(timezone.utc).isoformat()
+        turns = list(record.get("turns") or [])
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO rl_trajectories (
+                    timestamp, trajectory_id, run_name, domain, verified,
+                    terminal_reward, turn_count, payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(record.get("timestamp") or now),
+                    str(record.get("trajectory_id") or record.get("episode_id") or ""),
+                    str(record.get("run_name") or "rl-run"),
+                    str(record.get("domain") or "general"),
+                    1 if record.get("verified") else 0,
+                    float(record.get("terminal_reward", record.get("reward", 0.0))),
+                    len(turns),
+                    json.dumps(record, default=str),
+                ),
+            )
+
+    def query_rl_trajectories(
+        self,
+        *,
+        run_name: str | None = None,
+        domain: str | None = None,
+        failed_only: bool = False,
+        limit: int = 30,
+    ) -> list[dict[str, Any]]:
+        """Query persisted multi-turn RL trajectories with turn credit, newest first."""
+        if not self.db_path.is_file():
+            return []
+        self._ensure_schema()
+        clauses: list[str] = []
+        params: list[Any] = []
+        if run_name:
+            clauses.append("run_name = ?")
+            params.append(run_name.strip())
+        if domain:
+            clauses.append("domain = ?")
+            params.append(domain.strip().lower())
+        if failed_only:
+            clauses.append("verified = 0")
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(max(1, min(int(limit), 200)))
+        sql = (
+            f"SELECT payload_json FROM rl_trajectories {where} ORDER BY id DESC LIMIT ?"
+        )
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(sql, params)
+            out: list[dict[str, Any]] = []
+            for row in cur.fetchall():
+                try:
+                    parsed = json.loads(row["payload_json"])
+                    if isinstance(parsed, dict):
+                        out.append(parsed)
+                except json.JSONDecodeError:
+                    continue
+            return out
+
     def stats(self) -> dict[str, Any]:
         """Return aggregate row counts and store metadata."""
         if not self.db_path.is_file():
@@ -382,6 +462,7 @@ class StudioSQLiteStore:
                 "failing_trace_count": 0,
                 "rollout_count": 0,
                 "rl_step_count": 0,
+                "rl_trajectory_count": 0,
             }
         self._ensure_schema()
         with self._lock, self._connect() as conn:
@@ -391,6 +472,9 @@ class StudioSQLiteStore:
             ).fetchone()[0]
             r_total = conn.execute("SELECT COUNT(*) FROM rollouts").fetchone()[0]
             rl_total = conn.execute("SELECT COUNT(*) FROM rl_steps").fetchone()[0]
+            traj_total = conn.execute(
+                "SELECT COUNT(*) FROM rl_trajectories"
+            ).fetchone()[0]
         return {
             "db_path": str(self.db_path),
             "exists": True,
@@ -398,6 +482,7 @@ class StudioSQLiteStore:
             "failing_trace_count": int(t_fail),
             "rollout_count": int(r_total),
             "rl_step_count": int(rl_total),
+            "rl_trajectory_count": int(traj_total),
         }
 
 

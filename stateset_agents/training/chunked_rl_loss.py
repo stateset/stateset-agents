@@ -250,6 +250,56 @@ def chunked_gather_token_logprobs(
     return token_logprobs, shifted_mask_2d
 
 
+def moe_router_aux_loss(
+    router_logits: Any,
+    *,
+    num_experts: int | None = None,
+    top_k: int = 2,
+    aux_coef: float = 0.01,
+    attention_mask: Any | None = None,
+) -> Any:
+    """Switch / DeepSeek / Qwen3-MoE load-balancing auxiliary loss (computed in float32).
+
+    ``router_logits`` may have shape ``[B, T, E]`` or ``[N, E]``.
+    Computes ``aux_coef * E * sum_i (f_i * P_i)`` where ``f_i`` is the fraction
+    of tokens routed to expert ``i`` (top-k) and ``P_i`` is the mean routing
+    probability for expert ``i``.
+    """
+    torch = _t()
+    logits = router_logits.to(torch.float32)
+    if logits.ndim == 3:
+        if attention_mask is not None:
+            flat_mask = attention_mask.reshape(-1).to(torch.bool)
+            logits_2d = logits.reshape(-1, logits.shape[-1])[flat_mask]
+        else:
+            logits_2d = logits.reshape(-1, logits.shape[-1])
+    elif logits.ndim == 2:
+        logits_2d = logits
+    else:
+        raise ValueError(
+            f"router_logits must be 2D [N, E] or 3D [B, T, E], got shape {tuple(logits.shape)}"
+        )
+
+    if logits_2d.numel() == 0:
+        return logits.new_tensor(0.0)
+
+    n_experts = int(num_experts or logits_2d.shape[-1])
+    k = max(1, min(int(top_k), n_experts))
+    probs = torch.softmax(logits_2d, dim=-1)
+    top_idx = torch.topk(probs, k=k, dim=-1).indices
+    one_hot = torch.nn.functional.one_hot(top_idx, num_classes=n_experts).to(
+        torch.float32
+    )
+    # Fraction of routing slots assigned to each expert
+    tokens_per_expert = one_hot.sum(dim=1).mean(dim=0) / float(k)
+    router_prob_per_expert = probs.mean(dim=0)
+    return (
+        float(aux_coef)
+        * float(n_experts)
+        * torch.sum(tokens_per_expert * router_prob_per_expert)
+    )
+
+
 def chunked_rl_policy_loss(
     hidden_states: Any,
     lm_head_weight: Any,
@@ -268,6 +318,12 @@ def chunked_rl_policy_loss(
     chunk_size: int = 256,
     use_checkpointing: bool = False,
     importance_weights: Any | None = None,
+    rollout_logprobs: Any | None = None,
+    tis_clip_max: float | None = None,
+    icepop_bounds: tuple[float, float] | None = None,
+    router_logits: Any | None = None,
+    moe_aux_coef: float = 0.0,
+    moe_top_k: int = 2,
 ) -> dict[str, Any]:
     """Compute memory-efficient chunked GRPO, GSPO, or DAPO policy loss + diagnostics.
 
@@ -333,35 +389,89 @@ def chunked_rl_policy_loss(
             iw = iw.unsqueeze(-1).expand_as(cur_lp)
         adv_2d = adv_2d * iw
 
+    # FP8 rollout vs. BF16 learner mismatch correction (Truncated IS / IcePop)
+    eff_mask = mask
+    tis_mean_ratio = 1.0
+    tis_clipped_fraction = 0.0
+    icepop_masked_fraction = 0.0
+    rollout_learner_kl = 0.0
+    if rollout_logprobs is not None:
+        roll_lp = rollout_logprobs.detach().to(torch.float32)
+        mismatch_log = (old_lp - roll_lp) * mask
+        rho_is = safe_exp_ratio(mismatch_log)
+        with torch.no_grad():
+            rollout_learner_kl = float(
+                masked_mean(torch.abs(mismatch_log), mask, mode="token").item()
+            )
+        if icepop_bounds is not None:
+            lo_b, hi_b = float(icepop_bounds[0]), float(icepop_bounds[1])
+            in_bounds = ((rho_is >= lo_b) & (rho_is <= hi_b)).to(torch.float32)
+            with torch.no_grad():
+                icepop_masked_fraction = float(
+                    masked_mean(1.0 - in_bounds, mask, mode="token").item()
+                )
+            eff_mask = mask * in_bounds
+        if tis_clip_max is not None:
+            cap = float(tis_clip_max)
+            with torch.no_grad():
+                tis_clipped_fraction = float(
+                    masked_mean(
+                        (rho_is > cap).to(torch.float32), mask, mode="token"
+                    ).item()
+                )
+            rho_is = torch.clamp(rho_is, max=cap)
+        with torch.no_grad():
+            tis_mean_ratio = float(masked_mean(rho_is, eff_mask, mode="token").item())
+        adv_2d = adv_2d * rho_is.detach()
+
     clipped_ratio = torch.clamp(ratio, 1.0 - eps_low, 1.0 + eps_high)
     surr1 = ratio * adv_2d
     surr2 = clipped_ratio * adv_2d
-    pg_loss = -masked_mean(torch.minimum(surr1, surr2), mask, mode=mean_mode)
+    pg_loss = -masked_mean(torch.minimum(surr1, surr2), eff_mask, mode=mean_mode)
 
     kl_loss = (
-        k3_kl(cur_lp, ref_logprobs.detach(), mask)
+        k3_kl(cur_lp, ref_logprobs.detach(), eff_mask)
         if ref_logprobs is not None and kl_coef > 0.0
         else cur_lp.new_tensor(0.0)
     )
-    mean_entropy = masked_mean(token_entropy, mask, mode="token")
-    total_loss = pg_loss + float(kl_coef) * kl_loss - float(entropy_coef) * mean_entropy
+    mean_entropy = masked_mean(token_entropy, eff_mask, mode="token")
+    moe_loss = (
+        moe_router_aux_loss(
+            router_logits,
+            top_k=moe_top_k,
+            aux_coef=moe_aux_coef,
+        )
+        if router_logits is not None and moe_aux_coef > 0.0
+        else cur_lp.new_tensor(0.0)
+    )
+    total_loss = (
+        pg_loss
+        + float(kl_coef) * kl_loss
+        - float(entropy_coef) * mean_entropy
+        + moe_loss
+    )
 
     with torch.no_grad():
         clipped_mask = ((ratio < 1.0 - eps_low) | (ratio > 1.0 + eps_high)).to(
             torch.float32
         )
-        clip_fraction = float(masked_mean(clipped_mask, mask, mode="token").item())
-        mean_ratio = float(masked_mean(ratio, mask, mode="token").item())
+        clip_fraction = float(masked_mean(clipped_mask, eff_mask, mode="token").item())
+        mean_ratio = float(masked_mean(ratio, eff_mask, mode="token").item())
 
     return {
         "loss": total_loss,
         "pg_loss": pg_loss.detach(),
         "kl_loss": kl_loss.detach(),
+        "moe_aux_loss": moe_loss.detach(),
         "entropy": mean_entropy.detach(),
         "clip_fraction": clip_fraction,
         "mean_ratio": mean_ratio,
+        "tis_mean_ratio": tis_mean_ratio,
+        "tis_clipped_fraction": tis_clipped_fraction,
+        "icepop_masked_fraction": icepop_masked_fraction,
+        "rollout_learner_kl": rollout_learner_kl,
         "token_logprobs": cur_logprobs,
-        "mask": mask,
+        "mask": eff_mask,
         "kernel_backend": (
             "triton_cuda"
             if (hidden_states.is_cuda and triton_chunked_logprobs_available())
@@ -452,5 +562,6 @@ __all__ = [
     "chunked_model_token_logprobs",
     "chunked_rl_policy_loss",
     "extract_lm_head_and_backbone",
+    "moe_router_aux_loss",
     "triton_chunked_logprobs_available",
 ]

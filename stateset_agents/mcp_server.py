@@ -1424,6 +1424,28 @@ def studio_run_sandbox_pool(
         return _studio_err(exc, rt)
 
 
+def studio_query_rl_trajectories(
+    run_name: str = "",
+    domain: str = "",
+    failed_only: bool = False,
+    limit: int = 30,
+    workspace: str = "",
+) -> dict[str, Any]:
+    """Query persisted verifiable multi-turn RL trajectories with turn-level PRM credit."""
+    rt = None
+    try:
+        rt = _get_mcp_studio_runtime(workspace)
+        rows = rt.store.query_rl_trajectories(
+            run_name=run_name.strip() or None,
+            domain=domain.strip() or None,
+            failed_only=bool(failed_only),
+            limit=max(1, min(200, int(limit))),
+        )
+        return {"count": len(rows), "trajectories": rows, "stats": rt.store.stats()}
+    except Exception as exc:
+        return _studio_err(exc, rt)
+
+
 # ---------------------------------------------------------------------------
 # Live MCP Resources (stateset://studio/*)
 # ---------------------------------------------------------------------------
@@ -1763,6 +1785,7 @@ def create_server(*, workspace: str | Path | None = None) -> Any:
     mcp.tool(annotations=ro)(studio_rl_telemetry)
     mcp.tool(annotations=ro)(studio_rl_plan)
     mcp.tool(annotations=ro)(studio_run_sandbox_pool)
+    mcp.tool(annotations=ro)(studio_query_rl_trajectories)
 
     # Live MCP Resources (8)
     mcp.resource(

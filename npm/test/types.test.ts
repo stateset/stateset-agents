@@ -35,6 +35,8 @@ void client.studio.postRlTelemetry({ step: 1, reward: 0.85 });
 void client.studio.controlRlRun({ action: "rollback", reason: "hacking guard" });
 void client.studio.planRlRun({ model: "Qwen/Qwen3-8B", algorithm: "gspo", cloud: "modal" });
 void client.studio.runSandboxPool({ domains: ["commerce", "coding", "sql"] });
+void client.studio.recordRlTrajectory({ trajectory_id: "t1", domain: "sql", verified: true });
+void client.studio.queryRlTrajectories({ domain: "sql", failed_only: false, limit: 10 });
 void client.mcp.listTools();
 void client.mcp.callTool("studio_list_models", {});
 void client.mcp.readResource("stateset://studio/traces");
