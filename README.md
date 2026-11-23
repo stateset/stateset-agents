@@ -128,7 +128,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python release:** `stateset-agents==0.84.0`, published from the
+- **Current Python release:** `stateset-agents==0.85.0`, published from the
   annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/). Its first registry
@@ -371,9 +371,9 @@ pip install "stateset-agents[mcp]"
 claude mcp add stateset-agents -- stateset-agents mcp --workspace .
 ```
 
-27 annotated MCP tools (20 3D Weight Studio + 7 improve/finetune), live
+29 annotated MCP tools (22 3D Weight Studio + 7 improve/finetune), live
 Streamable HTTP MCP (`POST /api/weight-studio/mcp`) with real-time 3D browser
-sync, 6 live `stateset://studio/*` MCP resources, and 6 guided workflow prompts — see
+sync, 7 live `stateset://studio/*` MCP resources, and 7 guided workflow prompts — see
 [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md).
 
 Check what has actually been proven—not merely registered—with
@@ -384,7 +384,12 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**v0.84.0 (latest release; publication triggered by tag):**
+**v0.85.0 (latest release; publication triggered by tag):**
+
+- **Production Canary Shadow Gate & Durable Rollout Ledger (`stateset-agents canary`, `studio_canary_gate`)**: Paired Base-vs-Edited shadow traffic replay with win/tie/loss counts, 95% CIs, zero-regression safety guard, and auditable `PROMOTE`/`HOLD_CANARY`/`ROLLBACK` decisions logged to `rollout_ledger.jsonl` (`stateset://studio/rollouts`).
+- **One-Call Full Production Autopilot (`stateset-agents autopilot`, `studio_autopilot_release`)**: Chains Auto-Heal Logs → Red-Team Safety Immunization → Canary Shadow Gate → Verified LoRA/GGUF/safetensors Export + Offline 3D HTML Release Dossier (`autopilot_dossier.html`) across REST, CLI, Studio UI, and **29 annotated MCP tools**.
+
+**v0.84.0:**
 
 - **Live Streamable HTTP MCP & Real-Time 3D Browser Co-Pilot (`POST /api/weight-studio/mcp`, `GET /api/weight-studio/events`)**: Connect Claude Code, Cursor, Claude Desktop, or Antigravity directly to a running 3D Weight Studio so every AI-agent surgical edit, steering bake, Auto-Heal, Red-Team immunization, or Tournament merge animates the 3D WebGL2 viewport live.
 - **Adversarial Red-Team Safety Audit & Surgical Immunization (`stateset-agents redteam`, `studio_redteam_audit`)**: Measure Attack Success Rate (ASR) across prompt injection, PII exfiltration, unauthorized tool calls, policy bypass, and hallucinated commitments — then surgically immunize vulnerable layers via CAA steering while protecting benign helpfulness.

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.85.0] - 2026-11-23 — Production Canary Shadow Gate, Durable Rollout Ledger & Full Production Autopilot
+
+### Added
+
+- **Production Canary Shadow-Rollout Gate & Durable Rollout Ledger (`stateset-agents canary`, `POST /api/weight-studio/canary/gate`, `GET /api/weight-studio/canary/ledger`, `studio_canary_gate`):**
+  - Replays shadow production traffic comparing Base vs. Active Edited weights with paired win/tie/loss counts, 95% bootstrap confidence intervals, severe single-case regression guard, and Red-Team ASR safety parity — issuing auditable `PROMOTE` / `HOLD_CANARY` / `ROLLBACK` decisions logged to `outputs/weight_studio_rollouts/rollout_ledger.jsonl` and exposed as the live `stateset://studio/rollouts` MCP resource.
+- **One-Call Full Production Autopilot (`stateset-agents autopilot`, `POST /api/weight-studio/autopilot/run`, `studio_autopilot_release`):**
+  - Chains the entire StateSet self-improving control plane in one auditable pipeline: **Auto-Heal Logs → Adversarial Red-Team Safety Audit & Surgical Immunization → Paired Canary Shadow Gate → Verified Artifact Export (`lora`/`safetensors`/`gguf`/`hf_card`) + Durable Rollout Ledger + Offline 3D HTML Release Dossier (`autopilot_dossier.html`)**.
+  - Added **CANARY SHADOW GATE & AUTOPILOT** card in 3D Weight Studio UI and expanded MCP servers to **29 stdio tools / 22 live Streamable HTTP tools**, **7 live `stateset://studio/*` resources**, and **7 guided workflow prompts**.
+
 ## [0.84.0] - 2026-11-23 — Live Streamable HTTP MCP Co-Pilot, Red-Team Surgical Immunization & Multi-Model Tournament Lab
 
 ### Added
