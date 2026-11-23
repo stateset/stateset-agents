@@ -2929,6 +2929,46 @@ function bindRedTeamAndMcpBridge() {
   $('btn-run-redteam-audit')?.addEventListener('click', () => runRedTeam(false));
   $('btn-run-redteam-immunize')?.addEventListener('click', () => runRedTeam(true));
 
+  $('btn-run-tournament')?.addEventListener('click', async () => {
+    const pill = $('tournament-status-pill');
+    const summary = $('tournament-result-summary');
+    const btn = $('btn-run-tournament');
+    if (pill) pill.textContent = 'RUNNING…';
+    if (btn) btn.disabled = true;
+    try {
+      const contenders = state.modelId ? [state.modelId] : [];
+      if (state.secondaryModelId && state.secondaryModelId !== state.modelId) {
+        contenders.push(state.secondaryModelId);
+      }
+      const res = await apiPost('/tournament/run', {
+        model_ids: contenders.length ? contenders : null,
+        reward_fn: $('heal-reward-select')?.value || 'customer_support',
+        include_redteam: true,
+        synthesize_merge: true,
+        export_format: 'none',
+      });
+      const champ = res.champion || {};
+      if (pill) pill.textContent = `FIT ${Number(champ.fitness || 0).toFixed(3)}`;
+      if (summary) {
+        summary.textContent =
+          `Champion: ${champ.label || '?'} · Reward ${Number(champ.reward_score || 0).toFixed(3)} · ` +
+          `Safety ${(Number(champ.safety_pass_rate || 0) * 100).toFixed(0)}% ` +
+          `(${res.contender_count} contenders, ${res.merge_candidates_evaluated} merges)`;
+      }
+      renderer.triggerPulse(res.promoted_merge ? 'backprop' : 'forward');
+      if (res.promoted_merge && state.modelId) {
+        await loadModelStructure(state.modelId, state.checkpointId);
+      }
+      showToast(`🏆 Tournament Champion: ${champ.label || 'done'}`, 3200);
+    } catch (err) {
+      if (pill) pill.textContent = 'ERR';
+      if (summary) summary.textContent = err.message;
+      showToast(`Tournament error: ${err.message}`, 4000);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
   // MCP Connect Modal & Live AI-Agent Activity Feed
   const mcpModal = $('mcp-modal');
   const openMcpModal = () => {

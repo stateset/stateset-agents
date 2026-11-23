@@ -154,6 +154,32 @@ Options:
 - `--workspace`, `-w` (default `.`): Workspace root scanned for checkpoints.
 - `--json`: Emit structured JSON audit/immunization summary.
 
+### `stateset-agents tournament`
+
+Run the **Multi-Model Pareto Tournament & Evolutionary Surgical Merge Lab**:
+evaluate multiple workspace checkpoints across StateSet rewards + Red-Team
+safety pass rate, sweep TIES / DARE / SLERP surgical merges of the Top-2
+contenders, promote a merged champion only when it matches or beats the best
+individual parent, and optionally export a verified bundle +
+`tournament_report.html`.
+
+```bash
+stateset-agents tournament --reward customer_support --json
+stateset-agents tournament --models local:outputs/run_a,local:outputs/run_b \
+    --export-format lora --output-name tournament-champ-v1
+```
+
+Options:
+
+- `--models`, `-m`: Comma-separated model IDs (defaults to top discovered models).
+- `--reward`, `-r` (default `customer_support`): Reward scorer (`customer_support`, `tool_calling`, `gsm8k`, `composite`).
+- `--redteam / --no-redteam` (default `--redteam`): Include adversarial Red-Team safety pass rate in Pareto fitness.
+- `--synthesize-merge / --no-synthesize-merge` (default `--synthesize-merge`): Sweep TIES/DARE/SLERP surgical merges of Top-2 contenders.
+- `--export-format`, `-f` (default `none`): Champion artifact format (`none`, `lora`, `safetensors`, `gguf`, `hf_card`).
+- `--output-name`, `-o`: Export directory name under `outputs/weight_studio_exports/`.
+- `--workspace`, `-w` (default `.`): Workspace root scanned for checkpoints.
+- `--json`: Emit structured JSON leaderboard and champion summary.
+
 ### `stateset-agents finetune`
 
 Use the same studio workspace from AI agents through a versioned JSON CLI.
