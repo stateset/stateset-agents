@@ -726,3 +726,149 @@ def test_v93_gepo_vapo_chunked_parity_sql_sandbox_telemetry_callback_and_cli_sho
     assert res.exit_code == 0, res.output
     data = json.loads(res.output)
     assert data["shootout"]["disaggregated_async_rl"]["steps_completed"] == 3
+
+
+def test_v94_multi_domain_sandbox_pool_sleep_wake_sync_rl_cockpit_and_triton_probe(
+    tmp_path: Path,
+) -> None:
+    """Verify MultiDomainSandboxPool, vLLM sleep/wake sync, Live RL Cockpit API/SSE & Triton backend detection."""
+    from fastapi.testclient import TestClient
+
+    from stateset_agents.core.sandbox_pool import (
+        MultiDomainSandboxPool,
+        SandboxEpisodeSpec,
+    )
+    from stateset_agents.core.trajectory import ConversationTurn
+    from stateset_agents.training.chunked_rl_loss import (
+        triton_chunked_logprobs_available,
+    )
+    from stateset_agents.training.disaggregated_rl import (
+        DisaggregatedRLConfig,
+        DisaggregatedRLRuntime,
+    )
+    from stateset_agents.training.studio_callback import StudioTelemetryCallback
+    from stateset_agents.weight_studio import create_studio_app
+    from stateset_agents.weight_studio.live_serving import LiveServingBridge
+
+    # 1. Triton availability probe never crashes on CPU or GPU
+    assert isinstance(triton_chunked_logprobs_available(), bool)
+
+    # 2. MultiDomainSandboxPool running commerce + coding + sql concurrently with per-domain normalization
+    async def policy_fn(obs: str, meta: dict, turn_idx: int) -> ConversationTurn:
+        dom = meta["domain"]
+        fail_mode = bool(meta["scenario"].get("simulate_fail", False))
+        if fail_mode:
+            return ConversationTurn(role="assistant", content="I am unsure.")
+        if dom == "commerce":
+            if turn_idx == 0:
+                return ConversationTurn(
+                    role="assistant",
+                    content='<tool_call>{"name": "issue_refund", "arguments": {"order_id": "ORD-77701", "reason": "damaged"}}</tool_call>',
+                )
+            return ConversationTurn(
+                role="assistant", content="Refund issued for ORD-77701."
+            )
+        if dom == "coding":
+            if turn_idx == 0:
+                return ConversationTurn(
+                    role="assistant",
+                    content='<tool_call>{"name": "write_solution", "arguments": {"code": "def compute_net_revenue(s, p, r):\\n    return (s - r) * p"}}</tool_call>',
+                )
+            if turn_idx == 1:
+                return ConversationTurn(
+                    role="assistant",
+                    content='<tool_call>{"name": "run_tests", "arguments": {}}</tool_call>',
+                )
+            return ConversationTurn(
+                role="assistant", content="All coding tests passed."
+            )
+        if turn_idx == 0:
+            return ConversationTurn(
+                role="assistant",
+                content='<tool_call>{"name": "run_sql", "arguments": {"sql": "SELECT SUM(revenue_cents) AS total FROM sales WHERE region = \'west\'"}}</tool_call>',
+            )
+        return ConversationTurn(role="assistant", content="Total revenue is 25000.")
+
+    pool = MultiDomainSandboxPool(max_concurrency=6)
+    specs = [
+        SandboxEpisodeSpec("c-ok", "commerce", {"target_order_id": "ORD-77701"}),
+        SandboxEpisodeSpec(
+            "c-bad", "commerce", {"target_order_id": "ORD-77701", "simulate_fail": True}
+        ),
+        SandboxEpisodeSpec("k-ok", "coding", {}),
+        SandboxEpisodeSpec("k-bad", "coding", {"simulate_fail": True}),
+        SandboxEpisodeSpec("s-ok", "sql", {"expected_value": 25000}),
+        SandboxEpisodeSpec(
+            "s-bad", "sql", {"expected_value": 25000, "simulate_fail": True}
+        ),
+    ]
+    batch_res = asyncio.run(pool.run_batch(specs, policy_fn, normalize_per_domain=True))
+    assert batch_res["episode_count"] == 6
+    assert set(batch_res["domain_stats"]) == {"commerce", "coding", "sql"}
+    for dom in ("commerce", "coding", "sql"):
+        assert batch_res["domain_stats"][dom]["verified_pass_rate"] == 0.5
+    ok_advs = [
+        e["normalized_advantage"] for e in batch_res["episodes"] if e["verified"]
+    ]
+    bad_advs = [
+        e["normalized_advantage"] for e in batch_res["episodes"] if not e["verified"]
+    ]
+    assert all(a > 0 for a in ok_advs)
+    assert all(a < 0 for a in bad_advs)
+
+    # 3. DisaggregatedRLRuntime vLLM Level-1 Sleep -> Weight Push -> Wake-Up sync
+    endpoints_hit: list[str] = []
+
+    def fake_vllm_http(
+        url: str, payload: dict, headers: dict, timeout: float
+    ) -> tuple[int, dict]:
+        endpoints_hit.append(url)
+        return 200, {"ok": True}
+
+    bridge = LiveServingBridge(tmp_path, http_caller=fake_vllm_http)
+    drt = DisaggregatedRLRuntime(
+        DisaggregatedRLConfig(live_vllm_endpoint="http://127.0.0.1:8000/v1"),
+        workspace_root=tmp_path,
+        serving_bridge=bridge,
+    )
+    sw = drt.sync_vllm_sleep_wake(
+        level=1, weight_push_fn=lambda: {"nccl_broadcast": "ok"}
+    )
+    assert sw is not None and sw["synced"] is True
+    assert endpoints_hit == [
+        "http://127.0.0.1:8000/sleep",
+        "http://127.0.0.1:8000/wake_up",
+    ]
+    assert drt.metrics.weight_syncs_completed == 1
+
+    # 4. Live 3D Weight Studio RL Cockpit API (`POST/GET /api/weight-studio/rl/telemetry`)
+    app = create_studio_app(workspace_root=tmp_path)
+    client = TestClient(app)
+
+    def studio_http_adapter(
+        url: str, payload: dict, headers: dict, timeout: float
+    ) -> tuple[int, dict]:
+        path = url.replace("http://studio.local", "")
+        resp = client.post(path, json=payload, headers=headers)
+        return resp.status_code, resp.json()
+
+    cb = StudioTelemetryCallback(
+        run_name="v94-live-cockpit",
+        workspace_root=tmp_path,
+        studio_url="http://studio.local",
+        http_caller=studio_http_adapter,
+    )
+    out = cb.on_step(
+        1,
+        {"reward": 0.91, "loss": -0.35, "entropy": 1.22},
+        guard_report={"action": "CONTINUE", "alerts": []},
+        sample_traces=[{"prompt": "Order #100", "response": "Verified order #100."}],
+    )
+    assert out["telemetry_pushed"] is True
+    assert out["traces_pushed"] == 1
+
+    r_get = client.get("/api/weight-studio/rl/telemetry")
+    assert r_get.status_code == 200
+    assert r_get.json()["count"] == 1
+    assert r_get.json()["latest"]["run_name"] == "v94-live-cockpit"
+    assert r_get.json()["latest"]["guard_action"] == "CONTINUE"

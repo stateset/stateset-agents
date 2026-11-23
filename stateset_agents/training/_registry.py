@@ -85,6 +85,10 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
         f"{_PKG}.chunked_rl_loss",
         "extract_lm_head_and_backbone",
     ),
+    "triton_chunked_logprobs_available": (
+        f"{_PKG}.chunked_rl_loss",
+        "triton_chunked_logprobs_available",
+    ),
     "DisaggregatedRLConfig": (
         f"{_PKG}.disaggregated_rl",
         "DisaggregatedRLConfig",

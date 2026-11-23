@@ -71,6 +71,7 @@ class StudioRuntime:
             self.inspector.workspace_root, store=self.store
         )
         self.events = StudioEventBus()
+        self.rl_telemetry: list[dict[str, Any]] = []
 
 
 _DEFAULT_RUNTIME: StudioRuntime | None = None
@@ -1412,6 +1413,66 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
     @api.get("/store/stats")
     async def store_stats() -> dict[str, Any]:
         return _rt().store.stats()
+
+    # --- Live RL Training Cockpit & Online Reward-Hacking Guard Stream ---
+
+    @api.post("/rl/telemetry")
+    async def ingest_rl_telemetry(request: Request) -> dict[str, Any]:
+        rt = _rt()
+        try:
+            body = await request.json()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}") from exc
+        if not isinstance(body, dict):
+            raise HTTPException(
+                status_code=400, detail="Payload must be a JSON object."
+            )
+
+        record = dict(body)
+        rt.rl_telemetry.append(record)
+        if len(rt.rl_telemetry) > 200:
+            del rt.rl_telemetry[:-200]
+
+        step = record.get("step", len(rt.rl_telemetry))
+        run_name = str(record.get("run_name") or "rl-run")
+        reward = record.get("reward")
+        loss = record.get("loss")
+        entropy = record.get("entropy")
+        guard_action = str(record.get("guard_action") or "CONTINUE")
+        summary_parts = [f"{run_name} step {step}"]
+        if reward is not None:
+            summary_parts.append(f"R={float(reward):.3f}")
+        if loss is not None:
+            summary_parts.append(f"L={float(loss):.4f}")
+        if entropy is not None:
+            summary_parts.append(f"H={float(entropy):.3f}")
+        summary_parts.append(f"Guard={guard_action}")
+
+        rt.events.publish(
+            "rl_step",
+            source="rl_trainer",
+            tool="studio_rl_telemetry",
+            summary=" · ".join(summary_parts),
+            mutated=False,
+            pulse="backprop",
+            payload=record,
+        )
+        return {
+            "accepted": True,
+            "buffered_steps": len(rt.rl_telemetry),
+            "guard_action": guard_action,
+        }
+
+    @api.get("/rl/telemetry")
+    async def get_rl_telemetry(limit: int = Query(50, ge=1, le=200)) -> dict[str, Any]:
+        rt = _rt()
+        rows = rt.rl_telemetry[-limit:]
+        latest = rows[-1] if rows else None
+        return {
+            "count": len(rows),
+            "latest": latest,
+            "steps": rows,
+        }
 
     @api.post("/traces/calibration-audit")
     async def traces_calibration_audit(req: CalibrationAuditRequest) -> dict[str, Any]:

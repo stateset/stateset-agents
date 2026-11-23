@@ -479,6 +479,18 @@
             </div>
             <div id="live-ab-result-summary" class="empty-hint">Real-token latency (p50/p95), StateSet reward Δ &amp; 95% CI against live servers.</div>
           </div>
+
+          <!-- Live RL Training Cockpit & Online Reward-Hacking Guard -->
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">LIVE RL COCKPIT &amp; HACKING GUARD</span>
+              <span id="rl-cockpit-pill" class="mono-accent">IDLE</span>
+            </div>
+            <div class="op-action-row mb-6">
+              <button id="btn-rl-cockpit-pulse" class="mini-btn full" title="Send a live StudioTelemetryCallback RL step + Hacking Guard pulse">📡 Emit RL Step Pulse</button>
+            </div>
+            <div id="rl-cockpit-summary" class="empty-hint">Streams live GSPO/DAPO/GEPO/VAPO loss, reward, entropy &amp; OnlineRewardHackingGuard verdicts over SSE.</div>
+          </div>
         </section>
 
         <!-- TAB 2: FINETUNING WORKBENCH & LIVE PYTORCH TRAINER -->

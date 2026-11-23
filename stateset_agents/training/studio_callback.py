@@ -90,34 +90,52 @@ class StudioTelemetryCallback:
         self.steps_logged += 1
 
         pushed = 0
-        if self.studio_url and sample_traces:
+        telemetry_pushed = False
+        if self.studio_url:
             headers = (
                 {"Authorization": f"Bearer {self.studio_token}"}
                 if self.studio_token
                 else {}
             )
-            url = f"{self.studio_url}/api/weight-studio/traces/ingest"
+            # 1. Push live RL step & OnlineRewardHackingGuard telemetry to 3D RL Cockpit
             try:
-                status, _body = self._http_post(
-                    url,
-                    {
-                        "payload": {"traces": sample_traces},
-                        "reward_fn": self.reward_fn,
-                    },
+                t_status, _ = self._http_post(
+                    f"{self.studio_url}/api/weight-studio/rl/telemetry",
+                    record,
                     headers,
                     self.timeout,
                 )
-                if 200 <= status < 300:
-                    pushed = len(sample_traces)
-                    self.traces_pushed += pushed
-                else:
+                telemetry_pushed = 200 <= t_status < 300
+                if not telemetry_pushed:
                     self.push_errors += 1
             except Exception:
                 self.push_errors += 1
 
+            # 2. Optionally push sampled rollout traces to durable OTLP/SQLite store
+            if sample_traces:
+                url = f"{self.studio_url}/api/weight-studio/traces/ingest"
+                try:
+                    status, _body = self._http_post(
+                        url,
+                        {
+                            "payload": {"traces": sample_traces},
+                            "reward_fn": self.reward_fn,
+                        },
+                        headers,
+                        self.timeout,
+                    )
+                    if 200 <= status < 300:
+                        pushed = len(sample_traces)
+                        self.traces_pushed += pushed
+                    else:
+                        self.push_errors += 1
+                except Exception:
+                    self.push_errors += 1
+
         return {
             "logged": True,
             "metrics_path": str(path),
+            "telemetry_pushed": telemetry_pushed,
             "traces_pushed": pushed,
             "record": record,
         }

@@ -308,6 +308,51 @@ export function initAutopilotAndMcpPanel({
   });
 
   // 3c. Live vLLM / Ollama Shadow A/B Bridge
+  // 3d. Live RL Training Cockpit & Online Reward-Hacking Guard HUD
+  const renderRlTelemetry = (rec) => {
+    if (!rec) return;
+    const pill = $('rl-cockpit-pill');
+    const summary = $('rl-cockpit-summary');
+    const guard = rec.guard_action || 'CONTINUE';
+    if (pill) pill.textContent = `STEP ${rec.step ?? '?'} · ${guard}`;
+    if (summary) {
+      const rTxt = rec.reward !== undefined ? `R=${Number(rec.reward).toFixed(3)}` : '';
+      const lTxt = rec.loss !== undefined ? `L=${Number(rec.loss).toFixed(4)}` : '';
+      const hTxt = rec.entropy !== undefined ? `H=${Number(rec.entropy).toFixed(3)}` : '';
+      const parts = [rec.run_name || 'rl-run', rTxt, lTxt, hTxt, `Guard: ${guard}`].filter(Boolean);
+      summary.textContent = parts.join(' · ');
+    }
+  };
+
+  (async () => {
+    try {
+      const t = await apiGet('/rl/telemetry?limit=1');
+      if (t && t.latest) renderRlTelemetry(t.latest);
+    } catch (_err) {
+      // Optional on initial boot
+    }
+  })();
+
+  let _simRlStep = 0;
+  $('btn-rl-cockpit-pulse')?.addEventListener('click', async () => {
+    _simRlStep += 1;
+    try {
+      const payload = {
+        run_name: 'stateset-chunked-gspo',
+        step: _simRlStep,
+        reward: Number((0.68 + Math.min(0.28, _simRlStep * 0.04)).toFixed(3)),
+        loss: Number((-0.12 - _simRlStep * 0.03).toFixed(4)),
+        entropy: Number((1.45 - Math.min(0.3, _simRlStep * 0.02)).toFixed(3)),
+        guard_action: 'CONTINUE',
+      };
+      await apiPost('/rl/telemetry', payload);
+      renderRlTelemetry(payload);
+      renderer.triggerPulse('backprop');
+      showToast(`📡 RL Step ${_simRlStep} streamed (Guard: CONTINUE)`, 2200);
+    } catch (err) {
+      showToast(`RL telemetry error: ${err.message}`, 3200);
+    }
+  });
   $('btn-run-live-ab')?.addEventListener('click', async () => {
     const pill = $('live-ab-status-pill');
     const summary = $('live-ab-result-summary');
@@ -420,6 +465,9 @@ export function initAutopilotAndMcpPanel({
           setTimeout(() => {
             dot.style.boxShadow = 'none';
           }, 1200);
+        }
+        if (ev.type === 'rl_step' && ev.payload) {
+          renderRlTelemetry(ev.payload);
         }
         if (ev.pulse) renderer.triggerPulse(ev.pulse);
         if (ev.summary) showToast(`🤖 MCP Agent: ${ev.summary}`, 2600);
