@@ -723,6 +723,16 @@ export class WeightStudioRenderer {
       this.cam.goalYaw = 0.78;
       this.cam.goalPitch = 0.44;
       this.cam.goalDistance = 35.5;
+    } else if (this.viewMode === 'attention') {
+      this.cam.goalTarget = vec3(0, 1.2, 0);
+      this.cam.goalYaw = 0.56;
+      this.cam.goalPitch = 0.62;
+      this.cam.goalDistance = this.attentionHeadFilter >= 0 ? 19.5 : 30.5;
+    } else if (this.viewMode === 'residual') {
+      this.cam.goalTarget = vec3(0, 2.2, 0);
+      this.cam.goalYaw = 0.74;
+      this.cam.goalPitch = 0.38;
+      this.cam.goalDistance = 32.0;
     }
   }
 
@@ -774,7 +784,7 @@ export class WeightStudioRenderer {
     if (this.viewMode === 'microscope') this.rebuildScene(false);
   }
 
-  setData({ structure, tensorDetail, binaryGrid, trajectory, circuitData, selectedTensorName }) {
+  setData({ structure, tensorDetail, binaryGrid, trajectory, circuitData, attentionData, attentionHeadFilter, residualData, selectedTensorName }) {
     const animateMorph = (tensorDetail !== undefined || structure !== undefined);
     if (structure !== undefined) this.structure = structure;
     if (tensorDetail !== undefined) {
@@ -786,6 +796,9 @@ export class WeightStudioRenderer {
     if (binaryGrid !== undefined) this.binaryGrid = binaryGrid;
     if (trajectory !== undefined) this.trajectory = trajectory;
     if (circuitData !== undefined) this.circuitData = circuitData;
+    if (attentionData !== undefined) this.attentionData = attentionData;
+    if (attentionHeadFilter !== undefined) this.attentionHeadFilter = attentionHeadFilter;
+    if (residualData !== undefined) this.residualData = residualData;
     if (selectedTensorName !== undefined) this.selectedTensorName = selectedTensorName;
     this.rebuildScene(animateMorph);
   }
@@ -871,6 +884,10 @@ export class WeightStudioRenderer {
       this._buildTrajectoryScene(opaque, trans, curves, pushInst);
     } else if (this.viewMode === 'circuit' && this.circuitData) {
       this._buildCircuitScene(opaque, trans, curves, pushInst);
+    } else if (this.viewMode === 'attention' && this.attentionData) {
+      this._buildAttentionScene(opaque, trans, curves, pushInst);
+    } else if (this.viewMode === 'residual' && this.residualData) {
+      this._buildResidualScene(opaque, trans, curves, pushInst);
     } else if (this.structure) {
       this._buildArchitectureScene(opaque, trans, curves, pushInst);
     }
@@ -1703,6 +1720,305 @@ export class WeightStudioRenderer {
     }
   }
 
+  _buildAttentionScene(opaque, trans, curves, pushInst) {
+    const data = this.attentionData;
+    if (!data || !Array.isArray(data.heads) || !data.heads.length) return;
+    const tokens = data.tokens || [];
+    const T = Math.max(2, tokens.length);
+    const singleHead = typeof this.attentionHeadFilter === 'number' && this.attentionHeadFilter >= 0
+      ? data.heads.find((h) => h.head === this.attentionHeadFilter) || data.heads[0]
+      : null;
+
+    this.glowCenter = [0, 0, 0];
+    this.glowColor = [0.06, 0.72, 0.84];
+
+    const attnColor = (w) => {
+      const t = clamp(w, 0, 1);
+      if (t < 0.35) {
+        const k = t / 0.35;
+        return [lerp(0.08, 0.08, k), lerp(0.14, 0.52, k), lerp(0.24, 0.82, k), 0.10 + k * 0.25];
+      }
+      if (t < 0.72) {
+        const k = (t - 0.35) / 0.37;
+        return [lerp(0.08, 0.95, k), lerp(0.52, 0.72, k), lerp(0.82, 0.22, k), 0.35 + k * 0.45];
+      }
+      const k = (t - 0.72) / 0.28;
+      return [lerp(0.95, 1.0, k), lerp(0.72, 0.96, k), lerp(0.22, 0.68, k), 0.80 + k * 0.65];
+    };
+
+    if (singleHead) {
+      // Single-Head 3D Attention Cathedral (high-detail T x T causal crystal stage)
+      const stageW = 14.0;
+      const cell = stageW / T;
+      const start = -stageW * 0.5 + cell * 0.5;
+      this.footprintSize = [stageW * 0.65, stageW * 0.65];
+
+      pushInst(opaque, 0, 0.14, 0, stageW + 1.2, 0.28, stageW + 1.2, 0.22, 0.84, 0.09, 0.13, 0.20, 0.06, 0, 1, 0, 0);
+      this.spatialAnchors.push({
+        pos: [0, 5.2, -stageW * 0.5 - 0.8],
+        text: `${singleHead.label} · ${singleHead.role} (H=${singleHead.entropy})`,
+        kind: 'cyan',
+      });
+
+      const mat = singleHead.matrix || [];
+      for (let qi = 0; qi < T; qi++) {
+        const z = start + qi * cell;
+        this.spatialAnchors.push({
+          pos: [-stageW * 0.5 - 1.15, 0.65, z],
+          text: `Q:${(tokens[qi] || '').slice(0, 8)}`,
+          kind: 'amber',
+        });
+        this.spatialAnchors.push({
+          pos: [start + qi * cell, 0.65, -stageW * 0.5 - 1.15],
+          text: `K:${(tokens[qi] || '').slice(0, 8)}`,
+          kind: 'cyan',
+        });
+        const row = mat[qi] || [];
+        for (let ki = 0; ki < T; ki++) {
+          const x = start + ki * cell;
+          if (ki > qi) {
+            // Causal mask glass tile
+            pushInst(trans, x, 0.30, z, cell * 0.82, 0.05, cell * 0.82, 0.18, 0.4, 0.16, 0.22, 0.34, 0.02, 0, 0.16, 0, 0);
+            continue;
+          }
+          const w = clamp(Number(row[ki] || 0), 0, 1);
+          const h = 0.16 + Math.pow(w, 0.72) * 4.6;
+          const [r, g, b, emit] = attnColor(w);
+          const isPeak = singleHead.peak_pair && singleHead.peak_pair.query_idx === qi && singleHead.peak_pair.key_idx === ki;
+          pushInst(
+            opaque,
+            x,
+            0.28 + h * 0.5,
+            z,
+            cell * 0.76,
+            h,
+            cell * 0.76,
+            0.16,
+            0.62,
+            r,
+            g,
+            b,
+            isPeak ? emit + 0.45 : emit,
+            isPeak ? 2 : 0,
+            1,
+            (qi + ki) / (2 * T),
+            w
+          );
+        }
+      }
+
+      if (singleHead.peak_pair) {
+        const pk = singleHead.peak_pair;
+        const p0 = [-stageW * 0.5 - 0.4, 1.0, start + pk.query_idx * cell];
+        const p3 = [start + pk.key_idx * cell, 0.4 + Math.pow(pk.weight, 0.72) * 4.6, start + pk.query_idx * cell];
+        const lift = Math.max(p0[1], p3[1]) + 1.8;
+        curves.push({
+          p0,
+          p1: [lerp(p0[0], p3[0], 0.35), lift, lerp(p0[2], p3[2], 0.35)],
+          p2: [lerp(p0[0], p3[0], 0.70), lift, lerp(p0[2], p3[2], 0.70)],
+          p3,
+          radius: 0.065,
+          lane: 2,
+          intensity: 1.35,
+        });
+      }
+      return;
+    }
+
+    // Multi-Head 3D Gallery (4 x 2 floating attention wafers)
+    const heads = data.heads.slice(0, 8);
+    const cols = Math.min(4, heads.length);
+    const rows = Math.ceil(heads.length / cols);
+    const cardSpan = 6.2;
+    const gapX = 7.4;
+    const gapZ = 7.6;
+    const cell = cardSpan / T;
+    this.footprintSize = [cols * gapX * 0.55, rows * gapZ * 0.58];
+
+    heads.forEach((hd, idx) => {
+      const gx = idx % cols;
+      const gz = Math.floor(idx / cols);
+      const cx = (gx - (cols - 1) * 0.5) * gapX;
+      const cz = (gz - (rows - 1) * 0.5) * gapZ;
+
+      pushInst(opaque, cx, 0.14, cz, cardSpan + 0.6, 0.26, cardSpan + 0.6, 0.22, 0.86, 0.08, 0.12, 0.20, 0.06, 0, 1, idx / heads.length, 0);
+      this.hitBoxes.push({
+        kind: 'attention_head',
+        head: hd.head,
+        label: hd.label,
+        role: hd.role,
+        entropy: hd.entropy,
+        sink_ratio: hd.sink_ratio,
+        peak_pair: hd.peak_pair,
+        min: [cx - cardSpan * 0.52, 0.0, cz - cardSpan * 0.52],
+        max: [cx + cardSpan * 0.52, 3.6, cz + cardSpan * 0.52],
+      });
+      this.spatialAnchors.push({
+        pos: [cx, 3.65, cz - cardSpan * 0.46],
+        text: `${hd.label} · ${hd.role}`,
+        kind: idx % 2 === 0 ? 'cyan' : 'amber',
+      });
+
+      const mat = hd.matrix || [];
+      const x0 = cx - cardSpan * 0.5 + cell * 0.5;
+      const z0 = cz - cardSpan * 0.5 + cell * 0.5;
+      for (let qi = 0; qi < T; qi++) {
+        const row = mat[qi] || [];
+        for (let ki = 0; ki <= qi; ki++) {
+          const w = clamp(Number(row[ki] || 0), 0, 1);
+          const h = 0.10 + Math.pow(w, 0.75) * 3.1;
+          const [r, g, b, emit] = attnColor(w);
+          pushInst(
+            opaque,
+            x0 + ki * cell,
+            0.27 + h * 0.5,
+            z0 + qi * cell,
+            cell * 0.76,
+            h,
+            cell * 0.76,
+            0.18,
+            0.60,
+            r,
+            g,
+            b,
+            emit,
+            0,
+            1,
+            idx / Math.max(heads.length, 1),
+            w
+          );
+        }
+      }
+
+      if (hd.peak_pair) {
+        const pk = hd.peak_pair;
+        const p0 = [x0 + pk.key_idx * cell, 0.35 + Math.pow(pk.weight, 0.75) * 3.1, z0 + pk.query_idx * cell];
+        const p3 = [cx, 0.32, cz - cardSpan * 0.48];
+        curves.push({
+          p0,
+          p1: [lerp(p0[0], p3[0], 0.35), p0[1] + 1.4, lerp(p0[2], p3[2], 0.35)],
+          p2: [lerp(p0[0], p3[0], 0.70), p0[1] + 1.2, lerp(p0[2], p3[2], 0.70)],
+          p3,
+          radius: 0.036,
+          lane: idx % 3,
+          intensity: 0.95,
+        });
+      }
+    });
+  }
+
+  _buildResidualScene(opaque, trans, curves, pushInst) {
+    const data = this.residualData;
+    if (!data || !Array.isArray(data.stations) || !data.stations.length) return;
+    const stations = data.stations;
+    const n = stations.length;
+    const zStep = clamp(24.0 / Math.max(n - 1, 1), 1.15, 2.5);
+    const totalZ = (n - 1) * zStep;
+    const zStart = -totalZ * 0.5;
+    this.footprintSize = [11.0, Math.max(8, totalZ * 0.58 + 2.5)];
+    this.glowCenter = [0, 0, 0];
+    this.glowColor = [0.64, 0.90, 0.21];
+
+    const maxNorm = Math.max(
+      1e-4,
+      ...stations.map((s) => Math.max(s.base_norm || 0, s.edited_norm || 0))
+    );
+    const basePts = [];
+    const editPts = [];
+
+    stations.forEach((st, idx) => {
+      const z = zStart + idx * zStep;
+      const bx = (st.base_coord?.[0] || 0) * 4.2 - 1.6;
+      const by = 1.2 + ((st.base_norm || 1) / maxNorm) * 3.0;
+      const ex = (st.edited_coord?.[0] || 0) * 4.2 + 1.6 + Math.min(2.8, (st.cosine_drift || 0) * 14.0);
+      const ey = 1.2 + ((st.edited_norm || 1) / maxNorm) * 3.0 + (st.steered ? 0.55 : 0);
+
+      basePts.push([bx, by, z]);
+      editPts.push([ex, ey, z]);
+
+      // Layer deck wafer spanning base -> active
+      pushInst(opaque, 0, 0.12, z, 13.5, 0.20, Math.min(1.05, zStep * 0.62), 0.24, 0.86, 0.08, 0.12, 0.18, 0.04, 0, 1, idx / Math.max(n, 1), 0);
+
+      // Split Attention (amber) vs. MLP (emerald) contribution pillars on the flanks
+      const attnH = 0.4 + (st.attn_ratio || 0.5) * 2.4;
+      const mlpH = 0.4 + (st.mlp_ratio || 0.5) * 2.4;
+      pushInst(opaque, -5.8, 0.22 + attnH * 0.5, z, 0.68, attnH, 0.56, 0.20, 0.72, 0.95, 0.66, 0.18, 0.35, 0, 1, idx / n, st.attn_ratio);
+      pushInst(opaque, 5.8, 0.22 + mlpH * 0.5, z, 0.68, mlpH, 0.56, 0.20, 0.64, 0.16, 0.85, 0.58, 0.38, 0, 1, idx / n, st.mlp_ratio);
+
+      // Base residual node (cool cyan-silver crystal)
+      pushInst(opaque, bx, by, z, 0.62, 0.62, 0.62, 0.16, 0.76, 0.32, 0.74, 0.96, 0.48, 0, 1, idx / n, 0.3);
+
+      // Active Edited/Steered residual node (glowing lime/gold/rose if steered or patched)
+      const isHot = st.steered || st.patched || (st.cosine_drift || 0) > 0.04;
+      const er = st.patched ? 0.98 : st.steered ? 0.98 : 0.64;
+      const eg = st.patched ? 0.32 : st.steered ? 0.76 : 0.92;
+      const eb = st.patched ? 0.48 : st.steered ? 0.18 : 0.24;
+      pushInst(opaque, ex, ey, z, isHot ? 0.92 : 0.72, isHot ? 0.92 : 0.72, isHot ? 0.92 : 0.72, 0.12, 0.55, er, eg, eb, isHot ? 0.95 : 0.62, isHot ? 2 : 0, 1, idx / n, Math.min(1, (st.cosine_drift || 0) * 10));
+
+      // Translucent vertical drift tether from floor to active node
+      pushInst(trans, ex, ey * 0.5, z, 0.16, ey, 0.16, 0.2, 0.4, er, eg, eb, 0.22, 0, 0.34, idx / n, 0);
+
+      // Hitbox for rich hover tooltip
+      this.hitBoxes.push({
+        kind: 'residual_station',
+        ...st,
+        min: [Math.min(bx, ex) - 0.8, 0.0, z - 0.6],
+        max: [Math.max(bx, ex) + 0.8, Math.max(by, ey) + 0.9, z + 0.6],
+      });
+
+      // Screen-projected Logit Lens top-token beacons (every layer if <=12, else every 2nd + last + peak)
+      const showLabel = n <= 12 || idx % 2 === 0 || idx === n - 1 || st.layer === data.peak_drift_layer || st.steered || st.patched;
+      if (showLabel) {
+        const tok = (st.edited_top_token || '').slice(0, 10) || '—';
+        this.spatialAnchors.push({
+          pos: [ex, ey + 0.88, z],
+          text: `${st.name} → "${tok}"`,
+          kind: st.patched ? 'rose' : st.steered ? 'amber' : 'emerald',
+        });
+      }
+    });
+
+    // Twin Bezier highways connecting Base Stream (lane 0 cyan) and Active Stream (lane 4 emerald/gold)
+    for (let i = 0; i < n - 1; i++) {
+      const b0 = basePts[i], b1 = basePts[i + 1];
+      curves.push({
+        p0: b0,
+        p1: [lerp(b0[0], b1[0], 0.33), lerp(b0[1], b1[1], 0.33) + 0.18, lerp(b0[2], b1[2], 0.33)],
+        p2: [lerp(b0[0], b1[0], 0.66), lerp(b0[1], b1[1], 0.66) + 0.18, lerp(b0[2], b1[2], 0.66)],
+        p3: b1,
+        radius: 0.048,
+        lane: 0,
+        intensity: 0.72,
+      });
+
+      const e0 = editPts[i], e1 = editPts[i + 1];
+      curves.push({
+        p0: e0,
+        p1: [lerp(e0[0], e1[0], 0.33), lerp(e0[1], e1[1], 0.33) + 0.26, lerp(e0[2], e1[2], 0.33)],
+        p2: [lerp(e0[0], e1[0], 0.66), lerp(e0[1], e1[1], 0.66) + 0.26, lerp(e0[2], e1[2], 0.66)],
+        p3: e1,
+        radius: 0.068,
+        lane: 4,
+        intensity: 1.15,
+      });
+
+      // Drift bridge arc between Base & Active where divergence spikes
+      const st = stations[i];
+      if ((st.cosine_drift || 0) > 0.015 || st.steered || st.patched) {
+        const lift = Math.max(b0[1], e0[1]) + 0.9;
+        curves.push({
+          p0: b0,
+          p1: [lerp(b0[0], e0[0], 0.35), lift, b0[2]],
+          p2: [lerp(b0[0], e0[0], 0.70), lift, e0[2]],
+          p3: e0,
+          radius: 0.038,
+          lane: 3,
+          intensity: 1.05,
+        });
+      }
+    }
+  }
+
   _uploadInstances(opaque, baseOpaque, trans, curves, animateMorph = true) {
     const gl = this.gl;
     const nextGoal = new Float32Array(opaque);
@@ -2208,7 +2524,7 @@ export class WeightStudioRenderer {
       return null;
     }
 
-    if (this.viewMode === 'stack' || this.viewMode === 'circuit') {
+    if (this.viewMode === 'stack' || this.viewMode === 'circuit' || this.viewMode === 'attention' || this.viewMode === 'residual') {
       let best = null;
       let bestT = Infinity;
       for (const hb of this.hitBoxes) {
@@ -2220,7 +2536,7 @@ export class WeightStudioRenderer {
       }
       if (best) {
         return {
-          kind: 'tensor',
+          kind: best.kind || 'tensor',
           ...best,
           screenX: clientX - rect.left,
           screenY: clientY - rect.top,
@@ -2294,8 +2610,8 @@ export class WeightStudioRenderer {
       }
 
       const hit = this._pickAtClient(e.clientX, e.clientY);
-      const prevKey = this.hoveredHit ? `${this.hoveredHit.tensorName}:${this.hoveredHit.gridRow}:${this.hoveredHit.gridCol}` : '';
-      const nextKey = hit ? `${hit.tensorName}:${hit.gridRow}:${hit.gridCol}` : '';
+      const prevKey = this.hoveredHit ? `${this.hoveredHit.tensorName}:${this.hoveredHit.gridRow}:${this.hoveredHit.gridCol}:${this.hoveredHit.head}:${this.hoveredHit.layer}` : '';
+      const nextKey = hit ? `${hit.tensorName}:${hit.gridRow}:${hit.gridCol}:${hit.head}:${hit.layer}` : '';
       this.hoveredHit = hit;
       this.canvas.style.cursor = hit ? (this.brushMode && this.viewMode === 'microscope' ? 'crosshair' : 'pointer') : 'grab';
       if (prevKey !== nextKey && (this.viewMode === 'stack' || this.viewMode === 'microscope')) {
@@ -2314,7 +2630,9 @@ export class WeightStudioRenderer {
       const moved = Math.hypot(e.clientX - downX, e.clientY - downY);
       if (moved < 5 && e.button === 0) {
         const hit = this._pickAtClient(e.clientX, e.clientY);
-        if (hit && hit.kind === 'tensor' && this.callbacks.onSelectTensor) {
+        if (hit && hit.kind === 'attention_head' && this.callbacks.onSelectAttentionHead) {
+          this.callbacks.onSelectAttentionHead(hit.head);
+        } else if (hit && hit.kind === 'tensor' && this.callbacks.onSelectTensor) {
           this.callbacks.onSelectTensor(hit.tensorName, false);
         }
       }

@@ -259,4 +259,23 @@ if gate["verdict"] == "GO":
 | [`stateset_agents/weight_studio/inference_engine.py`](../stateset_agents/weight_studio/inference_engine.py) | Real PyTorch forward hooks, remote vLLM probe, Logit Lens, Causal Patching, CAA Steering extraction, Causal Circuit discovery, Batch Eval Gate. |
 | [`stateset_agents/weight_studio/router.py`](../stateset_agents/weight_studio/router.py) | FastAPI router, schemas, static SPA mounting, `create_studio_app()`. |
 | [`stateset_agents/weight_studio/static/`](../stateset_agents/weight_studio/static/) | Custom WebGL2 PBR renderer (`renderer.js`, `shaders.js`, `math3d.js`, `charts.js`, `app.js`, `index.html`, `styles.css`). |
-| [`tests/unit/test_weight_studio.py`](../tests/unit/test_weight_studio.py) | Unit and FastAPI integration test suite covering all Studio v1–v3 features. |
+| [`tests/unit/test_weight_studio.py`](../tests/unit/test_weight_studio.py) | Unit and FastAPI integration test suite covering all Studio v1–v6 features. |
+
+## Studio v6 Capabilities
+
+- **6th 3D WebGL2 Topology — `Attention 3D` (Hotkey `6`):** Interactive 8-head causal attention gallery and single-head 3D attention cathedral (`POST /api/weight-studio/inference/attention`) with causal mask glass floor, token axis labels, and glowing peak query→key Bezier arcs.
+- **Diff-as-LoRA SVD Adapter Export (`POST /api/weight-studio/export/lora`):** Factorizes any active surgical diff `ΔW = W_edited - W_base` via truncated SVD into a reload-verified PEFT LoRA adapter (`adapter_model.safetensors`, `adapter_config.json`, `lora_extraction_manifest.json`) with compression ratio and reconstruction error telemetry.
+- **GGUF v3 + Ollama Export (`POST /api/weight-studio/export/gguf`):** Writes a header-verified binary GGUF v3 file (`Q8_0`, `F16`, or `F32`) alongside an Ollama `Modelfile` and ready-to-run `ollama create` / `llama-cli` commands.
+- **Custom JSONL Eval Gate + StateSet Reward Scorers (`GET /eval/rewards`, `POST /eval/run`):** Score against `composite`, `customer_support`, `tool_calling`, or `gsm8k` with optional inline JSONL eval prompts, paired Win/Tie/Loss counts, and 95% bootstrap confidence intervals.
+- **Multi-Edit A/B Arena (`POST /api/weight-studio/arena/compare`):** Non-destructively benchmark Base vs. Active Edited vs. NF4 / Wanda / SVD candidates side-by-side without mutating session edit history.
+- **Pretrained SAE Atlas & Local Decoder Loader (`GET /sae/dictionaries`, `POST /sae/load`):** Switch between StateSet Built-in, Gemma Scope 2B, Llama Scope 8B, Qwen Scope, or any local `.safetensors` / `.npz` SAE decoder matrix.
+- **Command Palette (`Ctrl+K` / `⌘K`) & 8 MCP Tools:** Fuzzy-search any 3D view, lighting rig, surgical op, or export target, plus two new MCP tools (`studio_export_lora`, `studio_arena_compare`).
+
+## Studio v7 Capabilities
+
+- **7th 3D WebGL2 Topology — `Residual 3D` (Hotkey `7`):** Live twin-ribbon **Base vs. Active Edited/Steered Residual Stream Highway** (`POST /api/weight-studio/inference/residual`) with 2D PCA trajectory divergence, per-layer Attention vs. MLP contribution pillars, drift bridge arcs, and floating Logit Lens top-token beacons.
+- **Interactive Click-to-Zoom & Click-to-Ablate in `Attention 3D`:** Hover any floating 3D attention head wafer for entropy, sink ratio, and peak token pair; click a wafer to zoom into its Single-Head 3D Cathedral; click **✂ Ablate Head** to surgically ablate that head in real time (undoable).
+- **Surgical Auto-Repair (`POST /api/weight-studio/edits/auto-repair`):** Iteratively dials back high-drift edits or applies stabilizing P99 outlier clamping until the Pre-Export Batch Eval Gate flips back to **`GO`**.
+- **Hugging Face Model Card & Hub Publisher (`POST /api/weight-studio/export/hf-card`):** Generates a YAML-frontmatter `README.md` Model Card (with eval gate scorecard, surgical lineage, reproducible `studio_recipe.json`, and optional `huggingface_hub` upload).
+- **Persistent Workbench Sessions (`GET /sessions`, `POST /sessions/save`, `POST /sessions/load`):** Save and restore named Studio sessions across server restarts.
+- **10 Studio MCP Tools:** Added `studio_residual_stream` and `studio_save_session` to [mcp_server.py](../stateset_agents/mcp_server.py).

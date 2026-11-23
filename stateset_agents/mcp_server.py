@@ -476,6 +476,100 @@ def studio_eval_and_export(
         return _err(exc)
 
 
+def studio_export_lora(
+    model_id: str,
+    export_name: str = "surgical-lora-v1",
+    rank: int = 16,
+    alpha: int = 32,
+    workspace: str = ".",
+    checkpoint_id: str | None = None,
+) -> dict[str, Any]:
+    """Factorize active Weight Studio surgical diffs ΔW via SVD into a reload-verified PEFT LoRA adapter."""
+    try:
+        rt = _get_mcp_studio_runtime(workspace)
+        return dict(
+            rt.editor.export_diff_as_lora(
+                model_id,
+                export_name,
+                rank=rank,
+                alpha=alpha,
+                checkpoint_id=checkpoint_id,
+            )
+        )
+    except Exception as exc:
+        return _err(exc)
+
+
+def studio_arena_compare(
+    model_id: str,
+    prompt: str,
+    candidates: list[dict[str, Any]] | None = None,
+    reward_fn: str = "composite",
+    system_prompt: str = "",
+    workspace: str = ".",
+    checkpoint_id: str | None = None,
+) -> dict[str, Any]:
+    """Compare Base, Active Edited, and candidate surgical edits side-by-side without mutating session history."""
+    try:
+        rt = _get_mcp_studio_runtime(workspace)
+        return dict(
+            rt.inference.compare_arena_candidates(
+                model_id,
+                prompt,
+                candidates,
+                system_prompt=system_prompt,
+                checkpoint_id=checkpoint_id,
+                reward_fn=reward_fn,
+            )
+        )
+    except Exception as exc:
+        return _err(exc)
+
+
+def studio_residual_stream(
+    model_id: str,
+    prompt: str,
+    system_prompt: str = "",
+    workspace: str = ".",
+    checkpoint_id: str | None = None,
+) -> dict[str, Any]:
+    """Trace Base vs. Active Edited residual hidden-state drift, Attention/MLP split, and Logit Lens convergence across every layer."""
+    try:
+        rt = _get_mcp_studio_runtime(workspace)
+        return dict(
+            rt.inference.compute_residual_stream_3d(
+                model_id,
+                prompt,
+                checkpoint_id=checkpoint_id,
+                system_prompt=system_prompt,
+            )
+        )
+    except Exception as exc:
+        return _err(exc)
+
+
+def studio_save_session(
+    session_name: str,
+    model_id: str,
+    metadata: dict[str, Any] | None = None,
+    workspace: str = ".",
+    checkpoint_id: str | None = None,
+) -> dict[str, Any]:
+    """Persist a named 3D Weight Studio workbench session (recipe + steering/eval metadata) to disk."""
+    try:
+        rt = _get_mcp_studio_runtime(workspace)
+        return dict(
+            rt.editor.save_session(
+                session_name,
+                model_id=model_id,
+                checkpoint_id=checkpoint_id,
+                metadata=metadata,
+            )
+        )
+    except Exception as exc:
+        return _err(exc)
+
+
 # ---------------------------------------------------------------------------
 # Server factory
 # ---------------------------------------------------------------------------
@@ -514,6 +608,10 @@ def create_server() -> Any:
     mcp.tool()(studio_extract_steering)
     mcp.tool()(studio_discover_circuit)
     mcp.tool()(studio_eval_and_export)
+    mcp.tool()(studio_export_lora)
+    mcp.tool()(studio_arena_compare)
+    mcp.tool()(studio_residual_stream)
+    mcp.tool()(studio_save_session)
 
     return mcp
 

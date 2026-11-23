@@ -113,6 +113,13 @@ async function init() {
       await selectTensor(tensorName, { focusCamera: !openMicroscope });
       if (openMicroscope) setViewMode('microscope');
     },
+    onSelectAttentionHead: (headIdx) => {
+      const sel = $('attn-head-select');
+      if (sel) sel.value = String(headIdx);
+      renderer.setData({ attentionHeadFilter: headIdx });
+      renderer._fitCameraToViewMode();
+      showToast(`Focused Attention Head H${headIdx} — click ✂ Ablate Head to perform live head surgery`);
+    },
     onHover: (hit) => renderHoverTooltip(hit),
     onProjection: (pt, hit) => render3DCallout(pt, hit),
     onSpatialLabels: (labels) => renderSpatialLabels(labels),
@@ -574,6 +581,8 @@ function setViewMode(mode) {
   $('microscope-hud').classList.toggle('hidden', mode !== 'microscope');
   $('spectral-hud').classList.toggle('hidden', mode !== 'spectral');
   $('circuit-hud').classList.toggle('hidden', mode !== 'circuit');
+  $('attention-hud')?.classList.toggle('hidden', mode !== 'attention');
+  $('residual-hud')?.classList.toggle('hidden', mode !== 'residual');
 
   if (mode !== 'microscope' && state.splitCompare) {
     setSplitCompare(false);
@@ -586,6 +595,18 @@ function setViewMode(mode) {
       discoverCircuit({ switchMode: true });
     } else {
       renderer.setViewMode('circuit');
+    }
+  } else if (mode === 'attention') {
+    if (!state.attentionData) {
+      loadAttentionMap({ switchMode: true });
+    } else {
+      renderer.setViewMode('attention');
+    }
+  } else if (mode === 'residual') {
+    if (!state.residualData) {
+      loadResidualStream({ switchMode: true });
+    } else {
+      renderer.setViewMode('residual');
     }
   } else {
     renderer.setViewMode(mode);
@@ -869,6 +890,11 @@ function renderHoverTooltip(hit) {
     const sign = hit.value >= 0 ? '+' : '';
     const dStr = Math.abs(hit.delta) > 1e-7 ? ` · Δ=${hit.delta >= 0 ? '+' : ''}${hit.delta.toFixed(5)}` : '';
     tip.innerHTML = `<b>[${hit.origRow}, ${hit.origCol}]</b> · w = <span style="color:${hit.value >= 0 ? '#fbbf24' : '#38bdf8'}">${sign}${hit.value.toFixed(5)}</span>${dStr}`;
+  } else if (hit.kind === 'attention_head') {
+    const pk = hit.peak_pair ? ` · Peak "${hit.peak_pair.query_token}"→"${hit.peak_pair.key_token}" (${hit.peak_pair.weight})` : '';
+    tip.innerHTML = `<b>${hit.label} · ${hit.role}</b> · H=${hit.entropy} · Sink=${Math.round((hit.sink_ratio || 0) * 100)}%${pk} <span style="color:#7dd3fc">(Click to zoom)</span>`;
+  } else if (hit.kind === 'residual_station') {
+    tip.innerHTML = `<b>${hit.name}</b> · Top Token: <span style="color:#a3e635">"${hit.edited_top_token}"</span> (${Math.round((hit.edited_top_prob || 0) * 100)}%) · Drift=${(hit.cosine_drift || 0).toFixed(4)} · Attn ${Math.round((hit.attn_ratio || 0.5) * 100)}% / MLP ${Math.round((hit.mlp_ratio || 0.5) * 100)}%`;
   } else {
     const lTag = hit.layer !== null && hit.layer !== undefined ? `L${String(hit.layer).padStart(2, '0')} · ` : '';
     tip.innerHTML = `<b>${lTag}${hit.label}</b> · [${(hit.shape || []).join('×')}] · ‖W‖_F=${Number(hit.frob || 0).toFixed(2)}`;
@@ -1926,32 +1952,132 @@ function bindExportModal() {
   $('btn-close-export').addEventListener('click', () => modal.classList.add('hidden'));
   modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
 
+  const syncFormatUi = () => {
+    const fmt = $('export-format-select')?.value || 'safetensors';
+    $('export-lora-opts')?.classList.toggle('hidden', fmt !== 'lora');
+    $('export-gguf-opts')?.classList.toggle('hidden', fmt !== 'gguf');
+    $('export-hfcard-opts')?.classList.toggle('hidden', fmt !== 'hf_card');
+    $('export-merge-probe-row')?.classList.toggle('hidden', fmt !== 'safetensors');
+    const btn = $('btn-confirm-export');
+    if (btn) {
+      btn.textContent = fmt === 'lora'
+        ? 'Extract & Verify LoRA Adapter'
+        : fmt === 'gguf'
+          ? 'Write GGUF v3 + Ollama Modelfile'
+          : fmt === 'hf_card'
+            ? 'Write HF Model Card & Recipe'
+            : 'Write & Verify .safetensors';
+    }
+  };
+  $('export-format-select')?.addEventListener('change', syncFormatUi);
+  syncFormatUi();
+
   $('btn-run-eval-gate').addEventListener('click', runExportEvalGate);
+  $('btn-auto-repair')?.addEventListener('click', async () => {
+    if (!state.modelId) return;
+    const btn = $('btn-auto-repair');
+    btn.disabled = true;
+    btn.textContent = 'Repairing…';
+    try {
+      const rewardFn = $('eval-reward-select')?.value || 'composite';
+      const res = await apiPost('/edits/auto-repair', {
+        model_id: state.modelId,
+        checkpoint_id: state.checkpointId,
+        reward_fn: rewardFn,
+        max_steps: 4,
+      });
+      await reloadAfterEdit(
+        `Auto-Repair: ${res.initial_verdict} → ${res.final_verdict} (${(res.actions_taken || []).length} repair steps)`
+      );
+      await runExportEvalGate();
+    } catch (err) {
+      showToast(`Auto-Repair error: ${err.message}`, 3200);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🔧 Auto-Repair';
+    }
+  });
 
   $('btn-confirm-export').addEventListener('click', async () => {
     if (!state.modelId) return;
     const name = ($('export-name-input').value || '').trim() || `edited-${Date.now()}`;
-    const runProbe = $('export-merge-probe').checked;
+    const fmt = $('export-format-select')?.value || 'safetensors';
+    const box = $('export-result-box');
     try {
-      const manifest = await apiPost('/edits/export', {
-        model_id: state.modelId,
-        checkpoint_id: state.checkpointId,
-        export_name: name,
-        run_merge_probe: runProbe,
-      });
-      const box = $('export-result-box');
-      const probeHtml = manifest.merge_probe
-        ? `<br/><b>Merge Probe:</b> effect=${manifest.merge_probe.effect_verified ? 'VERIFIED' : 'NONE'} · Δ‖W‖=${manifest.merge_probe.total_delta_frobenius} · keys remapped=${manifest.merge_probe.composite_keys_remapped}`
-        : '';
-      box.innerHTML = `
-        <b>✓ Exported &amp; Reload-Verified</b><br/>
-        File: ${manifest.export_file}<br/>
-        SHA-256: ${manifest.sha256.slice(0, 24)}…<br/>
-        Tensors: ${manifest.tensor_count} (${manifest.modified_tensors.length} modified)${probeHtml}
-      `;
-      box.classList.remove('hidden');
-      showToast('Verified .safetensors checkpoint exported!');
-      await loadModels(true);
+      if (fmt === 'hf_card') {
+        const repoId = ($('export-hf-repo')?.value || '').trim();
+        const m = await apiPost('/export/hf-card', {
+          model_id: state.modelId,
+          checkpoint_id: state.checkpointId,
+          export_name: name,
+          repo_id: repoId,
+          include_eval: true,
+        });
+        box.innerHTML = `
+          <b>✓ Generated HF Model Card &amp; Reproducible Recipe</b><br/>
+          Card: ${m.model_card_file}<br/>
+          Recipe: ${m.recipe_file}<br/>
+          Upload CLI: <code>${m.cli_upload_command}</code>
+        `;
+        box.classList.remove('hidden');
+        showToast(`Generated Hugging Face Model Card for ${m.repo_id}!`);
+      } else if (fmt === 'lora') {
+        const rank = Number($('export-lora-rank')?.value || 16);
+        const alpha = Number($('export-lora-alpha')?.value || 32);
+        const m = await apiPost('/export/lora', {
+          model_id: state.modelId,
+          checkpoint_id: state.checkpointId,
+          export_name: name,
+          rank,
+          alpha,
+        });
+        box.innerHTML = `
+          <b>✓ Extracted PEFT LoRA Adapter (r=${m.rank}, α=${m.lora_alpha})</b><br/>
+          File: ${m.export_file}<br/>
+          SHA-256: ${m.sha256.slice(0, 24)}… · Verified: ${m.reload_verified ? 'YES' : 'NO'}<br/>
+          Compression: ${m.compression_ratio}× · Mean Rel Error: ${(m.mean_relative_error * 100).toFixed(2)}%<br/>
+          Targets: ${(m.target_modules || []).join(', ')}
+        `;
+        box.classList.remove('hidden');
+        showToast(`Extracted Diff-as-LoRA adapter (${m.compression_ratio}× compression)!`);
+        await loadModels(true);
+      } else if (fmt === 'gguf') {
+        const quant = $('export-gguf-quant')?.value || 'Q8_0';
+        const m = await apiPost('/export/gguf', {
+          model_id: state.modelId,
+          checkpoint_id: state.checkpointId,
+          export_name: name,
+          quant_type: quant,
+        });
+        box.innerHTML = `
+          <b>✓ Exported GGUF v3 + Ollama Package (${m.quant_type})</b><br/>
+          GGUF: ${m.gguf_file} (${(m.file_size_bytes / 1024).toFixed(1)} KB)<br/>
+          Header Verified: ${m.header_verified ? 'GGUF v3 OK' : 'WARN'} · SHA-256: ${m.sha256.slice(0, 24)}…<br/>
+          Ollama: <code>${m.ollama_command}</code>
+        `;
+        box.classList.remove('hidden');
+        showToast(`Exported GGUF v3 (${m.quant_type}) + Ollama Modelfile!`);
+      } else {
+        const runProbe = $('export-merge-probe').checked;
+        const manifest = await apiPost('/edits/export', {
+          model_id: state.modelId,
+          checkpoint_id: state.checkpointId,
+          export_name: name,
+          run_merge_probe: runProbe,
+        });
+        const probeHtml = manifest.merge_probe
+          ? `<br/><b>Merge Probe:</b> effect=${manifest.merge_probe.effect_verified ? 'VERIFIED' : 'NONE'} · Δ‖W‖=${manifest.merge_probe.total_delta_frobenius} · keys remapped=${manifest.merge_probe.composite_keys_remapped}`
+          : '';
+        box.innerHTML = `
+          <b>✓ Exported &amp; Reload-Verified</b><br/>
+          File: ${manifest.export_file}<br/>
+          SHA-256: ${manifest.sha256.slice(0, 24)}…<br/>
+          Tensors: ${manifest.tensor_count} (${manifest.modified_tensors.length} modified)${probeHtml}
+        `;
+        box.classList.remove('hidden');
+        showToast('Verified .safetensors checkpoint exported!');
+        await loadModels(true);
+      }
     } catch (err) {
       showToast(`Export error: ${err.message}`, 3500);
     }
@@ -1962,12 +2088,16 @@ async function runExportEvalGate() {
   if (!state.modelId) return;
   const btn = $('btn-run-eval-gate');
   btn.disabled = true;
-  btn.textContent = 'Running 6-case regression suite…';
+  btn.textContent = 'Running regression eval suite…';
   try {
+    const rewardFn = $('eval-reward-select')?.value || 'composite';
+    const customJsonl = ($('eval-custom-jsonl')?.value || '').trim() || null;
     const rep = await apiPost('/eval/run', {
       model_id: state.modelId,
       checkpoint_id: state.checkpointId,
       dataset_path: state.ftDatasetPath || null,
+      custom_jsonl: customJsonl,
+      reward_fn: rewardFn,
       max_cases: 6,
       causal_patches: state.causalPatches,
       steering: getActiveSteeringPayload(),
@@ -1976,7 +2106,11 @@ async function runExportEvalGate() {
     pill.textContent = rep.verdict;
     pill.className = `verdict-pill ${rep.verdict}`;
     pill.classList.remove('hidden');
-    $('eval-summary-copy').textContent = `${rep.verdict_reason} (Base ${(rep.base_summary.pass_rate * 100).toFixed(0)}% → Edited ${(rep.edited_summary.pass_rate * 100).toFixed(0)}% · ${rep.latency_ms} ms)`;
+    const ps = rep.paired_stats || {};
+    const ciStr = ps.ci_95_low !== undefined
+      ? ` · 95% CI [${ps.ci_95_low >= 0 ? '+' : ''}${ps.ci_95_low.toFixed(3)}, ${ps.ci_95_high >= 0 ? '+' : ''}${ps.ci_95_high.toFixed(3)}] · W/T/L ${ps.wins}/${ps.ties}/${ps.losses}`
+      : '';
+    $('eval-summary-copy').textContent = `${rep.verdict_reason} (Base ${(rep.base_summary.pass_rate * 100).toFixed(0)}% → Edited ${(rep.edited_summary.pass_rate * 100).toFixed(0)}%${ciStr} · ${rep.latency_ms} ms)`;
 
     const list = $('eval-case-list');
     list.classList.remove('hidden');
@@ -1994,12 +2128,12 @@ async function runExportEvalGate() {
         `;
       })
       .join('');
-    showToast(`Batch Eval Gate: ${rep.verdict} (${rep.case_count} cases in ${rep.latency_ms} ms)`);
+    showToast(`Batch Eval Gate (${rewardFn}): ${rep.verdict} (${rep.case_count} cases)`);
   } catch (err) {
     showToast(`Eval gate error: ${err.message}`, 3200);
   } finally {
     btn.disabled = false;
-    btn.textContent = '⚡ Re-Run 6-Case Regression Eval Gate';
+    btn.textContent = '⚡ Re-Run Regression Eval Gate';
   }
 }
 
@@ -2378,6 +2512,291 @@ function bindSplitCurtain() {
       btn.textContent = '📄 HTML Report';
     }
   });
+
+  // Studio v6/v7: Multi-Head Attention 3D + Direct Head Ablation & Residual 3D
+  $('btn-refresh-attention')?.addEventListener('click', () => loadAttentionMap({ switchMode: false }));
+  $('attn-layer-select')?.addEventListener('change', () => loadAttentionMap({ switchMode: false }));
+  $('attn-head-select')?.addEventListener('change', (e) => {
+    const hVal = Number(e.target.value);
+    renderer.setData({ attentionHeadFilter: hVal });
+    renderer._fitCameraToViewMode();
+  });
+  $('btn-ablate-attn-head')?.addEventListener('click', ablateSelectedAttentionHead);
+  $('btn-refresh-residual')?.addEventListener('click', () => loadResidualStream({ switchMode: false }));
+
+  // Studio v7: Workspace Session Persistence (Save / Load)
+  $('btn-save-session')?.addEventListener('click', async () => {
+    if (!state.modelId) return;
+    const name = ($('session-name-input')?.value || '').trim() || `studio-${Date.now()}`;
+    try {
+      const res = await apiPost('/sessions/save', {
+        session_name: name,
+        model_id: state.modelId,
+        checkpoint_id: state.checkpointId,
+        metadata: {
+          prompt: $('inf-prompt')?.value || '',
+          sae_atlas: $('sae-dict-select')?.value || 'stateset_builtin',
+          causal_patches: state.causalPatches,
+        },
+      });
+      showToast(`Saved session '${res.session_name}' (${res.operation_count} ops)`);
+    } catch (err) {
+      showToast(`Save session error: ${err.message}`, 3200);
+    }
+  });
+  $('btn-load-session')?.addEventListener('click', async () => {
+    const name = ($('session-name-input')?.value || '').trim();
+    if (!name) { showToast('Enter a saved session name to restore'); return; }
+    try {
+      const res = await apiPost('/sessions/load', { session_name: name });
+      if (res.metadata?.prompt && $('inf-prompt')) $('inf-prompt').value = res.metadata.prompt;
+      await reloadAfterEdit(`Restored session '${res.session_name}' (${res.replay.applied_count} ops replayed)`);
+    } catch (err) {
+      showToast(`Load session error: ${err.message}`, 3200);
+    }
+  });
+
+  // Studio v6: Pretrained SAE Dictionary Atlas Loader
+  (async () => {
+    try {
+      const res = await apiGet('/sae/dictionaries');
+      const sel = $('sae-dict-select');
+      if (!sel) return;
+      sel.innerHTML = '';
+      for (const d of res.dictionaries || []) {
+        const opt = document.createElement('option');
+        opt.value = d.id;
+        opt.textContent = d.name;
+        sel.appendChild(opt);
+      }
+    } catch { /* optional */ }
+  })();
+
+  $('btn-load-sae-dict')?.addEventListener('click', async () => {
+    const sourceId = $('sae-dict-select')?.value || 'stateset_builtin';
+    try {
+      const res = await apiPost('/sae/load', { source_id: sourceId });
+      showToast(`Loaded SAE Atlas: ${res.name} (${res.feature_count} features)`);
+      await analyzeSaeFeatures();
+    } catch (err) {
+      showToast(`SAE load error: ${err.message}`, 3200);
+    }
+  });
+
+  // Studio v6: Multi-Edit A/B Arena
+  $('btn-run-arena')?.addEventListener('click', runArenaComparison);
+
+  // Studio v6: Command Palette (Ctrl+K / ⌘K)
+  bindCommandPalette();
+}
+
+async function ablateSelectedAttentionHead() {
+  if (!state.modelId) return;
+  const layerIdx = Number($('attn-layer-select')?.value || 0);
+  const rawHead = Number($('attn-head-select')?.value ?? -1);
+  const headIdx = rawHead >= 0 ? rawHead : 0;
+  try {
+    const layer = state.structure?.layers?.find((l) => l.index === layerIdx);
+    const attnTensor = (layer?.tensors || []).find((t) => /attn|q_proj|o_proj|qkv/i.test(t.name)) || layer?.tensors?.[0];
+    if (!attnTensor) {
+      showToast(`No attention tensor found on Layer ${layerIdx}`);
+      return;
+    }
+    await executeSurgicalEdit(
+      'head_edit',
+      attnTensor.name,
+      { head_index: headIdx, num_heads: 8, action: 'ablate' },
+      `Ablate Head L${String(layerIdx).padStart(2, '0')}.H${headIdx}`
+    );
+    await loadAttentionMap({ switchMode: false });
+  } catch (err) {
+    showToast(`Head ablation error: ${err.message}`, 3200);
+  }
+}
+
+async function loadResidualStream({ switchMode = true } = {}) {
+  if (!state.modelId) return;
+  const prompt = ($('inf-prompt')?.value || '').trim() || 'Customer says: My order #77701 arrived damaged after 9 days. Can you refund me?';
+  try {
+    const data = await apiPost('/inference/residual', {
+      model_id: state.modelId,
+      checkpoint_id: state.checkpointId,
+      prompt,
+      system_prompt: $('inf-system')?.value || '',
+      causal_patches: state.causalPatches,
+      steering: getActiveSteeringPayload(),
+    });
+    state.residualData = data;
+    $('residual-summary-val').textContent = `${data.layer_count}L · Peak Drift L${String(data.peak_drift_layer).padStart(2, '0')} (${(data.max_cosine_drift * 100).toFixed(2)}%)`;
+    renderer.setData({ residualData: data });
+    if (switchMode) renderer.setViewMode('residual');
+    renderer.triggerPulse('forward');
+    showToast(`Traced ${data.layer_count}-layer Base vs. Active Residual Stream (${data.latency_ms} ms)`);
+  } catch (err) {
+    showToast(`Residual 3D error: ${err.message}`, 3200);
+  }
+}
+
+async function loadAttentionMap({ switchMode = true } = {}) {
+  if (!state.modelId) return;
+  const prompt = ($('inf-prompt')?.value || '').trim() || 'Customer says: My order #77701 arrived damaged after 9 days. Can you refund me?';
+  const layerSel = $('attn-layer-select');
+  if (layerSel && !layerSel.options.length && state.structure?.layers?.length) {
+    layerSel.innerHTML = '';
+    for (const l of state.structure.layers) {
+      const opt = document.createElement('option');
+      opt.value = String(l.index);
+      opt.textContent = `L${String(l.index).padStart(2, '0')}`;
+      layerSel.appendChild(opt);
+    }
+  }
+  const layerIdx = Number(layerSel?.value || 0);
+  try {
+    const data = await apiPost('/inference/attention', {
+      model_id: state.modelId,
+      checkpoint_id: state.checkpointId,
+      prompt,
+      system_prompt: $('inf-system')?.value || '',
+      layer_index: layerIdx,
+      num_heads: 8,
+      max_tokens: 10,
+    });
+    state.attentionData = data;
+    const headVal = Number($('attn-head-select')?.value ?? -1);
+    $('attn-summary-val').textContent = `L${String(data.layer).padStart(2, '0')} · ${data.num_heads}H · ${data.tokens.length}T`;
+    renderer.setData({ attentionData: data, attentionHeadFilter: headVal });
+    if (switchMode) renderer.setViewMode('attention');
+    renderer.triggerPulse('forward');
+    showToast(`Computed ${data.num_heads}-head Attention 3D map for Layer ${data.layer} (${data.latency_ms} ms)`);
+  } catch (err) {
+    showToast(`Attention 3D error: ${err.message}`, 3200);
+  }
+}
+
+async function runArenaComparison() {
+  if (!state.modelId) return;
+  const btn = $('btn-run-arena');
+  const prompt = ($('inf-prompt')?.value || '').trim() || 'Customer says: My order #77701 arrived damaged. Can you refund me?';
+  const rewardFn = $('eval-reward-select')?.value || 'composite';
+  btn.disabled = true;
+  btn.textContent = 'Running Multi-Edit Arena…';
+  try {
+    const res = await apiPost('/arena/compare', {
+      model_id: state.modelId,
+      checkpoint_id: state.checkpointId,
+      prompt,
+      system_prompt: $('inf-system')?.value || '',
+      reward_fn: rewardFn,
+    });
+    $('arena-winner-pill').textContent = `★ ${res.winner.slice(0, 18)}`;
+    const list = $('arena-leaderboard');
+    list.innerHTML = '';
+    (res.candidates || []).forEach((c, idx) => {
+      const row = document.createElement('div');
+      row.className = `arena-row${idx === 0 ? ' winner' : ''}`;
+      const d = Number(c.delta_vs_base || 0);
+      row.innerHTML = `
+        <span style="color:${idx === 0 ? '#6ee7b7' : '#e2e8f0'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.output_preview || ''}">${idx === 0 ? '★ ' : ''}${c.name}</span>
+        <span style="color:#38bdf8;text-align:right">${Number(c.composite || 0).toFixed(3)}</span>
+        <span style="color:${d >= 0 ? '#34d399' : '#fb7185'};text-align:right">${d >= 0 ? '+' : ''}${d.toFixed(3)}</span>
+        <span style="color:#94a3b8;text-align:right">cos ${(c.hidden_cosine ?? 1).toFixed(2)}</span>
+      `;
+      list.appendChild(row);
+    });
+    showToast(`Arena complete: winner is ${res.winner} (${res.latency_ms} ms)`);
+  } catch (err) {
+    showToast(`Arena error: ${err.message}`, 3200);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚔ Compare Base vs. NF4 vs. Wanda vs. SVD';
+  }
+}
+
+function bindCommandPalette() {
+  const modal = $('cmd-palette-modal');
+  const input = $('cmd-palette-input');
+  const list = $('cmd-palette-list');
+  if (!modal || !input || !list) return;
+
+  const commands = [
+    { label: 'View: Architecture 3D', kbd: '1', run: () => setViewMode('stack') },
+    { label: 'View: Microscope 128² Heightfield', kbd: '2', run: () => setViewMode('microscope') },
+    { label: 'View: SVD Spectral Decomposition', kbd: '3', run: () => setViewMode('spectral') },
+    { label: 'View: Trajectory 4D Evolution', kbd: '4', run: () => setViewMode('trajectory') },
+    { label: 'View: Causal Circuit 3D Arcs', kbd: '5', run: () => setViewMode('circuit') },
+    { label: 'View: Multi-Head Attention 3D', kbd: '6', run: () => setViewMode('attention') },
+    { label: 'View: Residual Stream 3D & Logit Lens', kbd: '7', run: () => setViewMode('residual') },
+    { label: 'Toggle 3D MRI Cutaway Plane (SLICE)', kbd: 'MRI', run: () => $('btn-slice-toggle')?.click() },
+    { label: 'Toggle Cinema Zen Mode', kbd: 'H', run: () => toggleZenMode() },
+    { label: 'Run Multi-Edit A/B Arena', kbd: 'ARENA', run: () => { document.querySelector('.wb-tab[data-tab="infer"]')?.click(); runArenaComparison(); } },
+    { label: 'Analyze SAE Monosemantic Features', kbd: 'SAE', run: () => { document.querySelector('.wb-tab[data-tab="infer"]')?.click(); analyzeSaeFeatures(); } },
+    { label: 'Profile Auto-Sensitivity (Wanda/Fisher)', kbd: 'SENS', run: () => { document.querySelector('.wb-tab[data-tab="analyze"]')?.click(); $('btn-run-sensitivity')?.click(); } },
+    { label: 'Auto-Repair Destructive Edits to GO', kbd: 'FIX', run: () => { $('btn-export-modal')?.click(); $('btn-auto-repair')?.click(); } },
+    { label: 'Export: Diff-as-LoRA PEFT Adapter', kbd: 'LORA', run: () => { $('btn-export-modal')?.click(); if ($('export-format-select')) { $('export-format-select').value = 'lora'; $('export-format-select').dispatchEvent(new Event('change')); } } },
+    { label: 'Export: GGUF v3 + Ollama Modelfile', kbd: 'GGUF', run: () => { $('btn-export-modal')?.click(); if ($('export-format-select')) { $('export-format-select').value = 'gguf'; $('export-format-select').dispatchEvent(new Event('change')); } } },
+    { label: 'Export: HF Model Card & Recipe', kbd: 'HF', run: () => { $('btn-export-modal')?.click(); if ($('export-format-select')) { $('export-format-select').value = 'hf_card'; $('export-format-select').dispatchEvent(new Event('change')); } } },
+    { label: 'Export: Standalone HTML PR Report', kbd: 'HTML', run: () => $('btn-export-html-report')?.click() },
+    { label: 'Lighting Rig: Deep Photonics', kbd: 'RIG', run: () => { $('rig-select').value = 'photonics'; renderer.setRig('photonics'); } },
+    { label: 'Lighting Rig: Copper Forge', kbd: 'RIG', run: () => { $('rig-select').value = 'copper'; renderer.setRig('copper'); } },
+    { label: 'Lighting Rig: Cleanroom White', kbd: 'RIG', run: () => { $('rig-select').value = 'cleanroom'; renderer.setRig('cleanroom'); } },
+  ];
+
+  let selIdx = 0;
+  let filtered = commands;
+
+  const renderCmds = () => {
+    const q = (input.value || '').trim().toLowerCase();
+    filtered = q ? commands.filter((c) => c.label.toLowerCase().includes(q) || c.kbd.toLowerCase().includes(q)) : commands;
+    selIdx = Math.min(selIdx, Math.max(0, filtered.length - 1));
+    list.innerHTML = '';
+    filtered.forEach((cmd, idx) => {
+      const btn = document.createElement('button');
+      btn.className = `cmd-item${idx === selIdx ? ' selected' : ''}`;
+      btn.innerHTML = `<span>${cmd.label}</span><span class="cmd-kbd">${cmd.kbd}</span>`;
+      btn.addEventListener('click', () => {
+        modal.classList.add('hidden');
+        cmd.run();
+      });
+      list.appendChild(btn);
+    });
+  };
+
+  const openPalette = () => {
+    modal.classList.remove('hidden');
+    input.value = '';
+    selIdx = 0;
+    renderCmds();
+    setTimeout(() => input.focus(), 20);
+  };
+
+  $('btn-cmd-palette')?.addEventListener('click', openPalette);
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
+  input.addEventListener('input', () => { selIdx = 0; renderCmds(); });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      modal.classList.add('hidden');
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      selIdx = (selIdx + 1) % Math.max(1, filtered.length);
+      renderCmds();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      selIdx = (selIdx - 1 + Math.max(1, filtered.length)) % Math.max(1, filtered.length);
+      renderCmds();
+    } else if (e.key === 'Enter' && filtered[selIdx]) {
+      e.preventDefault();
+      modal.classList.add('hidden');
+      filtered[selIdx].run();
+    }
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      if (modal.classList.contains('hidden')) openPalette();
+      else modal.classList.add('hidden');
+    }
+  });
 }
 
 function toggleZenMode() {
@@ -2400,6 +2819,8 @@ function bindKeyboardShortcuts() {
     else if (e.key === '3') setViewMode('spectral');
     else if (e.key === '4') setViewMode('trajectory');
     else if (e.key === '5') setViewMode('circuit');
+    else if (e.key === '6') setViewMode('attention');
+    else if (e.key === '7') setViewMode('residual');
     else if (e.key === 'h' || e.key === 'H') toggleZenMode();
     else if (e.key === 's' || e.key === 'S') {
       if (renderer.viewMode === 'microscope') setSplitCompare(!state.splitCompare);
