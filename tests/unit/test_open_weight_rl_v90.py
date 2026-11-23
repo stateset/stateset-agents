@@ -463,3 +463,121 @@ def test_v91_gpu_torch_caa_warm_start_chunked_model_wrapper_and_code_sandbox() -
     d_cfg = DAPOConfig(chunked_loss_chunk_size=128, use_loss_checkpointing=True)
     assert g_cfg.chunked_loss_chunk_size == 128
     assert d_cfg.use_loss_checkpointing is True
+
+
+def test_v92_trainer_live_chunked_wiring_and_turn_level_credit_assignment() -> None:
+    """Verify DAPOTrainer & GSPOTrainer execute live chunked logprob path + Turn-Level PRM Credit Assignment."""
+    torch = pytest.importorskip("torch")
+    import torch.nn as nn
+    from types import SimpleNamespace
+
+    from stateset_agents.training.dapo_config import DAPOConfig
+    from stateset_agents.training.dapo_trainer import DAPOTrainer
+    from stateset_agents.training.gspo_config import GSPOConfig
+    from stateset_agents.training.gspo_trainer import GSPOTrainer
+    from stateset_agents.training.turn_credit import (
+        compute_turn_level_advantages,
+        expand_turn_advantages_to_tokens,
+    )
+
+    class _SplitLM(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.model = nn.Module()
+            self.model.embed = nn.Embedding(64, 16)
+            self.lm_head = nn.Linear(16, 64, bias=False)
+            self.full_forward_calls = 0
+
+            def _backbone(input_ids: torch.Tensor, **kwargs: object) -> SimpleNamespace:
+                return SimpleNamespace(last_hidden_state=self.model.embed(input_ids))
+
+            self.model.forward = _backbone  # type: ignore[method-assign]
+
+        def forward(self, input_ids: torch.Tensor, **kwargs: object) -> SimpleNamespace:
+            self.full_forward_calls += 1
+            return SimpleNamespace(
+                logits=self.lm_head(self.model(input_ids, **kwargs).last_hidden_state)
+            )
+
+    torch.manual_seed(99)
+    lm = _SplitLM()
+    input_ids = torch.randint(0, 64, (2, 16))
+    attn_mask = torch.ones_like(input_ids)
+    resp_mask = torch.ones_like(input_ids)
+    resp_mask[:, :5] = 0
+
+    # 1. Verify DAPOTrainer.compute_token_log_probs chunked vs full match identically
+    dapo_full = object.__new__(DAPOTrainer)
+    dapo_full.model = lm
+    dapo_full.config = DAPOConfig(chunked_loss_chunk_size=None)
+    dapo_full._logprob_dtype = None
+
+    dapo_chunk = object.__new__(DAPOTrainer)
+    dapo_chunk.model = lm
+    dapo_chunk.config = DAPOConfig(
+        chunked_loss_chunk_size=5, use_loss_checkpointing=True
+    )
+    dapo_chunk._logprob_dtype = None
+
+    lp_f, cnt_f = dapo_full.compute_token_log_probs(input_ids, attn_mask, resp_mask)
+    calls_after_full = lm.full_forward_calls
+    lp_c, cnt_c = dapo_chunk.compute_token_log_probs(input_ids, attn_mask, resp_mask)
+    assert lm.full_forward_calls == calls_after_full  # chunked bypassed full lm_head!
+    assert torch.allclose(lp_f, lp_c, atol=1e-5)
+    assert torch.allclose(cnt_f, cnt_c)
+
+    # 2. Verify GSPOTrainer._compute_group_sequence_log_probs chunked vs full match identically
+    class _StubTok:
+        padding_side = "right"
+
+        def __call__(self, texts: object, **kwargs: object) -> dict[str, torch.Tensor]:
+            if isinstance(texts, str):
+                return {"input_ids": torch.tensor([[1, 2, 3, 4]])}
+            return {"input_ids": input_ids.clone(), "attention_mask": attn_mask.clone()}
+
+        def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+            return [1, 2, 3, 4]
+
+    gspo_full = object.__new__(GSPOTrainer)
+    gspo_full.model = lm
+    gspo_full.tokenizer = _StubTok()
+    gspo_full.config = GSPOConfig(chunked_loss_chunk_size=None)
+
+    gspo_chunk = object.__new__(GSPOTrainer)
+    gspo_chunk.model = lm
+    gspo_chunk.tokenizer = _StubTok()
+    gspo_chunk.config = GSPOConfig(
+        chunked_loss_chunk_size=6, use_loss_checkpointing=True
+    )
+
+    seq_f, len_f = gspo_full._compute_group_sequence_log_probs("hi", ["a", "b"])
+    calls_before_gspo_chunk = lm.full_forward_calls
+    seq_c, len_c = gspo_chunk._compute_group_sequence_log_probs("hi", ["a", "b"])
+    assert lm.full_forward_calls == calls_before_gspo_chunk
+    assert torch.allclose(seq_f, seq_c, atol=1e-5)
+    assert torch.allclose(len_f, len_c)
+
+    # 3. Verify Turn-Level Process Reward Credit Assignment differentiates good vs bad turns
+    credits = compute_turn_level_advantages(
+        [
+            {"turn_process_rewards": [1.0, 1.0, 1.0], "terminal_reward": 1.0},
+            {"turn_process_rewards": [1.0, 0.0, 0.1], "terminal_reward": 0.0},
+        ],
+        gamma=0.95,
+        prm_weight=0.4,
+    )
+    assert len(credits) == 2
+    assert credits[0].turn_advantages[0] > 0.0
+    # In episode 1, turn 0 succeeded (prm=1.0) while turn 1 failed (prm=0.0)
+    assert credits[1].turn_advantages[0] > credits[1].turn_advantages[1]
+
+    tok_adv = expand_turn_advantages_to_tokens(
+        [c.turn_advantages for c in credits],
+        turn_token_spans=[[(2, 5), (6, 9), (10, 13)], [(2, 5), (6, 9), (10, 13)]],
+        seq_len=16,
+        as_torch=True,
+    )
+    assert tuple(tok_adv.shape) == (2, 16)
+    assert float(tok_adv[0, 3].item()) == pytest.approx(credits[0].turn_advantages[0])
+    assert float(tok_adv[1, 7].item()) == pytest.approx(credits[1].turn_advantages[1])
+    assert float(tok_adv[0, 0].item()) == 0.0

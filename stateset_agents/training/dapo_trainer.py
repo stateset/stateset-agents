@@ -496,6 +496,23 @@ class DAPOTrainer:
             token_log_probs: Log prob for each token [batch, seq_len]
             token_counts: Number of response tokens per sequence [batch]
         """
+        chunk_size = getattr(self.config, "chunked_loss_chunk_size", None)
+        if chunk_size is not None and int(chunk_size) > 0:
+            from .chunked_rl_loss import chunked_model_token_logprobs
+
+            masked_log_probs, shift_response_mask = chunked_model_token_logprobs(
+                self.model,
+                input_ids,
+                response_mask,
+                attention_mask=attention_mask,
+                chunk_size=int(chunk_size),
+                dtype=self._logprob_dtype,
+                use_checkpointing=bool(
+                    getattr(self.config, "use_loss_checkpointing", False)
+                ),
+            )
+            return masked_log_probs, shift_response_mask.sum(dim=-1)
+
         outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
         masked_log_probs, shift_response_mask = rl_losses.gather_token_logprobs(
             outputs.logits, input_ids, response_mask, dtype=self._logprob_dtype
