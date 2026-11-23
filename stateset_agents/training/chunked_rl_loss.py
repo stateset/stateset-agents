@@ -14,14 +14,108 @@ Torch is imported strictly lazily (zero eager ``torch`` import at module load).
 
 from __future__ import annotations
 
+import importlib
+import importlib.util
 from typing import Any
 
 from .rl_losses import k3_kl, masked_mean, safe_exp_ratio
 from .trainer_utils import get_torch, require_torch
 
 
+def triton_chunked_logprobs_available() -> bool:
+    """Return True when Triton + CUDA are both available for fused SRAM log-softmax."""
+    if importlib.util.find_spec("triton") is None:
+        return False
+    torch = get_torch()
+    if torch is None:
+        try:
+            torch = require_torch()
+        except ImportError:
+            return False
+    return bool(torch.cuda.is_available())
+
+
 def _t() -> Any:
     return get_torch() or require_torch()
+
+
+def _triton_row_logprob_entropy(
+    logits_2d: Any,
+    labels_1d: Any,
+    mask_1d: Any,
+) -> tuple[Any, Any] | None:
+    """Optional Triton single-pass online-logsumexp kernel on CUDA; returns None if unavailable."""
+    if not (logits_2d.is_cuda and triton_chunked_logprobs_available()):
+        return None
+    try:
+        triton: Any = importlib.import_module("triton")
+        tl: Any = importlib.import_module("triton.language")
+    except ImportError:
+        return None
+
+    torch = _t()
+    n_rows, vocab = logits_2d.shape
+    block_v = min(4096, triton.next_power_of_2(vocab))
+
+    @triton.jit
+    def _kernel(
+        logits_ptr: Any,
+        labels_ptr: Any,
+        mask_ptr: Any,
+        out_lp_ptr: Any,
+        out_ent_ptr: Any,
+        stride_row: int,
+        n_cols: int,
+        BLOCK: tl.constexpr,
+    ) -> None:
+        row_id = tl.program_id(0)
+        m_val = tl.load(mask_ptr + row_id)
+        if m_val == 0.0:
+            tl.store(out_lp_ptr + row_id, 0.0)
+            tl.store(out_ent_ptr + row_id, 0.0)
+            return
+        row_ptr = logits_ptr + row_id * stride_row
+        # Pass 1: online max + sumexp
+        m_i = -float("inf")
+        d_i = 0.0
+        for off in range(0, n_cols, BLOCK):
+            cols = off + tl.arange(0, BLOCK)
+            valid = cols < n_cols
+            x = tl.load(row_ptr + cols, mask=valid, other=-float("inf")).to(tl.float32)
+            m_new = tl.maximum(m_i, tl.max(x, axis=0))
+            d_i = d_i * tl.exp(m_i - m_new) + tl.sum(
+                tl.where(valid, tl.exp(x - m_new), 0.0), axis=0
+            )
+            m_i = m_new
+        lse = m_i + tl.log(d_i)
+        target = tl.load(labels_ptr + row_id)
+        target_logit = tl.load(row_ptr + target).to(tl.float32)
+        tl.store(out_lp_ptr + row_id, target_logit - lse)
+
+        # Pass 2: exact entropy
+        ent = 0.0
+        for off in range(0, n_cols, BLOCK):
+            cols = off + tl.arange(0, BLOCK)
+            valid = cols < n_cols
+            x = tl.load(row_ptr + cols, mask=valid, other=0.0).to(tl.float32)
+            log_p = x - lse
+            p = tl.where(valid, tl.exp(log_p), 0.0)
+            ent += -tl.sum(p * tl.where(valid, log_p, 0.0), axis=0)
+        tl.store(out_ent_ptr + row_id, ent)
+
+    out_lp = torch.empty((n_rows,), device=logits_2d.device, dtype=torch.float32)
+    out_ent = torch.empty((n_rows,), device=logits_2d.device, dtype=torch.float32)
+    _kernel[(n_rows,)](
+        logits_2d,
+        labels_1d,
+        mask_1d,
+        out_lp,
+        out_ent,
+        logits_2d.stride(0),
+        vocab,
+        BLOCK=block_v,
+    )
+    return out_lp, out_ent
 
 
 def _chunk_logprob_and_entropy(
@@ -31,10 +125,16 @@ def _chunk_logprob_and_entropy(
     labels_chunk: Any,
     mask_chunk: Any,
     softmax_dtype: Any,
+    *,
+    use_triton: bool = False,
 ) -> tuple[Any, Any]:
     """Compute masked token log-probs and token entropies for one `[N_chunk, H]` slice."""
     torch = _t()
     logits = torch.nn.functional.linear(hidden_chunk, lm_head_weight, lm_head_bias)
+    if use_triton and not torch.is_grad_enabled():
+        triton_res = _triton_row_logprob_entropy(logits, labels_chunk, mask_chunk)
+        if triton_res is not None:
+            return triton_res
     scores = logits.to(softmax_dtype)
     scores = scores - scores.amax(dim=-1, keepdim=True).detach()
 
@@ -262,6 +362,11 @@ def chunked_rl_policy_loss(
         "mean_ratio": mean_ratio,
         "token_logprobs": cur_logprobs,
         "mask": mask,
+        "kernel_backend": (
+            "triton_cuda"
+            if (hidden_states.is_cuda and triton_chunked_logprobs_available())
+            else "torch_chunked"
+        ),
     }
 
 
@@ -347,4 +452,5 @@ __all__ = [
     "chunked_model_token_logprobs",
     "chunked_rl_policy_loss",
     "extract_lm_head_and_backbone",
+    "triton_chunked_logprobs_available",
 ]

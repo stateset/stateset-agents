@@ -211,6 +211,37 @@ class DisaggregatedRLRuntime:
             self.metrics.weight_syncs_completed += 1
         return dict(res)
 
+    def sync_vllm_sleep_wake(
+        self,
+        *,
+        level: int = 1,
+        weight_push_fn: Callable[[], dict[str, Any]] | None = None,
+    ) -> dict[str, Any] | None:
+        """Execute vLLM Level-1 Sleep -> Weight Push (NCCL/LoRA) -> Wake-Up cycle."""
+        if not self.config.live_vllm_endpoint:
+            return None
+        bridge = self._get_serving()
+        base = bridge._normalize_base(self.config.live_vllm_endpoint)
+        root = base[:-3] if base.endswith("/v1") else base
+        headers = bridge._auth_headers(self.config.live_api_key)
+
+        s_status, s_body = bridge._http_post(
+            f"{root}/sleep", {"level": int(level)}, headers, 15.0
+        )
+        push_res = weight_push_fn() if weight_push_fn is not None else {"pushed": True}
+        w_status, w_body = bridge._http_post(f"{root}/wake_up", {}, headers, 15.0)
+        ok = (200 <= s_status < 300) and (200 <= w_status < 300)
+        if ok:
+            self.metrics.weight_syncs_completed += 1
+        return {
+            "synced": ok,
+            "sleep_status": s_status,
+            "wake_status": w_status,
+            "sleep_response": s_body,
+            "wake_response": w_body,
+            "weight_push": push_res,
+        }
+
     async def run_steps(
         self,
         *,

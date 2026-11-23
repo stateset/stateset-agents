@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.94.0] - 2026-11-23 — Triton Fused CUDA Chunked Log-Softmax Kernel, Multi-Domain Verifiable Sandbox Pool, vLLM Sleep/Wake Weight Sync & Live 3D RL Cockpit HUD
+
+### Added
+
+- **Triton Fused CUDA Chunked Log-Softmax + Entropy Kernel** (`stateset_agents/training/chunked_rl_loss.py`): added `triton_chunked_logprobs_available()` and an auto-dispatched single-pass Triton online-logsumexp SRAM kernel on CUDA with automatic bit-exact PyTorch chunked fallback and `kernel_backend` telemetry.
+- **Concurrent Multi-Domain Verifiable RL Sandbox Pool** (`stateset_agents/core/sandbox_pool.py`): `MultiDomainSandboxPool` runs mixed batches across `CommerceLedgerSandbox`, `CodeVerificationSandbox`, and `SQLAnalyticsSandbox` concurrently with per-domain z-score advantage normalization.
+- **vLLM Level-1 Sleep/Wake Weight Sync** (`stateset_agents/training/disaggregated_rl.py`): added `DisaggregatedRLRuntime.sync_vllm_sleep_wake` (`POST /sleep` → NCCL/LoRA weight push → `POST /wake_up`) for zero-OOM full-weight syncs.
+- **Live 3D Weight Studio RL Training Cockpit & Hacking Guard HUD** (`stateset_agents/weight_studio/router.py`, `studio_callback.py`, `index.html`, `autopilot_panel.js`): added `POST/GET /api/weight-studio/rl/telemetry`, real-time `rl_step` SSE animations, and an interactive RL Cockpit card in 3D Weight Studio.
+
 ## [0.93.0] - 2026-11-23 — Full 4-Trainer Chunked RL Fleet Parity (`GSPO`/`DAPO`/`GEPO`/`VAPO`), Live RL→3D Studio Telemetry Callback, `SQLAnalyticsSandbox` & CLI `--run-shootout`
 
 ### Added

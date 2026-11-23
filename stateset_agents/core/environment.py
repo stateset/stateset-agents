@@ -20,6 +20,7 @@ from .mcp_rl_env import (
     MCPRLEnvironment,
     SQLAnalyticsSandbox,
 )
+from .sandbox_pool import MultiDomainSandboxPool, SandboxEpisodeSpec
 from .task_environment import TaskEnvironment
 from .trajectory import ConversationTurn
 
@@ -44,7 +45,9 @@ __all__ = [
     "CodeVerificationSandbox",
     "CommerceLedgerSandbox",
     "MCPRLEnvironment",
+    "MultiDomainSandboxPool",
     "SQLAnalyticsSandbox",
+    "SandboxEpisodeSpec",
     "TaskEnvironment",
     "ConversationTurn",
     "create_environment",
