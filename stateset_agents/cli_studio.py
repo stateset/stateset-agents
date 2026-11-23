@@ -791,3 +791,127 @@ def serve_ab_command(
     ) as error:
         _echo(f"Live serving A/B failed: {error}", err=True)
         raise typer.Exit(code=2) from error
+
+
+@app.command("rl")
+def rl_blueprint_command(
+    model: str = typer.Option(
+        "Qwen/Qwen3-8B",
+        "--model",
+        "-m",
+        help="Open-weight model ID for the RL blueprint.",
+    ),
+    algorithm: str = typer.Option(
+        "gspo",
+        "--algorithm",
+        "-a",
+        help="RL algorithm: gspo, grpo, dapo, vapo, or gepo.",
+    ),
+    cloud: str = typer.Option(
+        "local",
+        "--cloud",
+        help="Execution target: local, runpod, modal, or k8s.",
+    ),
+    gpus: int = typer.Option(
+        1,
+        "--gpus",
+        min=1,
+        help="Number of GPUs to allocate.",
+    ),
+    chunk_size: int = typer.Option(
+        256,
+        "--chunk-size",
+        min=16,
+        help="Token chunk size for memory-efficient chunked LM-head RL loss.",
+    ),
+    blueprint: Path | None = typer.Option(
+        None,
+        "--blueprint",
+        "-b",
+        help="Optional YAML/JSON RL blueprint file.",
+    ),
+    warm_start: bool = typer.Option(
+        False,
+        "--warm-start",
+        help="Execute Step-0 Surgical Warm-Start (CAA steering bake) before RL.",
+    ),
+    curriculum_from_traces: bool = typer.Option(
+        False,
+        "--curriculum-from-traces",
+        help="Cluster failing SQLite OTLP traces into a balanced RL training curriculum JSONL.",
+    ),
+    workspace: Path = typer.Option(
+        Path("."),
+        "--workspace",
+        "-w",
+        help="Workspace root directory.",
+    ),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Print structured JSON launch plan and diagnostics.",
+    ),
+) -> None:
+    """Build a 1-command Open-Weight RL launch plan, trace curriculum, or Surgical Warm-Start."""
+    try:
+        from stateset_agents.training.rl_blueprint import (
+            RLBlueprintConfig,
+            build_cloud_launch_plan,
+            run_surgical_warm_start,
+        )
+        from stateset_agents.training.rl_flywheel_guard import (
+            ProductionTraceCurriculumBuilder,
+        )
+
+        cfg = (
+            RLBlueprintConfig.from_file(blueprint)
+            if blueprint is not None
+            else RLBlueprintConfig(
+                model=model,
+                algorithm=algorithm,
+                cloud=cloud,
+                gpus=gpus,
+                chunked_loss_chunk_size=chunk_size,
+                surgical_warm_start=warm_start,
+            )
+        )
+        plan = build_cloud_launch_plan(cfg, workspace_root=workspace)
+
+        if curriculum_from_traces:
+            plan["curriculum"] = ProductionTraceCurriculumBuilder(
+                workspace
+            ).build_curriculum()
+
+        if warm_start:
+            plan["warm_start_result"] = run_surgical_warm_start(
+                cfg, workspace_root=workspace
+            )
+
+        if as_json:
+            _echo(json.dumps(plan, indent=2))
+            return
+
+        vram = plan["vram_estimate"]
+        _echo(
+            f"StateSet Open-Weight RL Blueprint — {cfg.model} [{cfg.algorithm.upper()} @ {cfg.cloud}]"
+        )
+        _echo(f"  Plan SHA  : {plan['plan_sha256_prefix']}")
+        _echo(
+            f"  VRAM Save : {vram['full_logits_gb']} GB -> {vram['chunked_logits_gb']} GB "
+            f"({vram['peak_logit_vram_saved_pct']}% logit VRAM saved, chunk={cfg.chunked_loss_chunk_size})"
+        )
+        _echo(f"  Dispatch  : {plan['dispatch']['command']}")
+        if "curriculum" in plan:
+            cur = plan["curriculum"]
+            _echo(
+                f"  Curriculum: {cur['episode_count']} episodes -> {cur['curriculum_path']}"
+            )
+        if "warm_start_result" in plan:
+            ws_res = plan["warm_start_result"]
+            _echo(
+                f"  WarmStart : L{ws_res['target_layer']} (α={ws_res['chosen_strength']}) "
+                f"Eval={ws_res['eval_verdict']}"
+            )
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
+        _echo(f"RL blueprint failed: {error}", err=True)
+        raise typer.Exit(code=2) from error
