@@ -80,6 +80,11 @@ class VAPOConfig(TrainingConfig):
     value_loss_coef: float = 0.5
     entropy_coef: float = 0.0
 
+    # Opt-in memory-efficient chunked LM-head log-prob projection (avoids
+    # materializing [B, T, V] logits on long-context RL).
+    chunked_loss_chunk_size: int | None = None
+    use_loss_checkpointing: bool = False
+
     @classmethod
     def from_training_config(cls, config: TrainingConfig, **kwargs) -> VAPOConfig:
         """Create VAPO config from standard training config."""

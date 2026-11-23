@@ -155,6 +155,10 @@ class GEPOConfig(TrainingConfig):
     # inner update; global_step counts train_steps, not inner updates.
     num_gradient_updates: int = 1
 
+    # Opt-in memory-efficient chunked LM-head log-prob projection.
+    chunked_loss_chunk_size: int | None = None
+    use_loss_checkpointing: bool = False
+
     @classmethod
     def from_training_config(
         cls, config: TrainingConfig, **kwargs: Any
@@ -310,6 +314,27 @@ class GEPOTrainer:
             token_log_probs: Log probs for each token [batch, seq_len]
             sequence_log_probs: Sum of log probs per sequence [batch]
         """
+        response_mask = self.build_response_mask(attention_mask, response_start_idx)
+        chunk_size = getattr(self.config, "chunked_loss_chunk_size", None)
+        if chunk_size is not None and int(chunk_size) > 0:
+            from .chunked_rl_loss import chunked_model_token_logprobs
+
+            full_resp_mask = torch.zeros_like(attention_mask)
+            full_resp_mask[:, 1:] = response_mask.to(dtype=attention_mask.dtype)
+            with torch.set_grad_enabled(self.model.training and torch.is_grad_enabled()):
+                masked_log_probs, _ = chunked_model_token_logprobs(
+                    self.model,
+                    input_ids,
+                    full_resp_mask,
+                    attention_mask=attention_mask,
+                    chunk_size=int(chunk_size),
+                    use_checkpointing=bool(
+                        getattr(self.config, "use_loss_checkpointing", False)
+                    ),
+                )
+            sequence_log_probs = masked_log_probs.sum(dim=-1)
+            return masked_log_probs, sequence_log_probs
+
         # Never re-enable autograd inside a caller's no_grad (sampler pass).
         with torch.set_grad_enabled(self.model.training and torch.is_grad_enabled()):
             outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
@@ -327,8 +352,6 @@ class GEPOTrainer:
             dim=-1, index=shift_labels.unsqueeze(-1)
         ).squeeze(-1)
 
-        # Mask out prompt tokens and padding
-        response_mask = self.build_response_mask(attention_mask, response_start_idx)
 
         masked_log_probs = token_log_probs * response_mask
 

@@ -581,3 +581,148 @@ def test_v92_trainer_live_chunked_wiring_and_turn_level_credit_assignment() -> N
     assert float(tok_adv[0, 3].item()) == pytest.approx(credits[0].turn_advantages[0])
     assert float(tok_adv[1, 7].item()) == pytest.approx(credits[1].turn_advantages[1])
     assert float(tok_adv[0, 0].item()) == 0.0
+
+
+def test_v93_gepo_vapo_chunked_parity_sql_sandbox_telemetry_callback_and_cli_shootout(
+    tmp_path: Path,
+) -> None:
+    """Verify GEPO/VAPO live chunked wiring, SQLAnalyticsSandbox, StudioTelemetryCallback & CLI --run-shootout."""
+    torch = pytest.importorskip("torch")
+    import torch.nn as nn
+    from types import SimpleNamespace
+    from typer.testing import CliRunner
+
+    from stateset_agents.cli import app as cli_app
+    from stateset_agents.core.mcp_rl_env import MCPRLEnvironment, SQLAnalyticsSandbox
+    from stateset_agents.core.trajectory import ConversationTurn
+    from stateset_agents.training.gepo_trainer import GEPOConfig, GEPOTrainer
+    from stateset_agents.training.studio_callback import StudioTelemetryCallback
+    from stateset_agents.training.vapo_config import VAPOConfig
+    from stateset_agents.training.vapo_trainer import VAPOTrainer
+
+    class _SplitLM(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.model = nn.Module()
+            self.model.embed = nn.Embedding(64, 16)
+            self.lm_head = nn.Linear(16, 64, bias=False)
+            self.full_forward_calls = 0
+
+            def _backbone(input_ids: torch.Tensor, **kwargs: object) -> SimpleNamespace:
+                return SimpleNamespace(last_hidden_state=self.model.embed(input_ids))
+
+            self.model.forward = _backbone  # type: ignore[method-assign]
+
+        def forward(self, input_ids: torch.Tensor, **kwargs: object) -> SimpleNamespace:
+            self.full_forward_calls += 1
+            return SimpleNamespace(
+                logits=self.lm_head(self.model(input_ids, **kwargs).last_hidden_state)
+            )
+
+    torch.manual_seed(123)
+    lm = _SplitLM()
+    ids = torch.randint(0, 64, (2, 16))
+    attn = torch.ones_like(ids)
+    resp = torch.ones_like(ids)
+    resp[:, :5] = 0
+
+    # 1. VAPOTrainer live chunked parity
+    v_full = object.__new__(VAPOTrainer)
+    v_full.model = lm
+    v_full.config = VAPOConfig(chunked_loss_chunk_size=None)
+    v_full._logprob_dtype = None
+
+    v_chunk = object.__new__(VAPOTrainer)
+    v_chunk.model = lm
+    v_chunk.config = VAPOConfig(chunked_loss_chunk_size=5, use_loss_checkpointing=True)
+    v_chunk._logprob_dtype = None
+
+    vlp_f = v_full.compute_token_log_probs(ids, attn, resp)
+    calls_before = lm.full_forward_calls
+    vlp_c = v_chunk.compute_token_log_probs(ids, attn, resp)
+    assert lm.full_forward_calls == calls_before
+    assert torch.allclose(vlp_f, vlp_c, atol=1e-5)
+
+    # 2. GEPOTrainer live chunked parity
+    g_full = object.__new__(GEPOTrainer)
+    g_full.model = lm
+    g_full.config = GEPOConfig(chunked_loss_chunk_size=None)
+
+    g_chunk = object.__new__(GEPOTrainer)
+    g_chunk.model = lm
+    g_chunk.config = GEPOConfig(chunked_loss_chunk_size=5, use_loss_checkpointing=True)
+
+    _, gseq_f = g_full.compute_sequence_log_probs(ids, attn, 5)
+    calls_before_g = lm.full_forward_calls
+    _, gseq_c = g_chunk.compute_sequence_log_probs(ids, attn, 5)
+    assert lm.full_forward_calls == calls_before_g
+    assert torch.allclose(gseq_f, gseq_c, atol=1e-5)
+
+    # 3. SQLAnalyticsSandbox inside MCPRLEnvironment (read-only enforced + exact result verified)
+    async def _run_sql() -> None:
+        sb = SQLAnalyticsSandbox()
+        env = MCPRLEnvironment(
+            tool_executor=sb.call_tool, state_verifier=sb.verify, max_turns=4
+        )
+        st = await env.reset({"expected_value": 25000})
+        st, _, _, bad_inf = await env.step(
+            st,
+            ConversationTurn(
+                role="assistant",
+                content='<tool_call>{"name": "run_sql", "arguments": {"sql": "DROP TABLE sales"}}</tool_call>',
+            ),
+        )
+        assert bad_inf["tool_results"][0]["is_error"] is True
+        st, _, _, ok_inf = await env.step(
+            st,
+            ConversationTurn(
+                role="assistant",
+                content='<tool_call>{"name": "run_sql", "arguments": {"sql": "SELECT SUM(revenue_cents) AS total FROM sales WHERE region = \'west\'"}}</tool_call>',
+            ),
+        )
+        assert ok_inf["tool_results"][0]["is_error"] is False
+        _, rew, done, end_inf = await env.step(
+            st,
+            ConversationTurn(
+                role="assistant", content="Total west revenue is 25000 cents."
+            ),
+        )
+        assert done and end_inf["verification"]["verified"] is True and rew >= 0.8
+
+    asyncio.run(_run_sql())
+
+    # 4. StudioTelemetryCallback durable JSONL + live HTTP push
+    pushed_payloads: list[dict] = []
+
+    def fake_post(
+        url: str, payload: dict, headers: dict, timeout: float
+    ) -> tuple[int, dict]:
+        pushed_payloads.append({"url": url, "payload": payload, "headers": headers})
+        return 200, {"ingested_count": 1}
+
+    cb = StudioTelemetryCallback(
+        run_name="v93-test-run",
+        workspace_root=tmp_path,
+        studio_url="http://127.0.0.1:8765",
+        studio_token="secret-tok",
+        http_caller=fake_post,
+    )
+    step_out = cb.on_step(
+        1,
+        {"loss": -0.42, "reward": 0.88},
+        guard_report={"action": "CONTINUE", "alerts": []},
+        sample_traces=[{"prompt": "hi", "response": "hello"}],
+    )
+    assert step_out["logged"] is True
+    assert step_out["traces_pushed"] == 1
+    assert Path(step_out["metrics_path"]).is_file()
+    assert pushed_payloads[0]["headers"]["Authorization"] == "Bearer secret-tok"
+
+    # 5. CLI `stateset-agents rl --run-shootout --json`
+    res = CliRunner().invoke(
+        cli_app,
+        ["rl", "--run-shootout", "--workspace", str(tmp_path), "--json"],
+    )
+    assert res.exit_code == 0, res.output
+    data = json.loads(res.output)
+    assert data["shootout"]["disaggregated_async_rl"]["steps_completed"] == 3

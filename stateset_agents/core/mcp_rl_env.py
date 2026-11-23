@@ -271,6 +271,82 @@ class CodeVerificationSandbox:
         )
 
 
+class SQLAnalyticsSandbox:
+    """Deterministic read-only SQLite BI/Text-to-SQL verification sandbox for agentic RL."""
+
+    def __init__(self) -> None:
+        self._conn = sqlite3.connect(":memory:")
+        self._conn.row_factory = sqlite3.Row
+        self._last_rows: list[dict[str, Any]] = []
+        self._expected_value: Any = None
+        self.reset()
+
+    def reset(self, scenario: dict[str, Any] | None = None) -> None:
+        self._last_rows = []
+        self._expected_value = (scenario or {}).get("expected_value", 25000)
+        self._conn.executescript("""
+            DROP TABLE IF EXISTS sales;
+            CREATE TABLE sales (
+                id INTEGER PRIMARY KEY,
+                region TEXT NOT NULL,
+                product TEXT NOT NULL,
+                revenue_cents INTEGER NOT NULL
+            );
+            INSERT INTO sales (region, product, revenue_cents) VALUES
+                ('west', 'widget', 12000),
+                ('west', 'gadget', 13000),
+                ('east', 'widget', 9000);
+            """)
+        self._conn.commit()
+
+    def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if name == "list_tables":
+            rows = self._conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+            ).fetchall()
+            return {"isError": False, "tables": [r["name"] for r in rows]}
+
+        if name == "describe_table":
+            tbl = str(arguments.get("table") or "sales").strip()
+            if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", tbl):
+                return {"isError": True, "error": f"Invalid table name: {tbl!r}"}
+            rows = self._conn.execute(f"PRAGMA table_info({tbl})").fetchall()
+            return {
+                "isError": False,
+                "columns": [{"name": r["name"], "type": r["type"]} for r in rows],
+            }
+
+        if name == "run_sql":
+            sql = str(arguments.get("sql") or "").strip()
+            if not sql.lower().startswith("select"):
+                return {
+                    "isError": True,
+                    "error": "Only read-only SELECT queries are permitted in SQLAnalyticsSandbox.",
+                }
+            try:
+                cur = self._conn.execute(sql)
+                rows = [dict(r) for r in cur.fetchall()[:50]]
+                self._last_rows = rows
+                return {"isError": False, "row_count": len(rows), "rows": rows}
+            except sqlite3.Error as exc:
+                return {"isError": True, "error": str(exc)}
+
+        return {"isError": True, "error": f"Unknown SQL sandbox tool: {name!r}"}
+
+    def verify(
+        self, _state: EnvironmentState, _history: list[dict[str, Any]]
+    ) -> tuple[float, dict[str, Any]]:
+        matched = any(self._expected_value in row.values() for row in self._last_rows)
+        return (
+            1.0 if matched else 0.0,
+            {
+                "verified": matched,
+                "expected_value": self._expected_value,
+                "last_rows": self._last_rows[:5],
+            },
+        )
+
+
 def make_http_mcp_executor(
     mcp_url: str, *, bearer_token: str = "", timeout: float = 15.0
 ) -> ToolExecutor:
@@ -454,6 +530,7 @@ __all__ = [
     "CodeVerificationSandbox",
     "CommerceLedgerSandbox",
     "MCPRLEnvironment",
+    "SQLAnalyticsSandbox",
     "make_http_mcp_executor",
     "parse_tool_calls",
 ]

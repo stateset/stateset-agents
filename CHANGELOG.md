@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.93.0] - 2026-11-23 — Full 4-Trainer Chunked RL Fleet Parity (`GSPO`/`DAPO`/`GEPO`/`VAPO`), Live RL→3D Studio Telemetry Callback, `SQLAnalyticsSandbox` & CLI `--run-shootout`
+
+### Added
+
+- **100% Flagship Trainer Fleet Chunked Logprob Parity** (`stateset_agents/training/gepo_trainer.py`, `vapo_config.py`, `vapo_trainer.py`): wired opt-in `chunked_loss_chunk_size` & `use_loss_checkpointing` into `GEPOTrainer` and `VAPOTrainer` alongside `GSPOTrainer` and `DAPOTrainer`, completing bit-exact zero-`[B, T, V]`-materialization support across all four flagship RL algorithms.
+- **Live RL → 3D Weight Studio Telemetry Callback** (`stateset_agents/training/studio_callback.py`): `StudioTelemetryCallback` persists step metrics + `OnlineRewardHackingGuard` verdicts to Weight Studio's External Telemetry Sync JSONL and optionally streams live rollout traces to `POST /api/weight-studio/traces/ingest`.
+- **Read-Only BI / Text-to-SQL RL Sandbox** (`stateset_agents/core/mcp_rl_env.py`): added `SQLAnalyticsSandbox` (`list_tables`, `describe_table`, read-only `run_sql`, exact expected-result verification) alongside `CommerceLedgerSandbox` and `CodeVerificationSandbox`.
+- **CLI Shootout Flag** (`stateset_agents/cli_studio.py`): added `stateset-agents rl --run-shootout --json` for instant verification of disaggregated async RL throughput and chunked VRAM savings.
+
 ## [0.92.0] - 2026-11-23 — Live Chunked Logprob Wiring in `GSPOTrainer` & `DAPOTrainer`, Turn-Level Process Reward Credit Assignment & Open-Weight RL Architecture Guide
 
 ### Added
