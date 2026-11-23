@@ -45,9 +45,16 @@
         <button class="mode-pill" data-mode="circuit" role="tab" aria-selected="false">
           <span class="dot dot-rose"></span>Circuit 3D
         </button>
+        <button class="mode-pill" data-mode="attention" role="tab" aria-selected="false">
+          <span class="dot dot-sky"></span>Attention 3D
+        </button>
+        <button class="mode-pill" data-mode="residual" role="tab" aria-selected="false">
+          <span class="dot dot-lime"></span>Residual 3D
+        </button>
       </nav>
 
       <div class="topbar-actions">
+        <button id="btn-cmd-palette" class="icon-btn" title="Open Command Palette (Ctrl+K / ⌘K)" style="width:auto;padding:0 7px;font-family:var(--font-mono);font-size:10px">⌘K</button>
         <select id="colormap-select" class="precision-select compact" title="Weight Color Encoding">
           <option value="signed">Map: Signed (±)</option>
           <option value="magnitude">Map: Magnitude |W|</option>
@@ -208,6 +215,33 @@
             <input id="circuit-topk-slider" type="range" min="4" max="20" value="10" class="hud-slider sm" />
             <button id="btn-rediscover-circuit" class="mini-pill-btn accent">↻ Trace Prompt</button>
           </div>
+
+          <!-- Studio v6/v7: Multi-Head Attention 3D quick bar + Direct 3D Head Ablation -->
+          <div id="attention-hud" class="hud-chip glass hidden">
+            <span class="hud-k">ATTENTION 3D</span>
+            <select id="attn-layer-select" class="mini-select" title="Transformer layer"></select>
+            <select id="attn-head-select" class="mini-select" title="Show all heads or inspect one head in 3D">
+              <option value="-1">All 8 Heads</option>
+              <option value="0">Head H0</option>
+              <option value="1">Head H1</option>
+              <option value="2">Head H2</option>
+              <option value="3">Head H3</option>
+              <option value="4">Head H4</option>
+              <option value="5">Head H5</option>
+              <option value="6">Head H6</option>
+              <option value="7">Head H7</option>
+            </select>
+            <span id="attn-summary-val" class="mono-accent">Softmax Q·Kᵀ</span>
+            <button id="btn-ablate-attn-head" class="mini-pill-btn" title="Surgically ablate the focused attention head (undoable)">✂ Ablate Head</button>
+            <button id="btn-refresh-attention" class="mini-pill-btn accent">↻ Compute</button>
+          </div>
+
+          <!-- Studio v7: Residual Stream 3D quick bar -->
+          <div id="residual-hud" class="hud-chip glass hidden">
+            <span class="hud-k">RESIDUAL 3D</span>
+            <span id="residual-summary-val" class="mono-accent">Base vs. Active Stream</span>
+            <button id="btn-refresh-residual" class="mini-pill-btn accent">↻ Trace Stream</button>
+          </div>
           <!-- Tomographic MRI 3D Slice Plane quick bar -->
           <div id="slice-hud" class="hud-chip glass hidden">
             <span class="hud-k">MRI CUTAWAY</span>
@@ -326,6 +360,11 @@
                 <input id="recipe-file-input" type="file" accept=".json" class="hidden" />
                 <span id="stack-delta-summary" class="mono-accent">0 modified</span>
               </div>
+            </div>
+            <div class="patch-builder mb-6" style="grid-template-columns:1fr auto auto">
+              <input id="session-name-input" class="precision-input mono" placeholder="Session name (e.g. refund-v7)" />
+              <button id="btn-save-session" class="mini-btn" title="Save named workbench session to disk">Save</button>
+              <button id="btn-load-session" class="mini-btn" title="Restore named workbench session">Load</button>
             </div>
             <div id="edit-stack-list" class="edit-stack-list">
               <div class="empty-hint">No surgical edits yet. Try Scale, Wanda Prune, Head Surgery, ROME Rank-1, or TIES/DARE Merge above.</div>
@@ -587,18 +626,36 @@
             </div>
           </div>
 
-          <!-- Sparse Autoencoder (SAE) Monosemantic Feature Explorer -->
+          <!-- Sparse Autoencoder (SAE) Monosemantic Feature Explorer + Pretrained Atlas -->
           <div class="section-card">
             <div class="card-title-row">
               <span class="card-title">SAE MONOSEMANTIC FEATURES</span>
               <span id="sae-stats-pill" class="mono-muted">L0 —</span>
+            </div>
+            <div class="patch-builder mb-6" style="grid-template-columns:1fr auto">
+              <select id="sae-dict-select" class="precision-select compact" title="Select Built-in or Pretrained SAE Atlas (Gemma Scope / Llama Scope / Qwen Scope)">
+                <option value="stateset_builtin">StateSet Agent Built-in (24F)</option>
+              </select>
+              <button id="btn-load-sae-dict" class="mini-btn">Load Atlas</button>
             </div>
             <div class="op-action-row mb-6">
               <button id="btn-analyze-sae" class="mini-btn full">✦ Analyze SAE Features</button>
               <button id="btn-clear-sae-clamps" class="mini-btn">Reset</button>
             </div>
             <div id="sae-feature-list" class="circuit-node-list">
-              <div class="empty-hint">Decompose residual activations into interpretable StateSet sparse features with live 0×/2.5× clamping.</div>
+              <div class="empty-hint">Decompose residual activations into interpretable sparse features with live 0×/2.5× clamping.</div>
+            </div>
+          </div>
+
+          <!-- Studio v6: Multi-Edit A/B Arena -->
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">MULTI-EDIT A/B ARENA</span>
+              <span id="arena-winner-pill" class="mono-accent">READY</span>
+            </div>
+            <button id="btn-run-arena" class="mini-btn full mb-6">⚔ Compare Base vs. NF4 vs. Wanda vs. SVD</button>
+            <div id="arena-leaderboard" class="circuit-node-list">
+              <div class="empty-hint">Non-destructively benchmark multiple candidate weight edits side-by-side on the active prompt.</div>
             </div>
           </div>
 
@@ -712,16 +769,70 @@
             <span class="card-title">PRE-EXPORT BATCH EVAL GATE</span>
             <span id="eval-verdict-pill" class="verdict-pill hidden">GO</span>
           </div>
-          <div id="eval-summary-copy" class="helper-copy">Compare Base vs. Edited across 6 commerce, tool-schema, RLVR math &amp; safety boundary tests.</div>
+          <div class="patch-builder mt-6" style="grid-template-columns:1fr auto auto">
+            <select id="eval-reward-select" class="precision-select compact" title="StateSet Reward Scorer">
+              <option value="composite">Reward: StateSet Composite (4-Axis)</option>
+              <option value="customer_support">Reward: SupportConversationReward v2</option>
+              <option value="tool_calling">Reward: Tool Schema &amp; Ledger</option>
+              <option value="gsm8k">Reward: RLVR / GSM8K Reasoning</option>
+            </select>
+            <button id="btn-run-eval-gate" class="mini-btn">⚡ Run Gate</button>
+            <button id="btn-auto-repair" class="mini-btn" title="Automatically dial back destructive edits or clamp outliers until Eval Gate hits GO">🔧 Auto-Repair</button>
+          </div>
+          <details class="cli-drawer mt-6">
+            <summary>Optional Custom Eval Suite (JSONL or 1 Prompt / Line)</summary>
+            <textarea id="eval-custom-jsonl" class="precision-textarea mt-6" rows="3" placeholder='{"prompt": "My order #8812 arrived broken", "category": "Custom Support"}'></textarea>
+          </details>
+          <div id="eval-summary-copy" class="helper-copy mt-6">Compare Base vs. Edited across 6 commerce, tool-schema, RLVR math &amp; safety tests with 95% bootstrap CI.</div>
           <div id="eval-case-list" class="eval-case-list mt-6 hidden"></div>
-          <button id="btn-run-eval-gate" class="mini-btn full mt-6">⚡ Run 6-Case Regression Eval Gate</button>
         </div>
 
-        <label class="field mt-8">
-          <span>Export Directory Name</span>
-          <input id="export-name-input" class="precision-input mono" value="surgical-edit-v1" />
-        </label>
-        <label class="inline-toggle mt-8">
+        <div class="form-grid-2 mt-8">
+          <label class="field">
+            <span>Export Format</span>
+            <select id="export-format-select" class="precision-select compact">
+              <option value="safetensors">Verified .safetensors</option>
+              <option value="lora">Diff-as-LoRA (PEFT SVD)</option>
+              <option value="gguf">GGUF v3 + Ollama Modelfile</option>
+              <option value="hf_card">HF Model Card + Recipe</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Export Directory Name</span>
+            <input id="export-name-input" class="precision-input mono" value="surgical-edit-v1" />
+          </label>
+        </div>
+
+        <div id="export-hfcard-opts" class="mt-6 hidden">
+          <label class="field">
+            <span>Target Hugging Face Repo ID</span>
+            <input id="export-hf-repo" class="precision-input mono" placeholder="stateset/qwen-surgical-v7" />
+          </label>
+        </div>
+
+        <div id="export-lora-opts" class="form-grid-2 mt-6 hidden">
+          <label class="field">
+            <span>LoRA Rank r</span>
+            <input id="export-lora-rank" type="number" min="1" max="128" value="16" class="precision-input mono" />
+          </label>
+          <label class="field">
+            <span>LoRA Alpha α</span>
+            <input id="export-lora-alpha" type="number" min="1" max="512" value="32" class="precision-input mono" />
+          </label>
+        </div>
+
+        <div id="export-gguf-opts" class="mt-6 hidden">
+          <label class="field">
+            <span>GGUF Quantization Type</span>
+            <select id="export-gguf-quant" class="precision-select compact">
+              <option value="Q8_0" selected>Q8_0 (8-bit Block Quantized)</option>
+              <option value="F16">F16 (Half Precision)</option>
+              <option value="F32">F32 (Full Precision)</option>
+            </select>
+          </label>
+        </div>
+
+        <label id="export-merge-probe-row" class="inline-toggle mt-8">
           <input id="export-merge-probe" type="checkbox" checked />
           <span>Run <code>merge_adapter</code> key-remap &amp; effect probe (<code>merge_probe.json</code>)</span>
         </label>
@@ -730,6 +841,14 @@
           <button id="btn-export-html-report" class="action-btn subtle" title="Download single-file offline interactive 3D HTML PR report">📄 HTML Report</button>
           <button id="btn-confirm-export" class="action-btn primary full">Write &amp; Verify .safetensors</button>
         </div>
+      </div>
+    </div>
+
+    <!-- Studio v6: Command Palette Modal (Ctrl+K / ⌘K) -->
+    <div id="cmd-palette-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+      <div class="cmd-palette-card">
+        <input id="cmd-palette-input" class="precision-input" type="search" placeholder="Jump to any 3D view, surgical op, lighting rig, SAE atlas, or export… (Esc to close)" />
+        <div id="cmd-palette-list" class="cmd-palette-list"></div>
       </div>
     </div>
 

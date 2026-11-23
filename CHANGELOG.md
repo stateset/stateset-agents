@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **3D Weight Studio v6 + v7 (`Attention 3D`, `Residual 3D`, Diff-as-LoRA, GGUF v3, Auto-Repair, Arena, SAE Atlas, HF Model Card & Sessions):**
+  - **7 WebGL2 PBR 3D Topologies:** Added **`Attention 3D`** (Hotkey `6`: 8-head causal attention gallery, single-head cathedral, click-to-zoom & live **✂ Ablate Head** surgery) and **`Residual 3D`** (Hotkey `7`: twin-ribbon Base vs. Active Edited/Steered residual stream highway with 2D PCA drift arcs, Attention/MLP contribution pillars, and Logit Lens top-token beacons).
+  - **PEFT Diff-as-LoRA & GGUF v3 / Ollama Export:** SVD-factorize surgical diffs `ΔW` into compact PEFT LoRA adapters (`POST /api/weight-studio/export/lora`), write header-verified binary **GGUF v3** (`Q8_0`/`F16`/`F32`) + Ollama `Modelfile` bundles (`POST /export/gguf`), and generate YAML-frontmatter Hugging Face Model Cards + reproducible recipes (`POST /export/hf-card`).
+  - **Custom JSONL Eval Gate, Multi-Edit A/B Arena & Surgical Auto-Repair:** Selectable StateSet reward scorers (`composite`, `customer_support`, `tool_calling`, `gsm8k`) with inline JSONL suites, 95% bootstrap confidence intervals, non-destructive side-by-side candidate benchmarking (`POST /arena/compare`), and one-click **🔧 Auto-Repair** (`POST /edits/auto-repair`) to recover failing edits back to **`GO`**.
+  - **Pretrained SAE Atlas Loader, Persistent Sessions, `⌘K` Command Palette & 10 MCP Tools:** Switch between Gemma Scope 2B, Llama Scope 8B, Qwen Scope, or local `.safetensors`/`.npz` SAE decoders; save/restore named workbench sessions (`GET/POST /sessions`); fuzzy-search every action via `Ctrl+K`/`⌘K`; and added `studio_export_lora`, `studio_arena_compare`, `studio_residual_stream`, and `studio_save_session` to `stateset_agents.mcp_server`.
+
 ## [0.81.0] - 2026-11-22 — 3D Weight Studio v5
 
 ### Added

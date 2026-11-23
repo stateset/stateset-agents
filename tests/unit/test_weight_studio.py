@@ -754,3 +754,323 @@ def test_studio_v5_hf_range_quantize_sensitivity_telemetry_stream_and_html_repor
     assert "text/html" in r_html.headers["content-type"]
     assert "STATESET 3D WEIGHT STUDIO" in r_html.text
     assert 'canvas id="c3d"' in r_html.text
+
+
+def test_v6_diff_as_lora_and_gguf_export(tmp_path: Path) -> None:
+    """Verify Studio v6 Diff-as-LoRA SVD extraction and GGUF v3 binary + Ollama Modelfile export."""
+    import struct
+
+    ws = _make_sample_workspace(tmp_path)
+    insp = WeightInspector(workspace_root=ws)
+    ed = WeightEditEngine(insp)
+    mid = "local:outputs/demo_lora_run"
+
+    # Apply a surgical edit so ΔW is non-zero
+    ed.apply_edit(mid, "scale", "layer:0", {"factor": 1.25}, label="Scale L0")
+
+    # 1. Diff-as-LoRA PEFT SVD Extraction (low-rank compression + exact full-rank)
+    lora_manifest = ed.export_diff_as_lora(mid, "surgical-lora-test", rank=4, alpha=8)
+    assert lora_manifest["format"] == "peft-lora-diff"
+    assert lora_manifest["reload_verified"] is True
+    assert lora_manifest["adapter_tensor_count"] >= 2
+    assert 0.0 <= lora_manifest["mean_relative_error"] < 0.75
+    assert (ws / lora_manifest["export_file"]).is_file()
+    assert (ws / lora_manifest["export_dir"] / "adapter_config.json").is_file()
+
+    exact_lora = ed.export_diff_as_lora(mid, "surgical-lora-exact", rank=16, alpha=32)
+    assert exact_lora["reload_verified"] is True
+    assert exact_lora["mean_relative_error"] < 1e-4
+
+    # 2. GGUF v3 Binary Export + Ollama Modelfile
+    for q in ("Q8_0", "F16"):
+        gguf = ed.export_gguf_package(mid, f"gguf-test-{q.lower()}", quant_type=q)
+        assert gguf["format"] == "gguf-v3"
+        assert gguf["header_verified"] is True
+        assert gguf["tensor_count"] >= 4
+        gguf_file = ws / gguf["gguf_file"]
+        assert gguf_file.is_file()
+        raw = gguf_file.read_bytes()
+        assert raw[:4] == b"GGUF"
+        ver, t_cnt, kv_cnt = struct.unpack("<IQQ", raw[4:24])
+        assert ver == 3
+        assert t_cnt == gguf["tensor_count"]
+        assert kv_cnt == gguf["kv_count"]
+        assert (ws / gguf["modelfile"]).is_file()
+        assert "ollama create" in gguf["ollama_command"]
+
+
+def test_v6_custom_eval_arena_sae_attention_and_mcp(tmp_path: Path) -> None:
+    """Verify Studio v6 Custom JSONL Eval Gate, Multi-Edit Arena, SAE Atlas Loader, Attention 3D & MCP tools."""
+    from fastapi.testclient import TestClient
+    from safetensors.numpy import save_file
+
+    from stateset_agents.mcp_server import (
+        studio_arena_compare,
+        studio_export_lora,
+    )
+
+    ws = _make_sample_workspace(tmp_path)
+    app = create_studio_app(workspace_root=ws)
+    client = TestClient(app)
+    mid = "local:outputs/demo_lora_run"
+
+    # 1. Eval Rewards catalog + Custom JSONL Eval Gate with 95% CI & W/T/L
+    r_rew = client.get("/api/weight-studio/eval/rewards")
+    assert r_rew.status_code == 200
+    assert any(r["id"] == "customer_support" for r in r_rew.json()["rewards"])
+
+    custom_jsonl = (
+        '{"prompt": "Customer says: order #99102 arrived cracked", "category": "Custom Support"}\n'
+        "Can you check inventory for SKU-8841?\n"
+    )
+    r_eval = client.post(
+        "/api/weight-studio/eval/run",
+        json={
+            "model_id": mid,
+            "reward_fn": "customer_support",
+            "custom_jsonl": custom_jsonl,
+            "max_cases": 4,
+        },
+    )
+    assert r_eval.status_code == 200
+    ev = r_eval.json()
+    assert ev["reward_fn"] == "customer_support"
+    assert ev["verdict"] in {"GO", "WARN", "BLOCK"}
+    assert "ci_95_low" in ev["paired_stats"]
+    assert ev["cases"][0]["category"] == "Custom Support"
+
+    # 2. Multi-Edit A/B Arena (must not mutate session edit history)
+    r_arena = client.post(
+        "/api/weight-studio/arena/compare",
+        json={
+            "model_id": mid,
+            "prompt": "My order #77701 arrived damaged. Can you refund me?",
+            "reward_fn": "composite",
+        },
+    )
+    assert r_arena.status_code == 200
+    arena = r_arena.json()
+    assert len(arena["candidates"]) >= 4
+    assert arena["winner"]
+    # Confirm session history remained untouched (0 edits)
+    r_struct = client.get(f"/api/weight-studio/models/structure?model_id={mid}")
+    assert r_struct.status_code == 200
+    assert r_struct.json()["edit_history"]["edits"] == []
+
+    # 3. Pretrained SAE Dictionary Atlas + Local .safetensors SAE Decoder Loader
+    r_dicts = client.get("/api/weight-studio/sae/dictionaries")
+    assert r_dicts.status_code == 200
+    assert any(d["id"] == "gemma_scope_2b" for d in r_dicts.json()["dictionaries"])
+
+    r_load_atlas = client.post(
+        "/api/weight-studio/sae/load", json={"source_id": "gemma_scope_2b"}
+    )
+    assert r_load_atlas.status_code == 200
+    assert r_load_atlas.json()["feature_count"] == 24
+
+    r_sae = client.post(
+        "/api/weight-studio/sae/analyze",
+        json={"model_id": mid, "prompt": "Check refund policy for damaged item"},
+    )
+    assert r_sae.status_code == 200
+    assert "Gemma Scope" in r_sae.json()["sae_source"]
+
+    # Local .safetensors SAE decoder test
+    sae_file = ws / "outputs" / "tiny_sae.safetensors"
+    rng = np.random.default_rng(7)
+    save_file(
+        {"W_dec": rng.normal(0.0, 1.0, size=(20, 32)).astype(np.float32)},
+        str(sae_file),
+    )
+    r_load_local = client.post(
+        "/api/weight-studio/sae/load",
+        json={"source_id": "local", "local_path": "outputs/tiny_sae.safetensors"},
+    )
+    assert r_load_local.status_code == 200
+    assert r_load_local.json()["source"] == "local_file"
+    assert r_load_local.json()["feature_count"] == 20
+
+    # 4. Multi-Head Causal Attention 3D Matrix API
+    r_attn = client.post(
+        "/api/weight-studio/inference/attention",
+        json={
+            "model_id": mid,
+            "prompt": "My order #77701 arrived damaged after 9 days",
+            "layer_index": 0,
+            "num_heads": 8,
+            "max_tokens": 8,
+        },
+    )
+    assert r_attn.status_code == 200
+    attn = r_attn.json()
+    assert attn["num_heads"] == 8
+    assert len(attn["heads"]) == 8
+    mat0 = np.asarray(attn["heads"][0]["matrix"], dtype=np.float32)
+    assert mat0.shape == (len(attn["tokens"]), len(attn["tokens"]))
+    # Strict causal mask: upper triangle must be 0.0 and each row sums to ~1.0
+    assert np.allclose(np.triu(mat0, k=1), 0.0, atol=1e-5)
+    assert np.allclose(np.sum(mat0, axis=1), 1.0, atol=1e-3)
+
+    # 5. Export endpoints (/export/lora & /export/gguf)
+    r_lora = client.post(
+        "/api/weight-studio/export/lora",
+        json={"model_id": mid, "export_name": "api-lora-v6", "rank": 4, "alpha": 8},
+    )
+    assert r_lora.status_code == 200
+    assert r_lora.json()["reload_verified"] is True
+
+    r_gguf = client.post(
+        "/api/weight-studio/export/gguf",
+        json={"model_id": mid, "export_name": "api-gguf-v6", "quant_type": "Q8_0"},
+    )
+    assert r_gguf.status_code == 200
+    assert r_gguf.json()["header_verified"] is True
+
+    # 6. New v6 MCP Tools
+    mcp_lora = studio_export_lora(
+        mid, export_name="mcp-lora-v6", rank=4, alpha=8, workspace=str(ws)
+    )
+    assert mcp_lora["reload_verified"] is True
+
+    mcp_arena = studio_arena_compare(
+        mid,
+        prompt="Refund order #77701 due to shipping damage",
+        workspace=str(ws),
+    )
+    assert mcp_arena["winner"]
+    assert len(mcp_arena["candidates"]) >= 4
+
+
+def test_v7_residual_stream_auto_repair_hf_card_sessions_and_mcp(
+    tmp_path: Path,
+) -> None:
+    """Verify Studio v7 Residual 3D stream, Auto-Repair, HF Model Card, Session Persistence & MCP tools."""
+    from fastapi.testclient import TestClient
+
+    from stateset_agents.mcp_server import (
+        studio_residual_stream,
+        studio_save_session,
+    )
+
+    ws = _make_sample_workspace(tmp_path)
+    app = create_studio_app(workspace_root=ws)
+    client = TestClient(app)
+    mid = "local:outputs/demo_lora_run"
+
+    # 1. Apply an aggressive destructive prune (95% all) so Eval Gate degrades, then test Residual 3D & Auto-Repair
+    r_prune = client.post(
+        "/api/weight-studio/edits/apply",
+        json={
+            "model_id": mid,
+            "op": "prune",
+            "target": "all",
+            "params": {"sparsity": 0.95},
+            "label": "Extreme Prune 95%",
+        },
+    )
+    assert r_prune.status_code == 200
+
+    # 2. Residual Stream 3D API (Base vs. Active Edited trajectory + Attention/MLP split + Logit Lens)
+    r_res = client.post(
+        "/api/weight-studio/inference/residual",
+        json={
+            "model_id": mid,
+            "prompt": "My order #77701 arrived damaged after 9 days. Can you refund me?",
+        },
+    )
+    assert r_res.status_code == 200
+    res_data = r_res.json()
+    assert res_data["has_edits"] is True
+    assert res_data["layer_count"] >= 2
+    assert len(res_data["stations"]) == res_data["layer_count"]
+    st0 = res_data["stations"][0]
+    assert len(st0["base_coord"]) == 2
+    assert len(st0["edited_coord"]) == 2
+    assert st0["edited_top_token"] and st0["edited_top_token"] != "—"
+    assert st0["edited_top_prob"] > 0.0
+    assert abs((st0["attn_ratio"] + st0["mlp_ratio"]) - 1.0) < 0.02
+
+    # 3. Surgical Auto-Repair -> dials back destructive edit until Eval Gate hits GO
+    r_rep = client.post(
+        "/api/weight-studio/edits/auto-repair",
+        json={"model_id": mid, "reward_fn": "composite", "max_steps": 4},
+    )
+    assert r_rep.status_code == 200
+    rep = r_rep.json()
+    assert rep["repaired"] is True
+    assert rep["final_verdict"] == "GO"
+
+    # 4. HF Model Card & Reproducible Recipe Export
+    r_card = client.post(
+        "/api/weight-studio/export/hf-card",
+        json={
+            "model_id": mid,
+            "export_name": "hf-card-v7-test",
+            "repo_id": "stateset/test-surgical-v7",
+            "include_eval": True,
+            "push_to_hub": False,
+        },
+    )
+    assert r_card.status_code == 200
+    card = r_card.json()
+    assert card["repo_id"] == "stateset/test-surgical-v7"
+    assert (ws / card["model_card_file"]).is_file()
+    assert (ws / card["recipe_file"]).is_file()
+    assert "base_model:" in card["card_preview"]
+    assert "Pre-Export Batch Eval Gate" in card["card_preview"]
+
+    # 5. Workspace Session Save, List & Restore
+    r_scale = client.post(
+        "/api/weight-studio/edits/apply",
+        json={
+            "model_id": mid,
+            "op": "scale",
+            "target": "layer:0",
+            "params": {"factor": 1.15},
+            "label": "Session Scale L0",
+        },
+    )
+    assert r_scale.status_code == 200
+
+    r_save = client.post(
+        "/api/weight-studio/sessions/save",
+        json={
+            "session_name": "refund-v7-check",
+            "model_id": mid,
+            "metadata": {"prompt": "Check order #77701"},
+        },
+    )
+    assert r_save.status_code == 200
+    assert r_save.json()["operation_count"] >= 1
+
+    r_list = client.get("/api/weight-studio/sessions")
+    assert r_list.status_code == 200
+    assert any(
+        s["session_name"] == "refund-v7-check" for s in r_list.json()["sessions"]
+    )
+
+    # Reset edits then restore session and confirm recipe replayed cleanly
+    client.post("/api/weight-studio/edits/reset", json={"model_id": mid})
+    r_load = client.post(
+        "/api/weight-studio/sessions/load",
+        json={"session_name": "refund-v7-check"},
+    )
+    assert r_load.status_code == 200
+    assert r_load.json()["replay"]["applied_count"] >= 1
+    assert r_load.json()["metadata"]["prompt"] == "Check order #77701"
+
+    # 6. New v7 MCP Tools (10 Studio MCP tools total)
+    mcp_res = studio_residual_stream(
+        mid,
+        prompt="Refund order #77701 due to shipping damage",
+        workspace=str(ws),
+    )
+    assert mcp_res["layer_count"] >= 2
+
+    mcp_sess = studio_save_session(
+        "mcp-session-v7",
+        mid,
+        metadata={"source": "mcp"},
+        workspace=str(ws),
+    )
+    assert mcp_sess["session_name"] == "mcp-session-v7"

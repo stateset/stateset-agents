@@ -190,9 +190,114 @@ class BatchEvalRequest(BaseModel):
     model_id: str
     checkpoint_id: str | None = None
     dataset_path: str | None = None
+    custom_jsonl: str | None = None
+    reward_fn: str = Field(
+        "composite", pattern="^(composite|customer_support|tool_calling|gsm8k)$"
+    )
     max_cases: int = Field(6, ge=2, le=12)
     causal_patches: list[dict[str, Any]] = Field(default_factory=list)
     steering: dict[str, Any] | None = None
+
+
+class ExportLoraRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_id: str
+    checkpoint_id: str | None = None
+    export_name: str = Field(..., min_length=1, max_length=120)
+    rank: int = Field(16, ge=1, le=128)
+    alpha: int = Field(32, ge=1, le=512)
+
+
+class ExportGgufRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_id: str
+    checkpoint_id: str | None = None
+    export_name: str = Field(..., min_length=1, max_length=120)
+    quant_type: str = Field("Q8_0", pattern="^(F32|F16|Q8_0)$")
+
+
+class ArenaCompareRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_id: str
+    checkpoint_id: str | None = None
+    prompt: str = Field(..., min_length=1, max_length=8000)
+    system_prompt: str = ""
+    reward_fn: str = Field(
+        "composite", pattern="^(composite|customer_support|tool_calling|gsm8k)$"
+    )
+    candidates: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AttentionMapRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_id: str
+    checkpoint_id: str | None = None
+    prompt: str = Field(..., min_length=1, max_length=8000)
+    system_prompt: str = ""
+    layer_index: int = Field(0, ge=0, le=256)
+    num_heads: int = Field(8, ge=2, le=12)
+    max_tokens: int = Field(12, ge=4, le=14)
+
+
+class LoadSaeRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    source_id: str = Field("stateset_builtin", min_length=1, max_length=120)
+    local_path: str = ""
+    repo_id: str = ""
+
+
+class ResidualStreamRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_id: str
+    checkpoint_id: str | None = None
+    prompt: str = Field(..., min_length=1, max_length=8000)
+    system_prompt: str = ""
+    causal_patches: list[dict[str, Any]] = Field(default_factory=list)
+    steering: dict[str, Any] | None = None
+
+
+class AutoRepairRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_id: str
+    checkpoint_id: str | None = None
+    reward_fn: str = Field(
+        "composite", pattern="^(composite|customer_support|tool_calling|gsm8k)$"
+    )
+    max_steps: int = Field(4, ge=1, le=12)
+
+
+class HfCardRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_id: str
+    checkpoint_id: str | None = None
+    export_name: str = Field(..., min_length=1, max_length=120)
+    repo_id: str = ""
+    include_eval: bool = True
+    push_to_hub: bool = False
+    token: str = ""
+
+
+class SaveSessionRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    session_name: str = Field(..., min_length=1, max_length=120)
+    model_id: str
+    checkpoint_id: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class LoadSessionRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    session_name: str = Field(..., min_length=1, max_length=120)
 
 
 class SaeAnalyzeRequest(BaseModel):
@@ -625,7 +730,11 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
         except (KeyError, ValueError, FileNotFoundError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # --- Batch Eval Gate (Pre-Export Regression Scorecard) ---
+    # --- Batch Eval Gate (Pre-Export Regression Scorecard + Custom JSONL & Rewards) ---
+
+    @api.get("/eval/rewards")
+    async def list_eval_rewards() -> dict[str, Any]:
+        return {"rewards": _rt().inference.list_eval_rewards()}
 
     @api.post("/eval/run")
     async def run_batch_eval(req: BatchEvalRequest) -> dict[str, Any]:
@@ -634,6 +743,8 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
                 req.model_id,
                 checkpoint_id=req.checkpoint_id,
                 dataset_path=req.dataset_path,
+                custom_jsonl=req.custom_jsonl,
+                reward_fn=req.reward_fn,
                 max_cases=req.max_cases,
                 causal_patches=req.causal_patches,
                 steering=req.steering,
@@ -641,7 +752,159 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
         except (KeyError, ValueError, FileNotFoundError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # --- Sparse Autoencoder (SAE) Monosemantic Feature Explorer ---
+    # --- Studio v6: Diff-as-LoRA & GGUF v3 / Ollama Export ---
+
+    @api.post("/export/lora")
+    async def export_diff_lora(req: ExportLoraRequest) -> dict[str, Any]:
+        try:
+            return _rt().editor.export_diff_as_lora(
+                req.model_id,
+                req.export_name,
+                rank=req.rank,
+                alpha=req.alpha,
+                checkpoint_id=req.checkpoint_id,
+            )
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @api.post("/export/gguf")
+    async def export_gguf(req: ExportGgufRequest) -> dict[str, Any]:
+        try:
+            return _rt().editor.export_gguf_package(
+                req.model_id,
+                req.export_name,
+                quant_type=req.quant_type,
+                checkpoint_id=req.checkpoint_id,
+            )
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # --- Studio v6: Multi-Edit A/B Arena ---
+
+    @api.post("/arena/compare")
+    async def arena_compare(req: ArenaCompareRequest) -> dict[str, Any]:
+        try:
+            return _rt().inference.compare_arena_candidates(
+                req.model_id,
+                req.prompt,
+                req.candidates or None,
+                system_prompt=req.system_prompt,
+                checkpoint_id=req.checkpoint_id,
+                reward_fn=req.reward_fn,
+            )
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # --- Studio v6: Multi-Head Causal Attention 3D Matrix ---
+
+    @api.post("/inference/attention")
+    async def inference_attention(req: AttentionMapRequest) -> dict[str, Any]:
+        try:
+            return _rt().inference.compute_attention_map(
+                req.model_id,
+                req.prompt,
+                checkpoint_id=req.checkpoint_id,
+                system_prompt=req.system_prompt,
+                layer_index=req.layer_index,
+                num_heads=req.num_heads,
+                max_tokens=req.max_tokens,
+            )
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # --- Sparse Autoencoder (SAE) Monosemantic Feature Explorer & Pretrained Loader ---
+
+    @api.get("/sae/dictionaries")
+    async def sae_dictionaries() -> dict[str, Any]:
+        return {"dictionaries": _rt().inference.list_sae_dictionaries()}
+
+    @api.post("/sae/load")
+    async def sae_load(req: LoadSaeRequest) -> dict[str, Any]:
+        try:
+            return _rt().inference.load_sae_dictionary(
+                req.source_id,
+                local_path=req.local_path,
+                repo_id=req.repo_id,
+            )
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # --- Studio v7: Residual Stream 3D, Auto-Repair, HF Model Card & Sessions ---
+
+    @api.post("/inference/residual")
+    async def inference_residual(req: ResidualStreamRequest) -> dict[str, Any]:
+        try:
+            return _rt().inference.compute_residual_stream_3d(
+                req.model_id,
+                req.prompt,
+                checkpoint_id=req.checkpoint_id,
+                system_prompt=req.system_prompt,
+                causal_patches=req.causal_patches,
+                steering=req.steering,
+            )
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @api.post("/edits/auto-repair")
+    async def auto_repair_edits(req: AutoRepairRequest) -> dict[str, Any]:
+        rt = _rt()
+        try:
+            return rt.editor.auto_repair_edits(
+                req.model_id,
+                rt.inference,
+                checkpoint_id=req.checkpoint_id,
+                reward_fn=req.reward_fn,
+                max_steps=req.max_steps,
+            )
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @api.post("/export/hf-card")
+    async def export_hf_card(req: HfCardRequest) -> dict[str, Any]:
+        rt = _rt()
+        try:
+            eval_rep = (
+                rt.inference.run_batch_eval(
+                    req.model_id, checkpoint_id=req.checkpoint_id, max_cases=6
+                )
+                if req.include_eval
+                else None
+            )
+            return rt.editor.export_hf_model_card(
+                req.model_id,
+                req.export_name,
+                repo_id=req.repo_id,
+                eval_report=eval_rep,
+                checkpoint_id=req.checkpoint_id,
+                push_to_hub=req.push_to_hub,
+                token=req.token,
+            )
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @api.get("/sessions")
+    async def list_sessions() -> dict[str, Any]:
+        sessions = _rt().editor.list_sessions()
+        return {"sessions": sessions, "count": len(sessions)}
+
+    @api.post("/sessions/save")
+    async def save_session(req: SaveSessionRequest) -> dict[str, Any]:
+        try:
+            return _rt().editor.save_session(
+                req.session_name,
+                model_id=req.model_id,
+                checkpoint_id=req.checkpoint_id,
+                metadata=req.metadata,
+            )
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @api.post("/sessions/load")
+    async def load_session(req: LoadSessionRequest) -> dict[str, Any]:
+        try:
+            return _rt().editor.load_session(req.session_name)
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @api.post("/sae/analyze")
     async def sae_analyze(req: SaeAnalyzeRequest) -> dict[str, Any]:
