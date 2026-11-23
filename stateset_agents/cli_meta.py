@@ -112,6 +112,24 @@ def doctor(
                 "weight_studio_ready": studio_ready,
                 "mcp_stdio_ready": mcp_ready,
                 "mcp_http_ready": studio_ready,
+                "mcp_auth_mode": (
+                    "bearer_protected"
+                    if os.environ.get("STATESET_MCP_TOKEN")
+                    else (
+                        "readonly_configured"
+                        if os.environ.get("STATESET_MCP_READONLY_TOKEN")
+                        else "open_localhost"
+                    )
+                ),
+                "mcp_external_paths_allowed": os.environ.get(
+                    "STATESET_MCP_ALLOW_EXTERNAL_PATHS", ""
+                )
+                .strip()
+                .lower()
+                in {"1", "true", "yes"},
+                "live_trace_file_exists": (
+                    Path("outputs") / "weight_studio_traces" / "live_traces.jsonl"
+                ).is_file(),
             },
         }
         _echo(json.dumps(payload, sort_keys=True))

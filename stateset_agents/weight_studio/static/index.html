@@ -432,6 +432,53 @@
             </div>
             <div id="canary-result-summary" class="empty-hint">Paired shadow replay + zero-regression safety guard + durable rollout ledger.</div>
           </div>
+
+          <!-- Live Production Traces (OTLP/JSON) & Reward Calibration Audit -->
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">LIVE OTLP TRACES &amp; REWARD CALIBRATION</span>
+              <span id="traces-status-pill" class="mono-accent">0 TRACES</span>
+            </div>
+            <details class="cli-drawer mb-6">
+              <summary>Paste OTLP/JSON or OpenAI Chat Trace (Optional)</summary>
+              <textarea id="traces-payload-input" class="precision-textarea mt-6" rows="3" placeholder='{"prompt": "My order #77701 arrived broken", "response": "Sorry [NAME].", "human_score": 0.15}'></textarea>
+            </details>
+            <div class="op-action-row mb-6">
+              <button id="btn-ingest-trace" class="mini-btn full" title="Ingest pasted OTLP/JSON trace or a live sample span">📡 Ingest Trace</button>
+              <button id="btn-audit-calibration" class="mini-btn full" title="Audit proxy-vs-human correlation (Spearman ρ, MAE &amp; reward-hacking rate)">🧪 Calibrate</button>
+              <button id="btn-heal-live-traces" class="mini-btn full" title="Auto-heal current model directly from accumulated failing live traces">🩹 Heal Live</button>
+            </div>
+            <div id="traces-result-summary" class="empty-hint">Accepts OpenTelemetry OTLP/JSON resourceSpans &amp; audits reward-hacking drift.</div>
+          </div>
+
+          <!-- Live vLLM / Ollama LoRA Hot-Swap & Shadow A/B Bridge -->
+          <div class="section-card">
+            <div class="card-title-row">
+              <span class="card-title">LIVE VLLM / OLLAMA SHADOW A/B</span>
+              <span id="live-ab-status-pill" class="mono-accent">READY</span>
+            </div>
+            <details class="cli-drawer mb-6">
+              <summary>Configure Live Endpoint &amp; Candidate Models</summary>
+              <div class="form-grid-2 mt-6">
+                <label class="field">
+                  <span>Endpoint URL</span>
+                  <input id="live-ab-endpoint" class="precision-input mono" value="http://127.0.0.1:8000/v1" />
+                </label>
+                <label class="field">
+                  <span>Baseline Model</span>
+                  <input id="live-ab-baseline" class="precision-input mono" value="base-model" />
+                </label>
+              </div>
+              <label class="field mt-6">
+                <span>Candidate Model / Hot-Loaded LoRA</span>
+                <input id="live-ab-candidate" class="precision-input mono" value="stateset-healed-lora" />
+              </label>
+            </details>
+            <div class="op-action-row mb-6">
+              <button id="btn-run-live-ab" class="mini-btn full" title="Run real-token paired shadow A/B evaluation against live vLLM/Ollama endpoint">⚡ Run Live Shadow A/B</button>
+            </div>
+            <div id="live-ab-result-summary" class="empty-hint">Real-token latency (p50/p95), StateSet reward Δ &amp; 95% CI against live servers.</div>
+          </div>
         </section>
 
         <!-- TAB 2: FINETUNING WORKBENCH & LIVE PYTORCH TRAINER -->

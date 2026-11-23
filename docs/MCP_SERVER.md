@@ -131,6 +131,19 @@ For remote or team deployments of Streamable HTTP MCP (`POST /api/weight-studio/
 - Set `STATESET_MCP_TOKEN=<secret>` to require `Authorization: Bearer <secret>` for full read/write MCP access.
 - Set `STATESET_MCP_READONLY_TOKEN=<secret>` to grant read-only inspection access (mutating tools are rejected with JSON-RPC `-32001`).
 - All file paths passed to Studio/MCP tools are strictly confined to the active `workspace_root` (preventing path traversal outside the workspace unless `STATESET_MCP_ALLOW_EXTERNAL_PATHS=1`).
+- Inspect active auth & workspace confinement posture with `stateset-agents doctor --json` (`studio_and_mcp.mcp_auth_mode`).
+
+## Matching CLI Commands (`traces` & `serve-ab`)
+
+```bash
+# Ingest live OTLP/JSON or JSONL traces, audit reward calibration & auto-heal
+stateset-agents traces --ingest logs/prod_otlp.json --audit --auto-heal --json
+
+# Hot-load a Diff-as-LoRA adapter on live vLLM and run real-token shadow A/B
+stateset-agents serve-ab --endpoint http://127.0.0.1:8000/v1 \
+  --baseline base-model --candidate healed-lora \
+  --load-lora-name healed-lora --load-lora-path outputs/weight_studio_exports/healed-lora
+```
 
 ## Live MCP Resources (`stateset://studio/*`)
 

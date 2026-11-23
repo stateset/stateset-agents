@@ -1357,6 +1357,7 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
                 export_format=req.export_format,
                 output_name=req.output_name,
             )
+            res["ingested_failing_traces"] = len(failing)
             rt.events.publish(
                 "trace_auto_heal",
                 source="otlp_webhook",

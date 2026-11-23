@@ -1802,3 +1802,153 @@ def test_v86_live_serving_otlp_traces_calibration_and_mcp_auth_confinement(
     )
     assert r_rw_ok.status_code == 200
     assert r_rw_ok.json()["result"]["isError"] is False
+
+
+def test_v87_cli_traces_serve_ab_and_doctor_security_posture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify CLI `traces`, `serve-ab`, and enhanced `doctor --json` security diagnostics."""
+    from typer.testing import CliRunner
+
+    from stateset_agents.cli import app as cli_app
+    from stateset_agents.weight_studio.live_serving import LiveServingBridge
+
+    runner = CliRunner()
+
+    # 1. `stateset-agents traces --ingest --audit --auto-heal --json`
+    trace_file = tmp_path / "prod_traces.jsonl"
+    trace_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "prompt": "My order #77701 arrived broken",
+                        "response": "Sorry [NAME]. Sorry [NAME].",
+                        "human_score": 0.1,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "prompt": "Order #77702 damaged within 10 days.",
+                        "response": "I verified order #77702 under our 30-day policy and issued your refund.",
+                        "human_score": 0.95,
+                    }
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    res_traces = runner.invoke(
+        cli_app,
+        [
+            "traces",
+            "--ingest",
+            str(trace_file),
+            "--audit",
+            "--auto-heal",
+            "--workspace",
+            str(tmp_path),
+            "--json",
+        ],
+    )
+    assert res_traces.exit_code == 0, res_traces.output
+    data_traces = json.loads(res_traces.output)
+    assert data_traces["ingest"]["ingested_count"] == 2
+    assert data_traces["calibration"]["verdict"] in (
+        "CALIBRATED",
+        "DRIFT_WARN",
+        "HACKING_RISK",
+    )
+    assert data_traces["auto_heal"]["eval_gate"]["verdict"] in ("GO", "WARN", "BLOCK")
+    assert data_traces["summary"]["total_traces"] == 2
+
+    # 2. `stateset-agents serve-ab --json` with mocked LiveServingBridge HTTP caller
+    lora_dir = tmp_path / "outputs" / "weight_studio_exports" / "cli_lora"
+    lora_dir.mkdir(parents=True)
+    (lora_dir / "adapter_config.json").write_text("{}", encoding="utf-8")
+
+    def fake_http_post(
+        url: str, payload: dict, headers: dict, timeout: float
+    ) -> tuple[int, dict]:
+        if url.endswith("/load_lora_adapter"):
+            return 200, {"status": "ok"}
+        model = payload.get("model", "")
+        text = (
+            "I verified your order under our 30-day policy and initiated a full refund."
+            if "lora" in model
+            else "Sorry [NAME]. Sorry [NAME]."
+        )
+        return 200, {
+            "choices": [{"message": {"content": text}}],
+            "usage": {"completion_tokens": 12},
+        }
+
+    monkeypatch.setattr(
+        "stateset_agents.weight_studio.live_serving._default_http_post_json",
+        fake_http_post,
+    )
+    # Also ensure default init uses our patched function cleanly
+    orig_init = LiveServingBridge.__init__
+
+    def patched_init(self, workspace_root: Path, *, http_caller=None) -> None:
+        orig_init(self, workspace_root, http_caller=http_caller or fake_http_post)
+
+    monkeypatch.setattr(LiveServingBridge, "__init__", patched_init)
+
+    res_ab = runner.invoke(
+        cli_app,
+        [
+            "serve-ab",
+            "--endpoint",
+            "http://127.0.0.1:8000/v1",
+            "--baseline",
+            "base-qwen",
+            "--candidate",
+            "healed-lora",
+            "--load-lora-name",
+            "healed-lora",
+            "--load-lora-path",
+            str(lora_dir),
+            "--workspace",
+            str(tmp_path),
+            "--json",
+        ],
+    )
+    assert res_ab.exit_code == 0, res_ab.output
+    data_ab = json.loads(res_ab.output)
+    assert data_ab["lora_hot_load"]["loaded"] is True
+    assert data_ab["decision"] == "PROMOTE"
+    assert data_ab["paired_record"]["mean_delta"] > 0
+
+    # Also verify non-JSON human-readable CLI formatting for both commands
+    res_ab_text = runner.invoke(
+        cli_app,
+        [
+            "serve-ab",
+            "--endpoint",
+            "http://127.0.0.1:8000/v1",
+            "--baseline",
+            "base-qwen",
+            "--candidate",
+            "healed-lora",
+            "--workspace",
+            str(tmp_path),
+        ],
+    )
+    assert res_ab_text.exit_code == 0, res_ab_text.output
+    assert "PROMOTE" in res_ab_text.output
+
+    res_traces_text = runner.invoke(
+        cli_app,
+        ["traces", "--audit", "--workspace", str(tmp_path)],
+    )
+    assert res_traces_text.exit_code == 0, res_traces_text.output
+    assert "StateSet Live Traces" in res_traces_text.output
+
+    # 3. `stateset-agents doctor --json` surfaces MCP auth mode & confinement posture
+    monkeypatch.setenv("STATESET_MCP_TOKEN", "prod-secret")
+    res_doc = runner.invoke(cli_app, ["doctor", "--json"])
+    assert res_doc.exit_code == 0, res_doc.output
+    doc_payload = json.loads(res_doc.output)
+    assert doc_payload["studio_and_mcp"]["mcp_auth_mode"] == "bearer_protected"
+    assert doc_payload["studio_and_mcp"]["mcp_external_paths_allowed"] is False
