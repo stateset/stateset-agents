@@ -19,12 +19,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ._stats import bootstrap_ci_95, resolve_confined_path
 from .editor import WeightEditEngine
 from .inference_engine import InferenceStudioEngine
 from .inspector import WeightInspector
@@ -66,25 +66,24 @@ DEFAULT_SHADOW_TRAFFIC: list[dict[str, str]] = [
 
 
 def _bootstrap_ci_95(values: list[float]) -> tuple[float, float]:
-    if not values:
-        return (0.0, 0.0)
-    mean = sum(values) / len(values)
-    if len(values) == 1:
-        return (round(mean, 4), round(mean, 4))
-    var = sum((v - mean) ** 2 for v in values) / max(1, len(values) - 1)
-    se = math.sqrt(var / len(values))
-    return (round(mean - 1.96 * se, 4), round(mean + 1.96 * se, 4))
+    return bootstrap_ci_95(values, clamp_unit=False)
 
 
 def _load_shadow_traffic(
     traffic_path: str | None = None,
     traffic_jsonl: str | None = None,
+    *,
+    workspace_root: Path | None = None,
 ) -> list[dict[str, str]]:
     raw_lines: list[str] = []
     if traffic_jsonl and traffic_jsonl.strip():
         raw_lines.extend(traffic_jsonl.strip().splitlines())
     elif traffic_path and traffic_path.strip():
-        p = Path(traffic_path).expanduser()
+        p = (
+            resolve_confined_path(traffic_path, workspace_root)
+            if workspace_root is not None
+            else Path(traffic_path).expanduser()
+        )
         if not p.exists():
             raise FileNotFoundError(f"Shadow traffic file not found: {p}")
         raw_lines.extend(p.read_text(encoding="utf-8").splitlines())
@@ -182,7 +181,9 @@ class CanaryRolloutEngine:
         t0 = time.perf_counter()
 
         custom = _load_shadow_traffic(
-            traffic_path=traffic_path, traffic_jsonl=traffic_jsonl
+            traffic_path=traffic_path,
+            traffic_jsonl=traffic_jsonl,
+            workspace_root=self.inspector.workspace_root,
         )
         traffic = (custom if custom else list(DEFAULT_SHADOW_TRAFFIC))[
             : max(1, min(20, int(max_requests)))
