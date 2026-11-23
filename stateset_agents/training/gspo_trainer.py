@@ -37,6 +37,7 @@ from stateset_agents.rewards.multi_objective_reward import (
     MultiObjectiveRewardFunction as MultiObjectiveReward,
 )
 
+from .studio_callback import StudioControlMixin
 from . import objectives, rl_losses
 from .gspo_config import GSPOConfig
 from .gspo_generation import (
@@ -357,7 +358,7 @@ def _clamped_cosine_lr(step: int, *, warmup_steps: int, total_steps: int) -> flo
     return 0.5 * (1.0 + math.cos(math.pi * min(1.0, progress)))
 
 
-class GSPOTrainer:
+class GSPOTrainer(StudioControlMixin):
     #: Preset evaluated when ``config.objective`` is unset; the token variant
     #: overrides this instead of reassigning ``_objective`` after ``__init__``.
     _native_objective = "gspo"
@@ -879,6 +880,7 @@ class GSPOTrainer:
             if key in self.training_metrics:
                 self.training_metrics[key].append(value)
 
+        self.enforce_studio_step(int(getattr(self, "global_step", 0)), metrics)
         return metrics
 
     async def _compute_ref_log_prob(self, prompt: str, response: str) -> float:

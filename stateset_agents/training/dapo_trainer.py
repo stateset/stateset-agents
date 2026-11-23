@@ -21,6 +21,7 @@ from typing import Any, cast
 import numpy as np
 import torch
 
+from .studio_callback import StudioControlMixin
 from . import objectives, rl_losses
 from .dapo_config import DAPOConfig
 from .trainer_runtime import (
@@ -299,7 +300,7 @@ class DynamicSamplingBuffer:
         return len(self.buffer)
 
 
-class DAPOTrainer:
+class DAPOTrainer(StudioControlMixin):
     """
     Decoupled Clip and Dynamic Sampling Policy Optimization (DAPO) Trainer
 
@@ -927,6 +928,7 @@ class DAPOTrainer:
             if key in self.metrics_history:
                 self.metrics_history[key].append(metrics[key])
 
+        self.enforce_studio_step(int(self.global_step), metrics)
         return metrics
 
     def save_checkpoint(self, output_dir: str) -> None:

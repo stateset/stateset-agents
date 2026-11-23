@@ -11,9 +11,14 @@ on:
       - "stateset_agents/mcp_server.py"
       - "stateset_agents/cli_mcp.py"
       - "stateset_agents/cli_studio.py"
+      - "stateset_agents/core/sandbox_pool.py"
+      - "stateset_agents/training/chunked_rl_loss.py"
+      - "stateset_agents/training/studio_callback.py"
+      - "benchmarks/chunked_rl_shootout.py"
       - "npm/**"
       - "tests/unit/test_weight_studio.py"
       - "tests/unit/test_mcp_server.py"
+      - "tests/unit/test_open_weight_rl_v90.py"
       - "examples/weight_studio_quickstart.py"
       - "examples/autonomous_surgery_autopilot.py"
       - ".github/workflows/weight-studio-smoke.yml"
@@ -24,9 +29,14 @@ on:
       - "stateset_agents/mcp_server.py"
       - "stateset_agents/cli_mcp.py"
       - "stateset_agents/cli_studio.py"
+      - "stateset_agents/core/sandbox_pool.py"
+      - "stateset_agents/training/chunked_rl_loss.py"
+      - "stateset_agents/training/studio_callback.py"
+      - "benchmarks/chunked_rl_shootout.py"
       - "npm/**"
       - "tests/unit/test_weight_studio.py"
       - "tests/unit/test_mcp_server.py"
+      - "tests/unit/test_open_weight_rl_v90.py"
       - "examples/weight_studio_quickstart.py"
       - "examples/autonomous_surgery_autopilot.py"
       - ".github/workflows/weight-studio-smoke.yml"
@@ -157,6 +167,20 @@ jobs:
                       assert r.status == 200
                   page.wait_for_function("() => (document.querySelector('#mcp-activity-log')?.textContent || '').includes('studio_apply_edit')", timeout=8000)
                   page.click("#btn-close-mcp")
+
+                  # Verify Live RL Cockpit (Sparkline, Pause/Rollback, 3-Domain Pool & Cloud Plan)
+                  page.click('.wb-tab[data-tab="autopilot"]')
+                  page.wait_for_selector("#btn-rl-cockpit-pulse", state="visible", timeout=10000)
+                  page.click("#btn-rl-cockpit-pulse")
+                  page.wait_for_function("() => (document.querySelector('#rl-cockpit-pill')?.textContent || '').includes('STEP 1')", timeout=10000)
+                  page.click("#btn-rl-sandbox-pool")
+                  page.wait_for_function("() => (document.querySelector('#rl-cockpit-pill')?.textContent || '').includes('POOL')", timeout=15000)
+                  page.click("#btn-rl-blueprint")
+                  page.wait_for_function("() => (document.querySelector('#rl-cockpit-pill')?.textContent || '').includes('PLAN')", timeout=10000)
+                  page.click("#btn-rl-pause")
+                  page.wait_for_function("() => (document.querySelector('#rl-cockpit-pill')?.textContent || '').includes('PAUSED')", timeout=10000)
+                  page.click("#btn-rl-rollback")
+                  page.wait_for_function("() => (document.querySelector('#rl-cockpit-pill')?.textContent || '').includes('ROLLBACK')", timeout=10000)
 
                   page.click("#btn-export-modal")
                   page.click("#btn-run-eval-gate")

@@ -26,6 +26,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .studio_callback import StudioControlMixin
 from ..core.rust_accelerator import compute_gae as _rust_compute_gae
 from ..core.rust_accelerator import is_rust_available as _rust_gae_available
 from . import objectives, rl_losses
@@ -384,7 +385,7 @@ def _shares(sizes: list[float]) -> list[float]:
     return [size / total if total > 0 else 0.0 for size in sizes]
 
 
-class VAPOTrainer:
+class VAPOTrainer(StudioControlMixin):
     """
     Value-Augmented Policy Optimization (VAPO) Trainer
 
@@ -1149,6 +1150,7 @@ class VAPOTrainer:
             if key in self.metrics_history:
                 self.metrics_history[key].append(metrics[key])
 
+        self.enforce_studio_step(int(self.global_step), metrics)
         return metrics
 
     def save_checkpoint(self, output_dir: str) -> None:

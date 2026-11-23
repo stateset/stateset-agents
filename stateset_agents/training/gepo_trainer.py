@@ -24,6 +24,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from .studio_callback import StudioControlMixin
 from . import objectives, rl_losses
 from .checkpoint_io import load_checkpoint_file
 from .config import TrainingConfig
@@ -193,7 +194,7 @@ class GEPOModelManager(SharedModelManager):
         return LoraConfig, TaskType, get_peft_model
 
 
-class GEPOTrainer:
+class GEPOTrainer(StudioControlMixin):
     """
     Group Expectation Policy Optimization (GEPO) Trainer
 
@@ -704,6 +705,7 @@ class GEPOTrainer:
             if key in self.metrics_history:
                 self.metrics_history[key].append(metrics[key])
 
+        self.enforce_studio_step(int(self.global_step), metrics)
         return metrics
 
     def save_checkpoint(self, output_dir: str) -> None:

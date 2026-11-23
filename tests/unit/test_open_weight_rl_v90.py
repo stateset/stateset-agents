@@ -1072,3 +1072,99 @@ def test_v96_bidirectional_rl_control_sqlite_rl_ledger_and_multi_run_filtering(
     assert r_beta.json()["count"] == 1
     assert r_beta.json()["latest"]["run_name"] == "run-beta-dapo"
     assert r_beta.json()["latest"]["reward"] == 0.85
+
+
+def test_v97_training_runtime_auto_pause_and_weight_rollback_enforcement(
+    tmp_path: Path,
+) -> None:
+    """Verify TrainingRuntime.attach_studio_callback auto-snapshots best weights and enforces Studio Pause/Rollback in place."""
+    torch = pytest.importorskip("torch")
+    import torch.nn as nn
+    from fastapi.testclient import TestClient
+
+    from stateset_agents.training.gspo_config import GSPOConfig
+    from stateset_agents.training.gspo_trainer import GSPOTrainer
+    from stateset_agents.training.studio_callback import StudioTelemetryCallback
+    from stateset_agents.weight_studio import create_studio_app
+
+    app = create_studio_app(workspace_root=tmp_path)
+    client = TestClient(app)
+
+    def _post(
+        url: str, payload: dict, headers: dict, timeout: float
+    ) -> tuple[int, dict]:
+        resp = client.post(
+            url.replace("http://studio.local", ""), json=payload, headers=headers
+        )
+        return resp.status_code, resp.json()
+
+    def _get(url: str, headers: dict, timeout: float) -> tuple[int, dict]:
+        resp = client.get(url.replace("http://studio.local", ""), headers=headers)
+        return resp.status_code, resp.json()
+
+    torch.manual_seed(7)
+    model = nn.Linear(8, 4)
+    initial_w = model.weight.detach().clone()
+
+    trainer = object.__new__(GSPOTrainer)
+    trainer.config = GSPOConfig()
+    trainer.model = model
+
+    cb = StudioTelemetryCallback(
+        run_name="v97-auto-enforce",
+        workspace_root=tmp_path,
+        studio_url="http://studio.local",
+        http_caller=_post,
+        http_get_caller=_get,
+    )
+    trainer.attach_studio_callback(
+        cb, auto_snapshot=True, pause_poll_interval=0.01, max_pause_wait_sec=0.05
+    )
+
+    # Step 1 improves reward -> snapshot updated to good_w
+    with torch.no_grad():
+        model.weight.add_(0.5)
+    good_w = model.weight.detach().clone()
+    res1: dict = {"policy_loss": -0.2, "average_reward": 0.92}
+    trainer.enforce_studio_step(1, res1)
+    assert res1["studio_rolled_back"] is False
+    assert cb.summary()["best_snapshot_step"] == 1
+
+    # Corrupt model weights (simulating reward-hacking collapse) and request Studio ROLLBACK
+    with torch.no_grad():
+        model.weight.add_(10.0)
+    assert not torch.allclose(model.weight, good_w)
+
+    client.post(
+        "/api/weight-studio/rl/control",
+        json={
+            "action": "rollback",
+            "run_name": "v97-auto-enforce",
+            "reason": "collapse",
+        },
+    )
+    res2: dict = {"policy_loss": 5.0, "average_reward": 0.12}
+    trainer.enforce_studio_step(2, res2)
+    assert res2["studio_rolled_back"] is True
+    assert torch.allclose(model.weight, good_w, atol=1e-6)
+    assert not torch.allclose(model.weight, initial_w)
+    assert cb.summary()["rollbacks_executed"] == 1
+
+    # Operator requests PAUSE -> cooperative wait executes and returns cleanly on timeout/resume
+    client.post(
+        "/api/weight-studio/rl/control",
+        json={"action": "pause", "run_name": "v97-auto-enforce", "reason": "inspect"},
+    )
+    res3: dict = {"policy_loss": -0.1, "average_reward": 0.93}
+    trainer.enforce_studio_step(3, res3)
+    assert res3["studio_pause_waited_sec"] > 0.0
+    assert cb.summary()["pause_events_handled"] == 1
+
+    # Verify all 4 flagship trainers expose StudioControlMixin parity
+    from stateset_agents.training.dapo_trainer import DAPOTrainer
+    from stateset_agents.training.gepo_trainer import GEPOTrainer
+    from stateset_agents.training.vapo_trainer import VAPOTrainer
+
+    for cls in (GSPOTrainer, DAPOTrainer, GEPOTrainer, VAPOTrainer):
+        assert hasattr(cls, "attach_studio_callback")
+        assert hasattr(cls, "enforce_studio_step")
