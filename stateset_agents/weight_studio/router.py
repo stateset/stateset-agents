@@ -1439,6 +1439,7 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
         rt.rl_telemetry.append(record)
         if len(rt.rl_telemetry) > 200:
             del rt.rl_telemetry[:-200]
+        rt.store.record_rl_step(record)
 
         step = record.get("step", len(rt.rl_telemetry))
         run_name = str(record.get("run_name") or "rl-run")
@@ -1468,19 +1469,32 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
             "accepted": True,
             "buffered_steps": len(rt.rl_telemetry),
             "guard_action": guard_action,
+            "control": dict(rt.rl_control_state),
         }
 
     @api.get("/rl/telemetry")
-    async def get_rl_telemetry(limit: int = Query(50, ge=1, le=200)) -> dict[str, Any]:
+    async def get_rl_telemetry(
+        limit: int = Query(50, ge=1, le=200),
+        run_name: str | None = Query(None),
+    ) -> dict[str, Any]:
         from ..training.chunked_rl_loss import triton_chunked_logprobs_available
 
         rt = _rt()
-        rows = rt.rl_telemetry[-limit:]
+        persisted = rt.store.query_rl_steps(run_name=run_name, limit=limit)
+        if persisted:
+            rows = persisted
+        elif run_name:
+            rows = [
+                r for r in rt.rl_telemetry if str(r.get("run_name") or "") == run_name
+            ][-limit:]
+        else:
+            rows = rt.rl_telemetry[-limit:]
         latest = rows[-1] if rows else None
         return {
             "count": len(rows),
             "latest": latest,
             "steps": rows,
+            "runs": rt.store.list_rl_runs(),
             "control": dict(rt.rl_control_state),
             "triton_available": bool(triton_chunked_logprobs_available()),
         }

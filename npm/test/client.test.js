@@ -207,14 +207,17 @@ test("studio client calls Open-Weight RL Cockpit, Plan & Sandbox Pool endpoints"
     },
   });
 
-  await client.studio.getRlTelemetry({ limit: 25 });
+  await client.studio.getRlTelemetry({ limit: 25, run_name: "gspo-1" });
   await client.studio.postRlTelemetry({ run_name: "gspo-1", step: 1, reward: 0.9 });
   await client.studio.controlRlRun({ action: "pause", reason: "guard" });
   await client.studio.planRlRun({ model: "Qwen/Qwen3-8B", algorithm: "dapo", cloud: "modal" });
   await client.studio.runSandboxPool({ domains: ["commerce", "coding", "sql"] });
 
   assert.equal(calls.length, 5);
-  assert.equal(calls[0].url, "http://127.0.0.1:8765/api/weight-studio/rl/telemetry?limit=25");
+  assert.equal(
+    calls[0].url,
+    "http://127.0.0.1:8765/api/weight-studio/rl/telemetry?limit=25&run_name=gspo-1",
+  );
   assert.equal(calls[1].url, "http://127.0.0.1:8765/api/weight-studio/rl/telemetry");
   assert.equal(calls[2].url, "http://127.0.0.1:8765/api/weight-studio/rl/control");
   assert.equal(calls[2].body.action, "pause");

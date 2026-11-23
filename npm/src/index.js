@@ -341,6 +341,9 @@ export class WeightStudioClient {
     if (params.limit !== undefined && params.limit !== null) {
       qs.set("limit", String(params.limit));
     }
+    if (params.run_name) {
+      qs.set("run_name", String(params.run_name));
+    }
     const suffix = qs.toString() ? `?${qs.toString()}` : "";
     return this._client.request(`/api/weight-studio/rl/telemetry${suffix}`, options);
   }

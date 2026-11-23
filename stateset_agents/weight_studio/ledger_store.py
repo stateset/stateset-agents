@@ -86,6 +86,20 @@ class StudioSQLiteStore:
                         ON rollouts(decision, id DESC);
                     CREATE INDEX IF NOT EXISTS idx_rollouts_model_ts
                         ON rollouts(model_id, id DESC);
+
+                    CREATE TABLE IF NOT EXISTS rl_steps (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp TEXT NOT NULL,
+                        run_name TEXT NOT NULL,
+                        step INTEGER NOT NULL,
+                        reward REAL,
+                        loss REAL,
+                        entropy REAL,
+                        guard_action TEXT NOT NULL,
+                        payload_json TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_rl_steps_run_id
+                        ON rl_steps(run_name, id DESC);
                     """)
             self._initialized = True
 
@@ -249,6 +263,115 @@ class StudioSQLiteStore:
                     continue
             return out
 
+    def record_rl_step(self, record: dict[str, Any]) -> None:
+        """Atomically persist an RL training step & Hacking Guard verdict to SQLite."""
+        self._ensure_schema()
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO rl_steps (
+                    timestamp, run_name, step, reward, loss, entropy, guard_action, payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(record.get("timestamp") or now),
+                    str(record.get("run_name") or "rl-run"),
+                    int(record.get("step", 0)),
+                    (
+                        float(record["reward"])
+                        if record.get("reward") is not None
+                        else None
+                    ),
+                    float(record["loss"]) if record.get("loss") is not None else None,
+                    (
+                        float(record["entropy"])
+                        if record.get("entropy") is not None
+                        else None
+                    ),
+                    str(record.get("guard_action") or "CONTINUE"),
+                    json.dumps(record, default=str),
+                ),
+            )
+
+    def query_rl_steps(
+        self,
+        *,
+        run_name: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Query persisted RL steps in chronological order (oldest -> newest) for plotting."""
+        if not self.db_path.is_file():
+            return []
+        self._ensure_schema()
+        clauses: list[str] = []
+        params: list[Any] = []
+        if run_name:
+            clauses.append("run_name = ?")
+            params.append(run_name.strip())
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(max(1, min(int(limit), 500)))
+        sql = f"SELECT payload_json FROM rl_steps {where} ORDER BY id DESC LIMIT ?"
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(sql, params)
+            rows: list[dict[str, Any]] = []
+            for row in cur.fetchall():
+                try:
+                    parsed = json.loads(row["payload_json"])
+                    if isinstance(parsed, dict):
+                        rows.append(parsed)
+                except json.JSONDecodeError:
+                    continue
+            rows.reverse()
+            return rows
+
+    def list_rl_runs(self, *, limit: int = 20) -> list[dict[str, Any]]:
+        """Return summary rows for distinct persisted RL runs, most recently updated first."""
+        if not self.db_path.is_file():
+            return []
+        self._ensure_schema()
+        lim = max(1, min(int(limit), 100))
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                """
+                SELECT
+                    r.run_name,
+                    COUNT(*) AS step_count,
+                    MAX(r.step) AS latest_step,
+                    MAX(r.timestamp) AS last_timestamp,
+                    (
+                        SELECT s2.reward FROM rl_steps s2
+                        WHERE s2.run_name = r.run_name ORDER BY s2.id DESC LIMIT 1
+                    ) AS latest_reward,
+                    (
+                        SELECT s3.guard_action FROM rl_steps s3
+                        WHERE s3.run_name = r.run_name ORDER BY s3.id DESC LIMIT 1
+                    ) AS latest_guard_action
+                FROM rl_steps r
+                GROUP BY r.run_name
+                ORDER BY MAX(r.id) DESC
+                LIMIT ?
+                """,
+                (lim,),
+            )
+            return [
+                {
+                    "run_name": str(row["run_name"]),
+                    "step_count": int(row["step_count"]),
+                    "latest_step": int(row["latest_step"]),
+                    "latest_reward": (
+                        round(float(row["latest_reward"]), 4)
+                        if row["latest_reward"] is not None
+                        else None
+                    ),
+                    "latest_guard_action": str(
+                        row["latest_guard_action"] or "CONTINUE"
+                    ),
+                    "last_timestamp": str(row["last_timestamp"]),
+                }
+                for row in cur.fetchall()
+            ]
+
     def stats(self) -> dict[str, Any]:
         """Return aggregate row counts and store metadata."""
         if not self.db_path.is_file():
@@ -258,6 +381,7 @@ class StudioSQLiteStore:
                 "trace_count": 0,
                 "failing_trace_count": 0,
                 "rollout_count": 0,
+                "rl_step_count": 0,
             }
         self._ensure_schema()
         with self._lock, self._connect() as conn:
@@ -266,12 +390,14 @@ class StudioSQLiteStore:
                 "SELECT COUNT(*) FROM traces WHERE failed = 1"
             ).fetchone()[0]
             r_total = conn.execute("SELECT COUNT(*) FROM rollouts").fetchone()[0]
+            rl_total = conn.execute("SELECT COUNT(*) FROM rl_steps").fetchone()[0]
         return {
             "db_path": str(self.db_path),
             "exists": True,
             "trace_count": int(t_total),
             "failing_trace_count": int(t_fail),
             "rollout_count": int(r_total),
+            "rl_step_count": int(rl_total),
         }
 
 

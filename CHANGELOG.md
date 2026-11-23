@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.96.0] - 2026-11-23 — Bi-Directional RL Control Loop, Persistent SQLite RL Run Ledger & 1-Click Studio Sandbox/Blueprint Runner
+
+### Added
+
+- **Persisted SQLite WAL RL Run Ledger** (`stateset_agents/weight_studio/ledger_store.py`, `router.py`, `mcp_bridge.py`, `mcp_server.py`): added `rl_steps` table with `record_rl_step`, `query_rl_steps(run_name=...)`, `list_rl_runs()`, and `rl_step_count` in store stats so multi-run RL reward/entropy curves survive server restarts and support per-run comparison.
+- **Bi-Directional Studio ↔ Trainer Pause/Rollback Loop** (`stateset_agents/training/studio_callback.py`, `router.py`): `POST /api/weight-studio/rl/telemetry` returns live operator `control` state on every step; `StudioTelemetryCallback` exposes `should_pause`, `should_rollback`, `on_control_signal` callback hook, and `poll_control()`.
+- **1-Click Multi-Domain Sandbox Pool, Cloud Blueprint & Persisted Run Selector in 3D Weight Studio** (`index.html`, `autopilot_panel.js`, `npm/`): added `#rl-run-select`, `#btn-rl-sandbox-pool`, and `#btn-rl-blueprint` inside the Live RL Cockpit card plus `run_name` filtering on `client.studio.getRlTelemetry(...)`.
+
 ## [0.95.0] - 2026-11-23 — RL MCP Tool Parity, TypeScript SDK RL Methods, Interactive Sparkline Cockpit & Pause/Rollback Controls
 
 ### Added
