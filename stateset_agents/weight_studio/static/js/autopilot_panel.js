@@ -310,6 +310,8 @@ export function initAutopilotAndMcpPanel({
   // 3c. Live vLLM / Ollama Shadow A/B Bridge
   // 3d. Live RL Training Cockpit & Online Reward-Hacking Guard HUD
   const _rlHistory = [];
+  const _rlCompareHistory = [];
+  let _rlCompareRunName = '';
   let _rlControlStatus = 'running';
 
   const drawRlSparkline = () => {
@@ -329,21 +331,23 @@ export function initAutopilotAndMcpPanel({
     ctx.lineTo(w, h * 0.5);
     ctx.stroke();
 
-    if (!_rlHistory.length) {
+    if (!_rlHistory.length && !_rlCompareHistory.length) {
       ctx.fillStyle = 'rgba(148,163,184,0.55)';
       ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
       ctx.fillText('Awaiting RL steps (Reward emerald · Entropy cyan)', 8, h * 0.54);
       return;
     }
 
-    const plotSeries = (key, color, fallbackMin, fallbackMax) => {
-      const vals = _rlHistory.map((r) => Number(r[key])).filter((v) => Number.isFinite(v));
+    const plotSeries = (series, key, color, fallbackMin, fallbackMax, dashed = false) => {
+      const vals = series.map((r) => Number(r[key])).filter((v) => Number.isFinite(v));
       if (!vals.length) return;
       const minV = Math.min(fallbackMin, ...vals);
       const maxV = Math.max(fallbackMax, ...vals);
       const span = Math.max(1e-4, maxV - minV);
+      ctx.save();
+      if (dashed) ctx.setLineDash([4, 3]);
       ctx.strokeStyle = color;
-      ctx.lineWidth = 1.8;
+      ctx.lineWidth = dashed ? 1.5 : 1.8;
       ctx.beginPath();
       vals.forEach((v, i) => {
         const x = vals.length === 1 ? w * 0.5 : 8 + ((w - 16) * i) / (vals.length - 1);
@@ -352,22 +356,30 @@ export function initAutopilotAndMcpPanel({
         else ctx.lineTo(x, y);
       });
       ctx.stroke();
+      ctx.restore();
       const last = vals[vals.length - 1];
       const lx = vals.length === 1 ? w * 0.5 : w - 8;
       const ly = h - 8 - ((h - 18) * (last - minV)) / span;
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(lx, ly, 2.6, 0, Math.PI * 2);
+      ctx.arc(lx, ly, 2.5, 0, Math.PI * 2);
       ctx.fill();
     };
 
-    plotSeries('reward', '#10b981', 0.0, 1.0);
-    plotSeries('entropy', '#38bdf8', 0.0, 2.0);
+    plotSeries(_rlHistory, 'reward', '#10b981', 0.0, 1.0, false);
+    plotSeries(_rlHistory, 'entropy', '#38bdf8', 0.0, 2.0, false);
+    if (_rlCompareHistory.length) {
+      plotSeries(_rlCompareHistory, 'reward', '#f59e0b', 0.0, 1.0, true);
+    }
     ctx.fillStyle = '#10b981';
     ctx.font = '9px ui-monospace, SFMono-Regular, Menlo, monospace';
     ctx.fillText('R', 6, 11);
     ctx.fillStyle = '#38bdf8';
     ctx.fillText('H', 18, 11);
+    if (_rlCompareHistory.length) {
+      ctx.fillStyle = '#f59e0b';
+      ctx.fillText('BASE', 30, 11);
+    }
   };
 
   const renderRlControl = (ctrl) => {
@@ -404,19 +416,64 @@ export function initAutopilotAndMcpPanel({
   };
 
   const syncRlRunsDropdown = (runs, activeRun = '') => {
+    if (!Array.isArray(runs)) return;
     const sel = $('rl-run-select');
-    if (!sel || !Array.isArray(runs)) return;
-    const prev = activeRun || sel.value || '';
-    sel.innerHTML = '<option value="">All Persisted RL Runs</option>';
-    runs.forEach((r) => {
-      const opt = document.createElement('option');
-      opt.value = r.run_name;
-      const rVal = r.latest_reward !== null && r.latest_reward !== undefined ? ` · R=${Number(r.latest_reward).toFixed(2)}` : '';
-      opt.textContent = `${r.run_name} (${r.step_count} steps${rVal})`;
-      if (r.run_name === prev) opt.selected = true;
-      sel.appendChild(opt);
-    });
+    if (sel) {
+      const prev = activeRun || sel.value || '';
+      sel.innerHTML = '<option value="">All Persisted RL Runs</option>';
+      runs.forEach((r) => {
+        const opt = document.createElement('option');
+        opt.value = r.run_name;
+        const rVal = r.latest_reward !== null && r.latest_reward !== undefined ? ` · R=${Number(r.latest_reward).toFixed(2)}` : '';
+        opt.textContent = `${r.run_name} (${r.step_count} steps${rVal})`;
+        if (r.run_name === prev) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
+    const cmpSel = $('rl-compare-run-select');
+    if (cmpSel) {
+      const prevCmp = _rlCompareRunName || cmpSel.value || '';
+      cmpSel.innerHTML = '<option value="">No Overlay Run</option>';
+      runs.forEach((r) => {
+        const opt = document.createElement('option');
+        opt.value = r.run_name;
+        opt.textContent = `Overlay: ${r.run_name}`;
+        if (r.run_name === prevCmp) opt.selected = true;
+        cmpSel.appendChild(opt);
+      });
+    }
   };
+
+  const loadRlCompareRun = async (runName = '') => {
+    _rlCompareRunName = runName;
+    _rlCompareHistory.length = 0;
+    if (!runName) {
+      drawRlSparkline();
+      return;
+    }
+    try {
+      const t = await apiGet(`/rl/telemetry?limit=40&run_name=${encodeURIComponent(runName)}`);
+      if (t && Array.isArray(t.steps)) {
+        t.steps.forEach((s) => _rlCompareHistory.push(s));
+      }
+      drawRlSparkline();
+      if (_rlHistory.length && _rlCompareHistory.length) {
+        const rA = Number(_rlHistory[_rlHistory.length - 1].reward ?? 0);
+        const rB = Number(_rlCompareHistory[_rlCompareHistory.length - 1].reward ?? 0);
+        const delta = rA - rB;
+        const summary = $('rl-cockpit-summary');
+        if (summary) {
+          summary.textContent = `${summary.textContent.split(' · ΔR')[0]} · ΔR vs ${runName}: ${delta >= 0 ? '+' : ''}${delta.toFixed(3)}`;
+        }
+      }
+    } catch (_err) {
+      drawRlSparkline();
+    }
+  };
+
+  $('rl-compare-run-select')?.addEventListener('change', (e) => {
+    loadRlCompareRun(e.target.value || '');
+  });
 
   const loadRlTelemetry = async (runName = '') => {
     try {

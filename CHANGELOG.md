@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.97.0] - 2026-11-23 — Automatic 4-Trainer Pause/Rollback Enforcement, Multi-Run Sparkline Overlay & CI Chrome RL Cockpit E2E
+
+### Added
+
+- **Automatic 4-Trainer Studio Control & In-Place Weight Rollback Enforcement** (`stateset_agents/training/studio_callback.py`, `gspo_trainer.py`, `dapo_trainer.py`, `gepo_trainer.py`, `vapo_trainer.py`): added `StudioControlMixin` (`attach_studio_callback`, `enforce_studio_step`) and `StudioTelemetryCallback` `snapshot_model` / `restore_snapshot` / `wait_while_paused` / `enforce_step`, enabling `GSPOTrainer`, `DAPOTrainer`, `GEPOTrainer`, and `VAPOTrainer` to automatically snapshot best-reward weights, pause cooperatively on Studio Pause, and restore weights in place on Studio Rollback.
+- **Side-by-Side Multi-Run Sparkline Overlay in 3D Weight Studio** (`stateset_agents/weight_studio/static/index.html`, `autopilot_panel.js`): added `#rl-compare-run-select` to overlay any persisted SQLite baseline RL run as a dashed amber reward curve with live `ΔR` comparison on `#rl-cockpit-sparkline`.
+- **Expanded GitHub CI WebGL2 & RL Cockpit Smoke** (`.github/workflows/weight-studio-smoke.yml`): wired Headless Chromium verification for Step Pulse, 3-Domain Sandbox Pool, Cloud Blueprint, Pause, and Rollback controls on every push/PR.
+
 ## [0.96.0] - 2026-11-23 — Bi-Directional RL Control Loop, Persistent SQLite RL Run Ledger & 1-Click Studio Sandbox/Blueprint Runner
 
 ### Added

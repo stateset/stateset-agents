@@ -29,6 +29,7 @@ from . import objectives
 from .adamw_weights import model_adamw
 from .config import TrainingConfig
 from .reward_advantages import reward_tensor
+from .studio_callback import StudioControlMixin
 from .runtime_state import (
     TrainingRuntime,
     _reject_unsupported_resume,
@@ -205,7 +206,7 @@ class GEPOModelManager(SharedModelManager):
         return LoraConfig, TaskType, get_peft_model
 
 
-class GEPOTrainer(TrainingRuntime):
+class GEPOTrainer(StudioControlMixin, TrainingRuntime):
     """
     Group Expectation Policy Optimization (GEPO) Trainer
 
@@ -765,6 +766,7 @@ class GEPOTrainer(TrainingRuntime):
             if key in self.metrics_history:
                 self.metrics_history[key].append(metrics[key])
 
+        self.enforce_studio_step(int(self.global_step), metrics)
         return metrics
 
     def save_checkpoint(self, output_dir: str) -> None:

@@ -276,7 +276,10 @@ class DynamicSamplingBuffer:
         return len(self.buffer)
 
 
-class DAPOTrainer(TrainingRuntime):
+from .studio_callback import StudioControlMixin
+
+
+class DAPOTrainer(StudioControlMixin, TrainingRuntime):
     """
     Decoupled Clip and Dynamic Sampling Policy Optimization (DAPO) Trainer
 
@@ -1026,6 +1029,7 @@ class DAPOTrainer(TrainingRuntime):
             if key in self.metrics_history:
                 self.metrics_history[key].append(metrics[key])
 
+        self.enforce_studio_step(int(self.global_step), metrics)
         return metrics
 
     def save_checkpoint(self, output_dir: str) -> None:

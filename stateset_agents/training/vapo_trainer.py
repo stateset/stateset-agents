@@ -379,7 +379,10 @@ class LengthAdaptiveGAE:
         return critic_advantages, policy_advantages, returns
 
 
-class VAPOTrainer(TrainingRuntime):
+from .studio_callback import StudioControlMixin
+
+
+class VAPOTrainer(StudioControlMixin, TrainingRuntime):
     """
     Value-Augmented Policy Optimization (VAPO) Trainer
 
@@ -1192,6 +1195,7 @@ class VAPOTrainer(TrainingRuntime):
             if key in self.metrics_history:
                 self.metrics_history[key].append(metrics[key])
 
+        self.enforce_studio_step(int(self.global_step), metrics)
         return metrics
 
     def save_checkpoint(self, output_dir: str) -> None:

@@ -366,7 +366,10 @@ class GSPOModelManager(SharedModelManager):
             raise
 
 
-class GSPOTrainer(TrainingRuntime):
+from .studio_callback import StudioControlMixin
+
+
+class GSPOTrainer(StudioControlMixin, TrainingRuntime):
     #: Preset evaluated when ``config.objective`` is unset; the token variant
     #: overrides this instead of reassigning ``_objective`` after ``__init__``.
     _native_objective = "gspo"
@@ -933,6 +936,7 @@ class GSPOTrainer(TrainingRuntime):
             if key in self.training_metrics:
                 self.training_metrics[key].append(value)
 
+        self.enforce_studio_step(int(getattr(self, "global_step", 0)), metrics)
         return metrics
 
     async def _compute_ref_log_prob(self, prompt: str, response: str) -> float:
