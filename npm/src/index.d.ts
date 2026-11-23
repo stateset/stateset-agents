@@ -74,6 +74,28 @@ export interface RolloutQueryParams {
   limit?: number;
 }
 
+export interface RlControlRequest {
+  action: "pause" | "resume" | "rollback";
+  run_name?: string;
+  reason?: string;
+}
+
+export interface RlPlanRequest {
+  model?: string;
+  algorithm?: "grpo" | "gspo" | "dapo" | "vapo" | "gepo";
+  cloud?: "local" | "runpod" | "modal" | "k8s";
+  gpus?: number;
+  chunked_loss_chunk_size?: number;
+  live_vllm_endpoint?: string;
+  [key: string]: unknown;
+}
+
+export interface SandboxPoolRequest {
+  domains?: Array<"commerce" | "coding" | "sql">;
+  include_failure_pairs?: boolean;
+  max_concurrency?: number;
+}
+
 export class WeightStudioClient {
   constructor(client: StateSet);
   listModels<T = Record<string, unknown>>(options?: RequestOptions): Promise<T>;
@@ -91,6 +113,11 @@ export class WeightStudioClient {
   queryTraces<T = Record<string, unknown>>(params?: TraceQueryParams, options?: RequestOptions): Promise<T>;
   queryRollouts<T = Record<string, unknown>>(params?: RolloutQueryParams, options?: RequestOptions): Promise<T>;
   storeStats<T = Record<string, unknown>>(options?: RequestOptions): Promise<T>;
+  getRlTelemetry<T = Record<string, unknown>>(params?: { limit?: number }, options?: RequestOptions): Promise<T>;
+  postRlTelemetry<T = Record<string, unknown>>(body: Record<string, unknown>, options?: RequestOptions): Promise<T>;
+  controlRlRun<T = Record<string, unknown>>(body: RlControlRequest, options?: RequestOptions): Promise<T>;
+  planRlRun<T = Record<string, unknown>>(body?: RlPlanRequest, options?: RequestOptions): Promise<T>;
+  runSandboxPool<T = Record<string, unknown>>(body?: SandboxPoolRequest, options?: RequestOptions): Promise<T>;
 }
 
 export class McpHttpClient {

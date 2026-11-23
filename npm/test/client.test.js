@@ -195,3 +195,29 @@ test("mcp HTTP client invokes JSON-RPC tools and surfaces JSON-RPC errors", asyn
     (err) => err instanceof StateSetError && err.status === -32001,
   );
 });
+
+test("studio client calls Open-Weight RL Cockpit, Plan & Sandbox Pool endpoints", async () => {
+  const calls = [];
+  const client = new StateSet({
+    baseURL: "http://127.0.0.1:8765",
+    apiKey: "rl-token",
+    fetch: async (url, init) => {
+      calls.push({ url, method: init.method, body: init.body ? JSON.parse(init.body) : null });
+      return jsonResponse({ ok: true });
+    },
+  });
+
+  await client.studio.getRlTelemetry({ limit: 25 });
+  await client.studio.postRlTelemetry({ run_name: "gspo-1", step: 1, reward: 0.9 });
+  await client.studio.controlRlRun({ action: "pause", reason: "guard" });
+  await client.studio.planRlRun({ model: "Qwen/Qwen3-8B", algorithm: "dapo", cloud: "modal" });
+  await client.studio.runSandboxPool({ domains: ["commerce", "coding", "sql"] });
+
+  assert.equal(calls.length, 5);
+  assert.equal(calls[0].url, "http://127.0.0.1:8765/api/weight-studio/rl/telemetry?limit=25");
+  assert.equal(calls[1].url, "http://127.0.0.1:8765/api/weight-studio/rl/telemetry");
+  assert.equal(calls[2].url, "http://127.0.0.1:8765/api/weight-studio/rl/control");
+  assert.equal(calls[2].body.action, "pause");
+  assert.equal(calls[3].url, "http://127.0.0.1:8765/api/weight-studio/rl/plan");
+  assert.equal(calls[4].url, "http://127.0.0.1:8765/api/weight-studio/rl/sandbox-pool");
+});
