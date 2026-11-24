@@ -19,7 +19,7 @@
 - pip install → ingest sample logs → improve (grade/curate) → one GRPO dry‑run (stub/HF) → serve
 - remote training defaults to Modal (unverified; fail‑closed), with other providers still available
 
-> **v0.99.0 Open-Weight RL Leadership Suite & 3D Weight Studio:** memory-efficient chunked/Triton GSPO·DAPO·GEPO·VAPO (`99.61%` 16k Qwen3 logit VRAM saved), MoE router aux + FP8 rollout TIS/IcePop precision bridge, disaggregated async rollouts + vLLM Level-1 sleep/wake sync, **5 concurrent verifiable MCP sandboxes** (`commerce`, `coding`, `sql`, `rest_api`, `docker_code`), Adaptive Difficulty Curriculum + Turn-Level PRM Credit, Step-0 PyTorch CAA surgical warm-start, WebGL2 **3D Weight Studio** (Live RL Cockpit, Multi-Run Sparklines, Pause/Rollback enforcement, Trajectory Credit Inspector, SQLite WAL ledger), **39 annotated MCP tools** (stdio + Streamable HTTP), and the `@stateset/agents` TypeScript SDK. See [docs/OPEN_WEIGHT_RL.md](docs/OPEN_WEIGHT_RL.md) and [docs/WEIGHT_STUDIO.md](docs/WEIGHT_STUDIO.md).
+> **v0.99.1 Open-Weight RL Leadership Suite, 3D Weight Studio & River AI 0.11:** memory-efficient chunked/Triton GSPO·DAPO·GEPO·VAPO (`99.61%` 16k Qwen3 logit VRAM saved), MoE router aux + FP8 rollout TIS/IcePop precision bridge, disaggregated async rollouts + vLLM Level-1 sleep/wake sync, **6 concurrent verifiable MCP sandboxes** (`commerce`, `coding`, `sql`, `rest_api`, `docker_code`, `web_agent`), Adaptive Difficulty Curriculum + Turn-Level PRM Credit, Step-0 PyTorch CAA surgical warm-start, WebGL2 **3D Weight Studio** (Live RL Cockpit, Multi-Run Sparklines, Pause/Rollback enforcement, Trajectory Credit Inspector, SQLite WAL ledger), **full-lifecycle River AI `0.11`** training/RL/serving (`river-deploy`, `river-deployments`, `river-chat`), zero-CVE lockfiles (`0` `pip-audit` advisories), **39 annotated MCP tools** (stdio + Streamable HTTP), and the `@stateset/agents` TypeScript SDK. See [docs/OPEN_WEIGHT_RL.md](docs/OPEN_WEIGHT_RL.md) and [docs/WEIGHT_STUDIO.md](docs/WEIGHT_STUDIO.md).
 
 ```bash
 # Launch the interactive 3D Weight Studio & Live RL Cockpit
@@ -79,25 +79,25 @@ measurable.
 
 ### Current verification status
 
-The `v0.64.2` release tree completed its local Linux Python 3.12 suite on
-**2026-10-13** under CI's forced-colour settings with **8,437 passed and 21
-skipped** (three subprocess tests timed out under load and passed when rerun),
-and GitHub Actions passed all 21 checks on Linux 3.10–3.13 and Windows 3.10/3.13, including the per-trainer learning tests added in `v0.63.0`, plus
-pre-commit, strict typing, the stable-API contract, and release governance
-checks before tagging.
+The `v0.99.1` release-candidate tree completed its local Linux Python 3.12
+`publish_readiness.sh` suite on **2026-11-23** with **9,150 tests and 72.95%
+full-repo coverage** (`fail_under = 72`), **0 `pip-audit` CVEs** across the
+locked core and dev environments, **0 Medium/High/Critical Bandit findings**,
+**0 strict `mypy --all` errors**, **889 passing River AI `0.11` tests**
+(`87.10%` coverage across all 13 River modules, including real `river-client`
+`rl.RolloutEngine` execution over all 6 verifiable sandboxes), **Real Chrome
+WebGL2 E2E** (`6-Domain Pool`, 0 console/page/HTTP errors), clean `twine check`,
+isolated wheel smoke, and `@stateset/agents` TypeScript/Node checks (`10/10` +
+`tsc` + `npm pack`). Both registries are already live and bootstrapped
+(`stateset-agents==0.74.0` on PyPI and `@stateset/agents@0.74.0` on npm).
 
-The isolated `v0.58.0` release tree completed its local Linux Python 3.12 suite on
-**2026-10-07** with **6,020 passed, 18 skipped, and 65.00% coverage**. Its release
-checks passed lint, typing, API compatibility, governance, security scanning,
-distribution metadata, and isolated wheel installation. The
-[tag publication workflow](https://github.com/stateset/stateset-agents/actions/runs/37660763697)
-published Python distributions, documentation, and the GitHub release; npm's
-initial publication remains blocked. The broader Linux Python 3.10–3.13 and
-Windows Python 3.10/3.13 matrix evidence remains historical (`v0.54.0`), and
-should not be read as certification of every newer checkpoint or platform.
-See the retained
-[proof ledger](docs/PROOFS.md) for the evidence behind individual training,
-serving, and provider claims.
+Earlier multi-platform matrix baselines (`v0.64.2`: 8,437 passed across Linux
+3.10–3.13 and Windows 3.10/3.13; `v0.54.0` matrix evidence) remain historical
+context and should not be read as live-GPU certification of every newer
+checkpoint or platform. Component maturity tiers (`stable` vs `beta` vs
+`experimental`) are enforced in
+[`contracts/component_maturity_v1.json`](contracts/component_maturity_v1.json),
+and retained evidence lives in the [proof ledger](docs/PROOFS.md).
 
 - **RL objectives:** every native trainer evaluates one declarative
   [`PolicyObjective`](docs/OBJECTIVES.md); the eleven presets are verified by

@@ -126,6 +126,7 @@ def fixture_repo(tmp_path: Path) -> Path:
     benchmarks = tmp_path / "benchmarks"
     benchmarks.mkdir()
     for name in (
+        "agent_quality_manifest.json",
         "flagship_manifest.json",
         "flagship_preflight_manifest.json",
         "distributed_async_manifest.json",
@@ -327,6 +328,7 @@ def test_build_plan_bumps_current_evidence_manifests(fixture_repo: Path) -> None
     plan = release.build_plan(fixture_repo, "0.26.0", "t", None, "2026-08-12")
 
     for name in (
+        "agent_quality_manifest.json",
         "flagship_manifest.json",
         "flagship_preflight_manifest.json",
         "distributed_async_manifest.json",

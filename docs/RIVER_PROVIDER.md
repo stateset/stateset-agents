@@ -14,8 +14,8 @@ export RIVER_API_KEY=rv_...
 
 - `train-remote --provider river`: supervised fine-tuning with assistant-only loss.
 - `flywheel --provider river --algorithm sft`: rejection-sampling self-improvement.
-- `flywheel --provider river --algorithm cispo` (also `ppo`,
-  `importance_sampling`): synchronous group-relative RL, with one logical
+- `flywheel --provider river --algorithm cispo` (also `ppo`, `decoupled_ppo`,
+  `dro`, `importance_sampling`): synchronous group-relative RL, with one logical
   optimizer update per round and explicit microbatch accumulation.
 - `examples/river_refund_rl.py`: StateSet environments inside River's native
   `rl.RolloutEngine` / `rl.AsyncTrainer`, including executed sandbox actions,

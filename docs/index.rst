@@ -65,6 +65,9 @@ Run the maintained smoke-tested example with ``python examples/quick_start.py``.
 
    installation
    quickstart
+   open_weight_rl
+   weight_studio
+   river_provider
    platform_tour
    cookbook
    qwen3_5_starter

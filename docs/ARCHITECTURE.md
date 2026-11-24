@@ -1,13 +1,13 @@
 # StateSet Agents - Technical Architecture
 
-**Source version:** 0.41.0
-**Last updated:** May 2026
+**Source version:** 0.99.1
+**Last updated:** November 2026
 
-> **Versioning note.** Like the whitepaper, this document is pinned to the
-> source tree at the version above. The PyPI release may lag the source by
-> one or two patch versions; check `stateset_agents.__version__` for the
-> installed version. Section-level claims about file paths and line counts
-> are valid as of 0.41.0 — open an issue if they drift.
+> **Versioning note.** Like the whitepaper, this document tracks the
+> `v0.99.1` / `v1.0.0` release line. Check `stateset_agents.__version__` for
+> the installed package version. See [`docs/OPEN_WEIGHT_RL.md`](OPEN_WEIGHT_RL.md),
+> [`docs/WEIGHT_STUDIO.md`](WEIGHT_STUDIO.md), and
+> [`docs/RIVER_PROVIDER.md`](RIVER_PROVIDER.md) for dedicated subsystem guides.
 
 ---
 

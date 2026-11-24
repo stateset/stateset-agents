@@ -382,7 +382,9 @@ omit = [
 # 63.21%. Real-model streaming tests raised the Python 3.11 CI measurement
 # to 64.06%. The expanded local Python 3.12 suite measured 65.80% after the
 # River workflow and training-integrity additions, raising the floor to 65.
-fail_under = 71
+# The v0.99.1 Open-Weight RL + 3D Weight Studio + River 0.11 suite measured
+# 72.95% across 9,150 tests, raising the floor to 72 to satisfy the CI ratchet.
+fail_under = 72
 precision = 2
 show_missing = true
 skip_covered = false

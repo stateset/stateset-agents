@@ -1,20 +1,21 @@
 # StateSet Agents roadmap
 
-Current release line: **v0.54.x (strong beta)**.
+Current release line: **v0.99.1 (v1.0.0 GA Release Candidate)**.
 
 The roadmap is evidence-driven. A checked box means the behavior exists and
 has retained tests or live evidence; an unchecked box is not a product claim.
 
 ## Current foundation
 
-- [x] GRPO, GSPO, DAPO, GEPO, VAPO, PPO, offline RL, and RLAIF surfaces
-- [x] Single-turn and multi-turn environments, rewards, trajectories, and evals
+- [x] GRPO, GSPO, DAPO, GEPO, VAPO, PPO, offline RL, and RLAIF surfaces, plus memory-efficient chunked/Triton LM-head policy loss (`99.61%` 16k Qwen3 logit VRAM saved), MoE router aux + FP8 TIS/IcePop, Turn-Level PRM credit, Step-0 PyTorch CAA warm-start, Adaptive Curriculum & Online Reward-Hacking Guard
+- [x] Single-turn and multi-turn environments, rewards, trajectories, evals, and **6 concurrent enterprise verifiable MCP sandboxes** (`commerce`, `coding`, `sql`, `rest_api`, `docker_code`, `web_agent`)
+- [x] Interactive WebGL2 **3D Weight Studio** (Live RL Cockpit, SQLite WAL ledger, multi-run sparklines, Trajectory Credit Inspector, Pause/Rollback enforcement, Auto-Heal, Red-Team Immunization, Canary Gate) & **39 MCP tools** + `@stateset/agents` TypeScript SDK
 - [x] QLoRA/SFT and real CUDA GSPO proof on RunPod
-- [x] River remote-autograd training, sampling, and improvement loops
+- [x] **Full-lifecycle River AI `0.11`** remote-autograd training, RL (`cispo`/`ppo`/`dro`/`decoupled_ppo`, MoE routing replay, 6-domain `rl.RolloutEngine` bridge), and hosted serving/deployments (`river-chat`, `river-deploy`, `river-deployments`, `deploy-inference --provider river`)
 - [x] RunPod training, artifact retrieval, serving, leases, and cleanup controls
 - [x] Fireworks adapter with durable job reconnection and artifact handling
 - [x] FastAPI/OpenAI-compatible serving, observability, and deployment assets
-- [x] Python 3.10–3.13 packaging and a 4,600+ test default suite
+- [x] Python 3.10–3.13 packaging, zero-CVE dependency lockfiles (`0` `pip-audit` advisories), strict `mypy --all`, and a **9,150+ test** suite (`72.95%` full-repo coverage)
 - [x] Provenance-enforced measured algorithm/framework comparison schemas
 - [x] Neutral StateSet/upstream-TRL runner with config attestation and artifact hashing
 - [x] Strict 1/2/4/8-GPU scaling and three-scenario recovery validators

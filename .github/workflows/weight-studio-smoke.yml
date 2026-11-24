@@ -113,7 +113,8 @@ jobs:
                   page = browser.new_page(viewport={"width": 1440, "height": 900})
                   page.on("console", lambda m: console_errors.append(m.text) if m.type == "error" else None)
                   page.on("pageerror", lambda e: page_errors.append(str(e)))
-                  page.goto("http://127.0.0.1:8765/studio", wait_until="networkidle")
+                  page.goto("http://127.0.0.1:8765/studio", wait_until="domcontentloaded")
+                  page.wait_for_selector('.mode-pill[data-mode="circuit"]', state="visible", timeout=15000)
                   page.wait_for_timeout(800)
 
                   for mode in ("circuit", "attention", "residual", "microscope"):

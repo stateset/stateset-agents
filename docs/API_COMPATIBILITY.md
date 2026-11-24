@@ -1,10 +1,10 @@
 # API compatibility policy
 
 StateSet Agents freezes a machine-readable v1 contract for its supported
-Python and HTTP surfaces. The guarantee begins with the release that includes
-[`contracts/public_api_v1.json`](../contracts/public_api_v1.json); the `v1`
-label describes the public contract and does not imply that the Python package
-has reached version 1.0.
+Python and HTTP surfaces in
+[`contracts/public_api_v1.json`](../contracts/public_api_v1.json). The v1
+contract governs backward compatibility across the `v1.x` General Availability
+line and is enforced automatically in CI and release readiness.
 
 ## Covered surface
 

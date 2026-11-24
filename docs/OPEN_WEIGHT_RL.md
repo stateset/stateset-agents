@@ -1,4 +1,4 @@
-# StateSet Open-Weight RL Architecture Guide (`v0.90`–`v0.95`)
+# StateSet Open-Weight RL Architecture Guide (`v0.90`–`v1.0`)
 
 StateSet Agents combines **memory-efficient long-context RL** (with optional Triton fused CUDA SRAM kernel), **disaggregated async rollout throughput** (with vLLM Level-1 sleep/wake weight sync), **concurrent multi-domain verifiable MCP tool sandboxes**, **real PyTorch Step-0 surgical warm-start**, **online reward-hacking defense**, and a **Live 3D Weight Studio RL Cockpit** (with MCP & TypeScript SDK parity) in one unified open-weight stack.
 

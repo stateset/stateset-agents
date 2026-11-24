@@ -147,6 +147,26 @@ stateset-agents serve --checkpoint "$WORKDIR/outputs/sft_v1" --host 0.0.0.0 --po
 
 ---
 
+## 6) Open-Weight RL, 3D Weight Studio & River AI (v1.0 Quick Paths)
+
+Explore the `v1.0` open-weight RL suite, interactive 3D Weight Studio, and River AI `0.11` preflight locally (no GPU or API keys required):
+
+```bash
+# Run the verifiable chunked RL shootout & 6-domain sandbox pool benchmark
+stateset-agents rl --run-shootout --json
+
+# Plan a reproducible Modal / RunPod / River / local RL run
+stateset-agents rl --model Qwen/Qwen3.6-35B-A3B-FP8 --algorithm cispo --cloud river --json
+
+# Launch the interactive WebGL2 3D Weight Studio & Live RL Cockpit
+stateset-agents studio --port 8765
+
+# Check River AI 0.11 local prerequisites (add --live with RIVER_API_KEY set)
+stateset-agents river-preflight
+```
+
+---
+
 ## What keeps this from rotting?
 
 - CI runs a CLI smoke over the same entrypoints used above.
@@ -157,4 +177,4 @@ If something here stops working, please open an issue.
 
 ---
 
-• Need a deeper tour? See `docs/PLATFORM_TOUR.md` and `docs/COOKBOOK.md`.*** End Patch``` }}}```?? Wait... The tool requires valid grammar exactly. Ensure no stray braces. The patch content should be plain. Let's correct. I included extra triple braces. I must re-submit. Let's produce proper ApplyPatch input. We'll craft again without stray delimiting.
+- Need a deeper tour? See [`docs/PLATFORM_TOUR.md`](docs/PLATFORM_TOUR.md), [`docs/COOKBOOK.md`](docs/COOKBOOK.md), [`docs/OPEN_WEIGHT_RL.md`](docs/OPEN_WEIGHT_RL.md), [`docs/WEIGHT_STUDIO.md`](docs/WEIGHT_STUDIO.md), and [`docs/RIVER_PROVIDER.md`](docs/RIVER_PROVIDER.md).

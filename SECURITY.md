@@ -5,8 +5,9 @@ channels. Do not open a public issue for a suspected vulnerability.
 
 ## Supported versions
 
-Security fixes are provided for the latest `0.x` minor release. Older minor
-release lines are unsupported; users should upgrade before requesting a fix.
+Security fixes are provided for the latest minor release on the current release
+line (`1.x` GA and `0.99.x` release candidates). Older minor release lines are
+unsupported; users should upgrade before requesting a fix.
 
 ## Reporting a vulnerability
 
