@@ -273,3 +273,153 @@ def trajectory_truncation(trajectory: Any) -> str | None:
                 raise ValueError("Trajectory truncation cause must be nonempty text")
             return cause
     return None
+
+
+def river_mcp_sandbox_factory(
+    domain: str,
+    *,
+    before_reset: Callable[[], Awaitable[None] | None] | None = None,
+    truncation_reward: float = -1.0,
+    record_trace: bool = False,
+    max_turns: int = 8,
+    use_docker: bool = False,
+) -> Callable[[], Any]:
+    """Bridge any of StateSet's 6 enterprise verifiable sandboxes to River's RL engine.
+
+    Supported domains match :class:`~stateset_agents.core.sandbox_pool.MultiDomainSandboxPool`:
+    ``commerce``, ``coding``, ``sql``, ``rest_api``, ``docker_code``, and ``web_agent``.
+    Each rollout trajectory gets its own isolated sandbox instance and reset state.
+    """
+    from stateset_agents.core.mcp_rl_env import (
+        BrowserDOMSandbox,
+        CodeVerificationSandbox,
+        CommerceLedgerSandbox,
+        DockerCodeSandbox,
+        MCPRLEnvironment,
+        RESTAPISandbox,
+        SQLAnalyticsSandbox,
+    )
+    from stateset_agents.core.sandbox_pool import MultiDomainSandboxPool
+
+    normalized = str(domain).strip().lower()
+    if normalized not in MultiDomainSandboxPool.SUPPORTED_DOMAINS:
+        raise ValueError(
+            f"Unsupported River sandbox domain {domain!r}; "
+            f"choose from {list(MultiDomainSandboxPool.SUPPORTED_DOMAINS)}"
+        )
+
+    def _build_env() -> Environment:
+        class _RiverSandboxAdapter(Environment):
+            def __init__(self) -> None:
+                super().__init__(max_turns=max_turns)
+                self._inner: MCPRLEnvironment | None = None
+
+            def _make_inner(self) -> MCPRLEnvironment:
+                if normalized == "commerce":
+                    sb = CommerceLedgerSandbox()
+                    return MCPRLEnvironment(
+                        tool_executor=sb.call_tool,
+                        state_verifier=lambda st, _h: sb.verify_order_refunded(
+                            str(
+                                (st.context.get("scenario") or {}).get(
+                                    "target_order_id", "ORD-77701"
+                                )
+                            ),
+                            should_be_refunded=bool(
+                                (st.context.get("scenario") or {}).get(
+                                    "expect_refunded", True
+                                )
+                            ),
+                        ),
+                        max_turns=max_turns,
+                    )
+                if normalized == "coding":
+                    cb = CodeVerificationSandbox()
+                    return MCPRLEnvironment(
+                        tool_executor=cb.call_tool,
+                        state_verifier=cb.verify,
+                        max_turns=max_turns,
+                    )
+                if normalized == "sql":
+                    sq = SQLAnalyticsSandbox()
+                    return MCPRLEnvironment(
+                        tool_executor=sq.call_tool,
+                        state_verifier=sq.verify,
+                        max_turns=max_turns,
+                    )
+                if normalized == "rest_api":
+                    ra = RESTAPISandbox()
+                    return MCPRLEnvironment(
+                        tool_executor=ra.call_tool,
+                        state_verifier=ra.verify,
+                        max_turns=max_turns,
+                    )
+                if normalized == "docker_code":
+                    dc = DockerCodeSandbox(use_docker=use_docker)
+                    return MCPRLEnvironment(
+                        tool_executor=dc.call_tool,
+                        state_verifier=dc.verify,
+                        max_turns=max_turns,
+                    )
+                wb = BrowserDOMSandbox()
+                return MCPRLEnvironment(
+                    tool_executor=wb.call_tool,
+                    state_verifier=wb.verify,
+                    max_turns=max_turns,
+                )
+
+            async def get_initial_prompt(
+                self, scenario: dict[str, Any] | None = None
+            ) -> str:
+                if scenario and scenario.get("prompt"):
+                    return str(scenario["prompt"])
+                return f"Solve the {normalized} task using the available tools."
+
+            async def reset(
+                self, scenario: dict[str, Any] | None = None
+            ) -> EnvironmentState:
+                self._inner = self._make_inner()
+                ctx = dict(scenario or {})
+                state = await self._inner.reset(ctx)
+                if ctx.get("case_id"):
+                    state.episode_id = str(ctx["case_id"])
+                prompt = str(
+                    ctx.get("prompt")
+                    or state.context.get("prompt")
+                    or f"Solve the {normalized} task using the available tools."
+                )
+                state.context["messages"] = [{"role": "user", "content": prompt}]
+                return state
+
+            async def step(
+                self, state: EnvironmentState, action: ConversationTurn
+            ) -> tuple[EnvironmentState, float, bool, dict[str, Any]]:
+                if self._inner is None:
+                    raise RuntimeError("Sandbox must be reset before stepping")
+                next_state, reward, done, info = await self._inner.step(state, action)
+                out_info = dict(info)
+                if not done:
+                    obs = str(
+                        out_info.get("observation") or "Continue solving the task."
+                    )
+                    out_info["messages"] = [{"role": "user", "content": obs}]
+                verification = out_info.get("verification") or {}
+                verified = (
+                    bool(verification.get("verified"))
+                    if isinstance(verification, dict) and "verified" in verification
+                    else reward >= 0.5
+                )
+                metrics = dict(out_info.get("metrics") or {})
+                if done:
+                    metrics["task_success"] = 1.0 if verified else 0.0
+                out_info["metrics"] = metrics
+                return next_state, float(reward), bool(done), out_info
+
+        return _RiverSandboxAdapter()
+
+    return river_environment_factory(
+        _build_env,
+        before_reset=before_reset,
+        truncation_reward=truncation_reward,
+        record_trace=record_trace,
+    )

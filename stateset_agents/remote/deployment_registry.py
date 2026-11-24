@@ -28,10 +28,17 @@ def _huggingface() -> InferenceDeploymentProvider:
     return HuggingFaceEndpointProvider()
 
 
+def _river() -> InferenceDeploymentProvider:
+    from stateset_agents.remote.river_serving import RiverDeploymentProvider
+
+    return RiverDeploymentProvider()
+
+
 _PROVIDERS: dict[str, Callable[[], InferenceDeploymentProvider]] = {
     "coreweave": _coreweave,
     "huggingface": _huggingface,
     "nebius": _nebius,
+    "river": _river,
 }
 
 

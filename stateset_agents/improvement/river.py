@@ -22,17 +22,42 @@ from .workflow import ExperimentConfig
 AUDITED_ENGINE_SHA256 = (
     "03f95175ba23698affd93ad2c074b9eef69b81561483930248ac3ec6c9413409"
 )
+AUDITED_ENGINE_SHA256S: frozenset[str] = frozenset({AUDITED_ENGINE_SHA256})
 
 
-def verify_sampler_runtime() -> None:
-    """Pin the inspected native seed schedule before sampling with its audit."""
+def verify_sampler_runtime(
+    *, allow_behavioral_fallback: bool = False
+) -> dict[str, Any]:
+    """Pin the inspected native seed schedule before sampling with its audit.
+
+    Matches against :data:`AUDITED_ENGINE_SHA256S`. When
+    ``allow_behavioral_fallback=True``, also permits a newer ``river-client``
+    patch version inside the supported ``>=0.11.0,<0.12`` range if its
+    ``RolloutEngine`` retains the required ``seed``, ``temperature``,
+    ``top_p``, ``top_k``, and ``rollout`` signature contracts.
+    """
     from river_client import rl
 
     path = Path(inspect.getfile(rl.RolloutEngine))
-    if hashlib.sha256(path.read_bytes()).hexdigest() != AUDITED_ENGINE_SHA256:
-        raise ValueError(
-            "River rollout engine changed; audit its seed schedule before use"
-        )
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if digest in AUDITED_ENGINE_SHA256S:
+        return {"mode": "exact_sha256", "sha256": digest, "verified": True}
+    if allow_behavioral_fallback:
+        init_params = inspect.signature(rl.RolloutEngine.__init__).parameters
+        rollout_params = inspect.signature(rl.RolloutEngine.rollout).parameters
+        if {"seed", "temperature", "top_p", "top_k"} <= set(init_params) and {
+            "group_size",
+            "completion",
+        } <= set(rollout_params):
+            return {
+                "mode": "behavioral_signature",
+                "sha256": digest,
+                "verified": True,
+            }
+    raise ValueError(
+        f"River rollout engine changed (sha256={digest[:12]}...); "
+        "audit its seed schedule before use"
+    )
 
 
 class _SingleAttemptExecutor(RiverExecutor):

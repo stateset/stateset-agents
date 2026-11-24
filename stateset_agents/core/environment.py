@@ -15,6 +15,7 @@ from .environment_base import (
 )
 from .environment_presets import CONVERSATION_CONFIGS, TASK_CONFIGS
 from .mcp_rl_env import (
+    BrowserDOMSandbox,
     CodeVerificationSandbox,
     CommerceLedgerSandbox,
     DockerCodeSandbox,
@@ -44,6 +45,7 @@ __all__ = [
     "EnvironmentState",
     "Environment",
     "ConversationEnvironment",
+    "BrowserDOMSandbox",
     "CodeVerificationSandbox",
     "CommerceLedgerSandbox",
     "DockerCodeSandbox",

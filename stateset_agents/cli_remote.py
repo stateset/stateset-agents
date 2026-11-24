@@ -1490,7 +1490,7 @@ def inference_deploy(
 @app.command("inference-status")
 def inference_status(
     provider: str = typer.Option(
-        ..., "--provider", help="coreweave, huggingface, or nebius."
+        ..., "--provider", help="coreweave, huggingface, nebius, or river."
     ),
     deployment_id: str = typer.Option(..., "--deployment-id"),
     model_name: str = typer.Option(..., "--model-name"),
@@ -1514,7 +1514,7 @@ def inference_status(
 @app.command("inference-delete")
 def inference_delete(
     provider: str = typer.Option(
-        ..., "--provider", help="coreweave, huggingface, or nebius."
+        ..., "--provider", help="coreweave, huggingface, nebius, or river."
     ),
     deployment_id: str = typer.Option(..., "--deployment-id"),
     model_name: str = typer.Option(..., "--model-name"),
@@ -1550,3 +1550,158 @@ def inference_delete(
         _echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
     _echo(f"Deleted {provider} deployment {deployment_id}.")
+
+
+@app.command("river-chat")
+def river_chat(
+    prompt: str = typer.Option(..., "--prompt", help="User message to send."),
+    checkpoint: str | None = typer.Option(
+        None,
+        "--checkpoint",
+        help="River checkpoint URI (river://...) or directory with river_checkpoint.json.",
+    ),
+    base_model: str = typer.Option(
+        "",
+        "--base-model",
+        help="Base model ID (inferred from river_checkpoint.json when omitted).",
+    ),
+    system_prompt: str = typer.Option("", "--system", help="Optional system prompt."),
+    max_tokens: int = typer.Option(512, "--max-tokens", min=1),
+    temperature: float = typer.Option(0.0, "--temperature", min=0.0),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit full structured JSON response."
+    ),
+) -> None:
+    """Query a hosted River checkpoint or base model directly from the CLI."""
+    import json
+
+    from stateset_agents.remote.river_serving import RiverDeploymentManager
+
+    messages: list[dict[str, str]] = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
+    try:
+        with RiverDeploymentManager() as manager:
+            payload = manager.chat_complete(
+                messages,
+                checkpoint=checkpoint,
+                base_model=base_model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+    except (StateSetError, ValueError) as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    if json_output:
+        _echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        _echo(str(payload.get("text", "")))
+
+
+@app.command("river-deploy")
+def river_deploy(
+    checkpoint: str = typer.Option(
+        ...,
+        "--checkpoint",
+        help="River checkpoint URI (river://...) or directory with river_checkpoint.json.",
+    ),
+    unified_replicas: int | None = typer.Option(
+        None, "--unified-replicas", min=1, help="Unified serving replica count."
+    ),
+    prefill_replicas: int | None = typer.Option(
+        None, "--prefill-replicas", min=1, help="Disaggregated prefill replicas."
+    ),
+    decode_replicas: int | None = typer.Option(
+        None, "--decode-replicas", min=1, help="Disaggregated decode replicas."
+    ),
+    promote_streaming_model: str | None = typer.Option(
+        None,
+        "--promote-streaming-model",
+        help="Instead of a dedicated deployment, promote to a streaming replica alias.",
+    ),
+    idempotency_key: str | None = typer.Option(
+        None, "--idempotency-key", help="Optional idempotency key for safe retries."
+    ),
+    wait: bool = typer.Option(
+        False, "--wait", help="Wait until the deployment reaches ready/degraded."
+    ),
+) -> None:
+    """Deploy a trained River checkpoint or promote it to a streaming replica."""
+    import json
+
+    from stateset_agents.remote.river_serving import RiverDeploymentManager
+
+    try:
+        with RiverDeploymentManager() as manager:
+            if promote_streaming_model:
+                result = manager.promote_streaming_replica(
+                    checkpoint, promote_streaming_model
+                )
+            else:
+                result = manager.create_deployment(
+                    checkpoint,
+                    unified_replicas=unified_replicas,
+                    prefill_replicas=prefill_replicas,
+                    decode_replicas=decode_replicas,
+                    idempotency_key=idempotency_key,
+                    wait=wait,
+                )
+    except (StateSetError, ValueError) as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    _echo(json.dumps(result, indent=2, sort_keys=True))
+
+
+@app.command("river-deployments")
+def river_deployments(
+    include_deleted: bool = typer.Option(
+        False, "--include-deleted", help="Include deleted deployments."
+    ),
+    deployment_id: str | None = typer.Option(
+        None,
+        "--deployment-id",
+        help="Inspect, scale, usage-check, or delete one deployment.",
+    ),
+    usage: bool = typer.Option(
+        False, "--usage", help="Read metered usage for --deployment-id."
+    ),
+    scale_unified: int | None = typer.Option(
+        None,
+        "--scale-unified",
+        min=0,
+        help="Scale unified replicas for --deployment-id.",
+    ),
+    delete: bool = typer.Option(
+        False, "--delete", help="Delete --deployment-id to stop billing."
+    ),
+) -> None:
+    """List, inspect, scale, check usage, or delete River deployments."""
+    import json
+
+    from stateset_agents.remote.river_serving import RiverDeploymentManager
+
+    try:
+        with RiverDeploymentManager() as manager:
+            if delete:
+                if not deployment_id:
+                    raise ValueError("--delete requires --deployment-id")
+                payload: object = manager.delete_deployment(deployment_id)
+            elif scale_unified is not None:
+                if not deployment_id:
+                    raise ValueError("--scale-unified requires --deployment-id")
+                payload = manager.scale_deployment(
+                    deployment_id, unified_replicas=scale_unified
+                )
+            elif usage:
+                if not deployment_id:
+                    raise ValueError("--usage requires --deployment-id")
+                payload = manager.get_deployment_usage(deployment_id)
+            elif deployment_id:
+                payload = manager.get_deployment(deployment_id)
+            else:
+                payload = manager.list_deployments(include_deleted=include_deleted)
+    except (StateSetError, ValueError) as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    _echo(json.dumps(payload, indent=2, sort_keys=True))

@@ -1398,6 +1398,24 @@ def _dispatch_studio_tool(
                             "docker_code-fail", "docker_code", {"simulate_fail": True}
                         )
                     )
+            elif d == "web_agent":
+                specs.append(
+                    SandboxEpisodeSpec(
+                        "web_agent-ok",
+                        "web_agent",
+                        {"target_order_id": "ORD-77701"},
+                        max_turns=6,
+                    )
+                )
+                if include_failure_pairs:
+                    specs.append(
+                        SandboxEpisodeSpec(
+                            "web_agent-fail",
+                            "web_agent",
+                            {"target_order_id": "ORD-77701", "simulate_fail": True},
+                            max_turns=6,
+                        )
+                    )
             else:
                 raise ValueError(f"Unsupported sandbox domain: {d!r}")
 
@@ -1452,6 +1470,30 @@ def _dispatch_studio_tool(
                     )
                 return ConversationTurn(
                     role="assistant", content="Patched billing.py and verified pytest."
+                )
+            if dom == "web_agent":
+                if turn_idx == 0:
+                    return ConversationTurn(
+                        role="assistant",
+                        content='<tool_call>{"name": "click", "arguments": {"selector": "#link-returns"}}</tool_call>',
+                    )
+                if turn_idx == 1:
+                    return ConversationTurn(
+                        role="assistant",
+                        content='<tool_call>{"name": "fill", "arguments": {"selector": "#order-id", "value": "ORD-77701"}}</tool_call>',
+                    )
+                if turn_idx == 2:
+                    return ConversationTurn(
+                        role="assistant",
+                        content='<tool_call>{"name": "fill", "arguments": {"selector": "#reason", "value": "damaged"}}</tool_call>',
+                    )
+                if turn_idx == 3:
+                    return ConversationTurn(
+                        role="assistant",
+                        content='<tool_call>{"name": "click", "arguments": {"selector": "#btn-submit-return"}}</tool_call>',
+                    )
+                return ConversationTurn(
+                    role="assistant", content="Submitted RMA-ORD-77701."
                 )
             if turn_idx == 0:
                 return ConversationTurn(

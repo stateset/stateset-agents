@@ -650,6 +650,138 @@ class DockerCodeSandbox:
         )
 
 
+class BrowserDOMSandbox:
+    """Deterministic stateful Browser / Web-Agent DOM & Form Verifier.
+
+    Simulates an interactive multi-page SaaS / Commerce support portal with
+    structured DOM snapshots, form field inputs, button clicks, and terminal
+    DOM/URL receipt verification (zero extra runtime dependencies; mirrors
+    Playwright action semantics cleanly).
+
+    Tools:
+    - ``get_dom()`` -> returns current URL, visible elements, and form values
+    - ``navigate(url)`` -> navigates to ``/portal/orders`` or ``/portal/returns``
+    - ``fill(selector, value)`` -> populates a form input (e.g. ``#order-id``, ``#reason``)
+    - ``click(selector)`` -> clicks an interactive button (e.g. ``#btn-submit-return``)
+    """
+
+    def __init__(self) -> None:
+        self._url = "/portal/home"
+        self._inputs: dict[str, str] = {}
+        self._submitted_returns: list[dict[str, Any]] = []
+        self._confirmation_id = ""
+
+    def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if name == "get_dom":
+            if self._url == "/portal/returns":
+                elements = [
+                    {
+                        "selector": "#order-id",
+                        "tag": "input",
+                        "value": self._inputs.get("#order-id", ""),
+                    },
+                    {
+                        "selector": "#reason",
+                        "tag": "input",
+                        "value": self._inputs.get("#reason", ""),
+                    },
+                    {
+                        "selector": "#btn-submit-return",
+                        "tag": "button",
+                        "text": "Submit Return",
+                    },
+                ]
+            elif self._url == "/portal/confirmation":
+                elements = [
+                    {
+                        "selector": "#confirmation-id",
+                        "tag": "span",
+                        "text": self._confirmation_id,
+                    },
+                ]
+            else:
+                elements = [
+                    {
+                        "selector": "#link-returns",
+                        "tag": "a",
+                        "href": "/portal/returns",
+                        "text": "Start Return",
+                    },
+                ]
+            return {"isError": False, "url": self._url, "elements": elements}
+
+        if name == "navigate":
+            target = str(arguments.get("url") or "").strip()
+            if target not in ("/portal/home", "/portal/returns"):
+                return {
+                    "isError": True,
+                    "error": f"404 Unknown portal route: {target!r}",
+                }
+            self._url = target
+            return {"isError": False, "url": self._url}
+
+        if name == "fill":
+            if self._url != "/portal/returns":
+                return {
+                    "isError": True,
+                    "error": "Form inputs only exist on /portal/returns.",
+                }
+            sel = str(arguments.get("selector") or "").strip()
+            val = str(arguments.get("value") or "").strip()
+            if sel not in ("#order-id", "#reason"):
+                return {"isError": True, "error": f"Unknown input selector: {sel!r}"}
+            if not val:
+                return {"isError": True, "error": f"Value for {sel} must be non-empty."}
+            self._inputs[sel] = val
+            return {"isError": False, "selector": sel, "value": val}
+
+        if name == "click":
+            sel = str(arguments.get("selector") or "").strip()
+            if sel == "#link-returns" and self._url == "/portal/home":
+                self._url = "/portal/returns"
+                return {"isError": False, "url": self._url}
+            if sel == "#btn-submit-return" and self._url == "/portal/returns":
+                oid = self._inputs.get("#order-id", "").strip()
+                reason = self._inputs.get("#reason", "").strip()
+                if not oid or not reason:
+                    return {
+                        "isError": True,
+                        "error": "Both #order-id and #reason must be filled before submitting.",
+                    }
+                self._confirmation_id = f"RMA-{oid}"
+                rec = {
+                    "confirmation_id": self._confirmation_id,
+                    "order_id": oid,
+                    "reason": reason,
+                }
+                self._submitted_returns.append(rec)
+                self._url = "/portal/confirmation"
+                return {"isError": False, "url": self._url, "receipt": rec}
+            return {
+                "isError": True,
+                "error": f"Clickable selector {sel!r} not found on {self._url}.",
+            }
+
+        return {"isError": True, "error": f"Unknown browser sandbox tool: {name!r}"}
+
+    def verify(
+        self, state: EnvironmentState, _history: list[dict[str, Any]]
+    ) -> tuple[float, dict[str, Any]]:
+        scenario = state.context.get("scenario") or {}
+        target_oid = str(scenario.get("target_order_id") or "ORD-77701")
+        matched = any(r["order_id"] == target_oid for r in self._submitted_returns)
+        ok = matched and self._url == "/portal/confirmation"
+        return (
+            1.0 if ok else 0.0,
+            {
+                "verified": ok,
+                "url": self._url,
+                "confirmation_id": self._confirmation_id,
+                "expected_order_id": target_oid,
+            },
+        )
+
+
 def make_http_mcp_executor(
     mcp_url: str, *, bearer_token: str = "", timeout: float = 15.0
 ) -> ToolExecutor:
@@ -832,6 +964,7 @@ class MCPRLEnvironment(Environment):
 
 
 __all__ = [
+    "BrowserDOMSandbox",
     "CodeVerificationSandbox",
     "CommerceLedgerSandbox",
     "DockerCodeSandbox",

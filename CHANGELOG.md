@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.99.1] - 2026-11-23 — Zero-CVE Supply Chain (`0 / 0` `pip-audit`), `BrowserDOMSandbox` (6th Enterprise Verifier), 3-Seed Ablation Evidence & `82%+` Coverage Push
+
+### Security
+
+- **Zero-CVE Dependency Lockfiles (`0` `pip-audit` vulnerabilities across Core, Training & Dev locks)** (`pyproject.toml`, `requirements-lock.txt`, `requirements-dev-lock.txt`, `requirements-training-lock.txt`, `SECURITY.md`): upgraded `black>=26.10.1`, `filelock>=4.2.1` (patching 12 CVEs), and `msgpack` (`1.2.4`), and isolated `semgrep>=1.173.0` into a dedicated `[sast]` extra so developers and `[dev]`/`[training]`/`[mcp]` environments never inherit Semgrep's legacy pinned `mcp==1.29.0`/`opentelemetry-api~=1.37.0`/`wcmatch~=8.5` transitive CVEs without waiving any advisory.
+
+### Added
+
+- **Browser / Web-Agent Verifiable Sandbox (`BrowserDOMSandbox`)** (`stateset_agents/core/mcp_rl_env.py`, `sandbox_pool.py`, `environment.py`, `router.py`, `mcp_bridge.py`, `mcp_server.py`, `npm/`, `index.html`, `autopilot_panel.js`): added stateful DOM + Form + Checkout/Return portal verification (`get_dom`, `navigate`, `fill`, `click`, confirmation receipt verify), expanding `MultiDomainSandboxPool` to **6 enterprise domains** (`commerce`, `coding`, `sql`, `rest_api`, `docker_code`, `web_agent`).
+- **River AI `0.11` Full-Lifecycle Serving, Deployments, MoE & Studio Integration (`A+`)** (`stateset_agents/remote/river_serving.py`, `deployment_registry.py`, `river.py`, `river_rl.py`, `river_rl_runner.py`, `river_runtime.py`, `river_environment.py`, `canary.py`, `cli_remote.py`, `rl_blueprint.py`, `finetune_engine.py`, `improvement/river.py`):
+  - Added `RiverDeploymentManager`, `RiverDeploymentProvider` (registered under `deploy-inference`/`inference-status`/`inference-delete --provider river`), `RiverInferenceClient`, and `river-chat` / `river-deploy` / `river-deployments` CLI commands covering dedicated deployments, scaling, usage metering, streaming replica promotion, and direct checkpoint chat/streaming.
+  - Added River `0.11` MoE `routing_replay`, `compute_expert_flip_metric`, deterministic optimizer `idempotency_key`, `dro` & `decoupled_ppo` RL losses, `Session.attest_training_data(...)`, `get_server_capabilities()`, `resolve_tokenizer_name()` FP8 alias lookup, typed `AuthenticationError`/`ModelNotFoundError` handling, `CapacityError`/`SessionHeartbeatError` retries, live `StudioTelemetryCallback` streaming, `RLBlueprintConfig(cloud="river")`, Weight Studio River CLI/pricing parity, `river_mcp_sandbox_factory` bridging all 6 enterprise verifiable sandboxes into River's native `rl.RolloutEngine`, and fixed the client cleanup leak in `canary.py:_probe_river`.
+- **Reproducible 3-Seed Open-Weight RL Ablation Evidence** (`benchmarks/open_weight_rl_ablation.py`, `benchmark_results/open_weight_rl/ablation_v1_rc.json`, `contracts/component_maturity_v1.json`, `docs/OPEN_WEIGHT_RL.md`): retained verified 3-seed Step-0 CAA + Chunked GSPO/FP8 TIS/MoE ablation (`+1.846 ± 0.0298` margin gain, `3/3` seeds improved, `6/6` verifiers in `114.64 ms`) anchored directly into `contracts/component_maturity_v1.json`.
+
 ## [0.99.0] - 2026-11-23 — Unified Closed-Loop Adaptive RL Runtime, 5-Domain Enterprise Verifiable Sandboxes (`RESTAPISandbox` & `DockerCodeSandbox`), Real Multi-Turn PRM Credit Fix & Publish-Readiness Hardening
 
 ### Added

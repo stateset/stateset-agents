@@ -1470,3 +1470,229 @@ def test_v99_enterprise_sandboxes_real_multiturn_prm_credit_and_unified_adaptive
     assert len(loop_res["steps"]) == 2
     assert loop_res["self_play_variants_created"] >= 1
     assert cb.steps_logged == 2
+
+
+def test_v99_1_browser_dom_sandbox_ablation_and_mcp_bridge_coverage(
+    tmp_path: Path,
+) -> None:
+    """Verify BrowserDOMSandbox (6th domain), 3-seed ablation harness & comprehensive HTTP MCP bridge coverage."""
+    from fastapi.testclient import TestClient
+
+    from benchmarks.open_weight_rl_ablation import run_ablation
+    from stateset_agents.core.mcp_rl_env import BrowserDOMSandbox
+    from stateset_agents.weight_studio import create_studio_app
+    from stateset_agents.weight_studio.mcp_bridge import (
+        STUDIO_MCP_PROMPTS,
+        STUDIO_MCP_RESOURCES,
+        handle_mcp_jsonrpc,
+    )
+    from stateset_agents.weight_studio.router import StudioRuntime
+
+    # 1. BrowserDOMSandbox stateful DOM/Form flow + error validation
+    wb = BrowserDOMSandbox()
+    assert wb.call_tool("get_dom", {})["url"] == "/portal/home"
+    assert wb.call_tool("navigate", {"url": "/portal/bad"})["isError"] is True
+    assert (
+        wb.call_tool("fill", {"selector": "#order-id", "value": "X"})["isError"] is True
+    )
+    assert (
+        wb.call_tool("click", {"selector": "#link-returns"})["url"] == "/portal/returns"
+    )
+    assert wb.call_tool("click", {"selector": "#btn-submit-return"})["isError"] is True
+    assert (
+        wb.call_tool("fill", {"selector": "#order-id", "value": "ORD-77701"})["isError"]
+        is False
+    )
+    assert (
+        wb.call_tool("fill", {"selector": "#reason", "value": "damaged"})["isError"]
+        is False
+    )
+    sub = wb.call_tool("click", {"selector": "#btn-submit-return"})
+    assert sub["isError"] is False and sub["url"] == "/portal/confirmation"
+    assert sub["receipt"]["confirmation_id"] == "RMA-ORD-77701"
+
+    # 2. All 6 enterprise domains via REST API
+    app = create_studio_app(workspace_root=tmp_path)
+    client = TestClient(app)
+    r_pool = client.post(
+        "/api/weight-studio/rl/sandbox-pool",
+        json={
+            "domains": [
+                "commerce",
+                "coding",
+                "sql",
+                "rest_api",
+                "docker_code",
+                "web_agent",
+            ],
+            "include_failure_pairs": True,
+        },
+    )
+    assert r_pool.status_code == 200
+    assert r_pool.json()["episode_count"] == 12
+    assert set(r_pool.json()["domain_stats"]) == {
+        "commerce",
+        "coding",
+        "sql",
+        "rest_api",
+        "docker_code",
+        "web_agent",
+    }
+
+    # 3. 3-Seed Open-Weight RL Ablation harness smoke
+    abl = run_ablation(seeds=[42], steps=2)
+    assert abl["six_domain_verifiable_eval"]["all_verified"] is True
+    assert abl["summary"]["all_seeds_improved"] is True
+
+    # 4. Comprehensive HTTP MCP bridge dispatch (resources, prompts, RO auth, tools, error paths)
+    rt = StudioRuntime(workspace_root=tmp_path)
+    assert (
+        handle_mcp_jsonrpc(
+            rt, {"jsonrpc": "2.0", "method": "notifications/initialized"}
+        )
+        is None
+    )
+    assert (
+        handle_mcp_jsonrpc(rt, {"jsonrpc": "2.0", "id": 1, "method": "ping"})["result"]
+        == {}
+    )
+    assert "error" in handle_mcp_jsonrpc(
+        rt, {"jsonrpc": "2.0", "id": 2, "method": "no_such_method"}
+    )
+
+    # Every canonical resource URI reads cleanly
+    r_list = handle_mcp_jsonrpc(
+        rt, {"jsonrpc": "2.0", "id": 3, "method": "resources/list"}
+    )
+    assert len(r_list["result"]["resources"]) == len(STUDIO_MCP_RESOURCES)
+    for res_spec in STUDIO_MCP_RESOURCES:
+        rd = handle_mcp_jsonrpc(
+            rt,
+            {
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "resources/read",
+                "params": {"uri": res_spec["uri"]},
+            },
+        )
+        assert rd["result"]["contents"][0]["uri"] == res_spec["uri"]
+
+    # Every canonical prompt renders cleanly
+    p_list = handle_mcp_jsonrpc(
+        rt, {"jsonrpc": "2.0", "id": 5, "method": "prompts/list"}
+    )
+    assert len(p_list["result"]["prompts"]) == len(STUDIO_MCP_PROMPTS)
+    for pr_spec in STUDIO_MCP_PROMPTS:
+        pg = handle_mcp_jsonrpc(
+            rt,
+            {
+                "jsonrpc": "2.0",
+                "id": 6,
+                "method": "prompts/get",
+                "params": {
+                    "name": pr_spec["name"],
+                    "arguments": {"model_id": "preset:deepseek-r1-1.5b"},
+                },
+            },
+        )
+        assert pg["result"]["messages"]
+
+    # Read-only scope blocks mutating tools; unknown tool returns structured isError
+    ro_err = handle_mcp_jsonrpc(
+        rt,
+        {
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "tools/call",
+            "params": {"name": "studio_apply_edit", "arguments": {}},
+        },
+        granted_scope="read",
+    )
+    assert ro_err["error"]["code"] == -32001
+
+    unk = handle_mcp_jsonrpc(
+        rt,
+        {
+            "jsonrpc": "2.0",
+            "id": 8,
+            "method": "tools/call",
+            "params": {"name": "studio_does_not_exist", "arguments": {}},
+        },
+    )
+    assert unk["result"]["isError"] is True
+
+    # Core read & interpretability tools execute cleanly over HTTP MCP bridge
+    mid = "preset:deepseek-r1-1.5b"
+    for tname, targs in (
+        ("studio_list_models", {}),
+        ("studio_inspect_model", {"model_id": mid}),
+        ("studio_profile_sensitivity", {"model_id": mid}),
+        ("studio_run_inference", {"model_id": mid, "prompt": "Refund order #100"}),
+        ("studio_discover_circuit", {"model_id": mid, "prompt": "Refund order #100"}),
+        ("studio_residual_stream", {"model_id": mid, "prompt": "Refund order #100"}),
+        (
+            "studio_sae_analyze",
+            {"model_id": mid, "prompt": "Refund order #100", "layer_index": 0},
+        ),
+        (
+            "studio_extract_steering",
+            {
+                "model_id": mid,
+                "positive_prompt": "Verify order ID first.",
+                "negative_prompt": "Guess randomly.",
+            },
+        ),
+        ("studio_query_rl_trajectories", {"limit": 10}),
+        ("studio_run_sandbox_pool", {"domains": ["web_agent", "rest_api"]}),
+        ("studio_rl_telemetry", {"limit": 10}),
+        (
+            "studio_rl_plan",
+            {"model": "Qwen/Qwen3-8B", "algorithm": "gspo", "cloud": "local"},
+        ),
+        (
+            "studio_arena_compare",
+            {"model_id": mid, "prompt": "Refund order #100", "reward_fn": "composite"},
+        ),
+        (
+            "studio_apply_edit",
+            {
+                "model_id": mid,
+                "op": "scale",
+                "target": "layer:0",
+                "params": {"factor": 1.05},
+                "label": "v99.1 test scale",
+            },
+        ),
+        ("studio_manage_edits", {"model_id": mid, "action": "history"}),
+        ("studio_manage_edits", {"model_id": mid, "action": "export_recipe"}),
+        ("studio_manage_edits", {"model_id": mid, "action": "undo"}),
+        ("studio_manage_edits", {"model_id": mid, "action": "redo"}),
+        ("studio_save_session", {"model_id": mid, "session_name": "v99-1-sess"}),
+        ("studio_sessions", {"action": "list"}),
+        ("studio_sessions", {"action": "load", "session_name": "v99-1-sess"}),
+        ("studio_manage_edits", {"model_id": mid, "action": "reset"}),
+        ("studio_eval_and_export", {"model_id": mid, "max_cases": 2}),
+        (
+            "studio_ingest_trace",
+            {
+                "payload": {
+                    "prompt": "Refund order #100",
+                    "response": "I checked order #100 and processed a full refund.",
+                }
+            },
+        ),
+        ("studio_query_traces", {"limit": 5}),
+        ("studio_query_rollouts", {"limit": 5}),
+        ("studio_prune_traces", {"keep_latest": 50}),
+        ("studio_audit_reward_calibration", {"reward_fn": "customer_support"}),
+    ):
+        call_res = handle_mcp_jsonrpc(
+            rt,
+            {
+                "jsonrpc": "2.0",
+                "id": 9,
+                "method": "tools/call",
+                "params": {"name": tname, "arguments": targs},
+            },
+        )
+        assert call_res["result"]["isError"] is False, (tname, call_res)

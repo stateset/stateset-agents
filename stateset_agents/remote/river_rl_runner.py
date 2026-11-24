@@ -519,13 +519,26 @@ def run_rl(
                             "policy_id": policy_id,
                         }
                         if normalized:
+                            if (
+                                getattr(executor, "_routing_replay", False)
+                                and config.loss_fn == "decoupled_ppo"
+                            ):
+                                raise ValueError(
+                                    "River decoupled_ppo does not support force_routing_replay"
+                                )
                             guard = (
                                 {"expected_policy_id": policy_id}
                                 if policy_id is not None
                                 else {}
                             )
+                            moe_kwargs: dict[str, Any] = {}
+                            if getattr(executor, "_routing_replay", False):
+                                moe_kwargs["force_routing_replay"] = True
+                            if getattr(executor, "_compute_expert_flip_metric", False):
+                                moe_kwargs["compute_expert_flip_metric"] = True
                             losses = []
                             backward_metrics = []
+                            expert_flip_rates: list[float] = []
                             # Never pipeline an optimizer operation before backward succeeds.
                             for start in range(
                                 0, len(normalized), config.microbatch_size
@@ -536,9 +549,17 @@ def run_rl(
                                     zero_out=(start == 0),
                                     **config.loss_kwargs(),
                                     **guard,
+                                    **moe_kwargs,
                                 )
                                 loss = _extract(fb, "loss")
                                 loss_mean = _extract(fb, "loss_mean")
+                                flip = _extract(
+                                    fb,
+                                    "moe/expert_flip_rate",
+                                    "expert_flip_rate",
+                                )
+                                if flip is not None and math.isfinite(float(flip)):
+                                    expert_flip_rates.append(float(flip))
                                 if loss_mean is not None and not math.isfinite(
                                     float(loss_mean)
                                 ):
@@ -554,10 +575,15 @@ def run_rl(
                                 backward_metrics.append(
                                     {"loss_sum": loss, "loss_mean": loss_mean}
                                 )
+                            opt_kwargs: dict[str, Any] = {**guard}
+                            if getattr(executor, "_use_idempotency_keys", False):
+                                opt_kwargs["idempotency_key"] = (
+                                    f"stateset-{fingerprint[:16]}-r{rnd}"
+                                )
                             opt = model.optim_step(
                                 lr=spec.learning_rate,
                                 grad_clip_norm=config.grad_clip_norm,
-                                **guard,
+                                **opt_kwargs,
                             )
                             state["steps"] += 1
                             state["loss"] = (
@@ -566,6 +592,10 @@ def run_rl(
                                 else None
                             )
                             entry["backward_metrics"] = backward_metrics
+                            if expert_flip_rates:
+                                entry["expert_flip_rate"] = statistics.mean(
+                                    expert_flip_rates
+                                )
                             entry["committed_policy_id"] = getattr(
                                 getattr(opt, "policy_version", None), "id", None
                             )
@@ -602,6 +632,33 @@ def run_rl(
                         state["rounds"].append(entry)
                         commit_state(state)
                         publish("running")
+                        studio_cb = getattr(executor, "_studio_callback", None)
+                        if studio_cb is not None and callable(
+                            getattr(studio_cb, "on_step", None)
+                        ):
+                            try:
+                                studio_cb.on_step(
+                                    int(state["steps"]),
+                                    {
+                                        "provider": "river",
+                                        "algorithm": f"river:{config.loss_fn}",
+                                        "loss": float(state["loss"] or 0.0),
+                                        "mean_reward": float(
+                                            entry.get("mean_reward") or 0.0
+                                        ),
+                                        "round": rnd,
+                                        "datums": len(normalized),
+                                        "contributing_tokens": tokens,
+                                        "best_round": state["best_round"],
+                                        "checkpoint_uri": state["best_checkpoint"],
+                                        "policy_id": entry.get("committed_policy_id"),
+                                        "expert_flip_rate": entry.get(
+                                            "expert_flip_rate"
+                                        ),
+                                    },
+                                )
+                            except Exception:  # noqa: BLE001 - telemetry is non-fatal
+                                pass
                         job.logs.append(
                             f"round {rnd}: {len(normalized)} datums, {tokens} contributing tokens; best round {state['best_round']}"
                         )

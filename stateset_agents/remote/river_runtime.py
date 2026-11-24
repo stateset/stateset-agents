@@ -17,6 +17,53 @@ from stateset_agents.remote.executor import RemoteExecutionError
 SUPPORTED_RIVER_SDK = ">=0.11.0,<0.12"
 
 
+def inspect_server_capabilities(
+    client: Any, *, model_name: str | None = None
+) -> dict[str, Any]:
+    """Query River 0.11 ``get_server_capabilities()`` with graceful fallback.
+
+    Returns normalized ``supported_models``, ``features``, and ``model_features``
+    without exposing credentials. Falls back cleanly to ``get_capabilities()``
+    when a client or test double only implements the legacy list endpoint.
+    """
+    get_server_caps = getattr(client, "get_server_capabilities", None)
+    if callable(get_server_caps):
+        try:
+            scaps = (
+                get_server_caps(model_name=model_name)
+                if model_name is not None
+                else get_server_caps()
+            )
+        except Exception as exc:
+            raise RemoteExecutionError(
+                f"River server capabilities check failed ({type(exc).__name__}); "
+                "check credentials and connectivity before retrying",
+                provider="river",
+            ) from exc
+        raw_models = getattr(scaps, "supported_models", ())
+        raw_features = getattr(scaps, "features", ())
+        raw_model_features = getattr(scaps, "model_features", {}) or {}
+        models = tuple(
+            dict.fromkeys(
+                str(m).strip() for m in raw_models if isinstance(m, str) and m.strip()
+            )
+        )
+        return {
+            "supported_models": list(models),
+            "features": sorted(str(f) for f in raw_features),
+            "model_features": {
+                str(k): sorted(str(f) for f in v)
+                for k, v in dict(raw_model_features).items()
+            },
+        }
+    models = list_accessible_models(client)
+    return {
+        "supported_models": list(models),
+        "features": [],
+        "model_features": {},
+    }
+
+
 def list_accessible_models(client: Any) -> tuple[str, ...]:
     """Read fresh account model names, rejecting unavailable or malformed data."""
     get_capabilities = getattr(client, "get_capabilities", None)
@@ -132,6 +179,13 @@ def river_preflight(
             )
             models = list_accessible_models(client)
             account.update(status="checked", available_models=list(models))
+            if callable(getattr(client, "get_server_capabilities", None)):
+                try:
+                    scaps = inspect_server_capabilities(client)
+                    account["server_features"] = scaps["features"]
+                    account["model_features"] = scaps["model_features"]
+                except RemoteExecutionError:
+                    pass
             for model in requested:
                 model_access[model] = model in models
                 if model not in models:

@@ -160,6 +160,8 @@ class _RiverJob:
     cost_usd: float | None = None
     dataset_source: DatasetSourceIdentity | None = None
     sft_options: dict[str, Any] | None = None
+    dataset_bytes: bytes | None = None
+    attestation_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -240,6 +242,11 @@ class RiverExecutor(RemoteExecutor):
         ledger_path: Path | None = None,
         rl_scorer: RLScorer | None = None,
         rl_scorer_id: str | None = None,
+        studio_callback: Any = None,
+        routing_replay: bool = False,
+        compute_expert_flip_metric: bool = False,
+        use_idempotency_keys: bool = False,
+        attest_training_data: bool = False,
     ) -> None:
         self._client = client
         self._owns_client = client is None
@@ -253,6 +260,11 @@ class RiverExecutor(RemoteExecutor):
             raise ValueError("A custom rl_scorer requires a versioned rl_scorer_id")
         self._rl_scorer = rl_scorer
         self._rl_scorer_id = rl_scorer_id or "stateset-checks-v2"
+        self._studio_callback = studio_callback
+        self._routing_replay = bool(routing_replay)
+        self._compute_expert_flip_metric = bool(compute_expert_flip_metric)
+        self._use_idempotency_keys = bool(use_idempotency_keys)
+        self._attest_training_data = bool(attest_training_data)
 
     # -- SDK seam ----------------------------------------------------------
 
@@ -304,10 +316,19 @@ class RiverExecutor(RemoteExecutor):
                 provider=self.name,
             ) from exc
         try:
+            import river_client
+
+            resolve_name = getattr(river_client, "resolve_tokenizer_name", None)
+            tokenizer_source = (
+                str(resolve_name(base_model)) if callable(resolve_name) else base_model
+            )
+        except Exception:  # noqa: BLE001 - optional SDK alias lookup
+            tokenizer_source = base_model
+        try:
             # base_model is the caller's own model id, not attacker input;
             # pinning a revision would break arbitrary user-chosen models
             # (same rationale as training/sft.py).
-            tokenizer = AutoTokenizer.from_pretrained(base_model)  # nosec: B615
+            tokenizer = AutoTokenizer.from_pretrained(tokenizer_source)  # nosec: B615
         except Exception as exc:  # noqa: BLE001 - hub/network/auth all land here
             raise RemoteExecutionError.wrap(
                 exc,
@@ -362,9 +383,23 @@ class RiverExecutor(RemoteExecutor):
     def _account_error(self, exc: Exception) -> RemoteExecutionError | None:
         """Translate an account-state failure into an actionable error.
 
+        Prefers River 0.11's typed exception classes (``AuthenticationError``,
+        ``ModelNotFoundError``) before falling back to envelope text hints.
         Returns None when the failure is not one of these, so genuine
         training errors keep their own reporting.
         """
+        exc_name = type(exc).__name__
+        if exc_name == "AuthenticationError":
+            return RemoteExecutionError(
+                "River rejected the API key (AuthenticationError). Check RIVER_API_KEY.",
+                provider=self.name,
+            )
+        if exc_name == "ModelNotFoundError":
+            return RemoteExecutionError(
+                "River reported the requested model or checkpoint was not found "
+                "(ModelNotFoundError). Verify model access via `stateset-agents river-preflight --live`.",
+                provider=self.name,
+            )
         text = str(exc).lower()
         for needle, guidance in self._ACCOUNT_HINTS:
             if needle in text:
@@ -466,6 +501,8 @@ class RiverExecutor(RemoteExecutor):
         source_data = source_path.read_bytes()
         rows = parse_chat_dataset(source_data)
         job.dataset_source = DatasetSourceIdentity.from_bytes(source_path, source_data)
+        if self._attest_training_data:
+            job.dataset_bytes = source_data
         client = None if spec.dry_run else self._checked_client(spec, job)
         tokenizer = self._get_tokenizer(spec.base_model)
         data = build_sft_batch(rows, tokenizer, max_length=spec.max_length)
@@ -1134,17 +1171,38 @@ class RiverExecutor(RemoteExecutor):
 
     def _transient_exceptions(self, client: Any) -> tuple[type[Exception], ...]:
         """The SDK's transient error types, if the SDK is importable."""
+        sources: list[Any] = []
         try:
             import river_client
+
+            sources.append(river_client)
         except ImportError:
-            river_client = _river_module(client)
-        names = ("RiverConnectionError", "RiverTimeoutError")
-        return tuple(
-            exc
-            for name in names
-            if isinstance(exc := getattr(river_client, name, None), type)
-            and issubclass(exc, Exception)
+            pass
+        if client is not None:
+            sources.append(client)
+            try:
+                mod = _river_module(client)
+                if mod not in sources:
+                    sources.append(mod)
+            except RemoteExecutionError:
+                pass
+        names = (
+            "RiverConnectionError",
+            "RiverTimeoutError",
+            "CapacityError",
+            "SessionHeartbeatError",
         )
+        found: list[type[Exception]] = []
+        for src in sources:
+            for name in names:
+                exc = getattr(src, name, None)
+                if (
+                    isinstance(exc, type)
+                    and issubclass(exc, Exception)
+                    and exc not in found
+                ):
+                    found.append(exc)
+        return tuple(found)
 
     def _train_with_recovery(
         self,
@@ -1204,6 +1262,24 @@ class RiverExecutor(RemoteExecutor):
         with _open_session(
             client, project=Path(spec.output_dir).name or None
         ) as session:
+            if (
+                self._attest_training_data
+                and job.dataset_source is not None
+                and job.dataset_bytes is not None
+                and callable(getattr(session, "attest_training_data", None))
+            ):
+                artifact_cls = getattr(river, "TrainingDataArtifact", None)
+                if callable(artifact_cls):
+                    artifact = artifact_cls(
+                        name=Path(job.dataset_source.path).name,
+                        expected_sha256=job.dataset_source.sha256,
+                        content=job.dataset_bytes,
+                    )
+                    attestation = session.attest_training_data([artifact])
+                    att_id = getattr(attestation, "training_data_attestation_id", None)
+                    if isinstance(att_id, str) and att_id:
+                        job.attestation_id = att_id
+                        logs.append(f"attested training data with River: {att_id}")
             model = session.create_model(
                 base_model=spec.base_model,
                 lora=lora,
@@ -1218,6 +1294,12 @@ class RiverExecutor(RemoteExecutor):
                 f"(LoRA rank {spec.lora_r}, attn+mlp)"
             )
 
+            moe_kwargs: dict[str, Any] = {}
+            if self._routing_replay:
+                moe_kwargs["force_routing_replay"] = True
+            if self._compute_expert_flip_metric:
+                moe_kwargs["compute_expert_flip_metric"] = True
+
             size = max(1, spec.per_device_batch_size)
             tokens = 0
             for epoch in range(spec.num_epochs):
@@ -1230,10 +1312,15 @@ class RiverExecutor(RemoteExecutor):
                         # The SDK's preferred complete step: forward+backward
                         # and the optimizer step pipelined server-side.
                         result, _ = model.train_step(
-                            chunk, lr=spec.learning_rate, loss_fn=self.SFT_LOSS_FN
+                            chunk,
+                            lr=spec.learning_rate,
+                            loss_fn=self.SFT_LOSS_FN,
+                            **moe_kwargs,
                         )
                     else:
-                        result = model.forward_backward(chunk, loss_fn=self.SFT_LOSS_FN)
+                        result = model.forward_backward(
+                            chunk, loss_fn=self.SFT_LOSS_FN, **moe_kwargs
+                        )
                     loss = _extract(result, "loss_mean", "loss")
                     if loss is not None:
                         job.final_loss = float(loss)
@@ -1464,6 +1551,8 @@ class RiverExecutor(RemoteExecutor):
         }
         if spec.job_kind == "sft":
             pointer["sft_options"] = sft_options
+        if job.attestation_id:
+            pointer["training_data_attestation_id"] = job.attestation_id
         atomic_json(output_dir / CHECKPOINT_POINTER_NAME, pointer)
 
         from stateset_agents.training.lineage import (

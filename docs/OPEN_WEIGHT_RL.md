@@ -40,12 +40,14 @@ dapo_cfg = DAPOConfig(
 | Chunked vs. Full-Logit Forward/Backward Parity | `exact_match = True` (`max Δlp = 0.0`, `max Δh_grad = 0.0`, `max Δw_grad = 1.19e-6`) |
 | 16k Qwen3 (`V=152,064`, `B=4`, `chunk=256`) Logit VRAM | **37.123 GB → 0.145 GB (99.61% saved)** |
 | Disaggregated Async RL + DAPO Dynamic Sampling | **7,729.7 rollouts/s** (`371k tok/s`, zero-variance groups dropped automatically) |
-| Concurrent `MultiDomainSandboxPool` (`commerce` + `coding` + `sql`) | **122.7 episodes/s** (`48.89 ms` for 6 multi-turn verifiable episodes w/ per-domain z-score normalization) |
+| 3-Seed Ablation (Step-0 CAA + Chunked GSPO + FP8 TIS + MoE Aux) | **`+1.846 ± 0.0298` logprob margin gain** (`3/3` seeds improved; artifact: `benchmark_results/open_weight_rl/ablation_v1_rc.json`) |
+| 6-Domain Verifiable Enterprise Sandbox Pool | **`6/6` domains verified in `114.64 ms`** (`commerce`, `coding`, `sql`, `rest_api`, `docker_code`, `web_agent`) |
 
-Reproduce locally anytime:
+Reproduce locally (or on CUDA H100/A100) anytime:
 
 ```bash
 python benchmarks/chunked_rl_shootout.py --json
+python benchmarks/open_weight_rl_ablation.py --output benchmark_results/open_weight_rl/ablation_v1_rc.json
 # or via CLI:
 stateset-agents rl --run-shootout --json
 ```
