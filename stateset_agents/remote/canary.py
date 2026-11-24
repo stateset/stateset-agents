@@ -123,14 +123,38 @@ def _redact_error(exc: BaseException) -> str:
 
 
 def _probe_river(executor: RemoteExecutor) -> tuple[dict[str, Any], bool]:
+    owns_client = bool(getattr(executor, "_owns_client", False))
+    had_client = getattr(executor, "_client", None) is not None
     client = executor._get_client()  # type: ignore[attr-defined]
-    health = client.health_check()
-    capabilities = client.get_capabilities()
-    return {
-        "health": _safe_value(health),
-        "capabilities": _safe_value(capabilities),
-        "billable_resources_created": 0,
-    }, True
+    cleanup_ok = True
+    try:
+        health = client.health_check()
+        capabilities = client.get_capabilities()
+        checks: dict[str, Any] = {
+            "health": _safe_value(health),
+            "capabilities": _safe_value(capabilities),
+            "billable_resources_created": 0,
+        }
+        get_server_caps = getattr(client, "get_server_capabilities", None)
+        if callable(get_server_caps):
+            try:
+                scaps = get_server_caps()
+                features = getattr(scaps, "features", None)
+                if features is not None:
+                    checks["server_features"] = sorted(str(f) for f in features)
+            except Exception:  # noqa: BLE001 - optional newer capability RPC
+                pass
+    finally:
+        if owns_client and not had_client:
+            if hasattr(executor, "_client"):
+                executor._client = None
+            close = getattr(client, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:  # noqa: BLE001 - cleanup failure fails gate
+                    cleanup_ok = False
+    return checks, cleanup_ok
 
 
 def _probe_fireworks(executor: RemoteExecutor) -> tuple[dict[str, Any], bool]:

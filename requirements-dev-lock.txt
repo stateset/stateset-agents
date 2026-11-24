@@ -4,106 +4,86 @@
 #
 #    pip-compile --extra=api --extra=dev --output-file=requirements-dev-lock.txt pyproject.toml
 #
-accelerate==1.15.0
+accelerate==1.16.0
     # via
     #   peft
     #   stateset-agents (pyproject.toml)
     #   trl
 aiohappyeyeballs==2.7.1
     # via aiohttp
-aiohttp==3.14.3
-    # via
-    #   fsspec
-    #   stateset-agents (pyproject.toml)
+aiohttp==3.14.5
+    # via stateset-agents (pyproject.toml)
 aiosignal==1.4.0
     # via aiohttp
 alabaster==1.0.0
     # via sphinx
-annotated-doc==0.0.4
+annotated-doc==0.0.7
     # via
     #   fastapi
     #   typer
 annotated-types==0.8.0
     # via pydantic
-anyio==4.14.2
+anyio==4.16.0
     # via
+    #   cwevals
+    #   fastapi
     #   httpx
-    #   mcp
-    #   sse-starlette
+    #   httpx2
     #   starlette
-ast-serialize==0.6.0
+ast-serialize==0.13.1
     # via mypy
 attrs==26.1.0
-    # via
-    #   aiohttp
-    #   glom
-    #   jsonschema
-    #   referencing
-    #   semgrep
+    # via aiohttp
 babel==2.18.0
     # via sphinx
 bandit==1.9.4
     # via stateset-agents (pyproject.toml)
-black==26.5.1
+black==26.10.1
     # via stateset-agents (pyproject.toml)
-boltons==21.0.0
-    # via
-    #   face
-    #   glom
-    #   semgrep
 boolean-py==5.0
     # via license-expression
-bracex==3.0.1
-    # via wcmatch
-build==1.5.0
+build==1.6.1
     # via pip-tools
-cachecontrol[filecache]==0.14.4
+cachecontrol[filecache]==0.15.0
     # via
     #   cachecontrol
     #   pip-audit
-cachetools==7.1.6
+cachetools==8.0.2
     # via stateset-agents (pyproject.toml)
-certifi==2026.7.22
+certifi==2026.11.20
     # via
     #   httpcore
     #   httpx
     #   requests
-    #   sentry-sdk
-cffi==2.1.0
-    # via cryptography
+    #   stateset-agents (pyproject.toml)
 cfgv==3.5.0
     # via pre-commit
-charset-normalizer==3.4.9
+charset-normalizer==3.5.3
     # via requests
-click==8.4.2
+click==8.5.1
     # via
     #   black
-    #   click-option-group
     #   huggingface-hub
     #   pip-tools
-    #   semgrep
-    #   typer
     #   uvicorn
     #   wandb
-click-option-group==0.5.9
-    # via semgrep
-cloudpickle==3.1.2
-    # via gymnasium
-colorama==0.4.6
-    # via semgrep
-coverage[toml]==7.15.2
+cloudpickle==3.1.3
+    # via
+    #   gymnasium
+    #   joblib
+coverage[toml]==7.17.5
     # via pytest-cov
-cryptography==50.0.1
-    # via pyjwt
-cuda-bindings==13.3.1
+cuda-bindings==13.5.0
     # via torch
-cuda-pathfinder==1.6.0
+cuda-pathfinder==1.9.1
     # via cuda-bindings
-cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.3.0
+cuda-toolkit[cublas,cudart,cufft,cufile,cupti,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.2.2
     # via torch
+cwevals==0.0.1b3
+    # via wandb
 cyclonedx-python-lib==11.12.0
     # via pip-audit
-datasets==5.0.1
+datasets==5.2.0
     # via
     #   stateset-agents (pyproject.toml)
     #   trl
@@ -113,85 +93,81 @@ dill==0.4.1
     # via
     #   datasets
     #   multiprocess
-distlib==0.4.3
+distlib==0.4.4
     # via virtualenv
+distro==1.9.0
+    # via cwevals
 docutils==0.22.4
     # via
     #   sphinx
     #   sphinx-rtd-theme
-exceptiongroup==1.2.2
-    # via semgrep
 execnet==2.1.2
     # via pytest-xdist
-face==26.0.1
-    # via glom
 farama-notifications==0.0.6
     # via gymnasium
-fastapi==0.140.7
+fastapi==0.165.0
     # via stateset-agents (pyproject.toml)
-filelock==3.32.0
+filelock==4.3.1
     # via
     #   cachecontrol
     #   datasets
     #   huggingface-hub
     #   python-discovery
+    #   stateset-agents (pyproject.toml)
     #   torch
     #   virtualenv
-flake8==7.3.0
+flake8==7.5.0
     # via stateset-agents (pyproject.toml)
 frozenlist==1.8.0
     # via
     #   aiohttp
     #   aiosignal
-fsspec[http]==2026.6.0
+fsspec==2026.9.0
     # via
     #   datasets
     #   huggingface-hub
     #   torch
-glom==25.12.0
-    # via semgrep
-googleapis-common-protos==1.75.0
-    # via opentelemetry-exporter-otlp-proto-http
-gymnasium==1.3.0
+gymnasium==1.4.0
     # via stateset-agents (pyproject.toml)
 h11==0.16.0
     # via
     #   httpcore
+    #   httpcore2
     #   uvicorn
-hf-xet==1.5.2
+hf-xet==1.8.0
     # via huggingface-hub
 httpcore==1.0.9
     # via httpx
+httpcore2==2.16.2
+    # via httpx2
 httpx==0.27.2
     # via
-    #   datasets
-    #   huggingface-hub
-    #   mcp
+    #   cwevals
     #   stateset-agents (pyproject.toml)
-httpx-sse==0.4.3
-    # via mcp
-huggingface-hub==1.25.1
+httpx2==2.16.2
+    # via huggingface-hub
+huggingface-hub==2.4.0
     # via
     #   accelerate
     #   datasets
     #   peft
     #   tokenizers
     #   transformers
-hypothesis==6.161.8
+    #   trl
+hypothesis==6.170.17
     # via stateset-agents (pyproject.toml)
-identify==2.6.19
+identify==2.6.20
     # via pre-commit
-idna==3.18
+idna==3.20
     # via
     #   anyio
     #   httpx
+    #   httpx2
     #   requests
     #   yarl
-imagesize==2.0.0
+imagesize==2.0.1
     # via sphinx
-importlib-metadata==8.7.1
-    # via opentelemetry-api
-iniconfig==2.3.0
+iniconfig==2.3.1
     # via pytest
 isort==8.0.1
     # via stateset-agents (pyproject.toml)
@@ -200,33 +176,25 @@ jinja2==3.1.6
     #   sphinx
     #   torch
     #   trl
-joblib==1.5.3
+joblib==1.6.0
     # via scikit-learn
-jsonschema==4.25.1
-    # via
-    #   mcp
-    #   semgrep
-jsonschema-specifications==2025.9.1
-    # via jsonschema
-librt==0.13.0
+librt==0.17.0
     # via mypy
 license-expression==30.4.4
     # via cyclonedx-python-lib
-markdown-it-py==4.2.0
+markdown-it-py==4.3.0
     # via rich
-markupsafe==3.0.3
+markupsafe==3.0.4
     # via jinja2
 mccabe==0.7.0
     # via flake8
-mcp==1.29.0
-    # via semgrep
 mdurl==0.1.2
     # via markdown-it-py
 mpmath==1.3.0
     # via sympy
-msgpack==1.2.2
+msgpack==1.2.4
     # via cachecontrol
-multidict==6.9.1
+multidict==7.2.1
     # via
     #   aiohttp
     #   yarl
@@ -234,15 +202,16 @@ multiprocess==0.70.19
     # via datasets
 mypy==2.3.0
     # via stateset-agents (pyproject.toml)
-mypy-extensions==1.1.0
+mypy-extensions==1.2.0
     # via
     #   black
+    #   librt
     #   mypy
-narwhals==2.24.0
+narwhals==2.29.0
     # via scikit-learn
-networkx==3.6.1
+networkx==3.7
     # via torch
-nodeenv==1.10.0
+nodeenv==1.12.0
     # via pre-commit
 numpy==2.4.6
     # via
@@ -255,112 +224,90 @@ numpy==2.4.6
     #   scipy
     #   stateset-agents (pyproject.toml)
     #   transformers
-nvidia-cublas==13.1.1.3
+    #   trl
+nvidia-cublas==13.4.1.3
     # via
     #   cuda-toolkit
     #   nvidia-cudnn-cu13
     #   nvidia-cusolver
-nvidia-cuda-cupti==13.0.85
+nvidia-cuda-cccl==13.3.5.0.6
+    # via nvidia-nvshmem-cu13
+nvidia-cuda-cupti==13.2.86
     # via cuda-toolkit
-nvidia-cuda-nvrtc==13.0.88
+nvidia-cuda-nvrtc==13.2.86
     # via
     #   cuda-toolkit
     #   nvidia-cublas
-nvidia-cuda-runtime==13.0.96
+nvidia-cuda-runtime==13.2.86
     # via cuda-toolkit
-nvidia-cudnn-cu13==9.20.0.48
+nvidia-cudnn-cu13==9.26.0.51
     # via torch
-nvidia-cufft==12.0.0.61
+nvidia-cufft==12.2.0.57
     # via cuda-toolkit
-nvidia-cufile==1.15.1.6
+nvidia-cufile==1.17.1.22
     # via cuda-toolkit
-nvidia-curand==10.4.0.35
+nvidia-cusolver==12.2.0.11
     # via cuda-toolkit
-nvidia-cusolver==12.0.4.66
-    # via cuda-toolkit
-nvidia-cusparse==12.6.3.3
+nvidia-cusparse==12.7.10.12
     # via
     #   cuda-toolkit
     #   nvidia-cusolver
 nvidia-cusparselt-cu13==0.8.1
     # via torch
-nvidia-nccl-cu13==2.29.7
+nvidia-nccl-cu13==2.30.7
     # via torch
-nvidia-nvjitlink==13.3.33
+nvidia-nvjitlink==13.5.37
     # via
     #   cuda-toolkit
     #   nvidia-cufft
     #   nvidia-cusolver
     #   nvidia-cusparse
-nvidia-nvshmem-cu13==3.4.5
+nvidia-nvshmem-cu13==3.7.2
     # via torch
-nvidia-nvtx==13.0.85
+nvidia-nvtx==13.2.86
     # via cuda-toolkit
-opentelemetry-api==1.37.0
+opentelemetry-api==1.45.2
     # via
-    #   opentelemetry-exporter-otlp-proto-http
-    #   opentelemetry-instrumentation
-    #   opentelemetry-instrumentation-requests
-    #   opentelemetry-instrumentation-threading
+    #   fastapi
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
-    #   semgrep
-opentelemetry-exporter-otlp-proto-common==1.37.0
-    # via opentelemetry-exporter-otlp-proto-http
-opentelemetry-exporter-otlp-proto-http==1.37.0
-    # via semgrep
-opentelemetry-instrumentation==0.58b0
-    # via
-    #   opentelemetry-instrumentation-requests
-    #   opentelemetry-instrumentation-threading
-opentelemetry-instrumentation-requests==0.58b0
-    # via semgrep
-opentelemetry-instrumentation-threading==0.58b0
-    # via semgrep
-opentelemetry-proto==1.37.0
-    # via
-    #   opentelemetry-exporter-otlp-proto-common
-    #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-sdk==1.37.0
-    # via
-    #   opentelemetry-exporter-otlp-proto-http
-    #   semgrep
-opentelemetry-semantic-conventions==0.58b0
-    # via
-    #   opentelemetry-instrumentation
-    #   opentelemetry-instrumentation-requests
-    #   opentelemetry-sdk
-opentelemetry-util-http==0.58b0
-    # via opentelemetry-instrumentation-requests
+    #   wandb
+opentelemetry-exporter-otlp-proto-common==1.45.2
+    # via wandb
+opentelemetry-proto==1.45.2
+    # via opentelemetry-exporter-otlp-proto-common
+opentelemetry-sdk==1.45.2
+    # via wandb
+opentelemetry-semantic-conventions==0.66b2
+    # via opentelemetry-sdk
 packageurl-python==0.17.6
     # via cyclonedx-python-lib
-packaging==26.2
+packaging==26.4
     # via
     #   accelerate
     #   black
     #   build
     #   datasets
     #   huggingface-hub
-    #   opentelemetry-instrumentation
     #   peft
     #   pip-audit
     #   pip-requirements-parser
     #   pytest
-    #   semgrep
     #   sphinx
     #   transformers
     #   trl
+    #   virtualenv
     #   wandb
     #   wheel
-pandas==3.0.5
-    # via datasets
+pandas==3.1.1
+    # via
+    #   datasets
+    #   trl
 pathspec==1.1.1
     # via
     #   black
     #   mypy
-peewee==3.19.0
-    # via semgrep
-peft==0.19.1
+peft==0.22.0
     # via stateset-agents (pyproject.toml)
 pip-api==0.0.35
     # via pip-audit
@@ -368,27 +315,26 @@ pip-audit==2.10.1
     # via stateset-agents (pyproject.toml)
 pip-requirements-parser==32.0.1
     # via pip-audit
-pip-tools==7.6.0
+pip-tools==7.7.0
     # via stateset-agents (pyproject.toml)
-platformdirs==4.11.0
+platformdirs==4.14.8
     # via
     #   black
     #   pip-audit
     #   virtualenv
     #   wandb
-pluggy==1.6.0
+pluggy==1.7.0
     # via
     #   pytest
     #   pytest-cov
-pre-commit==4.6.1
+pre-commit==4.7.0
     # via stateset-agents (pyproject.toml)
-propcache==0.5.2
+propcache==0.5.4
     # via
     #   aiohttp
     #   yarl
-protobuf==6.33.6
+protobuf==7.36.2
     # via
-    #   googleapis-common-protos
     #   opentelemetry-proto
     #   wandb
 psutil==7.2.2
@@ -396,46 +342,42 @@ psutil==7.2.2
     #   accelerate
     #   peft
     #   stateset-agents (pyproject.toml)
-py-cpuinfo==9.0.0
+    #   trl
+py-cpuinfo2==10.1.1
     # via pytest-benchmark
-py-serializable==2.1.0
+py-serializable==2.2.0
     # via cyclonedx-python-lib
-pyarrow==25.0.0
-    # via datasets
-pycodestyle==2.14.0
-    # via flake8
-pycparser==3.0
-    # via cffi
-pydantic==2.13.4
+pyarrow==26.0.1
     # via
-    #   fastapi
-    #   mcp
-    #   pydantic-settings
-    #   stateset-agents (pyproject.toml)
-    #   wandb
-pydantic-core==2.46.4
-    # via pydantic
-pydantic-settings==2.14.2
-    # via mcp
-pyflakes==3.4.0
+    #   datasets
+    #   trl
+pycodestyle==2.15.0
     # via flake8
-pygments==2.20.0
+pydantic==2.14.4
+    # via
+    #   cwevals
+    #   fastapi
+    #   stateset-agents (pyproject.toml)
+    #   typer
+    #   wandb
+pydantic-core==2.50.5
+    # via pydantic
+pyflakes==4.1.0
+    # via flake8
+pygments==2.21.0
     # via
     #   pytest
     #   rich
     #   sphinx
-pyjwt[crypto]==2.15.0
-    # via
-    #   mcp
-    #   semgrep
-    #   stateset-agents (pyproject.toml)
+pyjwt==2.15.1
+    # via stateset-agents (pyproject.toml)
 pyparsing==3.3.3
     # via pip-requirements-parser
-pyproject-hooks==1.2.0
+pyproject-hooks==1.3.3
     # via
     #   build
     #   pip-tools
-pytest==9.1.1
+pytest==9.2.0
     # via
     #   pytest-asyncio
     #   pytest-benchmark
@@ -443,9 +385,9 @@ pytest==9.1.1
     #   pytest-timeout
     #   pytest-xdist
     #   stateset-agents (pyproject.toml)
-pytest-asyncio==1.4.0
+pytest-asyncio==1.5.0
     # via stateset-agents (pyproject.toml)
-pytest-benchmark==5.2.3
+pytest-benchmark==5.3.1
     # via stateset-agents (pyproject.toml)
 pytest-cov==7.1.0
     # via stateset-agents (pyproject.toml)
@@ -453,17 +395,13 @@ pytest-timeout==2.4.0
     # via stateset-agents (pyproject.toml)
 pytest-xdist==3.8.0
     # via stateset-agents (pyproject.toml)
-python-dateutil==2.9.0.post0
+python-dateutil==4.0.0
     # via pandas
-python-discovery==1.6.1
+python-discovery==1.9.7
     # via virtualenv
-python-dotenv==1.2.2
-    # via pydantic-settings
-python-multipart==0.0.32
-    # via mcp
 pytokens==0.4.1
     # via black
-pyyaml==6.0.3
+pyyaml==6.0.4
     # via
     #   accelerate
     #   bandit
@@ -473,22 +411,16 @@ pyyaml==6.0.3
     #   pre-commit
     #   stateset-agents (pyproject.toml)
     #   transformers
+    #   trl
     #   wandb
-redis==8.0.1
+redis==8.2.0
     # via stateset-agents (pyproject.toml)
-referencing==0.37.0
-    # via
-    #   jsonschema
-    #   jsonschema-specifications
-regex==2026.7.19
+regex==2026.11.23
     # via transformers
 requests==2.34.2
     # via
     #   cachecontrol
-    #   datasets
-    #   opentelemetry-exporter-otlp-proto-http
     #   pip-audit
-    #   semgrep
     #   sphinx
     #   stateset-agents (pyproject.toml)
     #   wandb
@@ -496,49 +428,34 @@ rich==15.0.0
     # via
     #   bandit
     #   pip-audit
-    #   semgrep
     #   stateset-agents (pyproject.toml)
     #   typer
 roman-numerals==4.1.0
     # via sphinx
-rpds-py==2026.6.3
-    # via
-    #   jsonschema
-    #   referencing
-ruamel-yaml==0.19.1
-    # via semgrep
-ruamel-yaml-clib==0.2.15
-    # via semgrep
-ruff==0.16.0
+ruff==0.17.6
     # via stateset-agents (pyproject.toml)
 safetensors==0.8.0
     # via
     #   accelerate
     #   peft
     #   transformers
-scikit-learn==1.9.0
+scikit-learn==1.9.1
     # via stateset-agents (pyproject.toml)
-scipy==1.17.1
+scipy==1.18.1
     # via scikit-learn
-semantic-version==2.10.0
-    # via semgrep
-semgrep==1.179.0
-    # via stateset-agents (pyproject.toml)
-sentry-sdk==2.66.1
-    # via wandb
 shellingham==1.5.4
     # via typer
-six==1.17.0
-    # via python-dateutil
 sniffio==1.3.1
-    # via httpx
+    # via
+    #   cwevals
+    #   httpx
 snowballstemmer==3.1.1
     # via sphinx
 sortedcontainers==2.4.0
     # via
     #   cyclonedx-python-lib
     #   hypothesis
-sphinx==9.0.4
+sphinx==9.1.1
     # via
     #   sphinx-rtd-theme
     #   sphinxcontrib-jquery
@@ -553,55 +470,53 @@ sphinxcontrib-htmlhelp==2.1.0
     # via sphinx
 sphinxcontrib-jquery==4.1
     # via sphinx-rtd-theme
-sphinxcontrib-jsmath==1.0.1
+sphinxcontrib-jsmath==2.0.0
     # via sphinx
 sphinxcontrib-qthelp==2.0.0
     # via sphinx
 sphinxcontrib-serializinghtml==2.0.0
     # via sphinx
-sse-starlette==3.4.6
-    # via mcp
-starlette==1.3.1
-    # via
-    #   fastapi
-    #   mcp
-    #   sse-starlette
-stevedore==5.9.0
+starlette==1.10.0
+    # via fastapi
+stevedore==5.10.0
     # via bandit
 sympy==1.14.0
     # via torch
-threadpoolctl==3.6.0
+threadpoolctl==3.8.0
     # via scikit-learn
-tokenizers==0.22.2
+tokenizers==0.23.3
     # via transformers
-tomli==2.4.1
-    # via
-    #   pip-audit
-    #   semgrep
+tomli==2.5.0
+    # via pip-audit
 tomli-w==1.2.0
     # via pip-audit
-torch==2.13.0
+torch==2.15.0
     # via
     #   accelerate
     #   peft
     #   stateset-agents (pyproject.toml)
-tqdm==4.70.0
+    #   trl
+tqdm==4.70.1
     # via
     #   datasets
     #   huggingface-hub
     #   peft
     #   stateset-agents (pyproject.toml)
     #   transformers
-transformers==5.14.1
+transformers==5.24.0
     # via
     #   peft
     #   stateset-agents (pyproject.toml)
     #   trl
-triton==3.7.1
+triton==3.9.0
     # via torch
-trl==1.9.1
+trl==1.18.2
     # via stateset-agents (pyproject.toml)
-typer==0.25.1
+truststore==0.10.5
+    # via
+    #   httpcore2
+    #   httpx2
+typer==0.29.2
     # via
     #   stateset-agents (pyproject.toml)
     #   transformers
@@ -610,59 +525,48 @@ typing-extensions==4.16.0
     #   aiohttp
     #   aiosignal
     #   anyio
+    #   cwevals
     #   cyclonedx-python-lib
     #   fastapi
     #   gymnasium
+    #   httpx2
     #   huggingface-hub
-    #   mcp
     #   mypy
     #   opentelemetry-api
-    #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
     #   pydantic
     #   pydantic-core
     #   pytest-asyncio
-    #   referencing
-    #   semgrep
     #   starlette
     #   stateset-agents (pyproject.toml)
     #   torch
     #   typing-inspection
     #   wandb
-typing-inspection==0.4.2
+typing-inspection==0.4.5
     # via
     #   fastapi
-    #   mcp
     #   pydantic
-    #   pydantic-settings
+tzdata==2026.6
+    # via python-dateutil
 urllib3==2.8.0
-    # via
-    #   requests
-    #   semgrep
-    #   sentry-sdk
-uvicorn==0.51.0
-    # via
-    #   mcp
-    #   stateset-agents (pyproject.toml)
-virtualenv==21.7.13
-    # via pre-commit
-wandb==0.28.1
+    # via requests
+uvicorn==0.54.0
     # via stateset-agents (pyproject.toml)
-wcmatch==8.5.2
-    # via semgrep
-wheel==0.47.0
-    # via pip-tools
-wrapt==1.17.3
+virtualenv==21.15.13
     # via
-    #   opentelemetry-instrumentation
-    #   opentelemetry-instrumentation-threading
-xxhash==3.8.1
-    # via datasets
-yarl==1.24.5
+    #   pre-commit
+    #   stateset-agents (pyproject.toml)
+wandb==0.31.2
+    # via stateset-agents (pyproject.toml)
+wheel==0.48.0
+    # via pip-tools
+xxhash==4.1.0
+    # via
+    #   datasets
+    #   wandb
+yarl==1.25.1
     # via aiohttp
-zipp==4.1.0
-    # via importlib-metadata
 
 # The following packages are considered to be unsafe in a requirements file:
 # pip

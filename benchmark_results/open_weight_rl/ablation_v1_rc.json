@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-11-24T02:27:38.632612+00:00",
+  "device": "cpu",
+  "cuda_available": false,
+  "triton_available": false,
+  "seeds": [
+    42,
+    1337,
+    2026
+  ],
+  "steps_per_seed": 8,
+  "summary": {
+    "base_margin": {
+      "mean": 0.0375,
+      "std": 0.1073
+    },
+    "chunked_gspo_margin": {
+      "mean": 1.8836,
+      "std": 0.1302
+    },
+    "margin_gain": {
+      "mean": 1.846,
+      "std": 0.0298
+    },
+    "all_seeds_improved": true
+  },
+  "vram_projection_16k_qwen3": {
+    "full_logits_gb": 37.123,
+    "chunked_logits_gb": 0.145,
+    "peak_logit_vram_saved_pct": 99.61,
+    "chunk_size": 256,
+    "seq_len": 16384,
+    "vocab_size": 152064
+  },
+  "six_domain_verifiable_eval": {
+    "domains": [
+      "coding",
+      "commerce",
+      "docker_code",
+      "rest_api",
+      "sql",
+      "web_agent"
+    ],
+    "episode_count": 6,
+    "elapsed_ms": 114.64,
+    "all_verified": true,
+    "domain_stats": {
+      "commerce": {
+        "count": 1,
+        "mean_reward": 0.9375,
+        "reward_std": 0.0,
+        "verified_pass_rate": 1.0
+      },
+      "coding": {
+        "count": 1,
+        "mean_reward": 0.9583,
+        "reward_std": 0.0,
+        "verified_pass_rate": 1.0
+      },
+      "sql": {
+        "count": 1,
+        "mean_reward": 0.9375,
+        "reward_std": 0.0,
+        "verified_pass_rate": 1.0
+      },
+      "rest_api": {
+        "count": 1,
+        "mean_reward": 0.9375,
+        "reward_std": 0.0,
+        "verified_pass_rate": 1.0
+      },
+      "docker_code": {
+        "count": 1,
+        "mean_reward": 0.9583,
+        "reward_std": 0.0,
+        "verified_pass_rate": 1.0
+      },
+      "web_agent": {
+        "count": 1,
+        "mean_reward": 0.975,
+        "reward_std": 0.0,
+        "verified_pass_rate": 1.0
+      }
+    }
+  },
+  "per_seed": [
+    {
+      "seed": 42,
+      "base_logprob_margin": 0.17922,
+      "caa_warm_start_margin": 0.1794,
+      "chunked_gspo_margin": 2.06389,
+      "total_margin_gain": 1.88467,
+      "warm_start_layer": 0,
+      "warm_start_mode": "rank1_weight_bake",
+      "kernel_backend": "torch_chunked",
+      "train_ms": 476.95
+    },
+    {
+      "seed": 1337,
+      "base_logprob_margin": 0.0136,
+      "caa_warm_start_margin": 0.01344,
+      "chunked_gspo_margin": 1.82582,
+      "total_margin_gain": 1.81222,
+      "warm_start_layer": 2,
+      "warm_start_mode": "rank1_weight_bake",
+      "kernel_backend": "torch_chunked",
+      "train_ms": 250.78
+    },
+    {
+      "seed": 2026,
+      "base_logprob_margin": -0.0802,
+      "caa_warm_start_margin": -0.08032,
+      "chunked_gspo_margin": 1.76106,
+      "total_margin_gain": 1.84126,
+      "warm_start_layer": 0,
+      "warm_start_mode": "rank1_weight_bake",
+      "kernel_backend": "torch_chunked",
+      "train_ms": 309.43
+    }
+  ]
+}

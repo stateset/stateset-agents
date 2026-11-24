@@ -59,8 +59,16 @@ class RiverRLConfig:
             value = getattr(self, name)
             if not math.isfinite(value) or not 0 < value < 1:
                 raise ValueError(f"RL {name} must be between 0 and 1")
-        if self.loss_fn not in {"cispo", "ppo", "importance_sampling"}:
-            raise ValueError("RL loss_fn must be cispo, ppo, or importance_sampling")
+        if self.loss_fn not in {
+            "cispo",
+            "ppo",
+            "importance_sampling",
+            "decoupled_ppo",
+            "dro",
+        }:
+            raise ValueError(
+                "RL loss_fn must be cispo, ppo, importance_sampling, decoupled_ppo, or dro"
+            )
         if self.normalization not in {"token", "sequence", "sum"}:
             raise ValueError("RL normalization must be token, sequence, or sum")
         if self.truncation not in {"drop_group", "error"}:
@@ -84,7 +92,7 @@ class RiverRLConfig:
         """Return only arguments supported by the selected loss."""
         if self.loss_fn == "cispo":
             return {"eps_max": self.eps_max}
-        if self.loss_fn == "ppo":
+        if self.loss_fn in {"ppo", "decoupled_ppo"}:
             return {"clip_low": self.clip_low, "clip_high": self.clip_high}
         return {}
 

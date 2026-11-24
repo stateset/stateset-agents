@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .mcp_rl_env import (
+    BrowserDOMSandbox,
     CodeVerificationSandbox,
     CommerceLedgerSandbox,
     DockerCodeSandbox,
@@ -48,7 +49,14 @@ class SandboxEpisodeSpec:
 class MultiDomainSandboxPool:
     """Concurrent multi-domain MCP sandbox pool with per-domain reward normalization."""
 
-    SUPPORTED_DOMAINS = ("commerce", "coding", "sql", "rest_api", "docker_code")
+    SUPPORTED_DOMAINS = (
+        "commerce",
+        "coding",
+        "sql",
+        "rest_api",
+        "docker_code",
+        "web_agent",
+    )
 
     def __init__(self, *, max_concurrency: int = 16) -> None:
         self.max_concurrency = max(1, int(max_concurrency))
@@ -97,6 +105,13 @@ class MultiDomainSandboxPool:
             return MCPRLEnvironment(
                 tool_executor=dc.call_tool,
                 state_verifier=dc.verify,
+                max_turns=max_turns,
+            )
+        if key == "web_agent":
+            wb = BrowserDOMSandbox()
+            return MCPRLEnvironment(
+                tool_executor=wb.call_tool,
+                state_verifier=wb.verify,
                 max_turns=max_turns,
             )
         raise ValueError(

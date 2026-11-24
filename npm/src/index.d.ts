@@ -91,7 +91,7 @@ export interface RlPlanRequest {
 }
 
 export interface SandboxPoolRequest {
-  domains?: Array<"commerce" | "coding" | "sql" | "rest_api" | "docker_code">;
+  domains?: Array<"commerce" | "coding" | "sql" | "rest_api" | "docker_code" | "web_agent">;
   include_failure_pairs?: boolean;
   max_concurrency?: number;
 }

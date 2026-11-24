@@ -59,11 +59,19 @@ class RLBlueprintConfig:
     extra: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if self.algorithm not in ("grpo", "gspo", "dapo", "vapo", "gepo"):
+        if self.algorithm not in (
+            "grpo",
+            "gspo",
+            "dapo",
+            "vapo",
+            "gepo",
+            "cispo",
+            "dro",
+        ):
             raise ValueError(f"Unsupported RL algorithm: {self.algorithm!r}")
-        if self.cloud not in ("local", "runpod", "modal", "k8s"):
+        if self.cloud not in ("local", "runpod", "modal", "k8s", "river"):
             raise ValueError(
-                f"Unsupported cloud target {self.cloud!r}; expected local, runpod, modal, or k8s."
+                f"Unsupported cloud target {self.cloud!r}; expected local, runpod, modal, k8s, or river."
             )
         if self.gpus < 1:
             raise ValueError("gpus must be >= 1")
@@ -159,6 +167,29 @@ def build_cloud_launch_plan(
             "gpu_spec": f"{config.gpu_type}:{config.gpus}",
             "entrypoint": f"modal run scripts/modal_rl.py --blueprint {config.name}",
             "command": " ".join(base_cmd),
+        }
+    elif config.cloud == "river":
+        river_loss = (
+            config.algorithm if config.algorithm in ("cispo", "dro") else "cispo"
+        )
+        river_rank = max(1, min(32, int(config.lora_rank)))
+        river_cmd = (
+            f"stateset-agents flywheel --provider river --algorithm {river_loss} "
+            f"--base-model {config.model} --lora-r {river_rank} "
+            f"--best-of {max(2, int(config.group_size))} "
+            f"--rounds {max(1, int(config.max_steps))} "
+            f"--output-root outputs/{config.name}"
+        )
+        dispatch = {
+            "provider": "river",
+            "compute_model": "managed-remote-autograd",
+            "pricing_model": "token_metered_unknown_usd",
+            "lora_rank": river_rank,
+            "loss_fn": river_loss,
+            "preflight_command": (
+                f"stateset-agents river-preflight --live --base-model {config.model}"
+            ),
+            "command": river_cmd,
         }
     else:
         dispatch = {

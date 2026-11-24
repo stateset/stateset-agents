@@ -1125,6 +1125,99 @@ class NativeRiverIntegration(unittest.IsolatedAsyncioTestCase):
             run_manifest_hash="native",
         )
 
+    async def test_six_domain_mcp_sandboxes_run_through_real_river_rollout_engine(self):
+        from stateset_agents.core.sandbox_pool import MultiDomainSandboxPool
+        from stateset_agents.remote.river_environment import river_mcp_sandbox_factory
+
+        domain_scripts = {
+            "commerce": [
+                '<tool_call>{"name": "issue_refund", "arguments": {"order_id": "ORD-77701", "reason": "damaged"}}</tool_call>',
+                "Refund issued for ORD-77701.",
+            ],
+            "coding": [
+                '<tool_call>{"name": "write_solution", "arguments": {"code": "def compute_net_revenue(units, price_cents, refund_units):\\n    return (units - refund_units) * price_cents\\n"}}</tool_call>',
+                '<tool_call>{"name": "run_tests", "arguments": {}}</tool_call>',
+                "Fixed compute_net_revenue and verified all tests.",
+            ],
+            "sql": [
+                '<tool_call>{"name": "run_sql", "arguments": {"sql": "SELECT SUM(revenue_cents) AS total FROM sales WHERE region = \'west\'"}}</tool_call>',
+                "West region total is 25000 cents.",
+            ],
+            "rest_api": [
+                '<tool_call>{"name": "http_request", "arguments": {"method": "POST", "path": "/v1/subscriptions/sub_101/cancel", "idempotency_key": "river-idem-1", "body": {"reason": "done"}}}</tool_call>',
+                "Canceled subscription sub_101.",
+            ],
+            "docker_code": [
+                '<tool_call>{"name": "apply_patch", "arguments": {"path": "billing.py", "content": "def apply_discount(subtotal_cents: int, pct: int) -> int:\\n    return subtotal_cents - (subtotal_cents * pct) // 100\\n"}}</tool_call>',
+                '<tool_call>{"name": "run_pytest", "arguments": {}}</tool_call>',
+                "Patched billing.py and verified pytest passes.",
+            ],
+            "web_agent": [
+                '<tool_call>{"name": "click", "arguments": {"selector": "#link-returns"}}</tool_call>',
+                '<tool_call>{"name": "fill", "arguments": {"selector": "#order-id", "value": "ORD-77701"}}</tool_call>',
+                '<tool_call>{"name": "fill", "arguments": {"selector": "#reason", "value": "damaged"}}</tool_call>',
+                '<tool_call>{"name": "click", "arguments": {"selector": "#btn-submit-return"}}</tool_call>',
+                "Submitted return portal form.",
+            ],
+        }
+
+        for domain in MultiDomainSandboxPool.SUPPORTED_DOMAINS:
+            with self.subTest(domain=domain):
+                turns = domain_scripts[domain]
+
+                class _DomainModel:
+                    base_model = f"scripted-{domain}"
+
+                    def __init__(self, scripted_turns):
+                        self._turns = scripted_turns
+
+                    async def sample(self, *, model_input, seeds, max_tokens, **kwargs):
+                        outs = []
+                        for chunks in model_input:
+                            prompt = ScriptedRenderer.tokenizer.decode(
+                                [t for c in chunks for t in c["tokens"]]
+                            )
+                            t_idx = min(prompt.count(STOP), len(self._turns) - 1)
+                            toks = ScriptedRenderer.tokenizer.encode(
+                                self._turns[t_idx] + STOP
+                            )
+                            outs.append(
+                                [
+                                    Sample(
+                                        tokens=toks,
+                                        text=ScriptedRenderer.tokenizer.decode(toks),
+                                        logprobs=[-0.05] * len(toks),
+                                        stop_reason="stop",
+                                        model_step=0,
+                                        token_data_is_exact=True,
+                                    )
+                                ]
+                            )
+                        return outs
+
+                engine = rl.RolloutEngine(
+                    _DomainModel(turns),
+                    env=river_mcp_sandbox_factory(
+                        domain, record_trace=True, max_turns=6
+                    ),
+                    renderer=ScriptedRenderer(),
+                    budget=rl.Budget(
+                        max_turns=6,
+                        max_generated_tokens=2048,
+                        max_context_tokens=16384,
+                        max_turn_tokens=512,
+                    ),
+                    schedule=rl.Schedule(concurrency=2),
+                    seed=42,
+                )
+                rows = [{"case_id": f"{domain}-case-1", "target_order_id": "ORD-77701"}]
+                trajs = await self.collect(engine, rows=rows, group_size=1)
+                self.assertEqual(len(trajs), 1)
+                self.assertEqual(trajs[0].metrics["task_success"], 1.0)
+                self.assertGreater(trajs[0].reward, 0.5)
+                trace = trajectory_environment_trace(trajs[0])
+                self.assertEqual(trace["case_id"], f"{domain}-case-1")
+
 
 if __name__ == "__main__":
     unittest.main()

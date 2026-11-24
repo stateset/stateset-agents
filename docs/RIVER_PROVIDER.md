@@ -23,8 +23,32 @@ export RIVER_API_KEY=rv_...
 
 Results remain hosted `river://` checkpoints. `river_checkpoint.json` is a
 pointer, not downloaded adapter weights. Local `serve --checkpoint` cannot load
-it. River also offers dedicated OpenAI-compatible deployments for authorized
-team accounts; creating a deployment is a separate billable operation.
+it. You can query hosted checkpoints, promote low-latency streaming replicas,
+and manage dedicated OpenAI-compatible deployments directly through StateSet:
+
+```bash
+# Query a trained checkpoint pointer directory or river:// URI directly
+stateset-agents river-chat --checkpoint outputs/my_model --prompt "Ticket #9001 — refund?"
+
+# Create, inspect, scale, meter usage, and delete dedicated River deployments
+stateset-agents river-deploy --checkpoint outputs/my_model --unified-replicas 1 --wait
+stateset-agents river-deployments --deployment-id dep_... --usage
+stateset-agents river-deployments --deployment-id dep_... --scale-unified 2
+stateset-agents river-deployments --deployment-id dep_... --delete
+
+# Or promote to a streaming replica alias and use the unified deploy-inference provider
+stateset-agents river-deploy --checkpoint outputs/my_model --promote-streaming-model my-agent-live
+stateset-agents deploy-inference --provider river --name refund-prod --model-name Qwen/Qwen3.5-9B \
+  --weights-uri river://... --gpu river-managed
+```
+
+Programmatically, use `RiverDeploymentManager`, `RiverDeploymentProvider`, or
+`RiverInferenceClient` from `stateset_agents.remote.river_serving`. River's
+native `rl.RolloutEngine` also connects directly to all 6 StateSet enterprise
+verifiable sandboxes (`commerce`, `coding`, `sql`, `rest_api`, `docker_code`,
+`web_agent`) via `river_mcp_sandbox_factory(domain)` in
+`stateset_agents.remote.river_environment`. Creating a dedicated deployment is
+a separate billable operation.
 
 ## Preflight before a run
 

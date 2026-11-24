@@ -111,10 +111,12 @@ PROVIDER_CATALOG: dict[str, dict[str, Any]] = {
     },
     "river": {
         "name": "River AI · Managed Remote Autograd",
-        "gpu": "Managed Serverless Cluster",
+        "gpu": "Managed Serverless Autograd (Token-Metered)",
         "vram_gb": 160,
-        "hourly_usd": 1.95,
-        "methods": ["sft", "gspo", "grpo", "cispo"],
+        "hourly_usd": 0.0,
+        "billing_model": "token_metered",
+        "cost_unknown": True,
+        "methods": ["sft", "cispo", "ppo", "dro", "gspo", "grpo"],
     },
     "modal": {
         "name": "Modal · Serverless H100",
@@ -285,6 +287,25 @@ def estimate_finetune_plan(
             f"--dataset {dataset_path} "
             f"--max-cost {max(2.0, round(est_cost_usd * 1.5, 2))}"
         )
+    elif provider_key == "river":
+        river_rank = max(1, min(32, int(lora_r)))
+        if algorithm == "sft":
+            cli_cmd = (
+                f"stateset-agents train-remote --provider river "
+                f"--base-model {entry.base_model} "
+                f"--dataset {dataset_path} "
+                f"--lora-r {river_rank} --learning-rate {lr:.1e} "
+                f"--output-dir outputs/river_sft"
+            )
+        else:
+            river_algo = algorithm if algorithm in {"cispo", "ppo", "dro"} else "cispo"
+            cli_cmd = (
+                f"stateset-agents flywheel --provider river --algorithm {river_algo} "
+                f"--base-model {entry.base_model} "
+                f"--harvest-prompts {dataset_path} "
+                f"--lora-r {river_rank} --best-of {max(2, int(num_generations))} "
+                f"--learning-rate {lr:.1e} --output-root outputs/river_rl"
+            )
     else:
         cli_cmd = (
             f"python examples/finetune_gspo.py --model {entry.metadata.get('preset_key', entry.base_model)} "

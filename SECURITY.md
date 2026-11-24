@@ -128,6 +128,19 @@ which also records why that advisory is unreachable from StateSet code.
 Security fixes and disclosures are published as
 GitHub Security Advisories.
 
+### Scanner environment isolation (`[sast]`)
+
+Upstream Semgrep (checked through 1.186.0) still hard-pins `mcp==1.29.0`
+(CVE-2026-59951 / GHSA-84m7-p3x7-pcfv), `opentelemetry-api~=1.37.0`, and
+`wcmatch~=8.5`. Rather than waiving those advisories or overriding pins,
+Semgrep is isolated in the dedicated optional `[sast]` extra (and installed
+in its own isolated job in `.github/workflows/security.yml`), while the
+product `[mcp]` extra requires `mcp>=1.30.0,<2` and the `[dev]` and
+`[training]` lockfiles pin patched dependencies (`black>=26.10.1`,
+`filelock>=4.2.1`, `msgpack>=1.2.3`) with **zero** unapproved `pip-audit`
+findings. Recheck the official
+[Semgrep package metadata](https://pypi.org/pypi/semgrep/json) before folding
+`[sast]` back into `[dev]`.
 The machine-readable response commitments live in
 [`contracts/security_response_v1.json`](contracts/security_response_v1.json).
 The repository currently has no retained independent third-party security
