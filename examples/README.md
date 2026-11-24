@@ -987,6 +987,9 @@ asyncio.run(example_module.main())
 12. `finetune_gemma4_31b_gspo.py` - Run the Gemma 4 31B starter path
 13. `finetune_glm5_1_gspo.py` - Run the GLM 5.1 (754B MoE) starter path for multi-node vLLM serving
 14. `hpo_training_example.py` - Automated hyperparameter tuning
+15. `weight_studio_quickstart.py` - Launch and inspect open-weight models in the 3D Weight Studio
+16. `autonomous_surgery_autopilot.py` - Zero-GPU autonomous trace-to-surgery Auto-Heal, Red-Team & Canary autopilot demo
+17. `open_weight_rl_end_to_end.py` - End-to-end Step-0 CAA warm-start, 6-domain verifiable sandboxes, chunked GSPO/FP8 TIS/MoE loss, adaptive curriculum & Studio telemetry loop
 
 ## 🐛 Troubleshooting
 

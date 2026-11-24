@@ -29,12 +29,12 @@ from . import objectives
 from .adamw_weights import model_adamw
 from .config import TrainingConfig
 from .reward_advantages import reward_tensor
-from .studio_callback import StudioControlMixin
 from .runtime_state import (
     TrainingRuntime,
     _reject_unsupported_resume,
     validate_training_config,
 )
+from .studio_callback import StudioControlMixin
 from .trainer_runtime import (
     SharedModelManager,
     build_group_batch,
@@ -319,7 +319,9 @@ class GEPOTrainer(StudioControlMixin, TrainingRuntime):
             sequence_log_probs: Sum of log probs per sequence [batch]
         """
         response_mask = self.build_response_mask(attention_mask, response_start_idx)
-        chunk_size = getattr(self.config, "chunked_loss_chunk_size", None)
+        chunk_size = getattr(
+            getattr(self, "config", None), "chunked_loss_chunk_size", None
+        )
         if chunk_size is not None and int(chunk_size) > 0:
             from .chunked_rl_loss import chunked_model_token_logprobs
 
