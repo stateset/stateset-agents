@@ -43,6 +43,10 @@ BUNDLED_NOTEBOOKS = [
     "judge_driven_training_loop.ipynb",
     "rag_agent_finetune.ipynb",
     "improve_your_agent_5min.ipynb",
+    "open_weight_rl_colab_gpu.ipynb",
+    "river_ai_full_lifecycle_colab.ipynb",
+    "weight_studio_3d_colab.ipynb",
+    "v1_ga_gpu_river_evidence_colab.ipynb",
 ]
 
 # Pattern → human-readable diagnostic. False positives can be suppressed

@@ -163,3 +163,151 @@ def test_flagship_v1_colab_notebooks_are_valid_nbformat_and_python_ast(
 
     readme = (REPO_ROOT / "notebooks" / "README.md").read_text(encoding="utf-8")
     assert notebook_file in readme
+
+
+def test_run_river_verification_live_wires_serving_and_capabilities(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from stateset_agents.remote import river_runtime, river_serving
+    from stateset_agents.utils.colab import run_river_verification
+
+    monkeypatch.setenv("RIVER_API_KEY", "test-key-not-real")
+    monkeypatch.setattr(
+        river_runtime,
+        "river_preflight",
+        lambda models=None, live=False, timeout_seconds=20.0: {
+            "ok": True,
+            "live": live,
+            "models": list(models or []),
+        },
+    )
+    monkeypatch.setattr(
+        river_runtime,
+        "inspect_server_capabilities",
+        lambda client, model_name=None: {
+            "supported_models": [model_name or "Qwen/Qwen3.6-35B-A3B-FP8"],
+            "features": ["rl", "deployments"],
+        },
+    )
+
+    class _FakeManager:
+        def __init__(self, *, api_key: str | None = None) -> None:
+            self.api_key = api_key
+            self.closed = False
+
+        def _get_client(self) -> object:
+            return object()
+
+        def list_deployments(self) -> list[dict[str, str]]:
+            return [{"id": "dep-1"}]
+
+        def close(self) -> None:
+            self.closed = True
+
+    class _FakeInferenceClient:
+        def __init__(
+            self,
+            checkpoint: str,
+            *,
+            base_model: str = "",
+            api_key: str | None = None,
+        ) -> None:
+            self.checkpoint = checkpoint
+            self.base_model = base_model
+            self.api_key = api_key
+
+        def chat(
+            self,
+            messages: list[dict[str, str]],
+            *,
+            max_tokens: int = 512,
+            temperature: float = 0.0,
+        ) -> dict[str, str]:
+            assert messages and max_tokens == 48 and temperature == 0.0
+            return {"text": "Ready for v1.0 GA."}
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(river_serving, "RiverDeploymentManager", _FakeManager)
+    monkeypatch.setattr(river_serving, "RiverInferenceClient", _FakeInferenceClient)
+
+    res = run_river_verification(
+        mode="live",
+        base_model="Qwen/Qwen3.6-35B-A3B-FP8",
+        checkpoint_uri="river://ckpt/demo",
+    )
+    assert res["mode"] == "live"
+    assert res["existing_deployments_count"] == 1
+    assert res["checkpoint_chat_verified"] is True
+    assert res["checkpoint_chat_preview"] == "Ready for v1.0 GA."
+
+
+def test_weight_studio_colab_notebook_endpoints_live(tmp_path: Path) -> None:
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from stateset_agents.weight_studio import create_studio_app
+
+    app = create_studio_app(workspace_root=tmp_path)
+    client = TestClient(app)
+
+    assert client.get("/api/weight-studio/health").status_code == 200
+    pool_resp = client.post(
+        "/api/weight-studio/rl/sandbox-pool",
+        json={
+            "domains": [
+                "commerce",
+                "coding",
+                "sql",
+                "rest_api",
+                "docker_code",
+                "web_agent",
+            ],
+            "include_failure_pairs": True,
+        },
+    )
+    assert pool_resp.status_code == 200
+    assert pool_resp.json()["episode_count"] >= 6
+
+    telem_resp = client.post(
+        "/api/weight-studio/rl/telemetry",
+        json={
+            "run_name": "colab-ultra-gspo",
+            "step": 1,
+            "mean_reward": 0.57,
+            "entropy": 1.12,
+            "kl": 0.018,
+            "guard_verdict": "HEALTHY",
+        },
+    )
+    assert telem_resp.status_code == 200
+
+    mcp_resp = client.post(
+        "/api/weight-studio/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+    )
+    assert mcp_resp.status_code == 200
+    assert len(mcp_resp.json()["result"]["tools"]) >= 30
+
+    auto_resp = client.post(
+        "/api/weight-studio/autopilot/run",
+        json={"model_id": "preset:deepseek-r1-1.5b", "reward_fn": "customer_support"},
+    )
+    assert auto_resp.status_code == 200
+    assert (auto_resp.json().get("canary_gate") or {}).get("decision") in {
+        "PROMOTE",
+        "HOLD",
+        "ROLLBACK",
+    }
+
+    html_resp = client.post(
+        "/api/weight-studio/report/html",
+        json={
+            "model_id": "preset:deepseek-r1-1.5b",
+            "include_eval": True,
+            "include_sensitivity": True,
+        },
+    )
+    assert html_resp.status_code == 200
+    assert "<html" in html_resp.text.lower()

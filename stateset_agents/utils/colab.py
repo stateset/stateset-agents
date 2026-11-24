@@ -857,6 +857,7 @@ def run_live_hf_open_weight_smoke(
         model_name,
         revision=model_revision,
         torch_dtype=torch_dtype,
+        attn_implementation="sdpa",
         trust_remote_code=False,
     ).to(device)
     lora_cfg = LoraConfig(
@@ -964,7 +965,12 @@ def run_live_hf_open_weight_smoke(
         dtype=torch.float32,
     )
 
-    backbone, lm_head = extract_lm_head_and_backbone(model)
+    extracted = extract_lm_head_and_backbone(model)
+    if extracted is None:
+        raise RuntimeError(
+            f"Model {model_name!r} does not expose a compatible backbone + lm_head for chunked RL."
+        )
+    backbone, lm_head_weight, lm_head_bias = extracted
     with torch.no_grad():
         old_lp, _ = chunked_model_token_logprobs(
             model,
@@ -984,13 +990,14 @@ def run_live_hf_open_weight_smoke(
         hidden = out.last_hidden_state
         res = chunked_rl_policy_loss(
             hidden,
-            lm_head.weight,
+            lm_head_weight,
             batch_ids,
             batch_mask,
             old_lp,
             advantages,
             algorithm="gspo",
             ref_logprobs=old_lp,
+            lm_head_bias=lm_head_bias,
             kl_coef=0.02,
             chunk_size=chunk_size,
             tis_clip_max=2.0,
@@ -1100,32 +1107,35 @@ def run_river_verification(
             RiverInferenceClient,
         )
 
-        result["server_capabilities"] = inspect_server_capabilities()
-
         manager = RiverDeploymentManager(api_key=api_key)
         try:
+            result["server_capabilities"] = inspect_server_capabilities(
+                manager._get_client(), model_name=base_model
+            )
             existing = manager.list_deployments()
             result["existing_deployments_count"] = len(existing)
         finally:
             manager.close()
 
         if checkpoint_uri:
-            infer = RiverInferenceClient(api_key=api_key)
+            infer = RiverInferenceClient(
+                checkpoint_uri,
+                base_model=base_model,
+                api_key=api_key,
+            )
             try:
-                reply = infer.chat_complete_from_checkpoint(
-                    messages=[
+                reply = infer.chat(
+                    [
                         {
                             "role": "user",
                             "content": "Acknowledge readiness in one short sentence.",
                         }
                     ],
-                    checkpoint_path=checkpoint_uri,
-                    base_model=base_model,
                     max_tokens=48,
                     temperature=0.0,
                 )
                 result["checkpoint_chat_verified"] = True
-                result["checkpoint_chat_preview"] = str(reply.get("content", ""))[:160]
+                result["checkpoint_chat_preview"] = str(reply.get("text", ""))[:160]
             finally:
                 infer.close()
 
