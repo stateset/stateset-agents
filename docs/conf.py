@@ -14,7 +14,7 @@ from stateset_agents import __version__ as PACKAGE_VERSION
 
 # -- Project information -----------------------------------------------------
 project = "StateSet Agents"
-copyright = "2024, StateSet Team"
+copyright = "2024-2026, StateSet Team"
 author = "StateSet Team"
 version = PACKAGE_VERSION
 release = PACKAGE_VERSION

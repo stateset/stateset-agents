@@ -82,8 +82,8 @@ export interface RlControlRequest {
 
 export interface RlPlanRequest {
   model?: string;
-  algorithm?: "grpo" | "gspo" | "dapo" | "vapo" | "gepo";
-  cloud?: "local" | "runpod" | "modal" | "k8s";
+  algorithm?: "grpo" | "gspo" | "dapo" | "vapo" | "gepo" | "cispo";
+  cloud?: "local" | "runpod" | "modal" | "k8s" | "river";
   gpus?: number;
   chunked_loss_chunk_size?: number;
   live_vllm_endpoint?: string;

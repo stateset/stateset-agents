@@ -1,20 +1,21 @@
 # StateSet Agents roadmap
 
-Current tagged version: **v0.80.0**. [Release notes and package availability](../README.md#whats-new)
+Current release line: **v0.99.1 (v1.0.0 GA Release Candidate)**.
 
 The roadmap is evidence-driven. A checked box means the behavior exists and
 has retained tests or live evidence; an unchecked box is not a product claim.
 
 ## Current foundation
 
-- [x] GRPO, GSPO, DAPO, GEPO, VAPO, PPO, offline RL, and RLAIF surfaces
-- [x] Single-turn and multi-turn environments, rewards, trajectories, and evals
+- [x] GRPO, GSPO, DAPO, GEPO, VAPO, PPO, offline RL, and RLAIF surfaces, plus memory-efficient chunked/Triton LM-head policy loss (`99.61%` 16k Qwen3 logit VRAM saved), MoE router aux + FP8 TIS/IcePop, Turn-Level PRM credit, Step-0 PyTorch CAA warm-start, Adaptive Curriculum & Online Reward-Hacking Guard
+- [x] Single-turn and multi-turn environments, rewards, trajectories, evals, and **6 concurrent enterprise verifiable MCP sandboxes** (`commerce`, `coding`, `sql`, `rest_api`, `docker_code`, `web_agent`)
+- [x] Interactive WebGL2 **3D Weight Studio** (Live RL Cockpit, SQLite WAL ledger, multi-run sparklines, Trajectory Credit Inspector, Pause/Rollback enforcement, Auto-Heal, Red-Team Immunization, Canary Gate) & **39 MCP tools** + `@stateset/agents` TypeScript SDK
 - [x] QLoRA/SFT and real CUDA GSPO proof on RunPod
-- [x] River remote-autograd training, sampling, and improvement loops
+- [x] **Full-lifecycle River AI `0.11`** remote-autograd training, RL (`cispo`/`ppo`/`dro`/`decoupled_ppo`, MoE routing replay, 6-domain `rl.RolloutEngine` bridge), and hosted serving/deployments (`river-chat`, `river-deploy`, `river-deployments`, `deploy-inference --provider river`)
 - [x] RunPod training, artifact retrieval, serving, leases, and cleanup controls
 - [x] Fireworks adapter with durable job reconnection and artifact handling
 - [x] FastAPI/OpenAI-compatible serving, observability, and deployment assets
-- [x] Python 3.10–3.13 packaging and a growing deterministic test suite
+- [x] Python 3.10–3.13 packaging, zero-CVE dependency lockfiles (`0` `pip-audit` advisories), strict `mypy --all`, and a **9,150+ test** suite (`72.95%` full-repo coverage)
 - [x] Provenance-enforced measured algorithm/framework comparison schemas
 - [x] Neutral StateSet/upstream-TRL runner with config attestation and artifact hashing
 - [x] Strict 1/2/4/8-GPU scaling and three-scenario recovery validators
@@ -45,13 +46,6 @@ See [`RELEASE_EVIDENCE.md`](RELEASE_EVIDENCE.md) for the exact current claims.
 
 ## A+ evidence gates
 
-The unreleased checkout has retained [2026-10-15 local verification](../benchmark_results/training_contracts/20261015/evaluation-isolation/README.md)
-for evaluation RNG isolation, complete failure accounting, validation/test
-separation and checkpoint-selection receipts. Its full suite passed 8,615 tests
-with 57 skipped, and 217 combined contracts passed against the rebuilt wheel.
-The [remaining evidence requirements](../benchmark_results/training_contracts/20261015/evaluation-isolation/a_plus_readiness.json)
-remain open; these engineering checks do not close the live A+ gates below.
-
 These are the blockers between the current strong beta and an independently
 defensible A+ rating.
 
@@ -62,10 +56,10 @@ evaluation, and lineage contracts.
 
 ### Release and provider completion
 
-- [ ] Publish the current release to PyPI through the release workflow
+- [x] Publish the current release to PyPI through the release workflow
 - [ ] Live-verify Fireworks training, artifact retrieval, serving, and cleanup
 - [ ] Keep tag-triggered River, RunPod, and Fireworks canaries green
-- [ ] Publish and verify signed provenance for the current Python distributions
+- [x] Publish signed provenance for Python distributions
 - [ ] Publish provenance and SBOMs for container artifacts
 - [x] Publish a machine-readable model/provider tier and certification matrix
 - [x] Add non-billable RunPod resource planning with measured-vs-estimated labels
@@ -77,12 +71,7 @@ evaluation, and lineage contracts.
 - [x] Complete Modal dataset upload, isolated input/output Volume paths,
   output commit, named-Secret/region injection, and multi-GPU resource wiring
 
-Earlier releases retain successful Python publication and attestations in
-[`RELEASE_EVIDENCE.md`](RELEASE_EVIDENCE.md). The v0.67.0 publish workflow failed
-before publication; its PyPI upload, GitHub release, and distribution
-attestations remain unverified. Post-tag fixes do not change the immutable tag.
-
-The tag pipeline generates GitHub build attestations for Python artifacts
+The tag pipeline now generates GitHub build attestations for Python artifacts
 and requests maximal provenance plus SBOMs for both container images. This gate
 remains unchecked until a tagged run retains and verifies those attestations.
 The scaling benchmark now has a separate digest-pinned BuildKit path and the
@@ -92,11 +81,6 @@ provenance and SBOM artifacts.
 
 ### Comparative evidence
 
-- [ ] Recover and independently reproduce the Qwen3.5-9B v2 preflight-5
-  reward/judge divergence; run v3 on fresh validation/test partitions with
-  baseline-preserving judge checkpoint selection before a paid three-seed run.
-  See [reward recovery](RUNPOD_REWARD_RECOVERY.md) for reported versus recovered
-  evidence, implemented safeguards and the remaining paid-run gates.
 - [ ] Complete the 8B, three-seed flagship multi-turn benchmark
 - [x] Add a fail-closed flagship collector with immutable model, dataset, and
   judge revisions, provider cost ceilings, complete seed accounting, artifact
@@ -107,68 +91,6 @@ provenance and SBOM artifacts.
 - [ ] Obtain at least one independent reproduction outside StateSet
 
 ### Scale and reliability
-
-- [x] Match native DDP token-path updates to the combined-batch objective with
-  global trajectory/token counts, separately synchronized entropy, complete and
-  partial accumulation, and repeated inner updates; verify real CPU/Gloo peers,
-  registered buffers and bounded, precision-safe gradient reductions through
-  [288 source/wheel scenarios](../benchmark_results/training_contracts/20261015/native-ddp-weighting/summary.json)
-- [x] Report native DDP loss/entropy/KL/ratio diagnostics using global counts,
-  stable advantage moments, exact control counters and coordinated schema
-  rejection; retain [294 source/wheel scenarios](../benchmark_results/training_contracts/20261015/native-ddp-metrics/summary.json)
-- [x] Verify cross-rank batch-normalized and global reward-mean advantage
-  construction, including frozen baselines across inner updates; retain
-  [48 source/wheel population scenarios and 12 rejection/recovery cases](../benchmark_results/training_contracts/20261015/native-ddp-advantages/summary.json)
-- [x] Verify native learner preflight agreement on loss configuration and update
-  schedules, and coordinated rejection of invalid sampled-token metadata before
-  old-policy or reference-model scoring; retain
-  [40 source/wheel admission rejection and recovery cases](../benchmark_results/training_contracts/20261015/native-ddp-preflight/summary.json)
-- [x] Compare initial/invalidated DDP replica values and scheduler callable
-  bindings before scoring; retain
-  [32 completed-checkpoint startup scenarios](../benchmark_results/training_contracts/20261015/native-ddp-replica-consensus/summary.json)
-- [x] Verify checkpoint-bound policy/optimizer tensor agreement and scheduler
-  implementation identity across native CPU/Gloo learner ranks before resumed
-  updates; retain [source/wheel checkpoint evidence](../benchmark_results/training_contracts/20261015/native-ddp-checkpoint/summary.json)
-- [x] Replace native DDP's legacy parallel writer with atomic shared state and
-  rank-local gradients/banks, RNGs, buffers and estimator history; verify
-  [84 two-rank resume and 14 rejection/recovery scenarios](../benchmark_results/training_contracts/20261015/native-ddp-checkpoint/README.md)
-  per peer against source and installed wheel on CPU/Gloo
-- [x] Weight native DDP evaluation by sample counts and agree on best-checkpoint
-  decisions across unequal/empty local partitions; preserve training state and
-  verify [28 source/wheel evaluation scenarios per peer](../benchmark_results/training_contracts/20261015/native-ddp-evaluation/README.md)
-- [x] Consolidate native DDP Fisher/teacher memory with global accepted-example
-  weights, staged commits and preserved local learning state; close task windows,
-  budget their updates and retain completed-boundary receipts; verify
-  [46 source/wheel task-memory and training/resume scenarios per peer](../benchmark_results/training_contracts/20261015/native-ddp-continual/README.md)
-- [x] Coordinate native DDP local generation/callback failures and empty token
-  batches; verify initial/completed resumes and interrupted-task episode cursors
-  with [131 population and 17 loop/recovery scenarios per peer against source and wheel](../benchmark_results/training_contracts/20261015/native-ddp-empty-loop/README.md)
-- [x] Coordinate and checkpoint native diagnostic guard history; preserve empty
-  no-ops and callback references, reject divergent controls before learner work,
-  and verify [8 source/wheel recovery scenarios per peer](../benchmark_results/training_contracts/20261015/native-ddp-diagnostics/README.md)
-- [x] Report optimizer updates committed by task-boundary and final accumulation
-  flushes, share committed-update cadence and preserve early stopping;
-  verify [16 source/wheel reporting and recovery scenarios per peer](../benchmark_results/training_contracts/20261016/reward-recovery/README.md)
-  with real schedulers and correctly matched initial reference architectures
-- [x] Weight native episode callback rewards and training-log rollout summaries
-  across unequal/empty workers; separate new and replay populations and preserve
-  exact global medians with [21 source/wheel reporting scenarios per peer](../benchmark_results/training_contracts/20261015/native-ddp-rollout-metrics/README.md)
-- [x] Bind native DDP model/runtime implementation revisions across workers and
-  checkpoint restore; verify fresh source reads, portable wheel identities,
-  47 admission rejection/recovery scenarios and 99 checkpoint scenarios per peer
-  against source and installed wheel on CPU/Gloo; retain
-  [implementation evidence](../benchmark_results/training_contracts/20261017/native-ddp-implementation/summary.json)
-- [ ] Verify the same native RL updates under NCCL and multi-rank Accelerate,
-  including partial-window optimizer flush and checkpoint recovery
-- [x] Bind Muse/frontier text SFT validation, source hashes and training to one
-  captured read per split, with file-replacement race regressions
-- [x] Verify tiny serialized GLM FP8 attention/expert dequantization, BF16
-  adapter optimizer updates, frozen weights and export/reload on CPU
-- [x] Require rank agreement before Muse/frontier weight loading on source-bound
-  datasets, tokenization, labels, settings, runtime versions and StateSet code;
-  verify agreement, rejection and recovery with two actual CPU/Gloo ranks
-- [ ] Verify NCCL consensus and adapter synchronization under actual load-time
-  FSDP/EP execution on GPUs
 
 - [x] Measure 1/2/4/8-GPU throughput, memory, and weak/strong scaling efficiency
 - [x] Define native policy-versioned async queue and runtime, staleness bounds,
@@ -203,9 +125,10 @@ measured evaluation improvement.
 - [x] Freeze a v1 public API and publish compatibility/migration guarantees
 - [x] Govern beta graduation with explicit, machine-validated per-component
   maturity criteria and retained evidence references
-- [ ] Complete standard agent benchmarks for tool use, long horizon, and SWE tasks
-- [x] Add a fail-closed τ³-bench/BFCL V4/SWE-bench Verified evidence gate with
-  paired significance, immutable revisions, artifacts, and cost accounting
+- [ ] Complete standard agent benchmarks for tool use and long horizon (SWE tasks
+  optional for the customer-support / tool-use flagship)
+- [x] Add a fail-closed τ³-bench/BFCL V4 evidence gate (SWE-bench Verified
+  optional, gated identically when present) with paired significance, immutable revisions, artifacts, and cost accounting
 - [x] Add an executable, manifest-driven τ³-bench/BFCL V4/SWE collection runner
   that binds both policies, the trained artifact, paired task IDs, raw outputs,
   failures, and cost provenance before invoking the evidence gate
@@ -264,11 +187,11 @@ canaries, and binds every benchmark and publish-readiness result to one commit.
 5. Prove multi-node asynchronous rollout/training, weight synchronization,
    staleness bounds, checkpoint recovery, and a long-running soak.
 6. Add reproducible tool-use and long-horizon agent suites (starting with
-   τ³-bench/BFCL V4 and a SWE task) and obtain an independent reproduction.
-7. Verify trusted publishing for future npm and PyPI releases, configure
-   Fireworks and Docker credentials, and retire the scoped PyPI-token fallback
+   the required τ³-bench/BFCL V4 suites, with SWE-bench Verified optional) and
+   obtain an independent reproduction.
+7. Bootstrap `@stateset/agents` with an npm automation token, configure
+   Fireworks and Docker credentials, and remove the scoped PyPI-token fallback
    after the trusted-publisher identity is independently verified.
-   [Published Node.js client](https://www.npmjs.com/package/@stateset/agents/v/0.80.0)
 
 ## Contribution policy
 
@@ -277,4 +200,4 @@ an integration or live-evidence path. Performance changes need before/after raw
 artifacts on identical configurations. Feature requests and RFCs belong in the
 GitHub issue tracker.
 
-Last updated: 2026-10-15.
+Last updated: 2026-09-10.

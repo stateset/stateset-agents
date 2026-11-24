@@ -1,13 +1,13 @@
 # StateSet Agents - Technical Architecture
 
-**Source version:** 0.41.0
-**Last updated:** May 2026
+**Source version:** 0.99.1
+**Last updated:** November 2026
 
-> **Versioning note.** Like the whitepaper, this document is pinned to the
-> source tree at the version above. The PyPI release may lag the source by
-> one or two patch versions; check `stateset_agents.__version__` for the
-> installed version. Section-level claims about file paths and line counts
-> are valid as of 0.41.0 — open an issue if they drift.
+> **Versioning note.** Like the whitepaper, this document tracks the
+> `v0.99.1` / `v1.0.0` release line. Check `stateset_agents.__version__` for
+> the installed package version. See [`docs/OPEN_WEIGHT_RL.md`](OPEN_WEIGHT_RL.md),
+> [`docs/WEIGHT_STUDIO.md`](WEIGHT_STUDIO.md), and
+> [`docs/RIVER_PROVIDER.md`](RIVER_PROVIDER.md) for dedicated subsystem guides.
 
 ---
 
@@ -140,9 +140,6 @@ stateset-agents/
 │   │   ├── dapo_trainer.py        # Decoupled clip + dynamic sampling
 │   │   ├── gepo_trainer.py        # Expectation-based GEPO
 │   │   ├── vapo_trainer.py        # Value-augmented (1036 LOC)
-│   │   ├── ppo_trainer.py         # Experimental online and reference PPO updates
-│   │   ├── rlaif_trainer.py       # RL from AI feedback
-│   │   ├── offline_rl_bcq.py      # BCQ / BEAR / CQL / IQL / DT
 │   │   ├── single_turn_trainer.py # Single-turn convenience wrapper
 │   │   ├── distributed_trainer.py # Multi-GPU
 │   │   └── neural_reward_trainer.py # Learned reward models
@@ -182,7 +179,7 @@ stateset-agents/
 │   ├── quick_start.py
 │   ├── complete_grpo_training.py
 │   ├── production_ready_customer_service.py
-│   └── starters/                  # Qwen-3.5 / Kimi-K2.6 / Kimi-K3 / Gemma-4 / GLM-5.1 / GLM-5.2 / Muse Glimmer / Nemotron-3.5 / Qwen3.8-27B / Qwen3-Coder / gpt-oss / DeepSeek-V4-Flash / Inkling-2-Mini
+│   └── starters/                  # Qwen-3.5 / Kimi-K2.6 / Kimi-K3 / Gemma-4 / GLM-5.1 / GLM-5.2 / Muse Glimmer / Nemotron-3.5 / Qwen3.8-27B / Qwen3-Coder / gpt-oss / DeepSeek-V4-Flash
 │
 ├── notebooks/                     # 13 Colab notebooks (lint-gated in CI)
 ├── docs/                          # 53 markdown guides + Sphinx site
@@ -577,9 +574,9 @@ and live alongside their `XxxConfig` dataclass.
 | GEPO | `training/gepo_trainer.py` | Expectation-based variant; useful when GSPO's variance is too high |
 | DAPO | `training/dapo_trainer.py` | Decoupled clip + dynamic sampling |
 | VAPO | `training/vapo_trainer.py` | Value-augmented; pairs well with a separate value head |
-| PPO  | `training/ppo_trainer.py`, `training/ppo_online.py` | Experimental token-exact single-process online PPO and external-text reference updates |
-| RLAIF | `training/rlaif_trainer.py` | RL-from-AI-feedback via an LLM judge |
-| BCQ / BEAR / CQL / IQL / Decision Transformer | `training/offline_rl_*.py` | Offline-RL baselines for log-replay training |
+| PPO  | `experimental/ppo.py` | Reference / baseline (experimental) |
+| RLAIF | `experimental/rlaif.py` | RL-from-AI-feedback via an LLM judge (experimental) |
+| BCQ / BEAR / CQL / IQL / Decision Transformer | `experimental/offline_rl/*.py` | Offline-RL baselines for log-replay training (experimental) |
 
 Default entry points:
 
