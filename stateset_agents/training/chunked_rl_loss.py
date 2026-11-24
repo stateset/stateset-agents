@@ -221,6 +221,7 @@ def chunked_gather_token_logprobs(
             and torch.is_grad_enabled()
             and (h_c.requires_grad or lm_head_weight.requires_grad)
         ):
+            import torch.utils.checkpoint as _torch_ckpt
 
             def _run_chunk(
                 hc: Any,
@@ -232,7 +233,7 @@ def chunked_gather_token_logprobs(
                     hc, w, lm_head_bias, lc, mc, softmax_dtype
                 )
 
-            lp_c, ent_c = torch.utils.checkpoint.checkpoint(
+            lp_c, ent_c = _torch_ckpt.checkpoint(
                 _run_chunk, h_c, lm_head_weight, use_reentrant=False
             )
         else:

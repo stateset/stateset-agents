@@ -312,7 +312,9 @@ class SQLAnalyticsSandbox:
             tbl = str(arguments.get("table") or "sales").strip()
             if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", tbl):
                 return {"isError": True, "error": f"Invalid table name: {tbl!r}"}
-            rows = self._conn.execute(f"PRAGMA table_info({tbl})").fetchall()
+            rows = self._conn.execute(
+                "SELECT name, type FROM pragma_table_info(?)", (tbl,)
+            ).fetchall()
             return {
                 "isError": False,
                 "columns": [{"name": r["name"], "type": r["type"]} for r in rows],
