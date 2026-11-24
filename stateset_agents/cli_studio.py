@@ -805,12 +805,17 @@ def rl_blueprint_command(
         "gspo",
         "--algorithm",
         "-a",
-        help="RL algorithm: gspo, grpo, dapo, vapo, or gepo.",
+        help="RL algorithm: gspo, grpo, dapo, vapo, gepo, cispo, or dro.",
     ),
     cloud: str = typer.Option(
         "local",
         "--cloud",
-        help="Execution target: local, runpod, modal, or k8s.",
+        help="Execution target: local, runpod, modal, k8s, river, or colab.",
+    ),
+    gpu_type: str = typer.Option(
+        "H100-80GB",
+        "--gpu-type",
+        help="Target GPU label (e.g. H100-80GB, A100-80GB, A100-40GB, L4-24GB, T4-16GB).",
     ),
     gpus: int = typer.Option(
         1,
@@ -876,6 +881,7 @@ def rl_blueprint_command(
                 algorithm=algorithm,
                 cloud=cloud,
                 gpus=gpus,
+                gpu_type=gpu_type,
                 chunked_loss_chunk_size=chunk_size,
                 surgical_warm_start=warm_start,
             )

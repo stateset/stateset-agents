@@ -1,6 +1,23 @@
 # Bundled Colab Notebooks
 
-Six runnable Colab notebooks covering the full developer journey. Each pins to a specific commit, sets seeds via `set_all_seeds()`, and produces real artifacts. Open any of them in Colab via the badge inside.
+Runnable Google Colab notebooks (tuned for **Google AI Ultra H100 / A100 / L4** with clean T4/CPU fallback) covering the full developer journey. Open any notebook directly in Colab via its badge.
+
+## Flagship `v1.0` Google Colab (AI Ultra) & River AI `0.11` Notebooks
+
+| Notebook | Open in Colab | Target Hardware | What it runs & produces |
+| --- | --- | --- | --- |
+| [`open_weight_rl_colab_gpu.ipynb`](./open_weight_rl_colab_gpu.ipynb) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/stateset/stateset-agents/blob/master/notebooks/open_weight_rl_colab_gpu.ipynb) | **H100 / A100 / L4** (T4/CPU fallback) | Auto-tunes from Colab GPU tier (`stateset_agents.utils.colab`), measures live CUDA peak VRAM & Triton chunked LM-head parity, runs all **6 enterprise verifiable MCP sandboxes**, executes Step-0 PyTorch CAA warm-start + Chunked GSPO LoRA training on Qwen, and exports LoRA + SHA-256 GPU evidence to Google Drive. |
+| [`river_ai_full_lifecycle_colab.ipynb`](./river_ai_full_lifecycle_colab.ipynb) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/stateset/stateset-agents/blob/master/notebooks/river_ai_full_lifecycle_colab.ipynb) | **CPU** (auto Python 3.12 `uv` side-venv) | Full **River AI `0.11`** lifecycle: `river-preflight --live`, all 6 verifiable sandboxes inside real `river_client.rl.RolloutEngine`, `cispo`/`dro` blueprints, opt-in live SFT + `river-chat`, and dedicated deployment lifecycle with guaranteed `finally: delete()` cleanup. |
+| [`weight_studio_3d_colab.ipynb`](./weight_studio_3d_colab.ipynb) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/stateset/stateset-agents/blob/master/notebooks/weight_studio_3d_colab.ipynb) | **CPU or GPU** | Embeds live **WebGL2 3D Weight Studio** inline inside Colab (no ngrok), runs 6-domain sandbox pool + SQLite WAL RL sparklines + Streamable HTTP MCP (32 tools) + Autonomous Auto-Heal → Red-Team → Canary autopilot, and downloads a standalone interactive 3D HTML PR report. |
+| [`v1_ga_gpu_river_evidence_colab.ipynb`](./v1_ga_gpu_river_evidence_colab.ipynb) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/stateset/stateset-agents/blob/master/notebooks/v1_ga_gpu_river_evidence_colab.ipynb) | **Colab Ultra H100 / A100 / L4** | 1-click turnkey runner for `benchmarks/capture_v1_gpu_river_evidence.py`: captures live CUDA peak VRAM, 3-seed ablation, live Qwen LoRA run, and optional River `0.11` preflight into a downloadable `v1_ga_evidence.json` + `v1_ga_evidence.md` bundle. |
+
+Plan a Colab Ultra run directly from the CLI:
+
+```bash
+stateset-agents rl --cloud colab --gpu-type A100-80GB --model Qwen/Qwen3-8B --algorithm gspo --json
+```
+
+---
 
 ## Pick the right notebook for what you want to do
 

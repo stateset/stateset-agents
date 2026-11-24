@@ -36,8 +36,12 @@ Quick Commands
    # Run the reproducible chunked RL & 6-domain sandbox shootout
    stateset-agents rl --run-shootout --json
 
-   # Generate a reproducible local, Modal, RunPod, Kubernetes, or River blueprint
+   # Generate a reproducible local, Modal, RunPod, Kubernetes, River, or Colab Ultra blueprint
+   stateset-agents rl --model Qwen/Qwen3-8B --algorithm gspo --cloud colab --gpu-type A100-80GB --json
    stateset-agents rl --model Qwen/Qwen3.6-35B-A3B-FP8 --algorithm cispo --cloud river --json
+
+   # Capture SHA-256 GPU + Triton + River AI 0.11 GA evidence (JSON + Markdown)
+   python benchmarks/capture_v1_gpu_river_evidence.py --skip-hf-model --river-mode offline
 
    # Run the end-to-end offline demo (Step-0 CAA + MCP sandboxes + Chunked GSPO)
    python examples/open_weight_rl_end_to_end.py
