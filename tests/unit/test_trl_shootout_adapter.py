@@ -96,8 +96,15 @@ def test_gsm8k_task_is_self_contained_and_scores_answers() -> None:
 
 
 def test_declared_and_locked_trl_versions_support_grpo() -> None:
+    import re
+
     root = Path(__file__).resolve().parents[2]
     pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
     lock = (root / "requirements-dev-lock.txt").read_text(encoding="utf-8")
     assert pyproject.count('"trl>=0.14.0,<2.0.0"') == 3
-    assert "trl==1.9.1" in lock
+    match = re.search(r"^trl==(\d+)\.(\d+)\.(\d+)", lock, flags=re.MULTILINE)
+    assert (
+        match is not None
+    ), "expected a pinned trl version in requirements-dev-lock.txt"
+    trl_ver = tuple(int(part) for part in match.groups())
+    assert (1, 9, 1) <= trl_ver < (2, 0, 0), f"unexpected locked trl version: {trl_ver}"

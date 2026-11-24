@@ -427,7 +427,7 @@ locally built wheel instead of PyPI (the pinned version cannot resolve before
 it is published):
 
 ```python
-RunPodExecutor(wheel=Path("dist/stateset_agents-0.86.0-py3-none-any.whl"))
+RunPodExecutor(wheel=Path("dist/stateset_agents-0.99.1-py3-none-any.whl"))
 ```
 
 ### `stateset-agents undeploy`
@@ -1902,3 +1902,57 @@ extras. Evaluation works without ML dependencies and scores exact reference/tool
 agreement, not autonomous task success or business outcomes. Synthetic starter
 data cannot pass the gate. See the industry guide for prediction bundle and
 Python callback contracts.
+
+### `stateset-agents rl`
+
+Run the Open-Weight RL Leadership Suite — chunked LM-head RL shootout, reproducible cloud/local/River launch blueprints, and multi-domain verifiable sandbox evaluation.
+
+```bash
+stateset-agents rl --run-shootout --json
+stateset-agents rl --cloud river --algorithm cispo --model Qwen/Qwen3.6-35B-A3B-FP8 --json
+```
+
+### `stateset-agents serve-ab`
+
+Run a real-token paired A/B shadow comparison between a baseline model and a candidate or hot-loaded LoRA adapter against a live vLLM or OpenAI-compatible serving endpoint.
+
+```bash
+stateset-agents serve-ab --endpoint http://127.0.0.1:8000 --baseline base --candidate healed-lora
+```
+
+### `stateset-agents traces`
+
+Ingest production OTLP/JSON traces into the durable SQLite ledger, audit reward calibration (`CALIBRATED` / `DRIFT_WARN` / `HACKING_RISK`), and mine failing traces for Auto-Heal or RL replay.
+
+```bash
+stateset-agents traces ingest --file traces.json
+stateset-agents traces calibrate --reward customer_support
+```
+
+### `stateset-agents river-chat`
+
+Query a hosted River AI `river://` checkpoint URI, local `river_checkpoint.json` pointer directory, or base model directly from the CLI.
+
+```bash
+stateset-agents river-chat --checkpoint outputs/my_model --prompt "Refund order ORD-77701?"
+```
+
+### `stateset-agents river-deploy`
+
+Create a dedicated River AI inference deployment or promote a trained checkpoint to a low-latency streaming replica alias.
+
+```bash
+stateset-agents river-deploy --checkpoint outputs/my_model --unified-replicas 1 --wait
+stateset-agents river-deploy --checkpoint outputs/my_model --promote-streaming-model my-agent-live
+```
+
+### `stateset-agents river-deployments`
+
+List, inspect, scale, check metered usage for, or delete River AI deployments so idle replicas stop billing.
+
+```bash
+stateset-agents river-deployments
+stateset-agents river-deployments --deployment-id dep_123 --usage
+stateset-agents river-deployments --deployment-id dep_123 --scale-unified 2
+stateset-agents river-deployments --deployment-id dep_123 --delete
+```

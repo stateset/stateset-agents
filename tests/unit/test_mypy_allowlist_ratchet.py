@@ -12,10 +12,10 @@ from pathlib import Path
 
 MYPY_INI = Path(__file__).resolve().parents[2] / "mypy.ini"
 
-# Floor = all 378 packaged Python files (the whole package is gated). Lowered
-# from 390 in v0.65.0 only because the twelve v0.64.0 experimental-move shim
-# modules were deleted; no gated source file left the type check.
-ALLOWLIST_FLOOR = 379
+# Floor = all 409 packaged Python files (the whole package is gated). Raised
+# from 379 in v0.99.1 to lock in the new 3D Weight Studio, Open-Weight RL,
+# and River 0.11 serving/deployment modules.
+ALLOWLIST_FLOOR = 409
 
 
 def _allowlisted_files() -> list[str]:

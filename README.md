@@ -139,7 +139,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python release:** `stateset-agents==0.86.0`, published from the
+- **Current Python release:** `stateset-agents==0.99.1`, published from the
   annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/). Its first registry
@@ -395,7 +395,13 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**v0.86.0 (latest release; publication triggered by tag):**
+**v0.99.1 (latest release; publication triggered by tag):**
+
+- **Zero-CVE Supply Chain (`0 / 0` `pip-audit`)**: Patched `black>=26.10.1`, `filelock>=4.2.1`, `msgpack==1.2.4`, and isolated `semgrep>=1.173.0` into `[sast]` so core and dev lockfiles report zero `pip-audit` advisories without waiving any CVE.
+- **6-Domain Enterprise Verifiable RL Sandboxes & 3-Seed Ablation Evidence**: Added `BrowserDOMSandbox` (`web_agent`), `RESTAPISandbox`, and `DockerCodeSandbox` alongside `commerce`, `coding`, and `sql`, unified `DisaggregatedRLRuntime.run_adaptive_sandbox_loop(...)`, real multi-turn PRM credit, and retained 3-seed Step-0 CAA + Chunked GSPO/FP8 TIS/MoE ablation evidence (`benchmark_results/open_weight_rl/ablation_v1_rc.json`).
+- **River AI `0.11` Full-Lifecycle Integration**: Added `RiverDeploymentManager`, `RiverDeploymentProvider` (`deploy-inference --provider river`), `RiverInferenceClient`, `river-chat`/`river-deploy`/`river-deployments` CLI commands, MoE `routing_replay`, `dro`/`decoupled_ppo`, `attest_training_data`, `get_server_capabilities`, `RLBlueprintConfig(cloud="river")`, live Studio telemetry, and 6-domain `river_mcp_sandbox_factory`.
+
+**v0.86.0:**
 
 - **Live vLLM LoRA Hot-Swap & Real-Token A/B Shadow Bridge (`POST /serving/load-lora`, `POST /serving/compare-live`, `studio_live_serving_ab`)**: Hot-load exported Diff-as-LoRA adapters into live vLLM servers and run real-endpoint paired A/B comparisons with p50/p95 latency, reward deltas, and 95% CIs.
 - **Live OTLP/Webhook Trace Collector & Reward Calibration Guard (`POST /traces/ingest`, `POST /traces/calibration-audit`, `POST /traces/auto-heal`, `stateset://studio/traces`)**: Stream OpenTelemetry OTLP/JSON `resourceSpans` directly into Auto-Heal and detect reward hacking (`CALIBRATED` / `DRIFT_WARN` / `HACKING_RISK`).
@@ -1463,8 +1469,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install "stateset-agents==0.82.0" # current stable release
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.82.0"
+pip install "stateset-agents==0.99.1" # current stable release
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.99.1"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub

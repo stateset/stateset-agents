@@ -27,6 +27,23 @@ from stateset_agents.training.lineage import MANIFEST_NAME
 from tests.unit.test_river_batches import FakeTokenizer
 
 
+@pytest.fixture(autouse=True)
+def _disable_live_river_renderers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep offline RiverExecutor fake tests independent of installed river-client renderers."""
+    try:
+        import river_client.renderers as _ren
+
+        monkeypatch.setattr(
+            _ren,
+            "get_renderer",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                LookupError("offline fake test")
+            ),
+        )
+    except ImportError:
+        pass
+
+
 @dataclass
 class FakeLoraConfig:
     rank: int

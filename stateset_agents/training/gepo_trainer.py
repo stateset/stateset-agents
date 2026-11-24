@@ -316,7 +316,9 @@ class GEPOTrainer(StudioControlMixin):
             sequence_log_probs: Sum of log probs per sequence [batch]
         """
         response_mask = self.build_response_mask(attention_mask, response_start_idx)
-        chunk_size = getattr(self.config, "chunked_loss_chunk_size", None)
+        chunk_size = getattr(
+            getattr(self, "config", None), "chunked_loss_chunk_size", None
+        )
         if chunk_size is not None and int(chunk_size) > 0:
             from .chunked_rl_loss import chunked_model_token_logprobs
 
