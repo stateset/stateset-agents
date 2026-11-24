@@ -69,9 +69,9 @@ class RLBlueprintConfig:
             "dro",
         ):
             raise ValueError(f"Unsupported RL algorithm: {self.algorithm!r}")
-        if self.cloud not in ("local", "runpod", "modal", "k8s", "river"):
+        if self.cloud not in ("local", "runpod", "modal", "k8s", "river", "colab"):
             raise ValueError(
-                f"Unsupported cloud target {self.cloud!r}; expected local, runpod, modal, k8s, or river."
+                f"Unsupported cloud target {self.cloud!r}; expected local, runpod, modal, k8s, river, or colab."
             )
         if self.gpus < 1:
             raise ValueError("gpus must be >= 1")
@@ -190,6 +190,28 @@ def build_cloud_launch_plan(
                 f"stateset-agents river-preflight --live --base-model {config.model}"
             ),
             "command": river_cmd,
+        }
+    elif config.cloud == "colab":
+        from stateset_agents.utils.colab import (
+            colab_notebook_url,
+            recommend_colab_profile,
+        )
+
+        profile = recommend_colab_profile(gpu_name=config.gpu_type)
+        notebook = "open_weight_rl_colab_gpu.ipynb"
+        dispatch = {
+            "provider": "colab",
+            "plan_tier": "google-ai-ultra",
+            "gpu_profile": profile.to_dict(),
+            "notebook": f"notebooks/{notebook}",
+            "colab_url": colab_notebook_url(notebook),
+            "drive_checkpoint_dir": f"/content/drive/MyDrive/stateset-agents/{config.name}",
+            "install_command": 'pip install -q "stateset-agents[training,api]"',
+            "evidence_command": (
+                f"python benchmarks/capture_v1_gpu_river_evidence.py "
+                f"--hf-model {config.model} --output-dir outputs/{config.name}"
+            ),
+            "command": " ".join(base_cmd),
         }
     else:
         dispatch = {

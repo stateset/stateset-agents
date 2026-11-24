@@ -165,15 +165,26 @@ const pool = await client.studio.runSandboxPool({ domains: ["commerce", "coding"
 await client.studio.controlRlRun({ action: "pause", reason: "Inspect entropy dip" });
 ```
 
-### 1-Command CLI Blueprints & End-to-End Demo
+### 1-Command CLI Blueprints, Google Colab (AI Ultra) & Evidence Capture
 
 ```bash
-# Build a reproducible cloud/local RL launch plan + mine failing SQLite OTLP traces into a curriculum
+# Build a reproducible cloud/local/River/Colab RL launch plan
+stateset-agents rl --model Qwen/Qwen3-8B --algorithm gspo --cloud colab --gpu-type A100-80GB --json
+stateset-agents rl --model Qwen/Qwen3.6-35B-A3B-FP8 --algorithm cispo --cloud river --json
 stateset-agents rl --model Qwen/Qwen3-8B --algorithm dapo --cloud modal --gpus 4 \
   --curriculum-from-traces --warm-start --json
+
+# Capture unified GPU + Triton + HF LoRA + River AI 0.11 GA evidence (JSON + Markdown)
+python benchmarks/capture_v1_gpu_river_evidence.py --hf-model Qwen/Qwen2.5-1.5B-Instruct --river-mode preflight
 
 # Run the complete offline end-to-end demo (PyTorch CAA warm-start + MCP sandboxes + Chunked GSPO)
 python examples/open_weight_rl_end_to_end.py
 ```
+
+Ready-to-run **Google Colab (AI Ultra H100/A100/L4)** notebooks live in [`notebooks/README.md`](../notebooks/README.md):
+- [`notebooks/open_weight_rl_colab_gpu.ipynb`](../notebooks/open_weight_rl_colab_gpu.ipynb)
+- [`notebooks/river_ai_full_lifecycle_colab.ipynb`](../notebooks/river_ai_full_lifecycle_colab.ipynb)
+- [`notebooks/weight_studio_3d_colab.ipynb`](../notebooks/weight_studio_3d_colab.ipynb)
+- [`notebooks/v1_ga_gpu_river_evidence_colab.ipynb`](../notebooks/v1_ga_gpu_river_evidence_colab.ipynb)
 
 See also: [`docs/WEIGHT_STUDIO.md`](WEIGHT_STUDIO.md) and [`docs/MCP_SERVER.md`](MCP_SERVER.md).

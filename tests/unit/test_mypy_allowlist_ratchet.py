@@ -15,7 +15,7 @@ MYPY_INI = Path(__file__).resolve().parents[2] / "mypy.ini"
 # Floor = all 409 packaged Python files (the whole package is gated). Raised
 # from 379 in v0.99.1 to lock in the new 3D Weight Studio, Open-Weight RL,
 # and River 0.11 serving/deployment modules.
-ALLOWLIST_FLOOR = 409
+ALLOWLIST_FLOOR = 410
 
 
 def _allowlisted_files() -> list[str]:
