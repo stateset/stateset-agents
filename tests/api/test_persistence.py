@@ -10,7 +10,7 @@ Comprehensive tests for database persistence including:
 
 import os
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime
 
 import pytest
 

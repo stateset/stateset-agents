@@ -78,6 +78,10 @@ class DAPOConfig(TrainingConfig):
     # materializing [B, T, V] logits on long-context RL).
     chunked_loss_chunk_size: int | None = None
     use_loss_checkpointing: bool = False
+    # Opt-in FP8 rollout mismatch correction (TIS/IcePop) & MoE router aux loss
+    tis_clip_max: float | None = None
+    icepop_bounds: tuple[float, float] | None = None
+    moe_aux_loss_coef: float = 0.0
 
     @classmethod
     def from_training_config(cls, config: TrainingConfig, **kwargs) -> DAPOConfig:

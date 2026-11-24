@@ -1960,6 +1960,8 @@ def test_v88_sqlite_ledger_llm_judge_live_parity_and_ingress_security(
     """Verify SQLite store, PluggableRewardJudge, live Red-Team/Canary parity, MCP parity & ingress limits."""
     from fastapi.testclient import TestClient
 
+    # 1. Single-source-of-truth MCP parity check between HTTP bridge and stdio server
+    import stateset_agents.mcp_server as stdio_mcp
     from stateset_agents.weight_studio import (
         PluggableRewardJudge,
         create_studio_app,
@@ -1969,9 +1971,6 @@ def test_v88_sqlite_ledger_llm_judge_live_parity_and_ingress_security(
         get_canonical_studio_resource_uris,
         get_canonical_studio_tool_names,
     )
-
-    # 1. Single-source-of-truth MCP parity check between HTTP bridge and stdio server
-    import stateset_agents.mcp_server as stdio_mcp
 
     canonical_tools = get_canonical_studio_tool_names()
     canonical_resources = get_canonical_studio_resource_uris()

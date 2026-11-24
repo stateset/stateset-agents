@@ -597,17 +597,17 @@ export function initAutopilotAndMcpPanel({
     if (pill) pill.textContent = 'SANDBOX…';
     try {
       const res = await apiPost('/rl/sandbox-pool', {
-        domains: ['commerce', 'coding', 'sql'],
+        domains: ['commerce', 'coding', 'sql', 'rest_api', 'docker_code'],
         include_failure_pairs: true,
-        max_concurrency: 6,
+        max_concurrency: 10,
       });
       const ds = res.domain_stats || {};
-      const parts = ['commerce', 'coding', 'sql']
+      const parts = ['commerce', 'coding', 'sql', 'rest_api', 'docker_code']
         .filter((d) => ds[d])
         .map((d) => `${d}:${Math.round(Number(ds[d].verified_pass_rate || 0) * 100)}%`);
       if (pill) pill.textContent = `POOL · ${res.episode_count} EPS`;
       if (summary) {
-        summary.textContent = `3-Domain Pool (${res.episode_count} eps) · ${parts.join(' · ')} · z-norm active`;
+        summary.textContent = `5-Domain Pool (${res.episode_count} eps) · ${parts.join(' · ')} · z-norm active`;
       }
       renderer.triggerPulse('forward');
       loadRlTrajectories();

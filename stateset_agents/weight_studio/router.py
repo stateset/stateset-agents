@@ -1597,6 +1597,7 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
     async def post_rl_sandbox_pool(request: Request) -> dict[str, Any]:
         from ..core.sandbox_pool import MultiDomainSandboxPool, SandboxEpisodeSpec
         from ..core.trajectory import ConversationTurn
+        from ..training.turn_credit import compute_turn_level_advantages
 
         try:
             body = await request.json()
@@ -1645,10 +1646,44 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
                             {"expected_value": 25000, "simulate_fail": True},
                         )
                     )
+            elif d == "rest_api":
+                specs.append(
+                    SandboxEpisodeSpec(
+                        "rest_api-ok",
+                        "rest_api",
+                        {
+                            "target_subscription_id": "sub_101",
+                            "expected_status": "canceled",
+                        },
+                    )
+                )
+                if include_failure_pairs:
+                    specs.append(
+                        SandboxEpisodeSpec(
+                            "rest_api-fail",
+                            "rest_api",
+                            {
+                                "target_subscription_id": "sub_101",
+                                "expected_status": "canceled",
+                                "simulate_fail": True,
+                            },
+                        )
+                    )
+            elif d == "docker_code":
+                specs.append(SandboxEpisodeSpec("docker_code-ok", "docker_code", {}))
+                if include_failure_pairs:
+                    specs.append(
+                        SandboxEpisodeSpec(
+                            "docker_code-fail", "docker_code", {"simulate_fail": True}
+                        )
+                    )
             else:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Unsupported sandbox domain {d!r}; expected commerce, coding, or sql.",
+                    detail=(
+                        f"Unsupported sandbox domain {d!r}; expected commerce, coding, "
+                        "sql, rest_api, or docker_code."
+                    ),
                 )
 
         async def _ref_policy(
@@ -1682,6 +1717,29 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
                 return ConversationTurn(
                     role="assistant", content="All coding assertions passed."
                 )
+            if dom == "rest_api":
+                if turn_idx == 0:
+                    return ConversationTurn(
+                        role="assistant",
+                        content='<tool_call>{"name": "http_request", "arguments": {"method": "POST", "path": "/v1/subscriptions/sub_101/cancel", "idempotency_key": "idem-101", "body": {"reason": "customer_requested"}}}</tool_call>',
+                    )
+                return ConversationTurn(
+                    role="assistant", content="Subscription sub_101 canceled."
+                )
+            if dom == "docker_code":
+                if turn_idx == 0:
+                    return ConversationTurn(
+                        role="assistant",
+                        content='<tool_call>{"name": "apply_patch", "arguments": {"path": "billing.py", "content": "def apply_discount(subtotal_cents: int, pct: int) -> int:\\n    return subtotal_cents - (subtotal_cents * pct) // 100\\n"}}</tool_call>',
+                    )
+                if turn_idx == 1:
+                    return ConversationTurn(
+                        role="assistant",
+                        content='<tool_call>{"name": "run_pytest", "arguments": {}}</tool_call>',
+                    )
+                return ConversationTurn(
+                    role="assistant", content="Patched billing.py and verified pytest."
+                )
             if turn_idx == 0:
                 return ConversationTurn(
                     role="assistant",
@@ -1692,15 +1750,32 @@ def build_studio_router(runtime: StudioRuntime | None = None) -> APIRouter:
         pool = MultiDomainSandboxPool(max_concurrency=max_concurrency)
         res = await pool.run_batch(specs, _ref_policy, normalize_per_domain=True)
         rt = _rt()
-        for ep in res.get("episodes") or []:
-            turns_raw = ep.get("turn_rewards") or [ep.get("reward", 0.0)]
+        episodes = list(res.get("episodes") or [])
+        # Compute real multi-turn PRM credit across the batch using turn_process_rewards
+        credit_inputs = [
+            {
+                "turn_process_rewards": [
+                    float(x)
+                    for x in (ep.get("turn_process_rewards") or [ep.get("reward", 0.0)])
+                ],
+                "terminal_reward": float(ep.get("reward", 0.0)),
+            }
+            for ep in episodes
+        ]
+        turn_credits = (
+            compute_turn_level_advantages(credit_inputs) if credit_inputs else []
+        )
+        for ep, tc in zip(episodes, turn_credits, strict=False):
+            turns_raw = ep.get("turn_process_rewards") or [ep.get("reward", 0.0)]
             turns = [
                 {
                     "turn": idx + 1,
                     "process_reward": round(float(tr), 4),
-                    "credit": round(float(ep.get("normalized_advantage", 0.0)), 4),
+                    "credit": round(float(adv), 4),
                 }
-                for idx, tr in enumerate(turns_raw)
+                for idx, (tr, adv) in enumerate(
+                    zip(turns_raw, tc.turn_advantages, strict=False)
+                )
             ]
             rt.store.record_rl_trajectory(
                 {

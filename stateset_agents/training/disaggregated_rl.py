@@ -328,6 +328,161 @@ class DisaggregatedRLRuntime:
             "steps": step_logs,
         }
 
+    async def run_adaptive_sandbox_loop(
+        self,
+        *,
+        pool: Any,
+        curriculum: Any,
+        policy_fn: Any,
+        learner_step_fn: Callable[
+            [list[dict[str, Any]], int], Awaitable[dict[str, Any]]
+        ],
+        num_steps: int = 3,
+        batch_size: int = 4,
+        model: Any = None,
+        studio_callback: Any | None = None,
+        hacking_guard: Any | None = None,
+        synthesize_self_play: bool = True,
+        vllm_sleep_wake_every: int = 0,
+    ) -> dict[str, Any]:
+        """Run a unified closed-loop adaptive RL session across verifiable sandboxes.
+
+        Wires together:
+        1. ``AdaptiveDifficultyCurriculum.sample_batch`` (frontier 20-80% priority)
+        2. ``MultiDomainSandboxPool.run_batch`` (concurrent rollouts + per-domain z-norm)
+        3. ``compute_turn_level_advantages`` (per-turn PRM credit assignment)
+        4. ``learner_step_fn`` (e.g. ``chunked_rl_policy_loss`` w/ FP8 TIS/IcePop + MoE aux)
+        5. ``OnlineRewardHackingGuard`` + ``StudioTelemetryCallback.enforce_step``
+        6. Optional ``sync_vllm_sleep_wake()`` weight broadcast.
+        """
+        from stateset_agents.core.sandbox_pool import SandboxEpisodeSpec
+        from stateset_agents.training.turn_credit import compute_turn_level_advantages
+
+        step_logs: list[dict[str, Any]] = []
+        self_play_created = 0
+        vllm_syncs = 0
+
+        for step in range(1, max(1, int(num_steps)) + 1):
+            tasks = curriculum.sample_batch(batch_size)
+            if not tasks:
+                break
+            specs = [
+                SandboxEpisodeSpec(
+                    episode_id=f"s{step}-{t.task_id}",
+                    domain=t.domain,
+                    scenario={**dict(t.scenario), "prompt": t.prompt},
+                )
+                for t in tasks
+            ]
+            batch_res = await pool.run_batch(
+                specs, policy_fn, normalize_per_domain=True
+            )
+            episodes = list(batch_res.get("episodes") or [])
+
+            # Assign true per-turn PRM credit across the batch
+            credit_inputs = [
+                {
+                    "turn_process_rewards": [
+                        float(x)
+                        for x in (
+                            ep.get("turn_process_rewards") or [ep.get("reward", 0.0)]
+                        )
+                    ],
+                    "terminal_reward": float(ep.get("reward", 0.0)),
+                }
+                for ep in episodes
+            ]
+            turn_credits = (
+                compute_turn_level_advantages(credit_inputs) if credit_inputs else []
+            )
+            for task_obj, ep, tc in zip(tasks, episodes, turn_credits, strict=False):
+                ep["task_id"] = task_obj.task_id
+                ep["turn_advantages"] = [round(float(a), 4) for a in tc.turn_advantages]
+                curriculum.record_outcome(
+                    task_obj.task_id,
+                    passed=bool(ep.get("verified")),
+                    reward=float(ep.get("reward", 0.0)),
+                )
+
+            if synthesize_self_play:
+                new_vars = curriculum.synthesize_harder_variants(max_new=2)
+                self_play_created += len(new_vars)
+
+            step_out = await learner_step_fn(episodes, step)
+            self.metrics.steps_completed += 1
+            self.metrics.rollouts_consumed += len(episodes)
+
+            mean_reward = round(
+                sum(float(e.get("reward", 0.0)) for e in episodes)
+                / max(1, len(episodes)),
+                4,
+            )
+            guard_rep = None
+            if hacking_guard is not None:
+                guard_samples = [
+                    {
+                        "prompt": str(e.get("episode_id") or ""),
+                        "response": f"verified={bool(e.get('verified'))}",
+                        "proxy_score": float(e.get("reward", 0.0)),
+                        "human_score": 1.0 if e.get("verified") else 0.0,
+                    }
+                    for e in episodes
+                ]
+                guard_rep = hacking_guard.check_step(
+                    step,
+                    guard_samples,
+                    mean_entropy=float(step_out.get("entropy", 1.0)),
+                )
+
+            cb_out = None
+            if studio_callback is not None:
+                step_metrics = {
+                    "reward": mean_reward,
+                    "loss": float(step_out.get("loss", 0.0)),
+                    "entropy": float(step_out.get("entropy", 1.0)),
+                }
+                if hasattr(studio_callback, "enforce_step"):
+                    cb_out = studio_callback.enforce_step(
+                        model, step, step_metrics, guard_report=guard_rep
+                    )
+                else:
+                    cb_out = studio_callback.on_step(
+                        step, step_metrics, guard_report=guard_rep
+                    )
+
+            sw_res = None
+            if (
+                vllm_sleep_wake_every > 0
+                and self.config.live_vllm_endpoint
+                and step % vllm_sleep_wake_every == 0
+            ):
+                sw_res = self.sync_vllm_sleep_wake(level=1)
+                if sw_res and sw_res.get("synced"):
+                    vllm_syncs += 1
+
+            step_logs.append(
+                {
+                    "step": step,
+                    "episode_count": len(episodes),
+                    "mean_reward": mean_reward,
+                    "domain_stats": batch_res.get("domain_stats") or {},
+                    "guard_action": (guard_rep or {}).get("action", "CONTINUE"),
+                    "studio_rolled_back": bool(
+                        (cb_out or {}).get("rolled_back", False)
+                    ),
+                    "vllm_sleep_wake": sw_res,
+                    **step_out,
+                }
+            )
+
+        return {
+            "steps": step_logs,
+            "curriculum_stats": curriculum.stats(),
+            "self_play_variants_created": self_play_created,
+            "vllm_sleep_wake_syncs": vllm_syncs,
+            "metrics": self.metrics.snapshot(),
+        }
+
 
 __all__ = [
     "DisaggregatedMetrics",

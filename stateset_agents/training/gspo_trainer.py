@@ -37,7 +37,6 @@ from stateset_agents.rewards.multi_objective_reward import (
     MultiObjectiveRewardFunction as MultiObjectiveReward,
 )
 
-from .studio_callback import StudioControlMixin
 from . import objectives, rl_losses
 from .gspo_config import GSPOConfig
 from .gspo_generation import (
@@ -48,6 +47,7 @@ from .gspo_generation import (
     render_prompt_for_scoring,
     scoring_prompt_length,
 )
+from .studio_callback import StudioControlMixin
 from .trainer_runtime import SharedModelManager, save_checkpoint_artifacts
 
 logger = logging.getLogger(__name__)

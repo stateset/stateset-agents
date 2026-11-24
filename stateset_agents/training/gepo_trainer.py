@@ -24,10 +24,10 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .studio_callback import StudioControlMixin
 from . import objectives, rl_losses
 from .checkpoint_io import load_checkpoint_file
 from .config import TrainingConfig
+from .studio_callback import StudioControlMixin
 from .trainer_runtime import (
     SharedModelManager,
     build_group_batch,
@@ -322,7 +322,9 @@ class GEPOTrainer(StudioControlMixin):
 
             full_resp_mask = torch.zeros_like(attention_mask)
             full_resp_mask[:, 1:] = response_mask.to(dtype=attention_mask.dtype)
-            with torch.set_grad_enabled(self.model.training and torch.is_grad_enabled()):
+            with torch.set_grad_enabled(
+                self.model.training and torch.is_grad_enabled()
+            ):
                 masked_log_probs, _ = chunked_model_token_logprobs(
                     self.model,
                     input_ids,
@@ -352,7 +354,6 @@ class GEPOTrainer(StudioControlMixin):
         token_log_probs = log_probs.gather(
             dim=-1, index=shift_labels.unsqueeze(-1)
         ).squeeze(-1)
-
 
         masked_log_probs = token_log_probs * response_mask
 

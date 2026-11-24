@@ -25,8 +25,12 @@ from typing import Any
 import torch
 import torch.nn as nn
 
-from stateset_agents.core.mcp_rl_env import CodeVerificationSandbox, MCPRLEnvironment
+from stateset_agents.core.sandbox_pool import MultiDomainSandboxPool
 from stateset_agents.core.trajectory import ConversationTurn
+from stateset_agents.training.adaptive_curriculum import (
+    AdaptiveDifficultyCurriculum,
+    CurriculumTask,
+)
 from stateset_agents.training.chunked_rl_loss import (
     chunked_model_token_logprobs,
     chunked_rl_policy_loss,
@@ -36,6 +40,7 @@ from stateset_agents.training.disaggregated_rl import (
     DisaggregatedRLRuntime,
 )
 from stateset_agents.training.rl_flywheel_guard import OnlineRewardHackingGuard
+from stateset_agents.training.studio_callback import StudioTelemetryCallback
 from stateset_agents.weight_studio.gpu_surgery import (
     bake_torch_caa_steering,
     extract_torch_caa_vector,
@@ -100,91 +105,108 @@ async def run_demo() -> dict[str, Any]:
         alpha=0.5,
     )
 
-    # 2. Verify BOTH Commerce SQLite Sandbox & Coding Verification Sandbox
-    commerce_env = MCPRLEnvironment(max_turns=4)
-    st = await commerce_env.reset(
-        {"target_order_id": "ORD-77701", "expect_refunded": True}
-    )
-    st, _, _, _ = await commerce_env.step(
-        st,
-        ConversationTurn(
-            role="assistant",
-            content='<tool_call>{"name": "get_order", "arguments": {"order_id": "ORD-77701"}}</tool_call>',
-        ),
-    )
-    st, _, _, _ = await commerce_env.step(
-        st,
-        ConversationTurn(
-            role="assistant",
-            content='<tool_call>{"name": "issue_refund", "arguments": {"order_id": "ORD-77701", "reason": "damaged"}}</tool_call>',
-        ),
-    )
-    _, commerce_reward, _, commerce_info = await commerce_env.step(
-        st,
-        ConversationTurn(
-            role="assistant",
-            content="Verified order ORD-77701 and issued your full refund.",
-        ),
-    )
-
-    code_box = CodeVerificationSandbox()
-    code_env = MCPRLEnvironment(
-        tool_executor=code_box.call_tool, state_verifier=code_box.verify, max_turns=4
-    )
-    cst = await code_env.reset()
-    cst, _, _, _ = await code_env.step(
-        cst,
-        ConversationTurn(
-            role="assistant",
-            content='<tool_call>{"name": "write_solution", "arguments": {"code": "def compute_net_revenue(sold, price, refunded):\\n    return (sold - refunded) * price"}}</tool_call>',
-        ),
-    )
-    cst, _, _, _ = await code_env.step(
-        cst,
-        ConversationTurn(
-            role="assistant",
-            content='<tool_call>{"name": "run_tests", "arguments": {}}</tool_call>',
-        ),
-    )
-    _, code_reward, _, code_info = await code_env.step(
-        cst,
-        ConversationTurn(
-            role="assistant", content="Solution verified against all unit tests."
-        ),
-    )
-
-    # 3. Disaggregated Async RL + Chunked GSPO Optimizer Step + Online Hacking Guard
-    guard = OnlineRewardHackingGuard()
-    rt = DisaggregatedRLRuntime(
-        DisaggregatedRLConfig(
-            min_batch_size=2,
-            max_batch_size=4,
-            dynamic_sampling=True,
-            num_rollout_workers=2,
-        )
-    )
-
-    async def producer(_worker_id: int, _ver: int) -> list[dict[str, Any]]:
-        return [
-            {
-                "reward": commerce_reward,
-                "token_count": 20,
-                "sampler_log_probs": (-0.3, -0.4),
-            },
-            {"reward": 0.15, "token_count": 20, "sampler_log_probs": (-0.6, -0.7)},
+    # 2. Unified Adaptive Curriculum + 5-Domain Verifiable Sandbox Pool + Chunked GSPO (FP8 TIS + MoE Aux)
+    pool = MultiDomainSandboxPool(max_concurrency=5)
+    curriculum = AdaptiveDifficultyCurriculum(
+        [
+            CurriculumTask(
+                "ord-1",
+                "commerce",
+                "Refund damaged ORD-77701",
+                {"target_order_id": "ORD-77701"},
+            ),
+            CurriculumTask("code-1", "coding", "Implement compute_net_revenue", {}),
+            CurriculumTask(
+                "sql-1", "sql", "Sum west revenue", {"expected_value": 25000}
+            ),
+            CurriculumTask(
+                "api-1",
+                "rest_api",
+                "Cancel sub_101 idempotently",
+                {"target_subscription_id": "sub_101"},
+            ),
+            CurriculumTask("swe-1", "docker_code", "Fix billing discount bug", {}),
         ]
+    )
 
-    async def learner(batch: list[Any], step: int) -> dict[str, Any]:
-        bsz = len(batch)
+    async def policy_fn(
+        obs: str, meta: dict[str, Any], turn_idx: int
+    ) -> ConversationTurn:
+        dom = meta["domain"]
+        if dom == "commerce":
+            if turn_idx == 0:
+                return ConversationTurn(
+                    role="assistant",
+                    content='<tool_call>{"name": "issue_refund", "arguments": {"order_id": "ORD-77701", "reason": "damaged"}}</tool_call>',
+                )
+            return ConversationTurn(
+                role="assistant", content="Verified refund for ORD-77701."
+            )
+        if dom == "coding":
+            if turn_idx == 0:
+                return ConversationTurn(
+                    role="assistant",
+                    content='<tool_call>{"name": "write_solution", "arguments": {"code": "def compute_net_revenue(sold, price, refunded):\\n    return (sold - refunded) * price"}}</tool_call>',
+                )
+            if turn_idx == 1:
+                return ConversationTurn(
+                    role="assistant",
+                    content='<tool_call>{"name": "run_tests", "arguments": {}}</tool_call>',
+                )
+            return ConversationTurn(
+                role="assistant", content="All coding unit tests passed."
+            )
+        if dom == "sql":
+            if turn_idx == 0:
+                return ConversationTurn(
+                    role="assistant",
+                    content='<tool_call>{"name": "run_sql", "arguments": {"sql": "SELECT SUM(revenue_cents) AS total FROM sales WHERE region = \'west\'"}}</tool_call>',
+                )
+            return ConversationTurn(
+                role="assistant", content="West revenue is 25000 cents."
+            )
+        if dom == "rest_api":
+            if turn_idx == 0:
+                return ConversationTurn(
+                    role="assistant",
+                    content='<tool_call>{"name": "http_request", "arguments": {"method": "POST", "path": "/v1/subscriptions/sub_101/cancel", "idempotency_key": "idem-demo-1", "body": {"reason": "user_request"}}}</tool_call>',
+                )
+            return ConversationTurn(
+                role="assistant", content="Subscription sub_101 canceled."
+            )
+        if turn_idx == 0:
+            return ConversationTurn(
+                role="assistant",
+                content='<tool_call>{"name": "apply_patch", "arguments": {"path": "billing.py", "content": "def apply_discount(subtotal_cents: int, pct: int) -> int:\\n    return subtotal_cents - (subtotal_cents * pct) // 100\\n"}}</tool_call>',
+            )
+        if turn_idx == 1:
+            return ConversationTurn(
+                role="assistant",
+                content='<tool_call>{"name": "run_pytest", "arguments": {}}</tool_call>',
+            )
+        return ConversationTurn(
+            role="assistant", content="Fixed billing.py and verified pytest."
+        )
+
+    guard = OnlineRewardHackingGuard()
+    studio_cb = StudioTelemetryCallback(run_name="open-weight-e2e-demo")
+    rt = DisaggregatedRLRuntime(
+        DisaggregatedRLConfig(min_batch_size=2, max_batch_size=5)
+    )
+
+    async def learner(episodes: list[dict[str, Any]], step: int) -> dict[str, Any]:
+        bsz = len(episodes)
         ids = torch.randint(0, 256, (bsz, 24))
         mask = torch.ones(bsz, 24)
         mask[:, :6] = 0.0
         with torch.no_grad():
             old_lp, _ = chunked_model_token_logprobs(lm, ids, mask, chunk_size=8)
         adv = torch.tensor(
-            [float(r.payload["advantage"]) for r in batch], dtype=torch.float32
+            [float(e.get("normalized_advantage", 0.0)) or 1.0 for e in episodes],
+            dtype=torch.float32,
         )
         hidden = lm.model(ids).last_hidden_state
+        router_logits = torch.randn(bsz, 24, 4)
         loss_out = chunked_rl_policy_loss(
             hidden,
             lm.lm_head.weight,
@@ -194,39 +216,34 @@ async def run_demo() -> dict[str, Any]:
             adv,
             algorithm="gspo",
             ref_logprobs=old_lp,
+            rollout_logprobs=old_lp - 0.05,
+            tis_clip_max=2.0,
+            icepop_bounds=(0.2, 5.0),
+            router_logits=router_logits,
+            moe_aux_coef=0.01,
             chunk_size=8,
             use_checkpointing=True,
         )
         optimizer.zero_grad()
         loss_out["loss"].backward()
         optimizer.step()
-
-        guard_rep = guard.check_step(
-            step,
-            [
-                {
-                    "prompt": "Order #77701 damaged",
-                    "response": "Verified order and issued refund.",
-                    "proxy_score": 0.9,
-                    "human_score": 0.88,
-                },
-                {
-                    "prompt": "Order #77702 damaged",
-                    "response": "bad",
-                    "proxy_score": 0.2,
-                    "human_score": 0.2,
-                },
-            ],
-            mean_entropy=float(loss_out["entropy"].item()),
-        )
         return {
             "loss": round(float(loss_out["loss"].item()), 5),
             "entropy": round(float(loss_out["entropy"].item()), 4),
-            "guard_action": guard_rep["action"],
+            "tis_mean_ratio": round(float(loss_out["tis_mean_ratio"]), 4),
+            "moe_aux_loss": round(float(loss_out["moe_aux_loss"].item()), 5),
         }
 
-    rl_res = await rt.run_steps(
-        num_steps=2, producer_fn=producer, learner_step_fn=learner
+    loop_res = await rt.run_adaptive_sandbox_loop(
+        pool=pool,
+        curriculum=curriculum,
+        policy_fn=policy_fn,
+        learner_step_fn=learner,
+        num_steps=2,
+        batch_size=5,
+        model=lm,
+        studio_callback=studio_cb,
+        hacking_guard=guard,
     )
     return {
         "warm_start": {
@@ -234,9 +251,16 @@ async def run_demo() -> dict[str, Any]:
             "mode": baked["mode"],
             "delta_l2": baked["delta_l2_norm"],
         },
-        "commerce_verified": commerce_info["verification"]["verified"],
-        "code_verified": code_info["verification"]["verified"],
-        "rl_steps": rl_res["steps"],
+        "domains_verified": sorted(
+            {
+                d
+                for s in loop_res["steps"]
+                for d, st in (s.get("domain_stats") or {}).items()
+                if st.get("verified_pass_rate", 0.0) >= 1.0
+            }
+        ),
+        "self_play_variants_created": loop_res["self_play_variants_created"],
+        "rl_steps": loop_res["steps"],
     }
 
 
@@ -246,6 +270,6 @@ if __name__ == "__main__":
     print(
         f"  Step-0 Warm-Start : L{summary['warm_start']['layer']:02d} ({summary['warm_start']['mode']}, ΔL2={summary['warm_start']['delta_l2']})"
     )
-    print(f"  Commerce Sandbox  : verified={summary['commerce_verified']}")
-    print(f"  CodeExec Sandbox  : verified={summary['code_verified']}")
-    print(f"  Chunked GSPO Steps: {summary['rl_steps']}")
+    print(f"  Verified Domains  : {', '.join(summary['domains_verified'])}")
+    print(f"  Self-Play Variants: {summary['self_play_variants_created']}")
+    print(f"  Chunked GSPO Steps: {len(summary['rl_steps'])}")

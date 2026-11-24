@@ -182,7 +182,7 @@ class StudioSQLiteStore:
             params.extend([like, like, like])
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(max(1, min(int(limit), 1000)))
-        sql = f"SELECT payload_json FROM traces {where} ORDER BY id DESC LIMIT ?"
+        sql = f"SELECT payload_json FROM traces {where} ORDER BY id DESC LIMIT ?"  # nosec B608
         with self._lock, self._connect() as conn:
             cur = conn.execute(sql, params)
             out: list[dict[str, Any]] = []
@@ -266,7 +266,7 @@ class StudioSQLiteStore:
             params.append(stage.strip())
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(max(1, min(int(limit), 500)))
-        sql = f"SELECT payload_json FROM rollouts {where} ORDER BY id DESC LIMIT ?"
+        sql = f"SELECT payload_json FROM rollouts {where} ORDER BY id DESC LIMIT ?"  # nosec B608
         with self._lock, self._connect() as conn:
             cur = conn.execute(sql, params)
             out: list[dict[str, Any]] = []
@@ -327,7 +327,7 @@ class StudioSQLiteStore:
             params.append(run_name.strip())
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(max(1, min(int(limit), 500)))
-        sql = f"SELECT payload_json FROM rl_steps {where} ORDER BY id DESC LIMIT ?"
+        sql = f"SELECT payload_json FROM rl_steps {where} ORDER BY id DESC LIMIT ?"  # nosec B608
         with self._lock, self._connect() as conn:
             cur = conn.execute(sql, params)
             rows: list[dict[str, Any]] = []
@@ -437,9 +437,7 @@ class StudioSQLiteStore:
             clauses.append("verified = 0")
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(max(1, min(int(limit), 200)))
-        sql = (
-            f"SELECT payload_json FROM rl_trajectories {where} ORDER BY id DESC LIMIT ?"
-        )
+        sql = f"SELECT payload_json FROM rl_trajectories {where} ORDER BY id DESC LIMIT ?"  # nosec B608
         with self._lock, self._connect() as conn:
             cur = conn.execute(sql, params)
             out: list[dict[str, Any]] = []

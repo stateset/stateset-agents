@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.98.0] - 2026-11-23 — MoE + FP8 Precision-Mismatch TIS/IcePop, Adaptive Difficulty Curriculum & Verifiable Trajectory Credit Inspector
+## [0.99.0] - 2026-11-23 — Unified Closed-Loop Adaptive RL Runtime, 5-Domain Enterprise Verifiable Sandboxes (`RESTAPISandbox` & `DockerCodeSandbox`), Real Multi-Turn PRM Credit Fix & Publish-Readiness Hardening
+
+### Added
+
+- **Enterprise Verifiable Sandboxes (`RESTAPISandbox` & `DockerCodeSandbox`)** (`stateset_agents/core/mcp_rl_env.py`, `sandbox_pool.py`, `environment.py`, `router.py`, `mcp_bridge.py`, `mcp_server.py`, `npm/`): expanded `MultiDomainSandboxPool` from 3 to 5 verifiable enterprise domains (`commerce`, `coding`, `sql`, `rest_api`, `docker_code`) with OpenAPI schema + idempotency-key enforcement and container-isolated patch+pytest verification (with clean subprocess fallback).
+- **Unified Closed-Loop Adaptive RL Runtime** (`stateset_agents/training/disaggregated_rl.py`, `gspo_config.py`, `dapo_config.py`, `examples/open_weight_rl_end_to_end.py`): added `DisaggregatedRLRuntime.run_adaptive_sandbox_loop(...)` uniting `AdaptiveDifficultyCurriculum`, `MultiDomainSandboxPool`, `compute_turn_level_advantages`, `OnlineRewardHackingGuard`, `StudioTelemetryCallback`, and optional `sync_vllm_sleep_wake()`, plus `tis_clip_max`/`icepop_bounds`/`moe_aux_loss_coef` on `GSPOConfig` & `DAPOConfig`.
+- **Front-Door Documentation & Publish-Readiness Hardening** (`README.md`): refreshed `README.md` with verified `v0.99.0` Open-Weight RL & 3D Weight Studio highlights and validated all CLI snippets, `bandit`, `twine check`, `release_governance`, and isolated wheel smoke gates.
+
+### Fixed
+
+- **Multi-Turn PRM Credit Persistence in `POST /api/weight-studio/rl/sandbox-pool`** (`stateset_agents/weight_studio/router.py`): fixed `turn_rewards` → `turn_process_rewards` key mismatch and wired batch `compute_turn_level_advantages(...)` so every multi-turn sandbox trajectory records distinct per-turn PRM credit badges in SQLite and the 3D Weight Studio Trajectory Credit Inspector.
+
+## [0.98.0] - 2026-11-23 — MoE+FP8 Precision-Mismatch TIS/IcePop, Adaptive Difficulty Curriculum & Verifiable Trajectory Credit Inspector
 
 ### Added
 

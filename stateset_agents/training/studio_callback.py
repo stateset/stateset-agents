@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import time
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -35,8 +36,10 @@ HttpGetCaller = Callable[[str, dict[str, str], float], tuple[int, dict[str, Any]
 def _default_http_get_json(
     url: str, headers: dict[str, str], timeout: float
 ) -> tuple[int, dict[str, Any]]:
+    if urllib.parse.urlparse(url).scheme not in ("http", "https"):
+        raise ValueError(f"Studio URL must use http or https scheme, got: {url!r}")
     req = urllib.request.Request(url, headers=headers, method="GET")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310
         raw = resp.read().decode("utf-8", errors="replace")
         parsed = json.loads(raw) if raw.strip() else {}
         return int(resp.status), (

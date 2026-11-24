@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
@@ -61,11 +62,13 @@ def _default_http_post_json(
     headers: dict[str, str],
     timeout: float = 30.0,
 ) -> tuple[int, dict[str, Any]]:
+    if urllib.parse.urlparse(url).scheme not in ("http", "https"):
+        raise ValueError(f"Endpoint URL must use http or https scheme, got: {url!r}")
     body = json.dumps(payload).encode("utf-8")
     req_headers = {"Content-Type": "application/json", **headers}
     req = urllib.request.Request(url, data=body, headers=req_headers, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310
             raw = resp.read().decode("utf-8", errors="replace")
             try:
                 parsed = json.loads(raw) if raw.strip() else {}

@@ -350,8 +350,9 @@ def test_online_reward_hacking_guard_curriculum_and_rl_blueprint_cli(
 def test_v91_gpu_torch_caa_warm_start_chunked_model_wrapper_and_code_sandbox() -> None:
     """Verify real PyTorch hook CAA warm-start + rollback, chunked_model_token_logprobs & CodeVerificationSandbox."""
     torch = pytest.importorskip("torch")
-    import torch.nn as nn
     from types import SimpleNamespace
+
+    import torch.nn as nn
 
     from stateset_agents.core.mcp_rl_env import (
         CodeVerificationSandbox,
@@ -468,8 +469,9 @@ def test_v91_gpu_torch_caa_warm_start_chunked_model_wrapper_and_code_sandbox() -
 def test_v92_trainer_live_chunked_wiring_and_turn_level_credit_assignment() -> None:
     """Verify DAPOTrainer & GSPOTrainer execute live chunked logprob path + Turn-Level PRM Credit Assignment."""
     torch = pytest.importorskip("torch")
-    import torch.nn as nn
     from types import SimpleNamespace
+
+    import torch.nn as nn
 
     from stateset_agents.training.dapo_config import DAPOConfig
     from stateset_agents.training.dapo_trainer import DAPOTrainer
@@ -588,8 +590,9 @@ def test_v93_gepo_vapo_chunked_parity_sql_sandbox_telemetry_callback_and_cli_sho
 ) -> None:
     """Verify GEPO/VAPO live chunked wiring, SQLAnalyticsSandbox, StudioTelemetryCallback & CLI --run-shootout."""
     torch = pytest.importorskip("torch")
-    import torch.nn as nn
     from types import SimpleNamespace
+
+    import torch.nn as nn
     from typer.testing import CliRunner
 
     from stateset_agents.cli import app as cli_app
@@ -1302,3 +1305,168 @@ def test_v98_moe_fp8_tis_adaptive_curriculum_and_trajectory_credit_inspector(
     )
     assert stdio_res["count"] >= 2
     assert stdio_res["stats"]["rl_trajectory_count"] >= 5
+
+
+def test_v99_enterprise_sandboxes_real_multiturn_prm_credit_and_unified_adaptive_loop(
+    tmp_path: Path,
+) -> None:
+    """Verify RESTAPISandbox & DockerCodeSandbox, fixed multi-turn PRM credit in /rl/sandbox-pool, and DisaggregatedRLRuntime.run_adaptive_sandbox_loop."""
+    from fastapi.testclient import TestClient
+
+    from stateset_agents.core.mcp_rl_env import DockerCodeSandbox, RESTAPISandbox
+    from stateset_agents.core.sandbox_pool import MultiDomainSandboxPool
+    from stateset_agents.core.trajectory import ConversationTurn
+    from stateset_agents.training.adaptive_curriculum import (
+        AdaptiveDifficultyCurriculum,
+        CurriculumTask,
+    )
+    from stateset_agents.training.dapo_config import DAPOConfig
+    from stateset_agents.training.disaggregated_rl import (
+        DisaggregatedRLConfig,
+        DisaggregatedRLRuntime,
+    )
+    from stateset_agents.training.gspo_config import GSPOConfig
+    from stateset_agents.training.rl_flywheel_guard import OnlineRewardHackingGuard
+    from stateset_agents.training.studio_callback import StudioTelemetryCallback
+    from stateset_agents.weight_studio import create_studio_app
+
+    # 1. Config fields for FP8 TIS/IcePop + MoE aux exposed cleanly on GSPOConfig & DAPOConfig
+    g_cfg = GSPOConfig(
+        tis_clip_max=2.0, icepop_bounds=(0.2, 5.0), moe_aux_loss_coef=0.01
+    )
+    d_cfg = DAPOConfig(
+        tis_clip_max=2.0, icepop_bounds=(0.2, 5.0), moe_aux_loss_coef=0.01
+    )
+    assert g_cfg.tis_clip_max == 2.0 and d_cfg.moe_aux_loss_coef == 0.01
+
+    # 2. Direct RESTAPISandbox idempotency & schema checks + DockerCodeSandbox subprocess fallback
+    ra = RESTAPISandbox()
+    missing_idem = ra.call_tool(
+        "http_request",
+        {
+            "method": "POST",
+            "path": "/v1/subscriptions/sub_101/cancel",
+            "body": {"reason": "bye"},
+        },
+    )
+    assert missing_idem["isError"] is True and missing_idem["status"] == 400
+    ok_cancel = ra.call_tool(
+        "http_request",
+        {
+            "method": "POST",
+            "path": "/v1/subscriptions/sub_101/cancel",
+            "idempotency_key": "k-1",
+            "body": {"reason": "customer_requested"},
+        },
+    )
+    assert ok_cancel["isError"] is False and ok_cancel["data"]["status"] == "canceled"
+    replay = ra.call_tool(
+        "http_request",
+        {
+            "method": "POST",
+            "path": "/v1/subscriptions/sub_101/cancel",
+            "idempotency_key": "k-1",
+            "body": {"reason": "customer_requested"},
+        },
+    )
+    assert replay.get("idempotent_replay") is True
+
+    dc = DockerCodeSandbox(use_docker=False)
+    pre_test = dc.call_tool("run_pytest", {})
+    assert pre_test["passed"] is False
+    dc.call_tool(
+        "apply_patch",
+        {
+            "path": "billing.py",
+            "content": "def apply_discount(subtotal_cents: int, pct: int) -> int:\n    return subtotal_cents - (subtotal_cents * pct) // 100\n",
+        },
+    )
+    post_test = dc.call_tool("run_pytest", {})
+    assert post_test["passed"] is True
+    assert post_test["execution_backend"] == "subprocess_fallback"
+
+    # 3. Fixed multi-turn PRM credit persistence in POST /api/weight-studio/rl/sandbox-pool across all 5 domains
+    app = create_studio_app(workspace_root=tmp_path)
+    client = TestClient(app)
+    r_pool = client.post(
+        "/api/weight-studio/rl/sandbox-pool",
+        json={
+            "domains": ["commerce", "coding", "sql", "rest_api", "docker_code"],
+            "include_failure_pairs": True,
+        },
+    )
+    assert r_pool.status_code == 200
+    body = r_pool.json()
+    assert body["episode_count"] == 10
+    assert set(body["domain_stats"]) == {
+        "commerce",
+        "coding",
+        "sql",
+        "rest_api",
+        "docker_code",
+    }
+
+    r_traj = client.get(
+        "/api/weight-studio/rl/trajectories?domain=docker_code&limit=10"
+    )
+    assert r_traj.status_code == 200
+    trajs = {t["trajectory_id"]: t for t in r_traj.json()["trajectories"]}
+    # docker_code-ok takes 3 turns (apply_patch -> run_pytest -> final answer); verify all 3 turns recorded!
+    assert len(trajs["docker_code-ok"]["turns"]) == 3
+    assert all("credit" in t for t in trajs["docker_code-ok"]["turns"])
+
+    # 4. Unified DisaggregatedRLRuntime.run_adaptive_sandbox_loop across all 5 domains
+    pool = MultiDomainSandboxPool(max_concurrency=5)
+    cur = AdaptiveDifficultyCurriculum(
+        [
+            CurriculumTask(
+                "t-rest",
+                "rest_api",
+                "Cancel sub_101",
+                {"target_subscription_id": "sub_101"},
+            ),
+            CurriculumTask("t-docker", "docker_code", "Fix billing discount", {}),
+        ]
+    )
+
+    async def _policy(obs: str, meta: dict, turn_idx: int) -> ConversationTurn:
+        if meta["domain"] == "rest_api":
+            if turn_idx == 0:
+                return ConversationTurn(
+                    role="assistant",
+                    content='<tool_call>{"name": "http_request", "arguments": {"method": "POST", "path": "/v1/subscriptions/sub_101/cancel", "idempotency_key": "idem-loop", "body": {"reason": "done"}}}</tool_call>',
+                )
+            return ConversationTurn(role="assistant", content="Canceled sub_101.")
+        if turn_idx == 0:
+            return ConversationTurn(
+                role="assistant",
+                content='<tool_call>{"name": "apply_patch", "arguments": {"path": "billing.py", "content": "def apply_discount(subtotal_cents: int, pct: int) -> int:\\n    return subtotal_cents - (subtotal_cents * pct) // 100\\n"}}</tool_call>',
+            )
+        if turn_idx == 1:
+            return ConversationTurn(
+                role="assistant",
+                content='<tool_call>{"name": "run_pytest", "arguments": {}}</tool_call>',
+            )
+        return ConversationTurn(role="assistant", content="Fixed billing.py.")
+
+    async def _learner(episodes: list[dict], step: int) -> dict:
+        assert all("turn_advantages" in e for e in episodes)
+        return {"loss": -0.2 * step, "entropy": 1.1}
+
+    cb = StudioTelemetryCallback(run_name="v99-unified-loop", workspace_root=tmp_path)
+    drt = DisaggregatedRLRuntime(DisaggregatedRLConfig(), workspace_root=tmp_path)
+    loop_res = asyncio.run(
+        drt.run_adaptive_sandbox_loop(
+            pool=pool,
+            curriculum=cur,
+            policy_fn=_policy,
+            learner_step_fn=_learner,
+            num_steps=2,
+            batch_size=2,
+            studio_callback=cb,
+            hacking_guard=OnlineRewardHackingGuard(),
+        )
+    )
+    assert len(loop_res["steps"]) == 2
+    assert loop_res["self_play_variants_created"] >= 1
+    assert cb.steps_logged == 2

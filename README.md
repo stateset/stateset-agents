@@ -19,6 +19,17 @@
 - pip install → ingest sample logs → improve (grade/curate) → one GRPO dry‑run (stub/HF) → serve
 - remote training defaults to Modal (unverified; fail‑closed), with other providers still available
 
+> **v0.99.0 Open-Weight RL Leadership Suite & 3D Weight Studio:** memory-efficient chunked/Triton GSPO·DAPO·GEPO·VAPO (`99.61%` 16k Qwen3 logit VRAM saved), MoE router aux + FP8 rollout TIS/IcePop precision bridge, disaggregated async rollouts + vLLM Level-1 sleep/wake sync, **5 concurrent verifiable MCP sandboxes** (`commerce`, `coding`, `sql`, `rest_api`, `docker_code`), Adaptive Difficulty Curriculum + Turn-Level PRM Credit, Step-0 PyTorch CAA surgical warm-start, WebGL2 **3D Weight Studio** (Live RL Cockpit, Multi-Run Sparklines, Pause/Rollback enforcement, Trajectory Credit Inspector, SQLite WAL ledger), **39 annotated MCP tools** (stdio + Streamable HTTP), and the `@stateset/agents` TypeScript SDK. See [docs/OPEN_WEIGHT_RL.md](docs/OPEN_WEIGHT_RL.md) and [docs/WEIGHT_STUDIO.md](docs/WEIGHT_STUDIO.md).
+
+```bash
+# Launch the interactive 3D Weight Studio & Live RL Cockpit
+stateset-agents studio --port 8765
+
+# Run the verifiable Open-Weight RL shootout & cloud blueprint planner
+stateset-agents rl --run-shootout --json
+stateset-agents rl --model Qwen/Qwen3-8B --algorithm dapo --cloud modal --gpus 4 --json
+```
+
 ---
 
 StateSet Agents is a production‑oriented RL stack for training and serving LLM‑backed agents that improve through **multi‑turn interaction**. The library provides:
