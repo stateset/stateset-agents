@@ -69,8 +69,10 @@ class RiverRLConfig:
             raise ValueError(
                 "RL loss_fn must be cispo, ppo, importance_sampling, decoupled_ppo, or dro"
             )
-        if self.normalization not in {"token", "sequence", "sum"}:
-            raise ValueError("RL normalization must be token, sequence, or sum")
+        if self.normalization not in {"token", "sequence", "sum", "dr_grpo"}:
+            raise ValueError(
+                "RL normalization must be token, sequence, sum, or dr_grpo"
+            )
         if self.truncation not in {"drop_group", "error"}:
             raise ValueError("RL truncation must be drop_group or error")
         if self.max_generated_tokens is not None and (
@@ -283,27 +285,43 @@ def retain_group(records: list[dict[str, Any]], config: RiverRLConfig) -> bool:
 
 
 def normalize_datums(
-    data: list[dict[str, Any]], mode: str
+    data: list[dict[str, Any]],
+    mode: str,
+    *,
+    constant_length: int | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """Normalize a logical update once, before transport microbatching.
 
     Sequence mode assigns equal weight to each retained assistant span (each
-    turn in an episode). Zero-advantage spans are excluded in all modes.
+    turn in an episode). ``dr_grpo`` mode divides by ``retained * constant_length``
+    (defaulting ``constant_length`` to the max retained span length in the batch)
+    to eliminate response-length bias. Zero-advantage spans are excluded in all modes.
     """
-    if mode not in {"token", "sequence", "sum"}:
-        raise ValueError("RL normalization must be token, sequence, or sum")
+    if mode not in {"token", "sequence", "sum", "dr_grpo"}:
+        raise ValueError("RL normalization must be token, sequence, sum, or dr_grpo")
     if any(not math.isfinite(a) for d in data for a in d["advantages"]):
         raise ValueError("RL advantages must be finite")
     counts = [sum(a != 0 for a in d["advantages"]) for d in data]
     total = sum(counts)
     retained = sum(n > 0 for n in counts)
+    max_retained = max((n for n in counts if n > 0), default=1)
+    const_len = (
+        int(constant_length)
+        if constant_length is not None and int(constant_length) > 0
+        else max_retained
+    )
     result = []
     for datum, count in zip(data, counts, strict=True):
         if not count:
             continue
-        denominator = (
-            total if mode == "token" else retained * count if mode == "sequence" else 1
-        )
+        if mode == "token":
+            denominator = total
+        elif mode == "sequence":
+            denominator = retained * count
+        elif mode == "dr_grpo":
+            denominator = retained * const_len
+        else:
+            denominator = 1
         result.append(
             {**datum, "advantages": [a / denominator for a in datum["advantages"]]}
         )

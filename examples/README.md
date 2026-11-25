@@ -990,6 +990,7 @@ asyncio.run(example_module.main())
 15. `weight_studio_quickstart.py` - Launch and inspect open-weight models in the 3D Weight Studio
 16. `autonomous_surgery_autopilot.py` - Zero-GPU autonomous trace-to-surgery Auto-Heal, Red-Team & Canary autopilot demo
 17. `open_weight_rl_end_to_end.py` - End-to-end Step-0 CAA warm-start, 6-domain verifiable sandboxes, chunked GSPO/FP8 TIS/MoE loss, adaptive curriculum & Studio telemetry loop
+18. `controlled_legal_rl_stack.py` - Closed-universe Client Matter Sandboxes, Hierarchical Issue-Group Rubric Reward (zero length penalty), Rank-64 Dr. GRPO/CISPO (`dr_cispo`), Nemotron 3.5 Super VL anchor sweep transfer across 5 models (`River` + `Tinker` + StateSet Sandboxes), and Appendix export
 
 ## 🐛 Troubleshooting
 

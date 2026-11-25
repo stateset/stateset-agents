@@ -78,9 +78,31 @@ _H100 = "NVIDIA H100 80GB HBM3"
 MODEL_CATALOG: tuple[ModelSupport, ...] = (
     ModelSupport(
         model="thinkingmachines/Inkling-2-Small",
+        aliases=("Inkling 2 Small",),
         tier="frontier-preview",
         certification="configured",
         recommended_provider="tinker",
+    ),
+    ModelSupport(
+        model="meta-models/Muse-Spark-Open-816B-A42B",
+        aliases=("Muse Spark Open",),
+        tier="frontier-preview",
+        certification="configured",
+        recommended_provider="river",
+    ),
+    ModelSupport(
+        model="nvidia/NVIDIA-Nemotron-3.5-Super-VL",
+        aliases=("Nemotron 3.5 Super VL",),
+        tier="frontier-preview",
+        certification="configured",
+        recommended_provider="river",
+    ),
+    ModelSupport(
+        model="beam/Beam-1.0",
+        aliases=("Beam 1.0",),
+        tier="frontier-preview",
+        certification="configured",
+        recommended_provider="river",
     ),
     ModelSupport(
         model="thinkingmachines/Inkling-Small",

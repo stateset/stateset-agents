@@ -917,7 +917,15 @@ class MCPRLEnvironment(Environment):
         proc_rewards.append(step_prm)
         next_state.metadata["process_rewards"] = proc_rewards
 
-        done = (not calls) or (next_state.turn_count >= self.max_turns)
+        tool_signaled_done = any(
+            isinstance(e.get("result"), dict) and bool(e["result"].get("done"))
+            for e in turn_tool_results
+        )
+        done = (
+            (not calls)
+            or tool_signaled_done
+            or (next_state.turn_count >= self.max_turns)
+        )
         verification: dict[str, Any] = {}
         reward = round(step_prm * self.process_reward_weight, 4)
 

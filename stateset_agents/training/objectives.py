@@ -450,6 +450,12 @@ OBJECTIVES: Mapping[str, PolicyObjective] = MappingProxyType(
             "reinforce_pp_baseline", advantage="batch_norm", aggregate="token_mean"
         ),
         "cispo": _preset("cispo", clip="cispo", aggregate="token_mean"),
+        "dr_cispo": _preset(
+            "dr_cispo",
+            advantage="group_mean",
+            clip="cispo",
+            aggregate="seq_sum_const",
+        ),
         "ppo": _preset(
             "ppo", advantage="external", aggregate="token_mean", kl="k3_token"
         ),

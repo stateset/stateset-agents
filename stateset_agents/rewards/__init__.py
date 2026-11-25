@@ -60,6 +60,19 @@ from .llm_judge_adapter import (
 # NSR verifier — deterministic, proof-backed reward (StateSet NSR)
 from .nsr_verifier import NSROutcomeReporter, NSRVerifierConfig, NSRVerifierReward
 
+# Hierarchical binary rubric reward (closed-universe legal/enterprise matters)
+from .rubric_reward import (
+    CriterionVerdict,
+    DeterministicRubricJudge,
+    HierarchicalRubricReward,
+    JudgeCompletionFn,
+    LLMRubricJudge,
+    RubricCriterion,
+    RubricJudge,
+    RubricRewardConfig,
+    score_rubric_verdicts,
+)
+
 __all__ = [
     "SupportConversationReward",
     "SupportConversationRewardV3",
@@ -106,5 +119,14 @@ __all__.extend(
         "NSROutcomeReporter",
         "NSRVerifierConfig",
         "NSRVerifierReward",
+        "CriterionVerdict",
+        "DeterministicRubricJudge",
+        "HierarchicalRubricReward",
+        "JudgeCompletionFn",
+        "LLMRubricJudge",
+        "RubricCriterion",
+        "RubricJudge",
+        "RubricRewardConfig",
+        "score_rubric_verdicts",
     ]
 )

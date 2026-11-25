@@ -361,6 +361,19 @@ def river_mcp_sandbox_factory(
                         state_verifier=dc.verify,
                         max_turns=max_turns,
                     )
+                if normalized == "client_matter":
+                    from stateset_agents.core.client_matter_sandbox import (
+                        ClientMatterSandbox,
+                        default_client_matter_tasks,
+                    )
+
+                    cm = ClientMatterSandbox(task=default_client_matter_tasks()[0])
+                    return MCPRLEnvironment(
+                        tool_executor=cm.call_tool,
+                        state_verifier=cm.verify,
+                        max_turns=max_turns,
+                        process_reward_weight=0.0,
+                    )
                 wb = BrowserDOMSandbox()
                 return MCPRLEnvironment(
                     tool_executor=wb.call_tool,

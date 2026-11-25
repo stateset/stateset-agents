@@ -56,12 +56,19 @@ class MultiDomainSandboxPool:
         "rest_api",
         "docker_code",
         "web_agent",
+        "client_matter",
     )
 
     def __init__(self, *, max_concurrency: int = 16) -> None:
         self.max_concurrency = max(1, int(max_concurrency))
 
-    def _build_env(self, domain: str, max_turns: int) -> MCPRLEnvironment:
+    def _build_env(
+        self,
+        domain: str,
+        max_turns: int,
+        *,
+        scenario: dict[str, Any] | None = None,
+    ) -> MCPRLEnvironment:
         key = domain.strip().lower()
         if key == "commerce":
             sb = CommerceLedgerSandbox()
@@ -114,6 +121,22 @@ class MultiDomainSandboxPool:
                 state_verifier=wb.verify,
                 max_turns=max_turns,
             )
+        if key == "client_matter":
+            from .client_matter_sandbox import (
+                ClientMatterSandbox,
+                default_client_matter_tasks,
+            )
+
+            tasks = default_client_matter_tasks()
+            wanted = str((scenario or {}).get("matter_id") or "").strip()
+            chosen = next((t for t in tasks if t.matter_id == wanted), tasks[0])
+            cm = ClientMatterSandbox(task=chosen)
+            return MCPRLEnvironment(
+                tool_executor=cm.call_tool,
+                state_verifier=cm.verify,
+                max_turns=max_turns,
+                process_reward_weight=0.0,
+            )
         raise ValueError(
             f"Unsupported sandbox domain {domain!r}; expected one of {self.SUPPORTED_DOMAINS}."
         )
@@ -122,7 +145,7 @@ class MultiDomainSandboxPool:
         self, spec: SandboxEpisodeSpec, policy_fn: AgentPolicyFn
     ) -> dict[str, Any]:
         """Run one isolated verifiable multi-turn episode to completion."""
-        env = self._build_env(spec.domain, spec.max_turns)
+        env = self._build_env(spec.domain, spec.max_turns, scenario=spec.scenario)
         state = await env.reset(spec.scenario)
         obs = str(state.context.get("prompt") or "")
         turn_rewards: list[float] = []
@@ -157,8 +180,19 @@ class MultiDomainSandboxPool:
         policy_fn: AgentPolicyFn,
         *,
         normalize_per_domain: bool = True,
+        advantage_mode: str = "zscore",
     ) -> dict[str, Any]:
-        """Execute a mixed-domain batch concurrently and compute per-domain advantages."""
+        """Execute a mixed-domain batch concurrently and compute per-domain advantages.
+
+        ``advantage_mode`` supports:
+        - ``"zscore"`` (default): per-domain z-score when ``normalize_per_domain=True``.
+        - ``"group_mean"`` (Dr. GRPO): unscaled ``reward - domain_mean`` with no std division.
+        """
+        mode = advantage_mode.strip().lower()
+        if mode not in {"zscore", "group_mean"}:
+            raise ValueError(
+                f"Unsupported advantage_mode {advantage_mode!r}; expected 'zscore' or 'group_mean'."
+            )
         sem = asyncio.Semaphore(self.max_concurrency)
 
         async def _bounded(spec: SandboxEpisodeSpec) -> dict[str, Any]:
@@ -167,7 +201,7 @@ class MultiDomainSandboxPool:
 
         results = list(await asyncio.gather(*(_bounded(s) for s in specs)))
 
-        # Per-domain z-score advantage normalization
+        # Per-domain advantage computation (z-score or Dr. GRPO group-mean centering)
         by_domain: dict[str, list[dict[str, Any]]] = {}
         for row in results:
             by_domain.setdefault(str(row["domain"]), []).append(row)
@@ -185,7 +219,7 @@ class MultiDomainSandboxPool:
                 "verified_pass_rate": round(pass_rate, 4),
             }
             for r in rows:
-                if normalize_per_domain and std >= 1e-4:
+                if mode == "zscore" and normalize_per_domain and std >= 1e-4:
                     r["normalized_advantage"] = round(
                         (float(r["reward"]) - mean) / std, 6
                     )

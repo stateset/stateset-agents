@@ -325,22 +325,31 @@ def chunked_rl_policy_loss(
     router_logits: Any | None = None,
     moe_aux_coef: float = 0.0,
     moe_top_k: int = 2,
+    max_completion_length: int | None = None,
+    cispo_is_cap: float = 5.0,
 ) -> dict[str, Any]:
-    """Compute memory-efficient chunked GRPO, GSPO, or DAPO policy loss + diagnostics.
+    """Compute memory-efficient chunked GRPO, GSPO, DAPO, CISPO, Dr. GRPO, or Dr. CISPO policy loss.
 
     Supports:
     - ``grpo``: Token-level clipped surrogate, sequence-normalized mean.
+    - ``dr_grpo``: Token-level clipped surrogate with Dr. GRPO constant-length token-sum
+      normalization (eliminating length bias).
     - ``gspo``: Sequence-level geometric mean importance ratio (``exp(mean_t log_ratio)``)
       for stable long-horizon multi-turn dialogue.
     - ``dapo``: Asymmetric Clip-Higher (``clip_low=0.20, clip_high=0.28`` default)
       with global token-level mean normalization.
+    - ``cispo``: Per-token detached clipped importance weights multiplying ``A_t * log pi(y_t)``
+      with global token-level mean normalization.
+    - ``dr_cispo``: CISPO per-token clipped importance weights combined with Dr. GRPO
+      constant-length token-sum normalization (zero length bias, async-safe).
     - Optional off-policy staleness ``importance_weights`` (for disaggregated async RL).
     """
     torch = _t()
     algo = algorithm.strip().lower()
-    if algo not in ("grpo", "gspo", "dapo"):
+    if algo not in ("grpo", "gspo", "dapo", "cispo", "dr_grpo", "dr_cispo"):
         raise ValueError(
-            f"Unsupported algorithm {algorithm!r}; expected grpo, gspo, or dapo."
+            f"Unsupported algorithm {algorithm!r}; expected grpo, gspo, dapo, "
+            "cispo, dr_grpo, or dr_cispo."
         )
 
     eps_low = float(clip_low)
@@ -377,9 +386,12 @@ def chunked_rl_policy_loss(
         seq_log_ratio = token_log_ratio.sum(dim=-1, keepdim=True) / seq_lengths
         ratio = safe_exp_ratio(seq_log_ratio).expand_as(cur_lp)
         mean_mode = "seq"
-    elif algo == "dapo":
+    elif algo in ("dapo", "cispo"):
         ratio = safe_exp_ratio(token_log_ratio)
         mean_mode = "token"
+    elif algo in ("dr_grpo", "dr_cispo"):
+        ratio = safe_exp_ratio(token_log_ratio)
+        mean_mode = "seq_sum_const"
     else:
         ratio = safe_exp_ratio(token_log_ratio)
         mean_mode = "seq"
@@ -426,9 +438,25 @@ def chunked_rl_policy_loss(
         adv_2d = adv_2d * rho_is.detach()
 
     clipped_ratio = torch.clamp(ratio, 1.0 - eps_low, 1.0 + eps_high)
-    surr1 = ratio * adv_2d
-    surr2 = clipped_ratio * adv_2d
-    pg_loss = -masked_mean(torch.minimum(surr1, surr2), eff_mask, mode=mean_mode)
+    if algo in ("cispo", "dr_cispo"):
+        # CISPO (matches objectives.py): detached upper-capped per-token IS weight * A_t * log pi(y_t)
+        cispo_weight = torch.clamp(ratio, max=float(cispo_is_cap)).detach()
+        per_token_obj = cispo_weight * adv_2d * cur_lp
+    else:
+        surr1 = ratio * adv_2d
+        surr2 = clipped_ratio * adv_2d
+        per_token_obj = torch.minimum(surr1, surr2)
+
+    if mean_mode == "seq_sum_const":
+        norm_len = float(
+            max_completion_length
+            if max_completion_length is not None and max_completion_length > 0
+            else max(1, int(cur_lp.shape[-1]))
+        )
+        batch_denom = max(float(cur_lp.shape[0]) * norm_len, 1.0)
+        pg_loss = -(per_token_obj * eff_mask).sum() / batch_denom
+    else:
+        pg_loss = -masked_mean(per_token_obj, eff_mask, mode=mean_mode)
 
     kl_loss = (
         k3_kl(cur_lp, ref_logprobs.detach(), eff_mask)

@@ -1546,6 +1546,12 @@ class NativeRiverIntegration(unittest.IsolatedAsyncioTestCase):
                 '<tool_call>{"name": "click", "arguments": {"selector": "#btn-submit-return"}}</tool_call>',
                 "Submitted return portal form.",
             ],
+            "client_matter": [
+                '<tool_call>{"name": "list_matter_files", "arguments": {}}</tool_call>',
+                '<tool_call>{"name": "read_document", "arguments": {"filename": "first_amendment_2024.txt"}}</tool_call>',
+                '<tool_call>{"name": "draft_work_product", "arguments": {"title": "Acme Lease Memo", "content": "Master Lease Section 12.2 deems a merger an assignment requiring consent, but First Amendment Section 3 creates a Permitted Transfer carve-out since Vertex has $62M net worth (> $50M). Acme must give 15 days prior to closing written notice and certified financial statements with the $1,500 fee. Per Harborview counsel October 2026 email, Section 18.1 provides 15 business days cure period."}}</tool_call>',
+                '<tool_call>{"name": "signal_complete", "arguments": {"summary": "Memo complete."}}</tool_call>',
+            ],
         }
 
         for domain in MultiDomainSandboxPool.SUPPORTED_DOMAINS:
